@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zxx">
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Link of CSS files -->
+    <link rel="stylesheet" th:href="@{/css/bootstrap.min.css}"/>
+    <link rel="stylesheet" th:href="@{/css/flaticon.css}"/>
+    <link rel="stylesheet" th:href="@{/css/remixicon.css}"/>
+    <link rel="stylesheet" th:href="@{/css/owl.carousel.min.css}"/>
+    <link rel="stylesheet" th:href="@{/css/odometer.min.css}"/>
+    <link rel="stylesheet" th:href="@{/css/magnific-popup.css}"/>
+    <link rel="stylesheet" th:href="@{/css/fancybox.css}"/>
+    <link rel="stylesheet" th:href="@{/css/aos.css}"/>
+    <link rel="stylesheet" th:href="@{/css/style.css}"/>
+    <link rel="stylesheet" th:href="@{/css/responsive.css}"/>
+    <title>Apply Loan</title>
+    <link rel="icon" type="image/png" href="assets/img/favicon.png">
+</head>
+
+<body>
+<!--Preloader starts-->
+<div class="preloader js-preloader">
+    <div class="loader loader-inner-1">
+        <div class="loader loader-inner-2">
+            <div class="loader loader-inner-3">
+            </div>
+        </div>
+    </div>
+</div>
+<!--Preloader ends-->
+
+<!-- Page Wrapper End -->
+<div class="page-wrapper">
+
+    <!-- Header Section Start -->
+    <header class="header-wrap style2">
+        <div class="header-bottom">
+            <div class="container">
+                <nav class="navbar navbar-expand-md navbar-light">
+                    <a class="navbar-brand" href="index.html">
+                        <img src="assets/img/logo.png" alt="logo">
+                    </a>
+                    <div class="collapse navbar-collapse main-menu-wrap" id="navbarSupportedContent">
+                        <div class="menu-close xl-none">
+                            <a href="javascript:void(0)"> <i class="ri-close-line"></i></a>
+                        </div>
+                        <ul class="navbar-nav ms-auto">
+
+
+                            <li class="nav-item">
+                                <a href="#" class="nav-link">My Loan</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="#" class="nav-link">Loan Calculator</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="#" class="nav-link">Terms & Conditions</a>
+                            </li>
+
+                            <li class="nav-item xl-none">
+                                <a href="apply.html" class="btn style2">Apply Now</a>
+                            </li>
+                        </ul>
+                    </div>
+                </nav>
+                <div class="mobile-bar-wrap">
+                    <div class="mobile-menu xl-none">
+                        <a href="javascript:void(0)"><i class="ri-menu-line"></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    <!-- Header Section End -->
+
+    <!-- Content Wrapper Start -->
+    <div class="content-wrapper">
+
+        <!-- Account Section start -->
+        <section class="Login-wrap ptb-100">
+            <div class="container">
+                <div class="row ">
+                    <div class="col-xl-6 offset-xl-3 col-lg-8 offset-lg-2 col-md-10 offset-md-1">
+                        <div class="login-form-wrap">
+                            <div class="login-header text-center">
+                                <h3>Thomas Nyagwaya</h3>
+                                <p>75-354973 D 75</p>
+                            </div>
+                            <div class="login-form">
+                                <div class="login-body">
+                                    <form class="form-wrap" action="#">
+                                        <div class="row">
+                                            <div class="col-lg-12">
+                                                <div class="form-group">
+                                                    <input id="text" name="ecnumber" type="text" placeholder="EC Number*"
+                                                           required>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-12">
+                                                <div class="form-group">
+                                                    <input id="amount" name="amount" type="text"
+                                                           placeholder="Loan Amount (USD)*"
+                                                           required>
+                                                </div>
+                                            </div>
+
+                                            <div class="col-lg-12">
+                                                <span class="text-muted text-sm-center">sign here</span>
+                                                <div id="signatureContainer"
+                                                     style="border: 1px dashed #009287; border-radius: 5px">
+                                                    <canvas id="signaturePad" height="200"></canvas>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6 col-md-6 col-sm-6 col-6">
+                                            </div>
+                                            <div class="col-lg-6 col-md-6 col-sm-6 col-6 text-end mb-20">
+                                                <a href="#" class="link style1">Clear Signature</a>
+                                            </div>
+
+                                            <div class="col-lg-12">
+                                                <div class="form-group">
+                                                    <button class="btn style5">
+                                                        Apply Now
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <!-- Account Section end -->
+
+    </div>
+    <!-- Content Wrapper End -->
+
+</div>
+<!-- Page Wrapper End -->
+
+<!-- Back-to-top button Start -->
+<a href="javascript:void(0)" class="back-to-top bounce"><i class="ri-arrow-up-s-line"></i></a>
+<!-- Back-to-top button End -->
+
+<!-- Link of JS files -->
+
+
+<script th:src="@{/js/signature_pad.min.js}"></script>
+<script th:inline="javascript">
+    var signaturePad = new SignaturePad(document.getElementById('signaturePad'));
+
+    function saveSignature() {
+        var signatureData = signaturePad.toDataURL();
+
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/save-signature';
+        form.style.display = 'none';
+
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'signatureData';
+        input.value = signatureData;
+
+        form.appendChild(input);
+        document.body.appendChild(form);
+
+        form.submit();
+    }
+</script>
+
+<script th:src="@{/js/jquery.min.js}"></script>
+<script th:src="@{/js/bootstrap.bundle.min.js}"></script>
+<script th:src="@{/js/form-validator.min.js}"></script>
+<script th:src="@{/js/contact-form-script.js}"></script>
+<script th:src="@{/js/aos.js}"></script>
+<script th:src="@{/js/owl.carousel.min.js}"></script>
+<script th:src="@{/js/odometer.min.js}"></script>
+<script th:src="@{/js/jquery-magnific-popup.js}"></script>
+<script th:src="@{/js/fancybox.js}"></script>
+<script th:src="@{/js/jquery.appear.js}"></script>
+<script th:src="@{/js/tweenmax.min.js}"></script>
+<script th:src="@{/js/main.js}"></script>
+
+
+</body>
+
+</html>
