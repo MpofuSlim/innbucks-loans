@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import zw.co.reikan.nanoloansweb.loan.Loan;
+import zw.co.reikan.nanoloansweb.loan.LoanRepository;
+import zw.co.reikan.nanoloansweb.loan.LoanStatus;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
 
 import java.util.List;
@@ -24,8 +27,8 @@ public class LoanApprovalServiceJob {
     @Scheduled(fixedRate = 60000) // Run every 1 minute (60,000 milliseconds)
     public void processSsbApprovals() {
         log.info("SSB LoanRequests");
-        final List<Loan> peningLoans = loanRepository.findByLoanStatus(LoanStatus.NEW);
-        peningLoans.forEach(this::processLoanApproval);
+        final List<Loan> pendingLoans = loanRepository.findByLoanStatus(LoanStatus.NEW);
+        pendingLoans.forEach(this::processLoanApproval);
     }
 
     private void processLoanApproval(Loan loan) {

@@ -1,9 +1,15 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.disbursements;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import zw.co.reikan.nanoloansweb.DisbursementRequest;
+import zw.co.reikan.nanoloansweb.DisbursementResponse;
+import zw.co.reikan.nanoloansweb.DisbursementService;
+import zw.co.reikan.nanoloansweb.loan.Loan;
+import zw.co.reikan.nanoloansweb.loan.LoanRepository;
+import zw.co.reikan.nanoloansweb.loan.LoanStatus;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
 
 import java.util.List;

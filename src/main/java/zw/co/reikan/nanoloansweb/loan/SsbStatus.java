@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.loan;
 
 public enum SsbStatus {
 

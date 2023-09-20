@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.loan;
 
 import lombok.Data;
 
@@ -18,6 +18,7 @@ public class LoanRequest implements Serializable {
         sb.append("signatureData='").append(signatureData).append('\'');
         sb.append(", amount=").append(amount);
         sb.append(", ecnumber='").append(ecnumber).append('\'');
+        sb.append(", mobileNumber='").append(mobileNumber).append('\'');
         sb.append('}');
         return sb.toString();
     }

@@ -1,7 +1,11 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.ssb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import zw.co.reikan.nanoloansweb.SsbApprovalRequest;
+import zw.co.reikan.nanoloansweb.SsbResponse;
+import zw.co.reikan.nanoloansweb.SsbService;
+import zw.co.reikan.nanoloansweb.loan.SsbStatus;
 
 import java.util.Map;
 

@@ -1,8 +1,10 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.loan;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import zw.co.reikan.nanoloansweb.LoanResponse;
+import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
 import java.util.Optional;
 

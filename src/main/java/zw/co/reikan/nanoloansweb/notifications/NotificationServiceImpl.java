@@ -8,6 +8,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -32,6 +33,12 @@ public class NotificationServiceImpl implements NotificationService {
     @Async
     public void sendSms(Sms sms) {
         try {
+
+            if (StringUtils.isEmpty(sms.getTo())) {
+                log.info("Empty sms recipient");
+                return;
+            }
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", "Basic Z2F0ZXdheS1zbXMtY2xpZW50OiQwMzB2RkhpMFpuTFpmQFlNUVREeUFzWmQ=");

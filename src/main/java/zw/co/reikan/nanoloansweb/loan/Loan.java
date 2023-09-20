@@ -1,9 +1,10 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.loan;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
 import javax.persistence.Column;
 import javax.persistence.Entity;

@@ -1,4 +1,6 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.loan;
+
+import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
 public enum DisbursementStatus {
 
