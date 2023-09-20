@@ -58,8 +58,7 @@
                             </li>
 
                             <li class="nav-item xl-none">
-                                <a th:href="@{/apply(mobileNumber=${#session.getAttribute('mobileNumber')})}"
-                                   class="btn style2">Apply Now</a>
+                                <a th:href="@{/apply(mobileNumber=${#session.getAttribute('mobileNumber')}, fname=${#session.getAttribute('fname')}, lname=${#session.getAttribute('lname')})}" class="btn style2">Apply Now</a>
                             </li>
                         </ul>
                     </div>
@@ -84,8 +83,8 @@
                     <div class="col-xl-6 offset-xl-3 col-lg-8 offset-lg-2 col-md-10 offset-md-1">
                         <div class="login-form-wrap">
                             <div class="login-header text-center">
-                                <h3>Thomas Nyagwaya</h3>
-                                <p th:text="${mobileNumber}">75-354973 D 75</p>
+                                <h3 th:text="${#session.getAttribute('fname')} + ' ' + ${#session.getAttribute('lname')}"></h3>
+                                <p th:text="${#session.getAttribute('mobileNumber')}">75-354973 D 75</p>
                             </div>
                             <div class="login-form">
                                 <div class="login-body">

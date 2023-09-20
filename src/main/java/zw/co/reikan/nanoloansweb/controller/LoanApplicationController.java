@@ -22,8 +22,13 @@ public class LoanApplicationController {
     private LoanServiceImpl loanService;
 
     @GetMapping("/apply")
-    public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber, Model model, HttpSession session) {
+    public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber,
+                                          @RequestParam("fname") String firstName,
+                                          @RequestParam("lname") String lastName,
+                                          Model model, HttpSession session) {
         session.setAttribute("mobileNumber", mobileNumber);
+        session.setAttribute("fname", firstName);
+        session.setAttribute("lname", lastName);
         model.addAttribute("mobileNumber", mobileNumber);
         return "apply";
     }
