@@ -16,7 +16,7 @@ public class LoanApprovalServiceJob {
 
     private final SsbService ssbService;
     private final LoanRepository loanRepository;
-    Map<LoanStatus, String> smsMessages = Map.of(LoanStatus.APPROVED, "Congratulations! Your loan has been approved. Funds will be disbursed within 2 hours. Thank you for choosing us.",
+    Map<LoanStatus, String> smsMessages = Map.of(LoanStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Thank you for choosing us.",
             LoanStatus.REJECTED, "Loan application rejected. We understand your disappointment. Feel free to contact us for further information."
     );
     private final NotificationService notificationService;
