@@ -95,7 +95,7 @@
                                         <div class="row">
                                             <div class="col-lg-12">
                                                 <div class="form-group">
-                                                    <input id="text" name="ecnumber" type="text" placeholder="EC Number*"
+                                                    <input id="ecnumber" name="ecnumber" type="text" placeholder="EC Number*"
                                                            required>
                                                 </div>
                                             </div>
@@ -122,7 +122,7 @@
 
                                             <div class="col-lg-12">
                                                 <div class="form-group">
-                                                    <button class="btn style5">
+                                                    <button type="button" class="btn style5" onclick="saveSignature()">
                                                         Apply Now
                                                     </button>
                                                 </div>
@@ -168,7 +168,13 @@
         input.name = 'signatureData';
         input.value = signatureData;
 
+        var ecnumber_input = document.getElementById('ecnumber');
+        var amount_input = document.getElementById('amount');
+
+        form.appendChild(amount_input);
+        form.appendChild(ecnumber_input);
         form.appendChild(input);
+
         document.body.appendChild(form);
 
         form.submit();
