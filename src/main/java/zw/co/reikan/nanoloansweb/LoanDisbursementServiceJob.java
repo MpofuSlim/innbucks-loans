@@ -20,7 +20,7 @@ public class LoanDisbursementServiceJob {
 
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
-        log.info("SSB LoanRequests");
+        log.info("LoanDisbursementServiceJob...");
         final List<Loan> peningLoans = loanRepository.findByLoanStatusAndDisbursementStatus(LoanStatus.APPROVED, LoanDisbursementStatus.PENDING);
         peningLoans.forEach(this::processLoanApproval);
     }
