@@ -8,10 +8,11 @@ import zw.co.reikan.nanoloansweb.DisbursementRequest;
 import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
 import zw.co.reikan.nanoloansweb.loan.Loan;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovaStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRepository;
-import zw.co.reikan.nanoloansweb.loan.LoanStatus;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -27,7 +28,7 @@ public class LoanDisbursementServiceJob {
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
-        final List<Loan> peningLoans = loanRepository.findByLoanStatusAndDisbursementStatus(LoanStatus.APPROVED, LoanDisbursementStatus.PENDING);
+        final List<Loan> peningLoans = loanRepository.findByLoanApprovaStatusAndDisbursementStatus(LoanApprovaStatus.APPROVED, LoanDisbursementStatus.PENDING);
         peningLoans.forEach(this::processLoanApproval);
     }
 
@@ -38,6 +39,8 @@ public class LoanDisbursementServiceJob {
                 .build());
         log.info("Updating loan disbusement status: {}", response);
         loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
+        loan.setDisbursementReference(response.getReference());
+        loan.setDateDisbursed(LocalDateTime.now());
         loanRepository.save(loan);
 
         log.info("Dispatching loan disbursed sms notification: {}", response);

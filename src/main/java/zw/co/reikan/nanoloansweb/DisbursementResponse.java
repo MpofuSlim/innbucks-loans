@@ -8,5 +8,6 @@ import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
 @Builder
 public class DisbursementResponse {
     private DisbursementStatus status;
+    private String reference;
     private String message;
 }

@@ -9,9 +9,9 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import zw.co.reikan.nanoloansweb.LoanResponse;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovaStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRequest;
 import zw.co.reikan.nanoloansweb.loan.LoanServiceImpl;
-import zw.co.reikan.nanoloansweb.loan.LoanStatus;
 
 import javax.servlet.http.HttpSession;
 
@@ -29,13 +29,13 @@ public class LoanApplicationController {
         session.setAttribute("mobileNumber", mobileNumber);
         session.setAttribute("fname", firstName);
         session.setAttribute("lname", lastName);
-        model.addAttribute("mobileNumber", mobileNumber);
         return "apply";
     }
 
     @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public String saveSignature(@ModelAttribute LoanRequest loanRequest) {
+    public String saveSignature(@ModelAttribute LoanRequest loanRequest, Model model) {
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
-        return loanResponse.getLoanStatus() == LoanStatus.REJECTED ? "fail" : "success";
+        model.addAttribute("internalReference", loanResponse.getInternalReference());
+        return loanResponse.getLoanApprovaStatus() == LoanApprovaStatus.REJECTED ? "fail" : "success";
     }
 }

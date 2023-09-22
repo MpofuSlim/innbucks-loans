@@ -2,12 +2,12 @@ package zw.co.reikan.nanoloansweb.ssb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import zw.co.reikan.nanoloansweb.SsbApprovalRequest;
-import zw.co.reikan.nanoloansweb.SsbResponse;
-import zw.co.reikan.nanoloansweb.SsbService;
 import zw.co.reikan.nanoloansweb.loan.SsbStatus;
 
 import java.util.Map;
+import java.util.UUID;
+
+import static zw.co.reikan.nanoloansweb.Utils.right;
 
 @Slf4j
 @Service
@@ -17,13 +17,6 @@ public class DummySsbServiceImpl implements SsbService {
             , "12", "High Debt-to-Income Ratio",
             "13", "Low Credit Score",
             "14", "Regulatory Compliance Issues");
-
-    private String right(String input, int length) {
-        if (input.length() >= length) {
-            return input.substring(input.length() - length);
-        }
-        return input;
-    }
 
     @Override
     public SsbResponse process(SsbApprovalRequest loanRequest) {
@@ -35,11 +28,13 @@ public class DummySsbServiceImpl implements SsbService {
         if (responseCodes.containsKey(rightMostString)) {
             return SsbResponse.builder()
                     .message(responseCodes.get(rightMostString))
+                    .reference(UUID.randomUUID().toString())
                     .status(SsbStatus.REJECTED)
                     .build();
         }
 
         return SsbResponse.builder()
+                .reference(UUID.randomUUID().toString())
                 .message("Approved")
                 .status(SsbStatus.APPROVED)
                 .build();

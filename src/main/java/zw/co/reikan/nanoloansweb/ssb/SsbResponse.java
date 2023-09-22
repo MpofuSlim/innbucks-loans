@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.ssb;
 
 import lombok.Builder;
 import lombok.Data;
@@ -9,4 +9,5 @@ import zw.co.reikan.nanoloansweb.loan.SsbStatus;
 public class SsbResponse {
     private SsbStatus status;
     private String message;
+    private String reference;
 }

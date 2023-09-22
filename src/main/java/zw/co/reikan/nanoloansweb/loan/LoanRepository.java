@@ -7,9 +7,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface LoanRepository extends JpaRepository<Loan, Long> {
-    Optional<Loan> findByEcNumberAndLoanStatus(String ecNumber, LoanStatus loanStatus);
 
-    List<Loan> findByLoanStatus(LoanStatus loanStatus);
+    Optional<Loan> findByEcNumberAndLoanApprovaStatus(String ecNumber, LoanApprovaStatus loanApprovaStatus);
 
-    List<Loan> findByLoanStatusAndDisbursementStatus(LoanStatus loanStatus, LoanDisbursementStatus disbursementStatus);
+    List<Loan> findByLoanApprovaStatus(LoanApprovaStatus loanApprovaStatus);
+
+    List<Loan> findByLoanApprovaStatusAndDisbursementStatus(LoanApprovaStatus loanApprovaStatus,
+                                                            LoanDisbursementStatus disbursementStatus);
 }

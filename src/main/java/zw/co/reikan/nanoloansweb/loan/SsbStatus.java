@@ -2,15 +2,15 @@ package zw.co.reikan.nanoloansweb.loan;
 
 public enum SsbStatus {
 
-    APPROVED(LoanStatus.APPROVED), REJECTED(LoanStatus.REJECTED);
+    APPROVED(LoanApprovaStatus.APPROVED), REJECTED(LoanApprovaStatus.REJECTED);
 
-    private final LoanStatus loanStatus;
+    private final LoanApprovaStatus loanApprovaStatus;
 
-    SsbStatus(LoanStatus loanStatus) {
-        this.loanStatus = loanStatus;
+    SsbStatus(LoanApprovaStatus loanApprovaStatus) {
+        this.loanApprovaStatus = loanApprovaStatus;
     }
 
-    public LoanStatus getLoanStatus() {
-        return loanStatus;
+    public LoanApprovaStatus getLoanStatus() {
+        return loanApprovaStatus;
     }
 }

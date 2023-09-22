@@ -1,5 +1,5 @@
 package zw.co.reikan.nanoloansweb.loan;
 
-public enum LoanStatus {
+public enum LoanApprovaStatus {
     NEW, APPROVED, REJECTED
 }

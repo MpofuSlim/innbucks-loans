@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb;
+package zw.co.reikan.nanoloansweb.ssb;
 
 import lombok.Builder;
 import lombok.Data;
@@ -11,4 +11,5 @@ import java.math.BigDecimal;
 public class SsbApprovalRequest implements Serializable {
     private BigDecimal amount;
     private String ecnumber;
+    private String reference;
 }

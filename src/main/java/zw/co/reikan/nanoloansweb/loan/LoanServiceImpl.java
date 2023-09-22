@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.nanoloansweb.LoanResponse;
+import zw.co.reikan.nanoloansweb.Utils;
 import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
 import java.util.Optional;
@@ -19,35 +20,39 @@ public class LoanServiceImpl {
 
         log.info("Requesting loan approval: {}", loanRequest);
 
-        boolean hasPendingLoan = findPendingLoan(loanRequest.getEcnumber()).isPresent();
+        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+
+        boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
 
         if (hasPendingLoan) {
             return LoanResponse.builder()
-                    .loanStatus(LoanStatus.REJECTED)
+                    .loanApprovaStatus(LoanApprovaStatus.REJECTED)
                     .message("You have a pending loan application.")
                     .build();
         }
 
+
         final Loan loan = Loan.builder()
                 .amount(loanRequest.getAmount())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
-                .loanStatus(LoanStatus.NEW)
-                .ecNumber(loanRequest.getEcnumber())
+                .loanApprovaStatus(LoanApprovaStatus.NEW)
+                .ecNumber(formattedEcNumber)
                 .mobileNumber(loanRequest.getMobileNumber())
+                .internalReference(Utils.generateReference(loanRequest.getMobileNumber()))
                 .signature(loanRequest.getSignatureData())
                 .build();
-
 
         loanRepository.save(loan);
 
         return LoanResponse.builder()
-                .loanStatus(LoanStatus.NEW)
+                .loanApprovaStatus(LoanApprovaStatus.NEW)
+                .internalReference(String.format("%09d", loan.getId()))
                 .message("Loan Sent For Approval")
                 .build();
     }
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanStatus(ecNumber, LoanStatus.NEW);
+        return loanRepository.findByEcNumberAndLoanApprovaStatus(Utils.trimSpecialCharacters(ecNumber), LoanApprovaStatus.NEW);
     }
 
 }

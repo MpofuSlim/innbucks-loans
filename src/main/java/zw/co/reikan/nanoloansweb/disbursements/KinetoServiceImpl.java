@@ -7,6 +7,8 @@ import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
 import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
 
+import java.util.UUID;
+
 @Slf4j
 @Service
 public class KinetoServiceImpl implements DisbursementService {
@@ -17,6 +19,7 @@ public class KinetoServiceImpl implements DisbursementService {
 
         return DisbursementResponse.builder()
                 .status(DisbursementStatus.SUCCESS)
+                .reference(UUID.randomUUID().toString())
                 .message("Success")
                 .build();
     }

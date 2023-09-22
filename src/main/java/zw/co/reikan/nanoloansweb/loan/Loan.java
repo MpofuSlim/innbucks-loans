@@ -32,15 +32,18 @@ public class Loan extends BaseEntity {
     private String ecNumber;
 
     @Lob
-    @Column(name = "signature",  columnDefinition = "MEDIUMTEXT")
+    @Column(name = "signature", columnDefinition = "MEDIUMTEXT")
     private String signature;
 
     @Enumerated(value = EnumType.STRING)
     @Column(name = "loan_status")
-    private LoanStatus loanStatus;
+    private LoanApprovaStatus loanApprovaStatus;
 
     @Column(name = "loan_status_message")
     private String loanStatusMessage;
+
+    @Column(name = "date_approved")
+    private LocalDateTime dateApproved;
 
     @Enumerated(value = EnumType.STRING)
     @Column(name = "disbursement_status")
@@ -51,4 +54,14 @@ public class Loan extends BaseEntity {
 
     @Column(name = "date_disbursed")
     private LocalDateTime dateDisbursed;
+
+    @Column(name = "disbursement_reference")
+    private String disbursementReference;
+
+    @Column(name = "approval_reference")
+    private String approvalReference;
+
+    @Column(name = "internal_reference")
+    private String internalReference;
+
 }
