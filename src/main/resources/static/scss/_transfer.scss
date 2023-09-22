@@ -1,0 +1,422 @@
+.header-transfer {
+    position: fixed;
+    width: 100%;
+    top: 0;
+    z-index: 10;
+}
+
+
+.action-sheet-transfer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0px;
+    &:not(:last-child){
+    border-bottom: 1px solid $line_br_color;
+
+    }
+    .icon {
+        width: 36px;
+        height: 36px;
+        background: $rgba_transfer_color;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        i {
+            font-size: 20px;
+            color: $primary_color;
+        }
+    }
+
+    p {
+        font-size: 10px;
+        line-height: 16px;
+    }
+}
+
+.wrap-transfer-friends {
+    .wrap-fixed {
+        background: $white_color;
+        z-index: 20;
+        position: fixed;
+        top: 44px;
+        left: 16px;
+        right: 16px;
+        padding: 12px 0px;
+    }
+
+    .menu-tabs {
+        position: fixed;
+        z-index: 30;
+        top: 103px;
+        left: 16px;
+        right: 16px;
+        background: $white_color;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        padding-top: 20px;
+
+        .nav-tab {
+            border-bottom: 1px solid $line_br_color;
+            padding: 8px 0px;
+            text-align: center;
+            cursor: pointer;
+            color: $secondary_color;
+            font-weight: $fw_5;
+            font-size: 14px;
+            line-height: 22px;
+            &.active {
+                color: $primary_color;
+                border-bottom: 2px solid $primary_color;
+            }
+        }
+    }
+
+    .content-tab {
+        padding-top: 168px;
+    }
+}
+
+.recipient-list {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+
+    .inner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        border-bottom: 1px solid $line_br_color;
+        padding-bottom: 12px;
+        .user {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            overflow: hidden;
+            // img {
+
+            //     border-radius: 50%;
+            // }
+        }
+    }
+
+    .alphabet {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding-bottom: 12px;
+    }
+}
+
+.transfer-section {
+    .tf-balance-box {
+        padding: 16px;
+
+        .inner-left {
+            gap: 8px;
+            img {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+            }
+        }
+        .icon-down {
+            font-size: 16px;
+        }
+    }
+    .transfer-amount {
+        padding: 16px 16px 0px;
+        .top {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-bottom: 12px;
+            border-bottom: 1px dashed $line_color;
+        }
+        .icon-group-dollar {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+        .bottom {
+            padding: 12px 0px;
+        }
+    }
+}
+.input-money {
+    .money {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+
+        .tag-money {
+            width: 107px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 4px 12px;
+            background: $surface_color;
+            border-radius: 95px;
+        }
+    }
+}
+
+
+
+// .transfer-content {
+//     .tf-form {
+//         .tf-btn {
+//             margin-top: 73px;
+//         }
+//     }
+// }
+.transfer-card {
+    margin-top: 10px;
+    .tf-card-block {
+        &:not(:last-child) {
+            margin-bottom: 8px;
+        }
+    }
+    .bottom-navigation-bar{
+        background: $surface_color;
+        z-index: 20;
+    }
+}
+.transfer-confirm {
+    .tf-card-block {
+        margin-top: 4px;
+        padding: 0;
+        box-shadow: none;
+        gap: 16px;
+    }
+    .line {
+        width: 100%;
+        height: 1px;
+        border: 1px solid $line_br_color;
+        margin: 10px 0px;
+    }
+    .bottom {
+        .tf-card-block {
+            gap: 12px;
+            img {
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+            }
+        }
+    }
+}
+.transfer-list {
+    padding-bottom: 16px;
+
+    .list-view {
+        margin-bottom: 128px;
+    }
+}
+
+.wrap-success {
+    background: $primary_color;
+    position: relative;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .line-through {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        overflow: hidden;
+        &::after {
+            content: "";
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.3) 100%);
+            transition: all 0.7s;
+            animation: rainbow 2s infinite;
+        }
+    }
+    .through-1 {
+        left: 23%;
+        top: 5%;
+        transform: rotate(131deg);
+        width: 486px;
+        height: 34px;
+    }
+    .through-2 {
+        left: 27%;
+        top: 0%;
+        transform: rotate(131deg);
+        width: 107px;
+        height: 34px;
+    }
+    .through-3 {
+        left: -12%;
+        top: 10%;
+        transform: rotate(131deg);
+        width: 113px;
+        height: 34px;
+    }
+    .through-4 {
+        left: -15%;
+        bottom: 9%;
+        transform: rotate(131deg);
+        width: 130px;
+        height: 34px;
+    }
+    .through-5 {
+        left: 27%;
+        bottom: 19%;
+        transform: rotate(131deg);
+        width: 168px;
+        height: 34px;
+    }
+    .through-6 {
+        left: 48%;
+        bottom: 16%;
+        transform: rotate(131deg);
+        width: 360px;
+        height: 34px;
+    }
+    .icon-1 {
+        position: absolute;
+        top: -10%;
+        left: 50%;
+        .check-icon {
+            transform: translateX(-50%);
+        }
+    }
+    .icon-2 {
+        position: absolute;
+        right: 28%;
+        top: -2%;
+    }
+    .icon-3 {
+        position: absolute;
+        left: 22%;
+        position: absolute;
+        top: 5%;
+    }
+    .icon-4 {
+        position: absolute;
+        position: absolute;
+        right: 22%;
+        top: 4%;
+    }
+}
+
+.success_box {
+    background: $white_color;
+    padding: 80px 16px 16px;
+    border-radius: 8px;
+    position: relative;
+    width: 100%;
+    margin: 0px 16px;
+    z-index: 1;
+
+    .content {
+        text-align: center;
+        margin-bottom: 40px;
+        .top p {
+            font-size: 14px;
+            line-height: 22px;
+        }
+        .inner p {
+            font-size: 16px;
+            
+            padding-bottom: 8px;
+        }
+        .bottom p {
+            font-size: 14px;
+            line-height: 22px;
+            &:first-child {
+                
+                padding-bottom: 4px;
+            }
+        }
+    }
+}
+
+@keyframes rainbow {
+    0% {
+        left: 0%;
+    }
+    50% {
+        left: 100%;
+    }
+    100% {
+        left: 0%;
+    }
+}
+
+// transfer banks
+.bank-box {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 12px;
+}
+.bank-list-transfer {
+    background: $white_color;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: $tf_shadow;
+    li {
+        padding-bottom: 8px;
+        &:not(:last-child) {
+            border-bottom: 1px solid $line_br_color;
+            margin-bottom: 8px;
+        }
+        a {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            font-size: 14px;
+            font-weight: $fw_5;
+            img {
+                width: 28px;
+                height: 28px;
+            }
+        }
+    }
+}
+
+.content-by-bank {
+    margin-bottom: 20px;
+    h3 {
+        a {
+            font-weight: $fw_6;
+            font-size: 12px;
+            line-height: 20px;
+            color: $primary_color;
+            display: flex;
+            align-items: center;
+            i {
+                font-size: 18px;
+            }
+        }
+    }
+    .group-btn {
+        padding-top: 183px;
+    }
+}
+.topup-content {
+   .tf-balance-box{
+    padding: 16px;
+    box-shadow: none;
+   } 
+   .bottom-navigation-bar{
+    z-index: 20;
+   }
+}
+.amount-money {
+    h3{
+            padding-bottom: 12px;
+
+    }
+}

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible">
+    <!-- Mobile Specific Metas -->
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport"/>
+    <title>top up</title>
+    <!-- Favicon and Touch Icons  -->
+    <link rel="shortcut icon" th:href="@{/images/logo.png}"/>
+    <link rel="apple-touch-icon-precomposed" th:href="@{/images/logo.png}"/> <!-- Font -->
+    <link rel="stylesheet" th:href="@{/fonts/fonts.css}"/> <!-- Icons -->
+    <link rel="stylesheet" th:href="@{/fonts/icons-alipay.css}">
+    <link rel="stylesheet" th:href="@{/styles/bootstrap.css}">
+    <link rel="stylesheet" th:href="@{/styles/styles.css}" type="text/css"/>
+    <link data-pwa-version="set_in_manifest_and_pwa_js" rel="manifest" th:href="@{/manifest.json}">
+    <link rel="apple-touch-icon" sizes="192x192" th:href="@{/app/icons/icon-192x192.png}">
+</head>
+
+<body>
+<!-- preloader -->
+<div class="preloader js-preloader">
+    <div class="loader loader-inner-1">
+        <div class="loader loader-inner-2">
+            <div class="loader loader-inner-3">
+            </div>
+        </div>
+    </div>
+</div>
+<!-- /preload -->
+<div class="app-header st1">
+    <div class="tf-container">
+        <div class="tf-topbar d-flex justify-content-center align-items-center">
+            <a class="back-btn" href="#"><i class="icon-left white_color"></i></a>
+            <h3>Request Loan</h3>
+        </div>
+    </div>
+</div>
+<div class="card-secton topup-content">
+    <div class="tf-container">
+        <div class="tf-balance-box">
+            <div class="tf-spacing-16"></div>
+            <div class="tf-form">
+
+                <div class="group-input input-field">
+                    <label>First Name</label>
+                    <input class="search-field st1" disabled required type="text" value="THOMAS">
+                    <span class="icon-clear"></span>
+                </div>
+
+                <div class="group-input input-field">
+                    <label>Last Name</label>
+                    <input class="search-field st1" disabled required type="text"
+                           value="NYAGWAYA">
+                    <span class="icon-clear"></span>
+                </div>
+
+                <div class="group-input input-field">
+                    <label>National ID Number</label>
+                    <input class="search-field st1" disabled placeholder="Format XXYYYYY" required type="text"
+                           value="75-354973D75">
+                    <span class="icon-clear"></span>
+                </div>
+
+                <div class="group-input input-field">
+                    <label>EC Number</label>
+                    <input class="search-field st1" required type="text" value="">
+                </div>
+
+                <div class="group-input input-field">
+                    <label>Payroll Number</label>
+                    <input class="search-field st1" required type="text" value="">
+                </div>
+
+                <div class="group-input input-field input-money">
+                    <label>Loan Amount</label>
+                    <input class="search-field value_input st1" required type="text" value="50">
+                    <span class="icon-clear"></span>
+                    <div class="money">
+                        <a class="tag-money" href="#">50</a>
+                        <a class="tag-money" href="#">100</a>
+                        <a class="tag-money" href="#">150</a>
+                        <a class="tag-money" href="#">200</a>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+    <div class="bottom-navigation-bar">
+        <div class="tf-container">
+            <a class="tf-btn accent large" href="#" id="btn-popup-up">Continue</a>
+        </div>
+    </div>
+</div>
+
+<div class="tf-panel up">
+    <div class="panel_overlay"></div>
+    <div class="panel-box panel-up wrap-content-panel">
+        <div class="heading">
+            <div class="tf-container">
+                <div class="d-flex align-items-center position-relative justify-content-center">
+                    <i class="icon-close1 clear-panel"></i>
+                    <h3>Confirm Top Up</h3>
+                </div>
+            </div>
+        </div>
+        <div class="main-topup">
+            <div class="tf-container">
+                <h3>Choose Source</h3>
+                <ul class="info">
+                    <li><h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">Amout <a
+                            class="on_surface_color fw_7" href="#">$ 200</a></h4></li>
+                    <li><h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">Fee <a
+                            class="success_color fw_7" href="#">Free</a></h4></li>
+                </ul>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="total">
+                        <h4 class="secondary_color fw_4">Total</h4>
+                        <h2>$ 200</h2>
+                    </div>
+                    <a class="tf-btn accent large" href="31_enter-pin.html"><i class="icon-secure1"></i> Recharge</a>
+
+                </div>
+            </div>
+
+        </div>
+
+
+    </div>
+
+</div>
+
+<script th:src="@{/js/jquery.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/bootstrap.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/main.js}" type="text/javascript"></script>
+
+</body>
+
+</html>

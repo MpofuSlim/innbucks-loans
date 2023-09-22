@@ -1,0 +1,90 @@
+.wrap-qr {
+    h2 {
+        padding: 20px 0px;
+    }
+    .logo-qr {
+        padding: 15px 24px 29px;
+    }
+    a {
+        display: block;
+        font-size: 16px;
+        line-height: 24px;
+        text-align: center;
+        padding: 20px 34px;
+        color: $primary_color;
+        text-decoration: underline;
+    }
+}
+.wrap-scan-camera {
+    background: url(../images/scan-qr/banner-qr.png);
+    padding: 200px 0px 360px;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center center;
+    position: relative;
+}
+
+.panel-close {
+    visibility: hidden;
+    opacity: 0;
+}
+.tf-panel {
+    .wrap-scan-qr {
+        width: auto;
+        left: 16px;
+        right: 16px;
+        bottom: 32px;
+        border-radius: unset;
+        background: none;
+        transition: unset;
+
+        .logo-qr {
+            padding: 15px 25px 29px;
+            margin-bottom: 48px;
+            position: relative;
+            .circle-box {
+                position: absolute;
+                top: 24%;
+                left: 31%;
+                &::after {
+                    border: 12px solid #fff;
+                    border-top: none;
+                    border-right: none;
+                    top: 37px;
+                    left: 36px;
+                    height: 40px;
+                    width: 68px;
+                }
+            }
+        }
+        &.st2 {
+            .logo-qr {
+                margin-bottom: 90px;
+            }
+        }
+    }
+}
+.box-scan-notification {
+    border-radius: 12px;
+    padding: 9px 18px;
+    display: flex;
+    align-items: center;
+    background: $white_color;
+    gap: 7px;
+
+    p {
+        font-size: 16px;
+        line-height: 24px;
+        color: $on_surface_color;
+    }
+    i {
+        color: red;
+        font-size: 30px;
+    }
+}
+
+.bottom-btn-fixed {
+    .medium {
+        padding: 12px 20px;
+    }
+}
