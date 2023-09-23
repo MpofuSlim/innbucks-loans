@@ -1,0 +1,74 @@
+package zw.co.reikan.nanoloansweb.disbursements;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import zw.co.reikan.nanoloansweb.DisbursementRequest;
+import zw.co.reikan.nanoloansweb.DisbursementResponse;
+import zw.co.reikan.nanoloansweb.DisbursementService;
+import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class InnbucksServiceImpl implements DisbursementService {
+
+    private static final BigDecimal CENTS = new BigDecimal("100");
+    private final InnbucksAuthService innbucksAuthService;
+    private final RestTemplate restTemplate;
+    private final InnbucksParameters parameters;
+
+    @Override
+    public DisbursementResponse disburseFunds(DisbursementRequest request) {
+
+        log.info("Processing loan disbursement: {}", request);
+
+        InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
+                .amount(toCents(request.getAmount()))
+                .destinationMsisdn(request.getMobileNumber())
+                .reference(request.getReference())
+                .narration(String.format("Loan disbursement - Ref: %s", request.getReference()))
+                .build();
+
+        HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders());
+
+        ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
+                parameters.getDepositEndpoint(),
+                HttpMethod.POST,
+                requestEntity,
+                InnbucksDepositResponse.class);
+
+        final InnbucksDepositResponse depositResponse = responseEntity.getBody();
+
+        final boolean success = depositResponse.getResponseCode() == 0;
+
+        return DisbursementResponse.builder()
+                .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
+                .reference(depositResponse.getAuthNumber())
+                .message(depositResponse.getResponseMsg())
+                .build();
+    }
+
+    private HttpHeaders getHttpHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(innbucksAuthService.getAccessToken());
+        headers.add(InnbucksContants.X_API_KEY, parameters.getApiKey());
+        headers.add(InnbucksContants.X_TRACE_ID, UUID.randomUUID().toString());
+        return headers;
+    }
+
+    private int toCents(BigDecimal amount) {
+        return amount.multiply(CENTS).intValue();
+    }
+
+}

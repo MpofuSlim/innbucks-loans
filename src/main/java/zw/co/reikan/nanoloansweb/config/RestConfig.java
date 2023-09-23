@@ -17,7 +17,6 @@ import java.util.List;
 public class RestConfig {
 
     @Bean
-    @Primary
     public RestTemplate restTemplate(LoggingInterceptor loggingInterceptor) {
         final SimpleClientHttpRequestFactory simpleClientHttpRequestFactory = new SimpleClientHttpRequestFactory();
         simpleClientHttpRequestFactory.setOutputStreaming(false);

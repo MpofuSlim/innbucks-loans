@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb.ssb;
+package zw.co.reikan.nanoloansweb.ndasenda;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,7 +11,7 @@ import static zw.co.reikan.nanoloansweb.Utils.right;
 
 @Slf4j
 @Service
-public class DummySsbServiceImpl implements SsbService {
+public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
 
     Map<String, String> responseCodes = Map.of("11", "Inaccurate Information"
             , "12", "High Debt-to-Income Ratio",
@@ -19,7 +19,7 @@ public class DummySsbServiceImpl implements SsbService {
             "14", "Regulatory Compliance Issues");
 
     @Override
-    public SsbResponse process(SsbApprovalRequest loanRequest) {
+    public SsbResponse process(LoanApprovalRequest loanRequest) {
 
         log.info("Processing SSB loan request: {}", loanRequest);
 

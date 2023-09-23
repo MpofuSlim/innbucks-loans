@@ -8,9 +8,9 @@ import zw.co.reikan.nanoloansweb.loan.Loan;
 import zw.co.reikan.nanoloansweb.loan.LoanApprovaStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRepository;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
-import zw.co.reikan.nanoloansweb.ssb.SsbApprovalRequest;
-import zw.co.reikan.nanoloansweb.ssb.SsbResponse;
-import zw.co.reikan.nanoloansweb.ssb.SsbService;
+import zw.co.reikan.nanoloansweb.ndasenda.LoanApprovalRequest;
+import zw.co.reikan.nanoloansweb.ndasenda.SsbResponse;
+import zw.co.reikan.nanoloansweb.ndasenda.LoanApprovalService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,7 +21,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LoanApprovalServiceJob {
 
-    private final SsbService ssbService;
+    private final LoanApprovalService loanApprovalService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
     Map<LoanApprovaStatus, String> smsMessages = Map.of(LoanApprovaStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Ref: %s.",
@@ -36,8 +36,8 @@ public class LoanApprovalServiceJob {
     }
 
     private void processLoanApproval(Loan loan) {
-        final SsbResponse ssbResponse = ssbService.process(SsbApprovalRequest.builder()
-                .amount(loan.getAmount())
+        final SsbResponse ssbResponse = loanApprovalService.process(LoanApprovalRequest.builder()
+                .totalAmount(loan.getAmount())
                 .ecnumber(loan.getEcNumber())
                 .build());
         log.info("Updating loan status: {}", ssbResponse);

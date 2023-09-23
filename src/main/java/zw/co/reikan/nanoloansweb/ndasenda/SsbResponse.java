@@ -1,4 +1,4 @@
-package zw.co.reikan.nanoloansweb.ssb;
+package zw.co.reikan.nanoloansweb.ndasenda;
 
 import lombok.Builder;
 import lombok.Data;

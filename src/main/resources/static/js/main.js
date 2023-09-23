@@ -290,6 +290,5 @@
     backPage();
     setTimeIn();
     hidePopupNoti();
-    preloader();
   });
 })(jQuery);

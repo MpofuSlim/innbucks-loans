@@ -10,4 +10,5 @@ import java.math.BigDecimal;
 public class DisbursementRequest {
     private BigDecimal amount;
     private String mobileNumber;
+    private String reference;
 }
