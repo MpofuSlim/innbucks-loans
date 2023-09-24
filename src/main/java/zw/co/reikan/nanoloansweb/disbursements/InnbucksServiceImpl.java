@@ -15,7 +15,8 @@ import zw.co.reikan.nanoloansweb.DisbursementService;
 import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
 
 import java.math.BigDecimal;
-import java.util.UUID;
+
+import static zw.co.reikan.nanoloansweb.Utils.generateReference;
 
 @Slf4j
 @Service
@@ -29,41 +30,52 @@ public class InnbucksServiceImpl implements DisbursementService {
 
     @Override
     public DisbursementResponse disburseFunds(DisbursementRequest request) {
+        final String uniqueTxnReference = generateReference(request.getMobileNumber());
+        try {
+            log.info("Processing loan disbursement: {}", request);
 
-        log.info("Processing loan disbursement: {}", request);
+            InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
+                    .amount(toCents(request.getAmount()))
+                    .destinationMsisdn(request.getMobileNumber())
+                    .reference(uniqueTxnReference)
+                    .narration(String.format("Loan disbursement - Ref: %s", request.getReference()))
+                    .build();
 
-        InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
-                .amount(toCents(request.getAmount()))
-                .destinationMsisdn(request.getMobileNumber())
-                .reference(request.getReference())
-                .narration(String.format("Loan disbursement - Ref: %s", request.getReference()))
-                .build();
+            HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders(uniqueTxnReference));
 
-        HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders());
+            ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
+                    parameters.getDepositEndpoint(),
+                    HttpMethod.POST,
+                    requestEntity,
+                    InnbucksDepositResponse.class);
 
-        ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
-                parameters.getDepositEndpoint(),
-                HttpMethod.POST,
-                requestEntity,
-                InnbucksDepositResponse.class);
+            final InnbucksDepositResponse depositResponse = responseEntity.getBody();
 
-        final InnbucksDepositResponse depositResponse = responseEntity.getBody();
+            final boolean success = depositResponse.getResponseCode() == 0;
 
-        final boolean success = depositResponse.getResponseCode() == 0;
+            return DisbursementResponse.builder()
+                    .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
+                    .approvalCode(depositResponse.getAuthNumber())
+                    .internalReference(depositResponse.getStan())
+                    .message(depositResponse.getResponseMsg())
+                    .build();
 
-        return DisbursementResponse.builder()
-                .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
-                .reference(depositResponse.getAuthNumber())
-                .message(depositResponse.getResponseMsg())
-                .build();
+        } catch (Exception ex) {
+            log.error("", ex);
+            return DisbursementResponse.builder()
+                    .status(DisbursementStatus.FAILED)
+                    .internalReference(uniqueTxnReference)
+                    .message(ex.getMessage())
+                    .build();
+        }
     }
 
-    private HttpHeaders getHttpHeaders() {
+    private HttpHeaders getHttpHeaders(String traceId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(innbucksAuthService.getAccessToken());
         headers.add(InnbucksContants.X_API_KEY, parameters.getApiKey());
-        headers.add(InnbucksContants.X_TRACE_ID, UUID.randomUUID().toString());
+        headers.add(InnbucksContants.X_TRACE_ID, traceId);
         return headers;
     }
 

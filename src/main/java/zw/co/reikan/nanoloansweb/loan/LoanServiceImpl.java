@@ -38,7 +38,6 @@ public class LoanServiceImpl {
                 .loanApprovaStatus(LoanApprovaStatus.NEW)
                 .ecNumber(formattedEcNumber)
                 .mobileNumber(loanRequest.getMobileNumber())
-                .internalReference(Utils.generateReference(loanRequest.getMobileNumber()))
                 .signature(loanRequest.getSignatureData())
                 .build();
 
@@ -46,7 +45,7 @@ public class LoanServiceImpl {
 
         return LoanResponse.builder()
                 .loanApprovaStatus(LoanApprovaStatus.NEW)
-                .internalReference(String.format("%09d", loan.getId()))
+                .internalReference(loan.getReference())
                 .message("Loan Sent For Approval")
                 .build();
     }

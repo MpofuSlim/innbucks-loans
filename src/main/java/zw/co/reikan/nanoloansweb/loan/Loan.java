@@ -61,7 +61,8 @@ public class Loan extends BaseEntity {
     @Column(name = "approval_reference")
     private String approvalReference;
 
-    @Column(name = "internal_reference")
-    private String internalReference;
+    public String getReference() {
+        return String.format("%09d", getId());
+    }
 
 }

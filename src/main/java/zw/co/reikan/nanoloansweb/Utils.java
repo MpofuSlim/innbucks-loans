@@ -12,9 +12,11 @@ public class Utils {
     }
 
     public static String generateReference(String msisdn) {
-        return right(msisdn, 9)
-                + LocalDateTime.now().atZone(ZoneId.systemDefault())
-                .toInstant().getEpochSecond();
+        return right(msisdn, 9) + getEpochSecond();
+    }
+
+    private static long getEpochSecond() {
+        return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().getEpochSecond();
     }
 
     public static String right(String input, int length) {

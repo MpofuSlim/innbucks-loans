@@ -39,7 +39,7 @@ public class LoanDisbursementServiceJob {
                 .build());
         log.info("Updating loan disbusement status: {}", response);
         loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
-        loan.setDisbursementReference(response.getReference());
+        loan.setDisbursementReference(response.getApprovalCode());
         loan.setDateDisbursed(LocalDateTime.now());
         loanRepository.save(loan);
 
