@@ -7,13 +7,18 @@ import zw.co.reikan.nanoloansweb.LoanResponse;
 import zw.co.reikan.nanoloansweb.Utils;
 import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Optional;
+
+import static java.math.BigDecimal.ONE;
 
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class LoanServiceImpl {
 
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private final LoanRepository loanRepository;
 
     public LoanResponse requestLoan(LoanRequest loanRequest) {
@@ -31,14 +36,17 @@ public class LoanServiceImpl {
                     .build();
         }
 
+        final LoanDetails loanDetails = calculate(loanRequest);
 
         final Loan loan = Loan.builder()
-                .amount(loanRequest.getAmount())
+                .amount(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovaStatus(LoanApprovaStatus.NEW)
                 .ecNumber(formattedEcNumber)
                 .mobileNumber(loanRequest.getMobileNumber())
                 .signature(loanRequest.getSignatureData())
+                .feeRate(loanRequest.getAdminFeeRate())
+                .interestRate(loanRequest.getInterestRate())
                 .build();
 
         loanRepository.save(loan);
@@ -52,6 +60,42 @@ public class LoanServiceImpl {
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
         return loanRepository.findByEcNumberAndLoanApprovaStatus(Utils.trimSpecialCharacters(ecNumber), LoanApprovaStatus.NEW);
+    }
+
+
+    public LoanDetails calculate(LoanRequest request) {
+
+        BigDecimal principalLoanAmount = getPrincipalLoanAmount(request);
+
+        BigDecimal adminFee = principalLoanAmount
+                .multiply(request.getAdminFeeRate())
+                .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+
+        BigDecimal interestRate = request.getInterestRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+
+        BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
+
+        BigDecimal installment = principalLoanAmount.multiply(interestRate).multiply(powerValue)
+                .divide(powerValue.subtract(ONE), 2, RoundingMode.HALF_UP);
+
+        final BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFee);
+
+        return LoanDetails.builder()
+                .principal(principalLoanAmount)
+                .tenor(request.getTenor())
+                .interestRate(request.getInterestRate())
+                .disbursedAmount(disbursementAmount)
+                .adminFee(adminFee)
+                .installment(installment)
+                .build();
+    }
+
+    private BigDecimal getPrincipalLoanAmount(LoanRequest request) {
+        if (LoanAmountType.NET_OF_FEES == request.getType()) {
+            return request.getAmount().divide(ONE.subtract(request.getAdminFeeRate()
+                    .divide(ONE_HUNDRED)), 0, RoundingMode.CEILING);
+        }
+        return request.getAmount();
     }
 
 }

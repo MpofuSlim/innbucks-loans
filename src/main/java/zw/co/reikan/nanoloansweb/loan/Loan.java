@@ -13,6 +13,7 @@ import javax.persistence.Enumerated;
 import javax.persistence.Lob;
 import javax.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -22,8 +23,27 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @Entity
 public class Loan extends BaseEntity {
+
     @Column(name = "amount")
     private BigDecimal amount;
+
+    private BigDecimal disbursedAmount;
+
+    private BigDecimal interestRate;
+
+    private BigDecimal interestAmount;
+
+    private BigDecimal feeRate;
+
+    private BigDecimal feeAmount;
+
+    private BigDecimal monthlyInstallment;
+
+    private int tenor;
+
+    private LocalDate loanStartDate;
+
+    private LocalDate loanEndDate;
 
     @Column(name = "mobile_number")
     private String mobileNumber;

@@ -1,16 +1,29 @@
 package zw.co.reikan.nanoloansweb.loan;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class LoanRequest implements Serializable {
     private String signatureData;
     private BigDecimal amount;
     private String ecnumber;
     private String mobileNumber;
+    private LocalDate startDate;
+    private int tenor;
+    private BigDecimal interestRate;
+    private BigDecimal adminFeeRate;
+    private LoanAmountType type;
+
 
     @Override
     public String toString() {
