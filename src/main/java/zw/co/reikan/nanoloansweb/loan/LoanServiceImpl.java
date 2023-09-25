@@ -9,6 +9,8 @@ import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static java.math.BigDecimal.ONE;
@@ -47,6 +49,8 @@ public class LoanServiceImpl {
                 .signature(loanRequest.getSignatureData())
                 .feeRate(loanRequest.getAdminFeeRate())
                 .interestRate(loanRequest.getInterestRate())
+                .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
+                .commissionRate(loanRequest.getCommissionRate())
                 .build();
 
         loanRepository.save(loan);
@@ -65,6 +69,8 @@ public class LoanServiceImpl {
 
     public LoanDetails calculate(LoanRequest request) {
 
+        List<AmortizationEntry> schedule = new ArrayList<>();
+
         BigDecimal principalLoanAmount = getPrincipalLoanAmount(request);
 
         BigDecimal adminFee = principalLoanAmount
@@ -78,22 +84,59 @@ public class LoanServiceImpl {
         BigDecimal installment = principalLoanAmount.multiply(interestRate).multiply(powerValue)
                 .divide(powerValue.subtract(ONE), 2, RoundingMode.HALF_UP);
 
-        final BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFee);
+        BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFee);
 
-        return LoanDetails.builder()
+        BigDecimal commissionRate = request.getCommissionRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRate), 2, RoundingMode.HALF_UP);
+
+        final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)
                 .tenor(request.getTenor())
                 .interestRate(request.getInterestRate())
                 .disbursedAmount(disbursementAmount)
+                .amortization(schedule)
                 .adminFee(adminFee)
-                .installment(installment)
+                .commissionRate(request.getCommissionRate())
+                .regularMonthlyInstallment(installment)
+                .grossedMonthlyInstallment(grossedMonthlyPayment)
                 .build();
+
+        amortizeLoan(loanDetails);
+
+        return loanDetails;
+
+    }
+
+    private void amortizeLoan(LoanDetails loanDetails) {
+        BigDecimal interestRate = loanDetails.getInterestRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal remainingPrincipal = loanDetails.getPrincipal();
+
+        for (int paymentNumber = 1; paymentNumber <= loanDetails.getTenor(); paymentNumber++) {
+            BigDecimal interestPayment = remainingPrincipal.multiply(interestRate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal principalPayment = loanDetails.getRegularMonthlyInstallment().subtract(interestPayment).setScale(2, RoundingMode.HALF_UP);
+            remainingPrincipal = remainingPrincipal.subtract(principalPayment).setScale(2, RoundingMode.HALF_UP);
+
+            if (remainingPrincipal.compareTo(ONE) < 0) {
+                remainingPrincipal = BigDecimal.ZERO;
+            }
+
+            AmortizationEntry entry = AmortizationEntry.builder()
+                    .interestPayment(interestPayment)
+                    .paymentNumber(paymentNumber)
+                    .regularMonthlyPayment(loanDetails.getRegularMonthlyInstallment())
+                    .grossedMonthlyPayment(loanDetails.getGrossedMonthlyInstallment())
+                    .remainingPrincipal(remainingPrincipal)
+                    .principalPayment(principalPayment)
+                    .build();
+
+            loanDetails.add(entry);
+        }
     }
 
     private BigDecimal getPrincipalLoanAmount(LoanRequest request) {
         if (LoanAmountType.NET_OF_FEES == request.getType()) {
             return request.getAmount().divide(ONE.subtract(request.getAdminFeeRate()
-                    .divide(ONE_HUNDRED)), 0, RoundingMode.CEILING);
+                    .divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
         }
         return request.getAmount();
     }

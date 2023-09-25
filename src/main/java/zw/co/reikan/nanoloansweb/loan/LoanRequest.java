@@ -22,6 +22,7 @@ public class LoanRequest implements Serializable {
     private int tenor;
     private BigDecimal interestRate;
     private BigDecimal adminFeeRate;
+    private BigDecimal commissionRate;
     private LoanAmountType type;
 
 

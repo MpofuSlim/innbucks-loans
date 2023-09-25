@@ -106,6 +106,12 @@ public class Loan extends BaseEntity {
     @Column(name = "batch_id")
     private String batchId;
 
+    @Column(name = "commission_rate")
+    private BigDecimal commissionRate;
+
+    @Column(name = "grossed_monthly_deduction")
+    private BigDecimal grossedMonthlyDeduction;
+
     public String getReference() {
         return String.format("%09d", getId());
     }
