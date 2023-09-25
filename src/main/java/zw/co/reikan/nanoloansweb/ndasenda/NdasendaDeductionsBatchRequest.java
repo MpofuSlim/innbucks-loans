@@ -12,7 +12,7 @@ import java.util.List;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class NdasendaDeductionsBatch {
+public class NdasendaDeductionsBatchRequest {
     @JsonProperty("id")
     private String id;
     @JsonProperty("recordsCount")
@@ -24,9 +24,9 @@ public class NdasendaDeductionsBatch {
     @JsonProperty("deductionCode")
     private String deductionCode;
     @JsonProperty("status")
-    private String status;
+    private DeductionBatchStatus status;
     @JsonProperty("creationDate")
     private String creationDate;
     @JsonProperty("records")
-    private List<NdasendaDeduction> deductions;
+    private List<NdasendaDeductionRequest> deductions;
 }

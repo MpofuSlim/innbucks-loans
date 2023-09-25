@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class NdasendaDeduction {
+public class NdasendaDeductionRequest {
     @JsonProperty("idNumber")
     private String idNumber;
     @JsonProperty("ecNumber")

@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpMethod.POST;
 
@@ -25,6 +24,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final RestTemplate restTemplate;
     private final NdasendaAuthServiceImpl ndasendaAuthService;
     private final NdasendaParameters ndasendaProps;
+    private final NdasendaBatchRepository batchRepository;
 
     @Override
     public SsbResponse process(LoanApprovalRequest loanRequest) {
@@ -36,25 +36,32 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         return null;
     }
 
-    private void requestAndCommitDeduction(List<LoanApprovalRequest> loanRequests) {
+    private void batchApprovalRequest(LoanApprovalRequest request) {
         log.info("Requesting loan deduction");
 
-        final List<NdasendaDeduction> deductions = loanRequests.stream().map(this::fromLoanRequest)
-                .collect(Collectors.toList());
+        final String batchId = batchRepository.findByDeductionBatchStatus(DeductionBatchStatus.DRAFT)
+                .map(NdasendaBatch::getBatchId)
+                .orElse(null);
 
-        final NdasendaDeductionsBatch batch = NdasendaDeductionsBatch.builder()
-                .deductions(deductions)
+        boolean batchExists = batchId == null;
+
+        final NdasendaDeductionsBatchRequest batch = NdasendaDeductionsBatchRequest.builder()
+                .id(batchId)
+                .deductions(List.of(fromLoanRequest(request)))
                 .build();
 
-        HttpEntity<NdasendaDeductionsBatch> requestEntity = new HttpEntity<>(batch, getHttpHeaders());
-        ResponseEntity<NdasendaDeductionsBatch> response = restTemplate.exchange(ndasendaProps.getDeductionsEndpoint(),
-                POST, requestEntity, NdasendaDeductionsBatch.class);
+        HttpEntity<NdasendaDeductionsBatchRequest> requestEntity = new HttpEntity<>(batch, getHttpHeaders());
 
-        NdasendaDeductionsBatch deductionsBatchResponse = response.getBody();
+        ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getDeductionsEndpoint(),
+                POST, requestEntity, NdasendaDeductionsBatchRequest.class);
+
+        NdasendaDeductionsBatchRequest deductionsBatchResponse = response.getBody();
+
+
     }
 
-    private NdasendaDeduction fromLoanRequest(LoanApprovalRequest request) {
-        return NdasendaDeduction.builder()
+    private NdasendaDeductionRequest fromLoanRequest(LoanApprovalRequest request) {
+        return NdasendaDeductionRequest.builder()
                 .amountInCents(toCents(request.getMonthlyInstallment()))
                 .ecNumber(request.getEcnumber())
                 .idNumber(request.getIdNumber())

@@ -10,6 +10,7 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
+import javax.persistence.Index;
 import javax.persistence.Lob;
 import javax.persistence.Table;
 import java.math.BigDecimal;
@@ -17,7 +18,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@Table(name = "loan_request")
+@Table(name = "loan_request", indexes = {
+        @Index(name = "idx_batch_id", columnList = "batch_id"),
+        @Index(name = "idx_ec_number", columnList = "ec_number")
+})
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
@@ -27,22 +31,31 @@ public class Loan extends BaseEntity {
     @Column(name = "amount")
     private BigDecimal amount;
 
+    @Column(name = "disburse_amount")
     private BigDecimal disbursedAmount;
 
+    @Column(name = "interest_rate")
     private BigDecimal interestRate;
 
+    @Column(name = "interest_amount")
     private BigDecimal interestAmount;
 
+    @Column(name = "fee_rate")
     private BigDecimal feeRate;
 
+    @Column(name = "fee_amount")
     private BigDecimal feeAmount;
 
+    @Column(name = "monthly_installment")
     private BigDecimal monthlyInstallment;
 
+    @Column(name = "tenor")
     private int tenor;
 
+    @Column(name = "loan_start_date")
     private LocalDate loanStartDate;
 
+    @Column(name = "loan_end_date")
     private LocalDate loanEndDate;
 
     @Column(name = "mobile_number")
@@ -50,6 +63,15 @@ public class Loan extends BaseEntity {
 
     @Column(name = "ec_number")
     private String ecNumber;
+
+    @Column(name = "first_name")
+    private String firstName;
+
+    @Column(name = "last_name")
+    private String lastName;
+
+    @Column(name = "national_id_number")
+    private String nationalIdNumber;
 
     @Lob
     @Column(name = "signature", columnDefinition = "MEDIUMTEXT")
@@ -80,6 +102,9 @@ public class Loan extends BaseEntity {
 
     @Column(name = "approval_reference")
     private String approvalReference;
+
+    @Column(name = "batch_id")
+    private String batchId;
 
     public String getReference() {
         return String.format("%09d", getId());
