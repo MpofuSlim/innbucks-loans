@@ -31,7 +31,7 @@ public class LoanServiceImpl {
 
         if (hasPendingLoan) {
             return LoanResponse.builder()
-                    .loanApprovaStatus(LoanApprovaStatus.REJECTED)
+                    .loanApprovalStatus(LoanApprovalStatus.REJECTED)
                     .message("You have a pending loan application.")
                     .build();
         }
@@ -41,7 +41,7 @@ public class LoanServiceImpl {
         final Loan loan = Loan.builder()
                 .amount(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
-                .loanApprovaStatus(LoanApprovaStatus.NEW)
+                .loanApprovalStatus(LoanApprovalStatus.NEW)
                 .ecNumber(formattedEcNumber)
                 .mobileNumber(loanRequest.getMobileNumber())
                 .signature(loanRequest.getSignatureData())
@@ -52,14 +52,14 @@ public class LoanServiceImpl {
         loanRepository.save(loan);
 
         return LoanResponse.builder()
-                .loanApprovaStatus(LoanApprovaStatus.NEW)
+                .loanApprovalStatus(LoanApprovalStatus.NEW)
                 .internalReference(loan.getReference())
                 .message("Loan Sent For Approval")
                 .build();
     }
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanApprovaStatus(Utils.trimSpecialCharacters(ecNumber), LoanApprovaStatus.NEW);
+        return loanRepository.findByEcNumberAndLoanApprovaStatus(Utils.trimSpecialCharacters(ecNumber), LoanApprovalStatus.NEW);
     }
 
 

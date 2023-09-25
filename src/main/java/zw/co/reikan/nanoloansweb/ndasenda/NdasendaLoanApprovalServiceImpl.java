@@ -7,12 +7,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
+import zw.co.reikan.nanoloansweb.loan.LoanApproval;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
+import zw.co.reikan.nanoloansweb.loan.LoanRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.HttpMethod.POST;
 
 @Slf4j
@@ -26,49 +31,74 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final NdasendaParameters ndasendaProps;
     private final NdasendaBatchRepository batchRepository;
 
-    @Override
-    public SsbResponse process(LoanApprovalRequest loanRequest) {
-        return null;
+    private final LoanRepository loanRepository;
+
+    private void processDeductionRequestResponse(NdasendaDeduction response) {
+
+        log.info("Processing deduction response: {}", response);
+
+        loanRepository.findById(Long.parseLong(response.getReference()))
+                .ifPresent(loan -> {
+                    loan.setLoanApprovalStatus(response.getStatus().getApprovalStatus());
+                    loan.setDateApproved(LocalDateTime.now());
+                    loan.setApprovalReference(response.getId());
+                    loanRepository.save(loan);
+                });
     }
 
-    private String createOrAssignBatchNumber(LoanApprovalRequest loanRequest) {
-        log.info("Creating and/or assigning batch number");
-        return null;
+    public void commit(String batchId) {
+        log.info("Committing batch id: {}", batchId);
+        ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getCommitDeductionsEndpoint(),
+                POST, new HttpEntity<>(getHttpHeaders()),
+                NdasendaDeductionsBatchRequest.class,
+                batchId);
     }
 
-    private void batchApprovalRequest(LoanApprovalRequest request) {
+    public NdasendaDeductionsBatchRequest getBatch(String batchId) {
+
+        log.info("Find batch id: {}", batchId);
+
+        ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getFindBatchEndpoint(),
+                GET, new HttpEntity<>(getHttpHeaders()),
+                NdasendaDeductionsBatchRequest.class,
+                batchId);
+        return response.getBody();
+    }
+
+    public LoanApprovalResponse process(LoanApprovalRequest request) {
+
         log.info("Requesting loan deduction");
 
-        final String batchId = batchRepository.findByDeductionBatchStatus(DeductionBatchStatus.DRAFT)
-                .map(NdasendaBatch::getBatchId)
-                .orElse(null);
+        final NdasendaDeduction deductionRequest = fromLoanRequest(request);
 
-        boolean batchExists = batchId == null;
+        final List<NdasendaDeduction> deductions = List.of(deductionRequest);
 
         final NdasendaDeductionsBatchRequest batch = NdasendaDeductionsBatchRequest.builder()
-                .id(batchId)
-                .deductions(List.of(fromLoanRequest(request)))
+                .totalAmountInCents(deductionRequest.getAmountInCents())
+                .recordsCount(deductions.size())
+                .deductionCode(ndasendaProps.getDeductionCode())
+                .securityToken(ndasendaProps.getSecurityCode())
+                .deductions(deductions)
                 .build();
 
         HttpEntity<NdasendaDeductionsBatchRequest> requestEntity = new HttpEntity<>(batch, getHttpHeaders());
 
-        ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getDeductionsEndpoint(),
+        ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getDeductionsRequestsEndpoint(),
                 POST, requestEntity, NdasendaDeductionsBatchRequest.class);
 
         NdasendaDeductionsBatchRequest deductionsBatchResponse = response.getBody();
 
-
+        return LoanApprovalResponse.builder()
+                .status(LoanApprovalStatus.PROCESSING)
+                .batchNumber(deductionsBatchResponse.getId())
+                .build();
     }
 
-    private NdasendaDeductionRequest fromLoanRequest(LoanApprovalRequest request) {
-        return NdasendaDeductionRequest.builder()
+    private NdasendaDeduction fromLoanRequest(LoanApprovalRequest request) {
+        return NdasendaDeduction.builder()
                 .amountInCents(toCents(request.getMonthlyInstallment()))
                 .ecNumber(request.getEcnumber())
                 .idNumber(request.getIdNumber())
-                .payrollNumber(request.getPayrollNumber())
-                .name(request.getName())
-                .surname(request.getSurname())
-                .totalAmountInCents(toCents(request.getTotalAmount()))
                 .startDate(formatDate(request.getStartDate()))
                 .endDate(formatDate(request.getEndDate()))
                 .type(NdasendaDeductionType.NEW)

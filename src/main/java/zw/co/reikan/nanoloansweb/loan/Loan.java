@@ -79,7 +79,7 @@ public class Loan extends BaseEntity {
 
     @Enumerated(value = EnumType.STRING)
     @Column(name = "loan_status")
-    private LoanApprovaStatus loanApprovaStatus;
+    private LoanApprovalStatus loanApprovalStatus;
 
     @Column(name = "loan_status_message")
     private String loanStatusMessage;

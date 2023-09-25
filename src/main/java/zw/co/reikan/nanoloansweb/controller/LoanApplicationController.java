@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import zw.co.reikan.nanoloansweb.LoanResponse;
-import zw.co.reikan.nanoloansweb.loan.LoanApprovaStatus;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRequest;
 import zw.co.reikan.nanoloansweb.loan.LoanServiceImpl;
 
@@ -36,6 +36,6 @@ public class LoanApplicationController {
     public String saveSignature(@ModelAttribute LoanRequest loanRequest, Model model) {
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
         model.addAttribute("internalReference", loanResponse.getInternalReference());
-        return loanResponse.getLoanApprovaStatus() == LoanApprovaStatus.REJECTED ? "fail" : "success";
+        return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }
 }

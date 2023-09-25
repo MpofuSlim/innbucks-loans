@@ -10,7 +10,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class NdasendaDeductionRequest {
+public class NdasendaDeduction {
+    @JsonProperty("id")
+    private String id;
     @JsonProperty("idNumber")
     private String idNumber;
     @JsonProperty("ecNumber")
@@ -23,14 +25,9 @@ public class NdasendaDeductionRequest {
     private String startDate;
     @JsonProperty("endDate")
     private String endDate;
-    @JsonProperty("payrollNumber")
-    private String payrollNumber;
-    @JsonProperty("name")
-    private String name;
-    @JsonProperty("surname")
-    private String surname;
     @JsonProperty("amount")
     private Integer amountInCents;
-    @JsonProperty("totalAmount")
-    private Integer totalAmountInCents;
+
+    @JsonProperty("status")
+    private NdasendaDeductionStatus status;
 }

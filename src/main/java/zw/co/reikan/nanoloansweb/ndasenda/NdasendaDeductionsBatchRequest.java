@@ -28,5 +28,5 @@ public class NdasendaDeductionsBatchRequest {
     @JsonProperty("creationDate")
     private String creationDate;
     @JsonProperty("records")
-    private List<NdasendaDeductionRequest> deductions;
+    private List<NdasendaDeduction> deductions;
 }

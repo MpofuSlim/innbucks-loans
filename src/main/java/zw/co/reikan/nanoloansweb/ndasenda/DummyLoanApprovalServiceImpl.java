@@ -2,7 +2,7 @@ package zw.co.reikan.nanoloansweb.ndasenda;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import zw.co.reikan.nanoloansweb.loan.SsbStatus;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 
 import java.util.Map;
 import java.util.UUID;
@@ -19,24 +19,24 @@ public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
             "14", "Regulatory Compliance Issues");
 
     @Override
-    public SsbResponse process(LoanApprovalRequest loanRequest) {
+    public LoanApprovalResponse process(LoanApprovalRequest loanRequest) {
 
         log.info("Processing SSB loan request: {}", loanRequest);
 
         final String rightMostString = right(loanRequest.getEcnumber(), 2);
 
         if (responseCodes.containsKey(rightMostString)) {
-            return SsbResponse.builder()
+            return LoanApprovalResponse.builder()
                     .message(responseCodes.get(rightMostString))
                     .reference(UUID.randomUUID().toString())
-                    .status(SsbStatus.REJECTED)
+                    .status(LoanApprovalStatus.REJECTED)
                     .build();
         }
 
-        return SsbResponse.builder()
+        return LoanApprovalResponse.builder()
                 .reference(UUID.randomUUID().toString())
                 .message("Approved")
-                .status(SsbStatus.APPROVED)
+                .status(LoanApprovalStatus.APPROVED)
                 .build();
     }
 }

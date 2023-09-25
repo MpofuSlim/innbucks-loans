@@ -25,7 +25,6 @@ public class NdasendaAuthServiceImpl {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.add("realm", parameters.getRealm());
 
         NdasendaAuthRequest authRequest = NdasendaAuthRequest.builder()
                 .clientId(parameters.getClientId())

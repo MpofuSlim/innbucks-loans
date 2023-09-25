@@ -8,7 +8,7 @@ import zw.co.reikan.nanoloansweb.DisbursementRequest;
 import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
 import zw.co.reikan.nanoloansweb.loan.Loan;
-import zw.co.reikan.nanoloansweb.loan.LoanApprovaStatus;
+import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRepository;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
 
@@ -28,7 +28,7 @@ public class LoanDisbursementServiceJob {
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
-        final List<Loan> peningLoans = loanRepository.findByLoanApprovaStatusAndDisbursementStatus(LoanApprovaStatus.APPROVED, LoanDisbursementStatus.PENDING);
+        final List<Loan> peningLoans = loanRepository.findByLoanApprovaStatusAndDisbursementStatus(LoanApprovalStatus.APPROVED, LoanDisbursementStatus.PENDING);
         peningLoans.forEach(this::processLoanApproval);
     }
 
