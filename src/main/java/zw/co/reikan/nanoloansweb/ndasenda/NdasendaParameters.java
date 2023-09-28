@@ -7,8 +7,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "ndasenda")
 public class NdasendaParameters {
     private String authEndpoint;
-    private String deductionsRequestsEndpoint;
+    private String deductionRequestsEndpoint;
+    private String deductionResponsesByDateRangeEndpoint;
+    private String deductionResponsesByBatchId;
     private String findBatchEndpoint;
+    private String findBatchesByDateRangeEndpoint;
     private String commitDeductionsEndpoint;
     private String clientId;
     private String grantType;

@@ -19,7 +19,7 @@ public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
             "14", "Regulatory Compliance Issues");
 
     @Override
-    public LoanApprovalResponse process(LoanApprovalRequest loanRequest) {
+    public LoanApprovalResponse requestApproval(LoanApprovalRequest loanRequest) {
 
         log.info("Processing SSB loan request: {}", loanRequest);
 

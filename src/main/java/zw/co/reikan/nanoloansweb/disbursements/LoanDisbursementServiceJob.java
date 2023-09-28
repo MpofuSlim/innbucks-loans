@@ -8,12 +8,13 @@ import zw.co.reikan.nanoloansweb.DisbursementRequest;
 import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
 import zw.co.reikan.nanoloansweb.loan.Loan;
-import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRepository;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
 
 import java.time.LocalDateTime;
-import java.util.List;
+
+import static zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus.PENDING;
+import static zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus.APPROVED;
 
 @Service
 @Slf4j
@@ -28,8 +29,8 @@ public class LoanDisbursementServiceJob {
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
-        final List<Loan> peningLoans = loanRepository.findByLoanApprovaStatusAndDisbursementStatus(LoanApprovalStatus.APPROVED, LoanDisbursementStatus.PENDING);
-        peningLoans.forEach(this::processLoanApproval);
+        loanRepository.findByLoanApprovalStatusAndDisbursementStatus(APPROVED, PENDING)
+                .forEach(this::processLoanApproval);
     }
 
     private void processLoanApproval(Loan loan) {
@@ -37,7 +38,7 @@ public class LoanDisbursementServiceJob {
                 .amount(loan.getAmount())
                 .mobileNumber(loan.getMobileNumber())
                 .build());
-        log.info("Updating loan disbusement status: {}", response);
+        log.info("Updating loan disbursement status: {}", response);
         loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
         loan.setDisbursementReference(response.getApprovalCode());
         loan.setDateDisbursed(LocalDateTime.now());

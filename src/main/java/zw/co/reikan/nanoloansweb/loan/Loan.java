@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
 
 @Data
 @Table(name = "loan_request", indexes = {
-        @Index(name = "idx_batch_id", columnList = "batch_id"),
+        @Index(name = "idx_batch_number", columnList = "batch_number"),
         @Index(name = "idx_ec_number", columnList = "ec_number")
 })
 @Builder
@@ -103,8 +103,8 @@ public class Loan extends BaseEntity {
     @Column(name = "approval_reference")
     private String approvalReference;
 
-    @Column(name = "batch_id")
-    private String batchId;
+    @Column(name = "batch_number")
+    private String batchNumber;
 
     @Column(name = "commission_rate")
     private BigDecimal commissionRate;

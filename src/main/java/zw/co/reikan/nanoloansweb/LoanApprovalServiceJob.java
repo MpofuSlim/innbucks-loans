@@ -31,19 +31,23 @@ public class LoanApprovalServiceJob {
     @Scheduled(fixedRate = 60000) // Run every 1 minute (60,000 milliseconds)
     public void processSsbApprovals() {
         log.info("SSB LoanRequests");
-        final List<Loan> pendingLoans = loanRepository.findByLoanApprovaStatus(LoanApprovalStatus.NEW);
+        final List<Loan> pendingLoans = loanRepository.findByLoanApprovalStatus(LoanApprovalStatus.NEW);
         pendingLoans.forEach(this::processLoanApproval);
     }
 
     private void processLoanApproval(Loan loan) {
-        final LoanApprovalResponse loanApprovalResponse = loanApprovalService.process(LoanApprovalRequest.builder()
+
+        final LoanApprovalResponse loanApprovalResponse = loanApprovalService.requestApproval(LoanApprovalRequest.builder()
                 .totalAmount(loan.getAmount())
                 .ecnumber(loan.getEcNumber())
                 .build());
+
         log.info("Updating loan status: {}", loanApprovalResponse);
         loan.setLoanApprovalStatus(loanApprovalResponse.getStatus());
         loan.setApprovalReference(loanApprovalResponse.getReference());
+        loan.setBatchNumber(loanApprovalResponse.getBatchNumber());
         loan.setDateApproved(LocalDateTime.now());
+
         loanRepository.save(loan);
 
         log.info("Dispatching loan approved sms notification: {}", loanApprovalResponse);

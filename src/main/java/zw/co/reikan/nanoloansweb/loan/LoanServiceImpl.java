@@ -63,7 +63,8 @@ public class LoanServiceImpl {
     }
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanApprovaStatus(Utils.trimSpecialCharacters(ecNumber), LoanApprovalStatus.NEW);
+        return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber),
+                LoanApprovalStatus.NEW);
     }
 
 

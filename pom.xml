@@ -61,8 +61,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.ehcache</groupId>
+            <groupId>net.sf.ehcache</groupId>
             <artifactId>ehcache</artifactId>
+            <version>2.10.7</version>
         </dependency>
 
     </dependencies>

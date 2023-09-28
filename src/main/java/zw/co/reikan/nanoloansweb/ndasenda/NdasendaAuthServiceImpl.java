@@ -9,6 +9,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 @RequiredArgsConstructor
@@ -24,16 +26,15 @@ public class NdasendaAuthServiceImpl {
     public String getAccessToken() {
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-        NdasendaAuthRequest authRequest = NdasendaAuthRequest.builder()
-                .clientId(parameters.getClientId())
-                .grantType(parameters.getGrantType())
-                .password(parameters.getPassword())
-                .username(parameters.getUsername())
-                .build();
+        MultiValueMap<String, String> authRequest = new LinkedMultiValueMap<>();
 
-        HttpEntity<NdasendaAuthRequest> requestEntity = new HttpEntity<>(authRequest, headers);
+        authRequest.add("grant_type", parameters.getGrantType());
+        authRequest.add("password", parameters.getPassword());
+        authRequest.add("username", parameters.getUsername());
+
+        HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(authRequest, headers);
 
         ResponseEntity<NdasendaAuthResponse> responseEntity = restTemplate.exchange(
                 parameters.getAuthEndpoint(),

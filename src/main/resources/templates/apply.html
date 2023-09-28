@@ -1,27 +1,25 @@
 <!DOCTYPE html>
-<html lang="zxx">
+<html lang="en">
 
 <head>
-    <!-- Required meta tags -->
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Link of CSS files -->
-    <link rel="stylesheet" th:href="@{/css/bootstrap.min.css}"/>
-    <link rel="stylesheet" th:href="@{/css/flaticon.css}"/>
-    <link rel="stylesheet" th:href="@{/css/remixicon.css}"/>
-    <link rel="stylesheet" th:href="@{/css/owl.carousel.min.css}"/>
-    <link rel="stylesheet" th:href="@{/css/odometer.min.css}"/>
-    <link rel="stylesheet" th:href="@{/css/magnific-popup.css}"/>
-    <link rel="stylesheet" th:href="@{/css/fancybox.css}"/>
-    <link rel="stylesheet" th:href="@{/css/aos.css}"/>
-    <link rel="stylesheet" th:href="@{/css/style.css}"/>
-    <link rel="stylesheet" th:href="@{/css/responsive.css}"/>
-    <title>Apply Loan</title>
-    <link rel="icon" type="image/png" href="assets/img/favicon.png">
+    <meta charset="UTF-8">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible">
+    <!-- Mobile Specific Metas -->
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport"/>
+    <title>top up</title>
+    <!-- Favicon and Touch Icons  -->
+    <link rel="shortcut icon" th:href="@{/images/logo.png}"/>
+    <link rel="apple-touch-icon-precomposed" th:href="@{/images/logo.png}"/> <!-- Font -->
+    <link rel="stylesheet" th:href="@{/fonts/fonts.css}"/> <!-- Icons -->
+    <link rel="stylesheet" th:href="@{/fonts/icons-alipay.css}">
+    <link rel="stylesheet" th:href="@{/styles/bootstrap.css}">
+    <link rel="stylesheet" th:href="@{/styles/styles.css}" type="text/css"/>
+    <link data-pwa-version="set_in_manifest_and_pwa_js" rel="manifest" th:href="@{/manifest.json}">
+    <link rel="apple-touch-icon" sizes="192x192" th:href="@{/app/icons/icon-192x192.png}">
 </head>
 
 <body>
-<!--Preloader starts-->
+<!-- preloader -->
 <div class="preloader js-preloader">
     <div class="loader loader-inner-1">
         <div class="loader loader-inner-2">
@@ -30,160 +28,240 @@
         </div>
     </div>
 </div>
-<!--Preloader ends-->
+<!-- /preload -->
+<div class="app-header st1">
+    <div class="tf-container">
+        <div class="tf-topbar d-flex justify-content-center align-items-center">
+            <a class="back-btn" href="#"><i class="icon-left white_color"></i></a>
+            <h3>Request Loan</h3>
+        </div>
+    </div>
+</div>
+<div class="card-secton topup-content">
+    <div class="tf-container">
+        <div class="tf-balance-box">
+            <div class="tf-spacing-16"></div>
+            <div class="tf-form">
 
-<!-- Page Wrapper End -->
-<div class="page-wrapper">
+                <div class="group-input input-field">
+                    <label>First Name</label>
+                    <input class="search-field st1" required type="text" value="THOMAS"
+                           th:value="${#session.getAttribute('fname')}">
+                    <span class="icon-clear"></span>
+                </div>
 
-    <!-- Header Section Start -->
-    <header class="header-wrap style2">
-        <div class="header-bottom">
-            <div class="container">
-                <nav class="navbar navbar-expand-md navbar-light">
-                    <div class="collapse navbar-collapse main-menu-wrap" id="navbarSupportedContent">
-                        <div class="menu-close xl-none">
-                            <a href="javascript:void(0)"> <i class="ri-close-line"></i></a>
-                        </div>
-                        <ul class="navbar-nav ms-auto">
+                <div class="group-input input-field">
+                    <label>Last Name</label>
+                    <input class="search-field st1" required type="text"
+                           th:value="${#session.getAttribute('lname')}"
+                           value="NYAGWAYA">
+                    <span class="icon-clear"></span>
+                </div>
 
+                <div class="group-input input-field">
+                    <label>Phone Number</label>
+                    <input class="search-field st1" disabled required type="text"
+                           th:value="${#session.getAttribute('mobileNumber')}"
+                           value="NYAGWAYA">
+                    <span class="icon-clear"></span>
+                </div>
 
-                            <li class="nav-item">
-                                <a href="#" class="nav-link">My Loan</a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="#" class="nav-link">Loan Calculator</a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="#" class="nav-link">Terms & Conditions</a>
-                            </li>
+                <div class="group-input input-field">
+                    <label>National ID Number</label>
+                    <input class="search-field st1" disabled placeholder="Format XXYYYYY" required type="text"
+                           value="75354973D75"  th:value="${#session.getAttribute('nationalIdNumber')}">
+                    <span class="icon-clear"></span>
+                </div>
 
-                            <li class="nav-item xl-none">
-                                <a th:href="@{/apply(mobileNumber=${#session.getAttribute('mobileNumber')}, fname=${#session.getAttribute('fname')}, lname=${#session.getAttribute('lname')})}" class="btn style2">Apply Now</a>
-                            </li>
-                        </ul>
+                <div class="group-input input-field">
+                    <label>EC Number</label>
+                    <input class="search-field st1" required type="text" value="">
+                </div>
+
+                <div class="group-input input-field input-money">
+                    <label>Loan Amount</label>
+                    <input class="search-field value_input st1" required type="text" value="50">
+                    <span class="icon-clear"></span>
+                    <div class="money">
+                        <a class="tag-money" href="#">50</a>
+                        <a class="tag-money" href="#">100</a>
+                        <a class="tag-money" href="#">150</a>
+                        <a class="tag-money" href="#">200</a>
                     </div>
-                </nav>
-                <div class="mobile-bar-wrap">
-                    <div class="mobile-menu xl-none">
-                        <a href="javascript:void(0)"><i class="ri-menu-line"></i></a>
-                    </div>
+                </div>
+
+                <div class="group-input input-field">
+                    <label>Loan Period</label>
+                    <input class="search-field st1" required type="text" value="">
+                </div>
+
+            </div>
+        </div>
+    </div>
+    <div class="bottom-navigation-bar">
+        <div class="tf-container">
+            <a class="tf-btn accent large" href="#" id="btn-popup-up">Continue</a>
+        </div>
+    </div>
+</div>
+
+<div class="tf-panel up">
+    <div class="panel_overlay"></div>
+    <div class="panel-box panel-up wrap-content-panel">
+        <div class="heading">
+            <div class="tf-container">
+                <div class="d-flex align-items-center position-relative justify-content-center">
+                    <i class="icon-close1 clear-panel"></i>
+                    <h3>Confirm</h3>
                 </div>
             </div>
         </div>
-    </header>
-    <!-- Header Section End -->
+        <div class="main-topup">
+            <div class="tf-container">
+                <ul class="info">
+                    <li><h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">Amout <a
+                            class="on_surface_color fw_7" href="#">$ 200</a></h4></li>
+                    <li><h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">Fee <a
+                            class="success_color fw_7" href="#">Free</a></h4></li>
+                    <li><h2 class="secondary_color fw_4 d-flex justify-content-between align-items-center">TOTAL <a
+                            class="on_surface_color fw_7" href="#"> $ 200</a></h2>
+                    </li>
+                </ul>
 
-    <!-- Content Wrapper Start -->
-    <div class="content-wrapper">
+                <div class="text-center">
+                    <span class="fw_3">By signing below, you confirm understanding and acceptance of the <a
+                            class="on_surface_color fw_7 clear-panel" data-dismiss="modal" data-target="#modalhome2"
+                            data-toggle="modal" href="#">Terms & Conditions</a></span>
+                </div>
+                <div class="group-input input-field d-flex align-items-center"
+                     style="border: dashed; border-radius: 5px">
+                    <canvas class="w-100" height="100" id="signaturePad"></canvas>
+                </div>
 
-        <!-- Account Section start -->
-        <section class="Login-wrap ptb-100">
-            <div class="container">
-                <div class="row ">
-                    <div class="col-xl-6 offset-xl-3 col-lg-8 offset-lg-2 col-md-10 offset-md-1">
-                        <div class="login-form-wrap">
-                            <div class="login-header text-center">
-                                <h3 th:text="${#session.getAttribute('fname')} + ' ' + ${#session.getAttribute('lname')}"></h3>
-                                <p th:text="${#session.getAttribute('mobileNumber')}">75-354973 D 75</p>
-                            </div>
-                            <div class="login-form">
-                                <div class="login-body">
-                                    <form class="form-wrap" action="#">
-                                        <div class="row">
-                                            <div class="col-lg-12">
-                                                <div class="form-group">
-                                                    <input id="ecnumber" name="ecnumber" type="text"
-                                                           placeholder="EC Number*"
-                                                           required>
-                                                </div>
-                                            </div>
-                                            <div class="col-lg-12">
-                                                <div class="form-group">
-                                                    <input id="amount" name="amount" type="text"
-                                                           placeholder="Loan Amount (USD)*"
-                                                           required>
-                                                </div>
-                                            </div>
 
-                                            <div class="col-lg-12">
-                                                <span class="text-muted text-sm-center">sign here</span>
-                                                <div id="signatureContainer"
-                                                     style="border: 1px dashed #009287; border-radius: 5px">
-                                                    <canvas id="signaturePad" height="100"></canvas>
-                                                </div>
-                                            </div>
-                                            <div class="col-lg-6 col-md-6 col-sm-6 col-6">
-                                            </div>
-                                            <div class="col-lg-6 col-md-6 col-sm-6 col-6 text-end mb-20">
-                                                <a id="clear_signature" href="#" class="link style1">Clear Signature</a>
-                                            </div>
-
-                                            <input id="mobileNumber" type="hidden" name="mobileNumber"
-                                                   th:value="${#session.getAttribute('mobileNumber')}"/>
-
-                                            <div class="col-lg-12">
-                                                <div class="form-group">
-                                                    <button type="button" class="btn style5" onclick="saveSignature()">
-                                                        Apply Now
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <a class="tf-btn accent large" onclick="saveSignature()"><i class="icon-secure1"></i> Continue</a>
+                    <div>
+                        <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
                     </div>
                 </div>
             </div>
-        </section>
-        <!-- Account Section end -->
+
+        </div>
+
 
     </div>
-    <!-- Content Wrapper End -->
 
 </div>
-<!-- Page Wrapper End -->
 
-<!-- Back-to-top button Start -->
-<a href="javascript:void(0)" class="back-to-top bounce"><i class="ri-arrow-up-s-line"></i></a>
-<!-- Back-to-top button End -->
+<div class="modal fade" id="modalhome2">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="heading">
+                <h2>Privacy</h2>
+                <p class="mt-1 fw_3">
+                    A mobile app privacy policy is a legal statement that must be clear, conspicuous, and consented to
+                    by all users. It must disclose how a mobile app gathers, stores, and uses the personally
+                    identifiable information it collects from its users.
+                    A mobile privacy app is developed and presented to users so that mobile app developers stay
+                    compliant with state, federal, and international laws. As a result, they fulfill the legal
+                    requirement to safeguard user privacy while protecting the company itself from legal challenges.
 
-<!-- Link of JS files -->
+                </p>
+                <h2 class="mt-3">Authorized Users</h2>
+                <p class="fw-3">
+                    A mobile app privacy policy is a legal statement that must be clear, conspicuous, and consented to
+                    by all users. It must disclose how a mobile app gathers, stores, and uses the personally
+                    identifiable information it collects from its users.
+                </p>
+                <div class="group-cb mt-3 align-items-center">
+                    <div class="cb">
+                        <input checked class="tf-checkbox st1" type="checkbox">
+                    </div>
+                    <span class="fw_3">I agree to the Terms & Conditions</span>
+                </div>
 
+            </div>
+            <div class="bottom mt-5">
+                <a class="tf-btn accent large" data-dismiss="modal" href="#">I Accept</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tf-panel down" id="message-modal">
+    <div class="panel_overlay"></div>
+    <div class="panel-box panel-down">
+        <div class="mt-5">
+            <div class="tf-container">
+                <form action="50_successful.html" class="tf-form-verify">
+                    <div class="text-send-code">
+                        <p class="fw_4">Error message goes here</p>
+                    </div>
+                    <div class="mt-7 mb-6">
+                        <a class="tf-btn accent large" id="btn-close-error" onclick="closeErrorMsg()"><i
+                                class="icon-secure1"></i> Got
+                            it!</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script th:src="@{/js/signature_pad.min.js}"></script>
 <script th:inline="javascript">
 
-    var signaturePad = new SignaturePad(document.getElementById('signaturePad'));
+    let canvas = document.getElementById('signaturePad');
+    var signaturePad = new SignaturePad(canvas, {
+        penColor: "rgb(66, 133, 244)"
+    });
 
     var button = document.getElementById('clear_signature');
     button.onclick = function () {
         signaturePad.clear();
     };
 
+    function closeErrorMsg() {
+        $("#message-modal").removeClass("panel-open");
+    }
+
+    function openErrorMsg(callback) {
+        $("#message-modal").addClass("panel-open");
+        $(".panel-up").removeClass("panel-open");
+    }
+
 
     function saveSignature() {
         var signatureData = signaturePad.toDataURL();
+
+        if (signaturePad.isEmpty()) {
+            $("#message-modal").addClass("panel-open");
+            return;
+        }
 
         var form = document.createElement('form');
         form.method = 'POST';
         form.action = '/apply';
         form.style.display = 'none';
 
-        var input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'signatureData';
-        input.value = signatureData;
+        var signature_input = document.createElement('input');
+        signature_input.type = 'hidden';
+        signature_input.name = 'signatureData';
+        signature_input.value = signatureData;
 
         var ecnumber_input = document.getElementById('ecnumber');
         var amount_input = document.getElementById('amount');
         var mobileNumber_input = document.getElementById('mobileNumber');
+        var payrollNumber_input = document.getElementById('payrollNumber');
+        var nationalId_input = document.getElementById('nationalId');
 
         form.appendChild(amount_input);
         form.appendChild(ecnumber_input);
         form.appendChild(mobileNumber_input);
-        form.appendChild(input);
+        form.appendChild(signature_input);
+        form.appendChild(payrollNumber_input);
+        form.appendChild(nationalId_input);
 
         document.body.appendChild(form);
 
@@ -191,19 +269,9 @@
     }
 </script>
 
-<script th:src="@{/js/jquery.min.js}"></script>
-<script th:src="@{/js/bootstrap.bundle.min.js}"></script>
-<script th:src="@{/js/form-validator.min.js}"></script>
-<script th:src="@{/js/contact-form-script.js}"></script>
-<script th:src="@{/js/aos.js}"></script>
-<script th:src="@{/js/owl.carousel.min.js}"></script>
-<script th:src="@{/js/odometer.min.js}"></script>
-<script th:src="@{/js/jquery-magnific-popup.js}"></script>
-<script th:src="@{/js/fancybox.js}"></script>
-<script th:src="@{/js/jquery.appear.js}"></script>
-<script th:src="@{/js/tweenmax.min.js}"></script>
-<script th:src="@{/js/main.js}"></script>
-
+<script th:src="@{/js/jquery.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/bootstrap.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/main.js}" type="text/javascript"></script>
 
 </body>
 
