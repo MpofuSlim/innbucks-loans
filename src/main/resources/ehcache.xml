@@ -2,10 +2,12 @@
     xsi:noNamespaceSchemaLocation="http://ehcache.org/ehcache.xsd">
 
     <!-- Define your caches here -->
-    <cache name="ndasenda-access-token-cache" eternal="false"
-        maxEntriesLocalHeap="1000"
-        overflowToDisk="false"
-        timeToIdleSeconds="1800"
-        timeToLiveSeconds="21600" />
+    <cache name="ndasenda-access-token-cache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
+        timeToIdleSeconds="1800" timeToLiveSeconds="21600" />
+
+
+    <!-- Define your caches here -->
+    <cache name="parameterCache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
+        timeToIdleSeconds="1800" timeToLiveSeconds="21600" />
 
 </ehcache>

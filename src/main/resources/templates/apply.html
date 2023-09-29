@@ -83,9 +83,9 @@
             <div class="tf-spacing-16"></div>
             <div class="tf-form">
 
-                <input id="commissionRate" th:value="${#session.getAttribute('commissionRate')}" type="hidden">
-                <input id="adminFeeRate" th:value="${#session.getAttribute('adminFeeRate')}" type="hidden">
-                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthlyInterestRate')}"
+                <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
+                <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
+                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
                        type="hidden">
 
 
@@ -103,33 +103,17 @@
                                 class="success_color fw_7" href="#" th:text="${#session.getAttribute('lname')}"></a></p>
                 </div>
 
-                <!--                <div class="group-input input-field">-->
-                <!--                    <label>First Name</label>-->
-                <!--                    <input class="search-field st1" required th:value="${#session.getAttribute('fname')}" type="text"-->
-                <!--                           value="THOMAS">-->
-                <!--                </div>-->
-
-                <!--                <div class="group-input input-field">-->
-                <!--                    <label>Last Name</label>-->
-                <!--                    <input class="search-field st1" required th:value="${#session.getAttribute('lname')}"-->
-                <!--                           type="text"-->
-                <!--                           value="NYAGWAYA">-->
-                <!--                </div>-->
-
-                <!--                <div class="group-input input-field">-->
-                <!--                    <label>Phone Number</label>-->
-                <!--                    <input class="search-field st1" disabled id="mobileNumber" required-->
-                <!--                           th:value="${#session.getAttribute('mobileNumber')}"-->
-                <!--                           type="text"-->
-                <!--                           value="NYAGWAYA">-->
-                <!--                </div>-->
-
                 <div class="group-input input-field">
                     <div class="slidecontainer">
                         <p class="secondary_color fw_4 d-flex justify-content-between align-items-center">Net Amount
                             Required <a
                                     class="success_color fw_7" href="#" id="amount"></a></p>
-                        <input class="slider" id="amountRange" max="2000" min="50" step="10" type="range" value="50">
+                        <input class="slider" id="amountRange" max="2000"
+                               min="50"
+                               step="10" th:max="${#session.getAttribute('maximum_loan_amount')}"
+                               th:min="${#session.getAttribute('minimum_loan_amount')}"
+                               th:value="${#session.getAttribute('default_loan_amount')}"
+                               type="range" value="50">
                     </div>
                 </div>
 
@@ -138,7 +122,9 @@
                         <p class="secondary_color fw_4 d-flex justify-content-between align-items-center">Months to
                             Pay<a
                                     class="success_color fw_7" href="#" id="tenor"></a></p>
-                        <input class="slider" id="tenorRange" max="24" min="1" step="1" type="range" value="6">
+                        <input class="slider" id="tenorRange" max="24" min="1"
+                               th:max="${#session.getAttribute('maximum_loan_tenor')}" th:min="${#session.getAttribute('minimum_loan_tenor')}"
+                               step="1" type="range" value="6" th:value="${#session.getAttribute('default_loan_tenor')}">
                     </div>
                 </div>
 

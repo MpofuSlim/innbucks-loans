@@ -12,8 +12,21 @@ import zw.co.reikan.nanoloansweb.LoanResponse;
 import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRequest;
 import zw.co.reikan.nanoloansweb.loan.LoanServiceImpl;
+import zw.co.reikan.nanoloansweb.parameter.ParameterService;
 
 import javax.servlet.http.HttpSession;
+import java.math.BigDecimal;
+import java.util.Map;
+
+import static zw.co.reikan.nanoloansweb.loan.Constants.ADMI_FEE_RATE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.COMMISSION_RATE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.DEFAULT_LOAN_AMOUNT;
+import static zw.co.reikan.nanoloansweb.loan.Constants.DEFAULT_LOAN_TENOR;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MAXIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MAXIMUM_LOAN_TENOR;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MINIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MINIMUM_LOAN_TENOR;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MONTHLY_INTEREST_RATE;
 
 @Controller
 public class LoanApplicationController {
@@ -21,21 +34,42 @@ public class LoanApplicationController {
     @Autowired
     private LoanServiceImpl loanService;
 
+    @Autowired
+    private ParameterService parameterService;
+
     @GetMapping("/apply")
     public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber,
                                           @RequestParam("fname") String firstName,
                                           @RequestParam("lname") String lastName,
                                           @RequestParam("idNumber") String nationalId,
                                           Model model, HttpSession session) {
+
+
+        final Map<String, String> params = parameterService.getParameterValues(
+                COMMISSION_RATE,
+                ADMI_FEE_RATE,
+                MONTHLY_INTEREST_RATE,
+                MINIMUM_LOAN_TENOR,
+                MAXIMUM_LOAN_TENOR,
+                MINIMUM_LOAN_AMOUNT,
+                MAXIMUM_LOAN_AMOUNT,
+                DEFAULT_LOAN_AMOUNT,
+                DEFAULT_LOAN_TENOR);
+
         session.setAttribute("mobileNumber", mobileNumber);
         session.setAttribute("fname", firstName.toUpperCase());
         session.setAttribute("lname", lastName.toUpperCase());
         session.setAttribute("nationalId", nationalId);
 
-        // ToDo: Load from properties or database
-        session.setAttribute("commissionRate", 3.00);
-        session.setAttribute("adminFeeRate", 6.00);
-        session.setAttribute("monthlyInterestRate", 7.00);
+        session.setAttribute(COMMISSION_RATE, new BigDecimal(params.get(COMMISSION_RATE)));
+        session.setAttribute(ADMI_FEE_RATE, new BigDecimal(params.get(ADMI_FEE_RATE)));
+        session.setAttribute(MONTHLY_INTEREST_RATE, new BigDecimal(params.get(MONTHLY_INTEREST_RATE)));
+        session.setAttribute(MINIMUM_LOAN_TENOR, new BigDecimal(params.get(MINIMUM_LOAN_TENOR)));
+        session.setAttribute(MAXIMUM_LOAN_TENOR, new BigDecimal(params.get(MAXIMUM_LOAN_TENOR)));
+        session.setAttribute(MINIMUM_LOAN_AMOUNT, new BigDecimal(params.get(MINIMUM_LOAN_AMOUNT)));
+        session.setAttribute(MAXIMUM_LOAN_AMOUNT, new BigDecimal(params.get(MAXIMUM_LOAN_AMOUNT)));
+        session.setAttribute(DEFAULT_LOAN_AMOUNT, new BigDecimal(params.get(DEFAULT_LOAN_AMOUNT)));
+        session.setAttribute(DEFAULT_LOAN_TENOR, new BigDecimal(params.get(DEFAULT_LOAN_TENOR)));
 
         return "apply";
     }
