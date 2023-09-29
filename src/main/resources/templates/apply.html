@@ -112,7 +112,9 @@
 
                     <h1><a class="success_color" href="#" id="repayment_amount"></a></h1>
                     <h3 class="mt-2 fw_6">Your Monthly Deduction</h3>
-
+                    <p class="fw_4 mt-4"><a
+                            class="fw_7 clear-panel" data-dismiss="modal" data-target="#modalhome2"
+                            data-toggle="modal" href="#">Read our Terms & Conditions</a></p>
                 </div>
             </div>
         </div>
@@ -140,15 +142,13 @@
 
                 <div class="group-input input-field">
                     <label>National ID Number</label>
-                    <input class="search-field st1" disabled id="nationalId" placeholder="Format XXYYYYY"
-                           required
-                           th:value="${#session.getAttribute('nationalId')}"
-                           type="text" value="75354973D75">
+                    <input class="search-field st1" id="nationalId" placeholder="Format XXYYYYYYZYY"
+                           required type="text">
                 </div>
 
                 <div class="group-input input-field">
                     <label>EC Number</label>
-                    <input class="search-field st1" id="ecnumber" required type="text">
+                    <input class="search-field st1" id="ecnumber" placeholder="Format XXYYYYY" required type="text">
                 </div>
                 <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
                 <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
