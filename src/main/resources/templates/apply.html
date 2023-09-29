@@ -24,10 +24,14 @@
 
         .slider {
             -webkit-appearance: none;
-            width: 100%;
-            height: 15px;
-            border-radius: 5px;
-            background: #d3d3d3;
+            width: 75%;
+            height: 1px;
+            border-radius: 1px;
+            background: #717171;
+            border-style: dotted;
+            line-height: 1px;
+            border-bottom: none;
+            border-color: #717171;
             outline: none;
             opacity: 0.7;
             -webkit-transition: .2s;
@@ -58,7 +62,7 @@
     </style>
 </head>
 
-<body>
+<body class="bg_surface_color">
 <!-- preloader -->
 <div class="preloader js-preloader">
     <div class="loader loader-inner-1">
@@ -69,45 +73,23 @@
     </div>
 </div>
 <!-- /preload -->
-<div class="app-header st1">
+<div class="header is-fixed">
     <div class="tf-container">
-        <div class="tf-topbar d-flex justify-content-center align-items-center">
-            <a class="back-btn" href="#"><i class="icon-left white_color"></i></a>
-            <h3>Request Loan</h3>
+        <div class="tf-statusbar d-flex justify-content-center align-items-center">
+            <h3>Loan Calculator</h3>
         </div>
     </div>
 </div>
-<div class="card-secton topup-content">
-    <div class="tf-container">
-        <div class="tf-balance-box">
-            <div class="tf-spacing-16"></div>
-            <div class="tf-form">
 
-                <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
-                <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
-                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
-                       type="hidden">
-
-
-                <div class="group-input input-field">
-                    <p class="fw_4 d-flex justify-content-between align-items-center">
-                        Name
-                        <a
-                                class="success_color fw_7" href="#" th:text="${#session.getAttribute('fname')}"></a></p>
-                </div>
-
-                <div class="group-input input-field">
-                    <p class="fw_4 d-flex justify-content-between align-items-center">
-                        Surname
-                        <a
-                                class="success_color fw_7" href="#" th:text="${#session.getAttribute('lname')}"></a></p>
-                </div>
-
-                <div class="group-input input-field">
+<div id="app-wrap">
+    <div class="bill-payment-content">
+        <div class="tf-container">
+            <div class="wrapper-bill">
+                <div class="archive-top">
+                    <h1><a class="critical_color" href="#" id="amount"></a></h1>
+                    <h3 class="mt-2 fw_6">Amount to be Credited in InnBucks</h3>
+                    <p class="fw_4 mt-0">Adjust the loan amount using the slider</p>
                     <div class="slidecontainer">
-                        <p class="secondary_color fw_4 d-flex justify-content-between align-items-center">Net Amount
-                            Required <a
-                                    class="success_color fw_7" href="#" id="amount"></a></p>
                         <input class="slider" id="amountRange" max="2000"
                                min="50"
                                step="10" th:max="${#session.getAttribute('maximum_loan_amount')}"
@@ -115,46 +97,30 @@
                                th:value="${#session.getAttribute('default_loan_amount')}"
                                type="range" value="50">
                     </div>
-                </div>
 
-                <div class="group-input input-field">
+                    <h1><a class="critical_color" href="#" id="tenor"></a></h1>
+                    <h3 class="mt-2 fw_6">Repayment Period in Months</h3>
+                    <p class="fw_4 mt-2">Adjust the loan tenor using the slider</p>
                     <div class="slidecontainer">
-                        <p class="secondary_color fw_4 d-flex justify-content-between align-items-center">Months to
-                            Pay<a
-                                    class="success_color fw_7" href="#" id="tenor"></a></p>
                         <input class="slider" id="tenorRange" max="24" min="1"
-                               th:max="${#session.getAttribute('maximum_loan_tenor')}" th:min="${#session.getAttribute('minimum_loan_tenor')}"
-                               step="1" type="range" value="6" th:value="${#session.getAttribute('default_loan_tenor')}">
+                               step="1"
+                               th:max="${#session.getAttribute('maximum_loan_tenor')}"
+                               th:min="${#session.getAttribute('minimum_loan_tenor')}"
+                               th:value="${#session.getAttribute('default_loan_tenor')}" type="range"
+                               value="6">
                     </div>
-                </div>
 
-                <div class="group-input input-field">
-                    <p class="error_color fw_4 d-flex justify-content-between align-items-center">
-                        Monthly Deduction
-                        <a
-                                class="error_color fw_7" href="#" id="repayment_amount"></a></p>
-                </div>
+                    <h1><a class="success_color" href="#" id="repayment_amount"></a></h1>
+                    <h3 class="mt-2 fw_6">Your Monthly Deduction</h3>
 
-                <div class="group-input input-field">
-                    <label>National ID Number</label>
-                    <input class="search-field st1" disabled id="nationalId" placeholder="Format XXYYYYY"
-                           required
-                           th:value="${#session.getAttribute('nationalId')}"
-                           type="text" value="75354973D75">
                 </div>
-
-                <div class="group-input input-field">
-                    <label>EC Number</label>
-                    <input class="search-field st1" id="ecnumber" required type="text">
-                </div>
-
             </div>
         </div>
     </div>
-    <div class="bottom-navigation-bar">
-        <div class="tf-container">
-            <a class="tf-btn accent large" href="#" id="btn-popup-up">Continue</a>
-        </div>
+</div>
+<div class="bottom-navigation-bar st1 bottom-btn-fixed">
+    <div class="tf-container">
+        <a class="tf-btn accent large" href="#" id="btn-popup-up">Apply Now</a>
     </div>
 </div>
 
@@ -172,23 +138,22 @@
         <div class="main-topup">
             <div class="tf-container">
 
-                <ul class="info">
-                    <li><h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">
-                        Loan Amount <a
-                            class="on_surface_color fw_7"
-                            href="#" id="principal_amount"></a></h4></li>
-                    <li>
-                        <h4 class="secondary_color fw_4 d-flex justify-content-between align-items-center">
-                            Monthly
-                            Deduction<a
-                                class="secondary_color fw_7" href="#" id="repayment_amount_2"></a></h4>
-                    </li>
-                    <li><h3 class="secondary_color fw_4 d-flex justify-content-between align-items-center">
-                        InnBucks
-                        <a
-                                class="success_color fw_7" href="#" id="disbursed_amount"></a></h3>
-                    </li>
-                </ul>
+                <div class="group-input input-field">
+                    <label>National ID Number</label>
+                    <input class="search-field st1" disabled id="nationalId" placeholder="Format XXYYYYY"
+                           required
+                           th:value="${#session.getAttribute('nationalId')}"
+                           type="text" value="75354973D75">
+                </div>
+
+                <div class="group-input input-field">
+                    <label>EC Number</label>
+                    <input class="search-field st1" id="ecnumber" required type="text">
+                </div>
+                <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
+                <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
+                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
+                       type="hidden">
 
                 <div class="text-center">
                     <span class="fw_3">By signing below, you confirm understanding and acceptance of the <a
@@ -288,7 +253,7 @@
     // Handle range calculations
     var amountRange = document.getElementById("amountRange");
     var amount = document.getElementById("amount");
-    amount.innerHTML = amountRange.value;
+    amount.innerHTML = formatCurrency(amountRange.value);
 
     amountRange.oninput = function () {
         amount.innerHTML = formatCurrency(this.value);
@@ -396,6 +361,11 @@
 
         form.submit();
     }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        calculateLoan();
+    });
+
 </script>
 
 <script th:src="@{/js/jquery.min.js}" type="text/javascript"></script>
