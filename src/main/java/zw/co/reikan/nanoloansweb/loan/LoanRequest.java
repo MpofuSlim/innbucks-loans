@@ -33,6 +33,12 @@ public class LoanRequest implements Serializable {
         sb.append(", amount=").append(amount);
         sb.append(", ecnumber='").append(ecnumber).append('\'');
         sb.append(", mobileNumber='").append(mobileNumber).append('\'');
+        sb.append(", startDate=").append(startDate);
+        sb.append(", tenor=").append(tenor);
+        sb.append(", interestRate=").append(interestRate);
+        sb.append(", adminFeeRate=").append(adminFeeRate);
+        sb.append(", commissionRate=").append(commissionRate);
+        sb.append(", type=").append(type);
         sb.append('}');
         return sb.toString();
     }

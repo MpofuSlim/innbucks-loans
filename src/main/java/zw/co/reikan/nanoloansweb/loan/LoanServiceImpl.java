@@ -18,11 +18,12 @@ import static java.math.BigDecimal.ONE;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class LoanServiceImpl {
+public class LoanServiceImpl implements LoanService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private final LoanRepository loanRepository;
 
+    @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
@@ -68,6 +69,7 @@ public class LoanServiceImpl {
     }
 
 
+    @Override
     public LoanDetails calculate(LoanRequest request) {
 
         List<AmortizationEntry> schedule = new ArrayList<>();

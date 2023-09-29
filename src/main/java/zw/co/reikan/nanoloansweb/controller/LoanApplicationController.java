@@ -25,10 +25,18 @@ public class LoanApplicationController {
     public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber,
                                           @RequestParam("fname") String firstName,
                                           @RequestParam("lname") String lastName,
+                                          @RequestParam("idNumber") String nationalId,
                                           Model model, HttpSession session) {
         session.setAttribute("mobileNumber", mobileNumber);
-        session.setAttribute("fname", firstName);
-        session.setAttribute("lname", lastName);
+        session.setAttribute("fname", firstName.toUpperCase());
+        session.setAttribute("lname", lastName.toUpperCase());
+        session.setAttribute("nationalId", nationalId);
+
+        // ToDo: Load from properties or database
+        session.setAttribute("commissionRate", 3.00);
+        session.setAttribute("adminFeeRate", 6.00);
+        session.setAttribute("monthlyInterestRate", 7.00);
+
         return "apply";
     }
 
