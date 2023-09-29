@@ -6,14 +6,19 @@ import org.springframework.stereotype.Service;
 import zw.co.reikan.nanoloansweb.LoanResponse;
 import zw.co.reikan.nanoloansweb.Utils;
 import zw.co.reikan.nanoloansweb.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.nanoloansweb.parameter.ParameterService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static java.math.BigDecimal.ONE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.ADMI_FEE_RATE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.COMMISSION_RATE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.MONTHLY_INTEREST_RATE;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -22,6 +27,7 @@ public class LoanServiceImpl implements LoanService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private final LoanRepository loanRepository;
+    private final ParameterService parameterService;
 
     @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
@@ -29,6 +35,7 @@ public class LoanServiceImpl implements LoanService {
         log.info("Requesting loan approval: {}", loanRequest);
 
         final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+        final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId());
 
         boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
 
@@ -42,16 +49,20 @@ public class LoanServiceImpl implements LoanService {
         final LoanDetails loanDetails = calculate(loanRequest);
 
         final Loan loan = Loan.builder()
-                .amount(loanDetails.getPrincipal())
+                .principal(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
                 .ecNumber(formattedEcNumber)
+                .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(loanRequest.getMobileNumber())
                 .signature(loanRequest.getSignatureData())
-                .feeRate(loanRequest.getAdminFeeRate())
-                .interestRate(loanRequest.getInterestRate())
+                .feeAmount(loanDetails.getAdminFeeAmount())
+                .feeRate(loanDetails.getAdminFeeRate())
+                .interestRate(loanDetails.getInterestRate())
+                .monthlyInstallment(loanDetails.getRegularMonthlyInstallment())
                 .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
-                .commissionRate(loanRequest.getCommissionRate())
+                .commissionRate(loanDetails.getCommissionRate())
+                .tenor(loanDetails.getTenor())
                 .build();
 
         loanRepository.save(loan);
@@ -74,32 +85,42 @@ public class LoanServiceImpl implements LoanService {
 
         List<AmortizationEntry> schedule = new ArrayList<>();
 
-        BigDecimal principalLoanAmount = getPrincipalLoanAmount(request);
+        final Map<String, String> params = parameterService.getParameterValues(
+                COMMISSION_RATE,
+                ADMI_FEE_RATE,
+                MONTHLY_INTEREST_RATE);
 
-        BigDecimal adminFee = principalLoanAmount
-                .multiply(request.getAdminFeeRate())
+        BigDecimal adminFeeRate = new BigDecimal(params.get(ADMI_FEE_RATE));
+        BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
+        BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
+
+        BigDecimal principalLoanAmount = getPrincipalLoanAmount(request, adminFeeRate);
+
+        BigDecimal adminFeeAmount = principalLoanAmount
+                .multiply(adminFeeRate)
                 .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
-        BigDecimal interestRate = request.getInterestRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal interestRate = monthlyInterestRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
         BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
 
         BigDecimal installment = principalLoanAmount.multiply(interestRate).multiply(powerValue)
                 .divide(powerValue.subtract(ONE), 2, RoundingMode.HALF_UP);
 
-        BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFee);
+        BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFeeAmount);
 
-        BigDecimal commissionRate = request.getCommissionRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
-        BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRate), 2, RoundingMode.HALF_UP);
+        BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
         final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)
                 .tenor(request.getTenor())
-                .interestRate(request.getInterestRate())
+                .adminFeeAmount(adminFeeAmount)
+                .adminFeeRate(adminFeeRate)
+                .interestRate(monthlyInterestRate)
                 .disbursedAmount(disbursementAmount)
                 .amortization(schedule)
-                .adminFee(adminFee)
-                .commissionRate(request.getCommissionRate())
+                .commissionRate(commissionRate)
                 .regularMonthlyInstallment(installment)
                 .grossedMonthlyInstallment(grossedMonthlyPayment)
                 .build();
@@ -136,10 +157,9 @@ public class LoanServiceImpl implements LoanService {
         }
     }
 
-    private BigDecimal getPrincipalLoanAmount(LoanRequest request) {
+    private BigDecimal getPrincipalLoanAmount(LoanRequest request, BigDecimal adminFeeRate) {
         if (LoanAmountType.NET_OF_FEES == request.getType()) {
-            return request.getAmount().divide(ONE.subtract(request.getAdminFeeRate()
-                    .divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
+            return request.getAmount().divide(ONE.subtract(adminFeeRate.divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
         }
         return request.getAmount();
     }

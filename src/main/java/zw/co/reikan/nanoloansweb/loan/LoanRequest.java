@@ -18,13 +18,9 @@ public class LoanRequest implements Serializable {
     private BigDecimal amount;
     private String ecnumber;
     private String mobileNumber;
-    private LocalDate startDate;
     private int tenor;
-    private BigDecimal interestRate;
-    private BigDecimal adminFeeRate;
-    private BigDecimal commissionRate;
-    private LoanAmountType type;
-
+    private String nationalId;
+    private LoanAmountType type = LoanAmountType.NET_OF_FEES;
 
     @Override
     public String toString() {
@@ -33,11 +29,8 @@ public class LoanRequest implements Serializable {
         sb.append(", amount=").append(amount);
         sb.append(", ecnumber='").append(ecnumber).append('\'');
         sb.append(", mobileNumber='").append(mobileNumber).append('\'');
-        sb.append(", startDate=").append(startDate);
         sb.append(", tenor=").append(tenor);
-        sb.append(", interestRate=").append(interestRate);
-        sb.append(", adminFeeRate=").append(adminFeeRate);
-        sb.append(", commissionRate=").append(commissionRate);
+        sb.append(", nationalId='").append(nationalId).append('\'');
         sb.append(", type=").append(type);
         sb.append('}');
         return sb.toString();

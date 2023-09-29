@@ -90,7 +90,7 @@
                     <h3 class="mt-2 fw_6">Amount to be Credited in InnBucks</h3>
                     <p class="fw_4 mt-0">Adjust the loan amount using the slider</p>
                     <div class="slidecontainer">
-                        <input class="slider" id="amountRange" max="2000"
+                        <input class="slider" id="amountRange" name="amount" max="2000"
                                min="50"
                                step="10" th:max="${#session.getAttribute('maximum_loan_amount')}"
                                th:min="${#session.getAttribute('minimum_loan_amount')}"
@@ -102,7 +102,7 @@
                     <h3 class="mt-2 fw_6">Repayment Period in Months</h3>
                     <p class="fw_4 mt-2">Adjust the loan tenor using the slider</p>
                     <div class="slidecontainer">
-                        <input class="slider" id="tenorRange" max="24" min="1"
+                        <input class="slider" id="tenorRange" name="tenor" max="24" min="1"
                                step="1"
                                th:max="${#session.getAttribute('maximum_loan_tenor')}"
                                th:min="${#session.getAttribute('minimum_loan_tenor')}"
@@ -142,18 +142,20 @@
 
                 <div class="group-input input-field">
                     <label>National ID Number</label>
-                    <input class="search-field st1" id="nationalId" placeholder="Format XXYYYYYYZYY"
+                    <input class="search-field st1" id="nationalId" name="nationalId" placeholder="Format XXYYYYYYZYY"
                            required type="text">
                 </div>
 
                 <div class="group-input input-field">
                     <label>EC Number</label>
-                    <input class="search-field st1" id="ecnumber" placeholder="Format XXYYYYY" required type="text">
+                    <input class="search-field st1" id="ecnumber" name="ecnumber" placeholder="Format XXYYYYY" required type="text">
                 </div>
                 <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
                 <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
                 <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
                        type="hidden">
+                <input id="mobileNumber" th:value="${#session.getAttribute('mobileNumber')}" type="hidden">
+
 
                 <div class="text-center">
                     <span class="fw_3">By signing below, you confirm understanding and acceptance of the <a
@@ -167,7 +169,7 @@
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center">
-                    <a class="tf-btn accent large" onclick="saveSignature()"><i class="icon-secure1"></i> Continue</a>
+                    <a class="tf-btn accent large" onclick="saveSignature()"><i class="icon-secure1"></i> Apply</a>
                     <div>
                         <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
                     </div>
@@ -345,16 +347,19 @@
         signature_input.value = signatureData;
 
         var ecnumber_input = document.getElementById('ecnumber');
-        var amount_input = document.getElementById('amount');
+
+        var amount_input = document.getElementById('amountRange');
+
+
         var mobileNumber_input = document.getElementById('mobileNumber');
-        var payrollNumber_input = document.getElementById('payrollNumber');
+        var tenor_input = document.getElementById('tenorRange');
         var nationalId_input = document.getElementById('nationalId');
 
         form.appendChild(amount_input);
         form.appendChild(ecnumber_input);
         form.appendChild(mobileNumber_input);
         form.appendChild(signature_input);
-        form.appendChild(payrollNumber_input);
+        form.appendChild(tenor_input);
         form.appendChild(nationalId_input);
 
         document.body.appendChild(form);

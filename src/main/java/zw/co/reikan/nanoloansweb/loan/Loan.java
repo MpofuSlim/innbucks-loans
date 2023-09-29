@@ -28,8 +28,8 @@ import java.time.LocalDateTime;
 @Entity
 public class Loan extends BaseEntity {
 
-    @Column(name = "amount")
-    private BigDecimal amount;
+    @Column(name = "principal")
+    private BigDecimal principal;
 
     @Column(name = "disburse_amount")
     private BigDecimal disbursedAmount;
@@ -111,6 +111,12 @@ public class Loan extends BaseEntity {
 
     @Column(name = "grossed_monthly_deduction")
     private BigDecimal grossedMonthlyDeduction;
+
+    @Column(name = "repayment_start_date")
+    private LocalDate repaymentStartDate;
+
+    @Column(name = "repayment_end_date")
+    private LocalDate repaymentEndDate;
 
     public String getReference() {
         return String.format("%09d", getId());

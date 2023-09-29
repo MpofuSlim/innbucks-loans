@@ -4,6 +4,8 @@ import lombok.Builder;
 import lombok.Data;
 import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 
+import java.time.LocalDate;
+
 @Builder
 @Data
 public class LoanApprovalResponse {
@@ -11,4 +13,6 @@ public class LoanApprovalResponse {
     private String message;
     private String reference;
     private String batchNumber;
+    private LocalDate startDate;
+    private LocalDate endDate;
 }

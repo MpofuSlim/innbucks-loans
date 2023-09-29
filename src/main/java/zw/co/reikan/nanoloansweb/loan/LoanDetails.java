@@ -15,7 +15,8 @@ public class LoanDetails {
     private BigDecimal principal;
     private int tenor;
     private BigDecimal interestRate;
-    private BigDecimal adminFee;
+    private BigDecimal adminFeeAmount;
+    private BigDecimal adminFeeRate;
     private BigDecimal disbursedAmount;
     private BigDecimal regularMonthlyInstallment;
     private BigDecimal interestAmount;

@@ -1,5 +1,6 @@
 package zw.co.reikan.nanoloansweb.ndasenda;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,6 +13,7 @@ import java.util.List;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class NdasendaDeductionsBatchRequest {
     @JsonProperty("id")
     private String id;

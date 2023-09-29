@@ -35,7 +35,7 @@ public class LoanDisbursementServiceJob {
 
     private void processLoanApproval(Loan loan) {
         final DisbursementResponse response = disbursementService.disburseFunds(DisbursementRequest.builder()
-                .amount(loan.getAmount())
+                .amount(loan.getPrincipal())
                 .mobileNumber(loan.getMobileNumber())
                 .build());
         log.info("Updating loan disbursement status: {}", response);
@@ -45,7 +45,7 @@ public class LoanDisbursementServiceJob {
         loanRepository.save(loan);
 
         log.info("Dispatching loan disbursed sms notification: {}", response);
-        final String message = String.format(SMS_MSG, loan.getMobileNumber(), loan.getAmount());
+        final String message = String.format(SMS_MSG, loan.getMobileNumber(), loan.getPrincipal());
         notificationService.sendSms(loan.getMobileNumber(), message);
     }
 

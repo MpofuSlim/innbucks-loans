@@ -44,7 +44,11 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
         log.info("Requesting loan deduction");
 
-        final NdasendaDeduction deductionRequest = fromLoanRequest(request);
+        LocalDate loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
+        LocalDate endDate = loanStartDate.plusMonths(request.getTenor());
+        LocalDate loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
+
+        final NdasendaDeduction deductionRequest = fromLoanRequest(request, loanStartDate, loanEndDate);
 
         final List<NdasendaDeduction> deductions = List.of(deductionRequest);
 
@@ -66,6 +70,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         return LoanApprovalResponse.builder()
                 .status(LoanApprovalStatus.PROCESSING)
                 .batchNumber(deductionsBatchResponse.getId())
+                .startDate(loanStartDate)
+                .endDate(loanEndDate)
                 .build();
     }
 
@@ -159,17 +165,18 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         }
     }
 
-    private NdasendaDeduction fromLoanRequest(LoanApprovalRequest request) {
+    private NdasendaDeduction fromLoanRequest(LoanApprovalRequest request, LocalDate startDate, LocalDate endDate) {
         return NdasendaDeduction.builder()
                 .amountInCents(toCents(request.getMonthlyInstallment()))
                 .ecNumber(request.getEcnumber())
                 .idNumber(request.getIdNumber())
-                .startDate(formatDate(request.getStartDate()))
-                .endDate(formatDate(request.getEndDate()))
+                .startDate(formatDate(startDate))
+                .endDate(formatDate(endDate))
                 .type(NdasendaDeductionType.NEW)
                 .reference(request.getReference())
                 .build();
     }
+
 
     private int toCents(BigDecimal amount) {
         return amount.multiply(CENTS).intValue();

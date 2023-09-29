@@ -3,7 +3,7 @@ VALUES ('2023-09-20 11:40:27.180001', '2023-09-20 11:40:27.180001', '0', b'1', '
 
 
 INSERT INTO `bulkit_loans`.`parameter` (`created_date`, `last_modified_date`, `version`, `user_can_edit`, `name`, `val`)
-VALUES ('2023-09-20 11:40:27.180001', '2023-09-20 11:40:27.180001', '0', b'1', 'admin_fee_rate', '3');
+VALUES ('2023-09-20 11:40:27.180001', '2023-09-20 11:40:27.180001', '0', b'1', 'commission_rate', '3');
 
 INSERT INTO `bulkit_loans`.`parameter` (`created_date`, `last_modified_date`, `version`, `user_can_edit`, `name`, `val`)
 VALUES ('2023-09-20 11:40:27.180001', '2023-09-20 11:40:27.180001', '0', b'1', 'monthly_interest_rate', '7');
