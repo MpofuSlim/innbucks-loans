@@ -10,8 +10,10 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
 
     Optional<Loan> findByEcNumberAndLoanApprovalStatus(String ecNumber, LoanApprovalStatus loanApprovaStatus);
 
+    Optional<Loan> findTopByNationalIdNumberAndLoanApprovalStatusIn(String idNumber, List<LoanApprovalStatus> statuses);
+
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
 
     List<Loan> findByLoanApprovalStatusAndDisbursementStatus(LoanApprovalStatus loanApprovaStatus,
-                                                            LoanDisbursementStatus disbursementStatus);
+                                                             LoanDisbursementStatus disbursementStatus);
 }

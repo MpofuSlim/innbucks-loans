@@ -84,9 +84,10 @@ public class LoanApplicationController {
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }
 
-    @GetMapping("/success")
-    public String testSuccess(Model model, HttpSession session) {
-        model.addAttribute("internalReference", "test-reference");
-        return "success";
+
+    @GetMapping("/loanDetails")
+    public String loanDetails() {
+
+        return "loan-details";
     }
 }

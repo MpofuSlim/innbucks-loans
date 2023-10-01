@@ -165,4 +165,9 @@ public class LoanServiceImpl implements LoanService {
         return request.getAmount();
     }
 
+    public Optional<Loan> findLatestActiveLoan(final String nationalIdNumber) {
+        log.info("Finding loan by ID Number");
+        return loanRepository.findTopByNationalIdNumberAndLoanApprovalStatusIn(Utils.trimSpecialCharacters(nationalIdNumber),
+                LoanApprovalStatus.activeLoanStatuses);
+    }
 }

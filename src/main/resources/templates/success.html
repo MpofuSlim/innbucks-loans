@@ -9,29 +9,24 @@
     <title>Successful</title>
 
     <link rel="shortcut icon" th:href="@{/images/logo.png}"/>
-    <link rel="apple-touch-icon-precomposed" th:href="@{/images/logo.png}"/> <!-- Font -->
     <link rel="stylesheet" th:href="@{/fonts/fonts.css}"/> <!-- Icons -->
     <link rel="stylesheet" th:href="@{/fonts/icons-alipay.css}">
     <link rel="stylesheet" th:href="@{/styles/bootstrap.css}">
     <link rel="stylesheet" th:href="@{/styles/styles.css}" type="text/css"/>
-    <link data-pwa-version="set_in_manifest_and_pwa_js" rel="manifest" th:href="@{/manifest.json}">
-    <link rel="apple-touch-icon" sizes="192x192" th:href="@{/app/icons/icon-192x192.png}">
-
-
 </head>
 
 <body>
 
-<!-- preloade -->
-<div class="preload preload-container">
-    <div class="preload-logo">
-        <div class="spinner"></div>
+<div class="preloader js-preloader">
+    <div class="loader loader-inner-1">
+        <div class="loader loader-inner-2">
+            <div class="loader loader-inner-3">
+            </div>
+        </div>
     </div>
 </div>
-<!-- /preload -->
+
 <div class="wrap-success">
-
-
     <div class="success_box">
         <div class="icon-1 ani3">
             <span class="circle-box lg bg-circle check-icon"></span>
@@ -50,15 +45,13 @@
         <div class="content">
             <div class="top">
                 <h2>Lekker!</h2>
-                <p>Your Loan Application has been accepted and is being processed.!</p>
+                <p>Your Loan is now being processed!</p>
             </div>
             <div class="tf-spacing-16"></div>
             <div class="inner">
                 <p class="secondary_color fw_6">Reference</p>
                 <h1 th:text="${internalReference}"></h1>
             </div>
-
-
         </div>
         <a class="tf-btn accent large" href="home.html">Done</a>
 
