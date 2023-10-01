@@ -26,7 +26,6 @@
             width: 75%;
             height: 1px;
             border-radius: 1px;
-            background: #717171;
             border-style: dotted;
             line-height: 1px;
             border-bottom: none;
@@ -49,6 +48,22 @@
             border-radius: 50%;
             background: #04AA6D;
             cursor: pointer;
+        }
+
+        .amount::-webkit-slider-thumb {
+            background: #5BC99A !important;
+        }
+
+        .amount::-moz-range-thumb {
+            background: #5BC99A !important;
+        }
+
+        .tenor::-webkit-slider-thumb {
+            background: #8d2cba !important;
+        }
+
+        .tenor::-moz-range-thumb {
+            background: #8d2cba !important;
         }
 
         .slider::-moz-range-thumb {
@@ -85,11 +100,11 @@
         <div class="tf-container">
             <div class="wrapper-bill">
                 <div class="archive-top">
-                    <h1><a class="success_color" href="#" id="amount"></a></h1>
+                    <h1><a href="#" id="amount" style="color: #5BC99A"></a></h1>
                     <h3 class="mt-2 fw_6">InnBucks Credit</h3>
                     <p class="fw_4 mt-0">Use slider to adjust amount</p>
                     <div class="slidecontainer">
-                        <input class="slider" id="amountRange" max="2000" min="50"
+                        <input class="slider amount" id="amountRange" max="2000" min="50"
                                name="amount"
                                step="10" th:max="${#session.getAttribute('maximum_loan_amount')}"
                                th:min="${#session.getAttribute('minimum_loan_amount')}"
@@ -97,11 +112,11 @@
                                type="range" value="50">
                     </div>
 
-                    <h1><a class="critical_color" href="#" id="tenor"></a></h1>
+                    <h1><a href="#" id="tenor" style="color: #8d2cba"></a></h1>
                     <h3 class="mt-2 fw_6">Months To Repay</h3>
                     <p class="fw_4 mt-2">Use slider to adjust period</p>
                     <div class="slidecontainer">
-                        <input class="slider" id="tenorRange" max="24" min="1" name="tenor"
+                        <input class="slider tenor" id="tenorRange" max="24" min="1" name="tenor"
                                step="1"
                                th:max="${#session.getAttribute('maximum_loan_tenor')}"
                                th:min="${#session.getAttribute('minimum_loan_tenor')}"
@@ -109,7 +124,7 @@
                                value="6">
                     </div>
 
-                    <h1><a class="critical_color" href="#" id="repayment_amount"></a></h1>
+                    <h1><a href="#" id="repayment_amount" style="color: #d92e40"></a></h1>
                     <h3 class="mt-2 fw_6">Monthly Deduction</h3>
 
                 </div>

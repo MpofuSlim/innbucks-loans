@@ -39,15 +39,15 @@ public class LoanApplicationController {
     @Autowired
     private ParameterService parameterService;
 
-    @GetMapping("/apply")
+    @GetMapping("/loan")
     public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber,
                                           @RequestParam("fname") String firstName,
                                           @RequestParam("lname") String lastName,
                                           @RequestParam("idNumber") String nationalId,
                                           Model model, HttpSession session) {
 
-
         final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
+
         if (latestActiveLoan.isPresent()) {
             final Loan loan = latestActiveLoan.get();
             model.addAttribute("loan", loan);
@@ -85,7 +85,6 @@ public class LoanApplicationController {
 
     @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public String apply(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
-
         final String mobileNumber = String.valueOf(session.getAttribute("mobileNumber"));
         loanRequest.setMobileNumber(mobileNumber);
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
@@ -96,7 +95,6 @@ public class LoanApplicationController {
 
     @GetMapping("/loanDetails")
     public String loanDetails() {
-
         return "loan-details";
     }
 }
