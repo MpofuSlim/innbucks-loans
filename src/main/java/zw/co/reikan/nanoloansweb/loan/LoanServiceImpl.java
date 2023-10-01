@@ -62,6 +62,7 @@ public class LoanServiceImpl implements LoanService {
                 .monthlyInstallment(loanDetails.getRegularMonthlyInstallment())
                 .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
                 .commissionRate(loanDetails.getCommissionRate())
+                .disbursedAmount(loanDetails.getDisbursedAmount())
                 .tenor(loanDetails.getTenor())
                 .build();
 

@@ -75,12 +75,18 @@ public class LoanApplicationController {
     }
 
     @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public String saveSignature(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
+    public String apply(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
 
         final String mobileNumber = String.valueOf(session.getAttribute("mobileNumber"));
         loanRequest.setMobileNumber(mobileNumber);
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
+    }
+
+    @GetMapping("/success")
+    public String testSuccess(Model model, HttpSession session) {
+        model.addAttribute("internalReference", "test-reference");
+        return "success";
     }
 }

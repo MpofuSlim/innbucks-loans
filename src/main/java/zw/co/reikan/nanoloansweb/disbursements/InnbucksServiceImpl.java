@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.nanoloansweb.DisbursementRequest;
 import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
+import zw.co.reikan.nanoloansweb.MsisdnUtil;
 import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
 
 import java.math.BigDecimal;
@@ -36,9 +37,9 @@ public class InnbucksServiceImpl implements DisbursementService {
 
             InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
                     .amount(toCents(request.getAmount()))
-                    .destinationMsisdn(request.getMobileNumber())
+                    .destinationMsisdn(MsisdnUtil.formatMsisdnInternational(request.getMobileNumber()))
                     .reference(uniqueTxnReference)
-                    .narration(String.format("Loan disbursement - Ref: %s", request.getReference()))
+                    .narration(String.format("Ref: %s", request.getReference()))
                     .build();
 
             HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders(uniqueTxnReference));

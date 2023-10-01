@@ -1,13 +1,13 @@
 <ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="http://ehcache.org/ehcache.xsd">
 
-    <!-- Define your caches here -->
     <cache name="ndasenda-access-token-cache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
-        timeToIdleSeconds="1800" timeToLiveSeconds="21600" />
+        timeToLiveSeconds="21600" />
 
-
-    <!-- Define your caches here -->
     <cache name="parameterCache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
-        timeToIdleSeconds="1800" timeToLiveSeconds="21600" />
+        timeToLiveSeconds="21600" />
+
+    <cache name="innbucks-access-token-cache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
+        timeToLiveSeconds="720" />
 
 </ehcache>

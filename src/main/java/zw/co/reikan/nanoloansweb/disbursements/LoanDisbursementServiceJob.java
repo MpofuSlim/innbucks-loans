@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import zw.co.reikan.nanoloansweb.DisbursementRequest;
 import zw.co.reikan.nanoloansweb.DisbursementResponse;
 import zw.co.reikan.nanoloansweb.DisbursementService;
+import zw.co.reikan.nanoloansweb.loan.DisbursementStatus;
 import zw.co.reikan.nanoloansweb.loan.Loan;
 import zw.co.reikan.nanoloansweb.loan.LoanRepository;
 import zw.co.reikan.nanoloansweb.notifications.NotificationService;
@@ -21,7 +22,7 @@ import static zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus.APPROVED;
 @RequiredArgsConstructor
 public class LoanDisbursementServiceJob {
 
-    private static final String SMS_MSG = "Funds Alert: Your mobile money account %s has been credited with USD %s. For any queries, contact our support team.";
+    private static final String SMS_MSG = "Your mobile money account %s has been credited with $%s. Ref %s";
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
@@ -37,16 +38,21 @@ public class LoanDisbursementServiceJob {
         final DisbursementResponse response = disbursementService.disburseFunds(DisbursementRequest.builder()
                 .amount(loan.getPrincipal())
                 .mobileNumber(loan.getMobileNumber())
+                .reference(loan.getReference())
                 .build());
         log.info("Updating loan disbursement status: {}", response);
         loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
         loan.setDisbursementReference(response.getApprovalCode());
         loan.setDateDisbursed(LocalDateTime.now());
+
         loanRepository.save(loan);
 
-        log.info("Dispatching loan disbursed sms notification: {}", response);
-        final String message = String.format(SMS_MSG, loan.getMobileNumber(), loan.getPrincipal());
-        notificationService.sendSms(loan.getMobileNumber(), message);
+        if (DisbursementStatus.SUCCESS == response.getStatus()) {
+            log.info("Dispatching loan disbursed sms notification: {}", response);
+            final String message = String.format(SMS_MSG, loan.getMobileNumber(),
+                    loan.getDisbursedAmount(), loan.getReference());
+            notificationService.sendSms(loan.getMobileNumber(), message);
+        }
     }
 
 
