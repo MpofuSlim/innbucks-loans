@@ -5,6 +5,7 @@ import lombok.Data;
 import org.springframework.util.CollectionUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,6 +23,8 @@ public class LoanDetails {
     private BigDecimal interestAmount;
     private BigDecimal commissionRate;
     private BigDecimal grossedMonthlyInstallment;
+    private LocalDate startDate;
+
 
     public LoanDetails add(AmortizationEntry entry) {
         ensureAmortizations().add(entry);

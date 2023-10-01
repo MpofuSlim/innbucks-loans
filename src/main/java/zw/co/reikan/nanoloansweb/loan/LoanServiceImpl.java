@@ -35,7 +35,7 @@ public class LoanServiceImpl implements LoanService {
         log.info("Requesting loan approval: {}", loanRequest);
 
         final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
-        final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId());
+        final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
 
         boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
 
@@ -76,7 +76,7 @@ public class LoanServiceImpl implements LoanService {
     }
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber),
+        return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber).toUpperCase(),
                 LoanApprovalStatus.NEW);
     }
 
@@ -165,9 +165,11 @@ public class LoanServiceImpl implements LoanService {
         return request.getAmount();
     }
 
-    public Optional<Loan> findLatestActiveLoan(final String nationalIdNumber) {
+    public Optional<Loan> findLatestActiveLoanByNationalId(final String nationalIdNumber) {
         log.info("Finding loan by ID Number");
         return loanRepository.findTopByNationalIdNumberAndLoanApprovalStatusIn(Utils.trimSpecialCharacters(nationalIdNumber),
                 LoanApprovalStatus.activeLoanStatuses);
     }
+
+
 }

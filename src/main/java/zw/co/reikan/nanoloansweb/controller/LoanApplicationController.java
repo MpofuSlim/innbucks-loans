@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import zw.co.reikan.nanoloansweb.LoanResponse;
+import zw.co.reikan.nanoloansweb.loan.Loan;
 import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
 import zw.co.reikan.nanoloansweb.loan.LoanRequest;
 import zw.co.reikan.nanoloansweb.loan.LoanServiceImpl;
@@ -17,6 +18,7 @@ import zw.co.reikan.nanoloansweb.parameter.ParameterService;
 import javax.servlet.http.HttpSession;
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.Optional;
 
 import static zw.co.reikan.nanoloansweb.loan.Constants.ADMI_FEE_RATE;
 import static zw.co.reikan.nanoloansweb.loan.Constants.COMMISSION_RATE;
@@ -44,6 +46,13 @@ public class LoanApplicationController {
                                           @RequestParam("idNumber") String nationalId,
                                           Model model, HttpSession session) {
 
+
+        final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
+        if (latestActiveLoan.isPresent()) {
+            final Loan loan = latestActiveLoan.get();
+            model.addAttribute("loan", loan);
+            return "loan-details";
+        }
 
         final Map<String, String> params = parameterService.getParameterValues(
                 COMMISSION_RATE,
