@@ -77,7 +77,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
     public void processDeductionResponses(LocalDate today) {
         log.info("Process deduction responses for: {}", today);
-        findBatchResponsesByDate(today, today).parallelStream()
+        findBatchResponsesByDate(today.minusDays(2), today)
+                .stream()
                 .map(NdasendaDeductionsBatchRequest::getId)
                 .map(this::findDeductionResponsesByBatchId)
                 .flatMap(responses -> responses.stream())

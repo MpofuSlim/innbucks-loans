@@ -46,6 +46,7 @@ public class LoanApprovalServiceJob {
                 .monthlyInstallment(loan.getGrossedMonthlyDeduction())
                 .ecnumber(loan.getEcNumber())
                 .idNumber(loan.getNationalIdNumber())
+                .reference(loan.getReference())
                 .tenor(loan.getTenor())
                 .build());
 
