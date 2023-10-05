@@ -42,15 +42,17 @@
                          <span class="circle-box lg bg-circle check-icon">
 
                          </span>
-                    <h1><a class="success_color" href="#" th:text="${loan.principal}">$ 21.5</a></h1>
+                    <h1><a class="success_color" href="#" th:text="${loan.disbursedAmount}">$ 21.5</a></h1>
                     <h3 class="mt-2 fw_6" th:text="${loan.reference}"></h3>
                 </div>
                 <div class="dashed-line"></div>
                 <div class="archive-bottom">
                     <h2 class="text-center">Summary</h2>
                     <ul>
-                        <li class="list-info-bill">Start Date <span th:text="${loan.repaymentStartDate}"></span></li>
-                        <li class="list-info-bill">End Date <span th:text="${loan.repaymentEndDate}"></span></li>
+                        <li class="list-info-bill" th:if="${loan.repaymentStartDate != null}">Start Date <span
+                                th:text="${loan.repaymentStartDate}"></span></li>
+                        <li class="list-info-bill" th:if="${loan.repaymentEndDate != null}">End Date <span
+                                th:text="${loan.repaymentEndDate}"></span></li>
                         <li class="list-info-bill">Approval Status <span
                                 th:text="${loan.loanApprovalStatus}"></span>
                         </li>

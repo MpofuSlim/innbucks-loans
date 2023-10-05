@@ -44,6 +44,7 @@ public class LoanApplicationController {
                                           @RequestParam("fname") String firstName,
                                           @RequestParam("lname") String lastName,
                                           @RequestParam("idNumber") String nationalId,
+                                          @RequestParam("dob") String dob,
                                           Model model, HttpSession session) {
 
         final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
@@ -69,6 +70,7 @@ public class LoanApplicationController {
         session.setAttribute("fname", firstName.toUpperCase());
         session.setAttribute("lname", lastName.toUpperCase());
         session.setAttribute("nationalId", nationalId);
+        session.setAttribute("dob", dob);
 
         session.setAttribute(COMMISSION_RATE, new BigDecimal(params.get(COMMISSION_RATE)));
         session.setAttribute(ADMI_FEE_RATE, new BigDecimal(params.get(ADMI_FEE_RATE)));

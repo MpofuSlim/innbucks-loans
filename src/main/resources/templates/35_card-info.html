@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- Mobile Specific Metas -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>card info</title>
+     <!-- Favicon and Touch Icons  -->
+     <link rel="shortcut icon" href="images/logo.png" />
+     <link rel="apple-touch-icon-precomposed" href="images/logo.png" />
+    <!-- Font -->
+    <link rel="stylesheet" href="fonts/fonts.css" />
+    <!-- Icons -->
+    <link rel="stylesheet" href="fonts/icons-alipay.css">
+    <link rel="stylesheet" href="styles/bootstrap.css">
+    <link rel="stylesheet" href="styles/data-picker.min.css">
+
+    <link rel="stylesheet" type="text/css" href="styles/styles.css" />
+    <link rel="manifest" href="_manifest.json" data-pwa-version="set_in_manifest_and_pwa_js">
+    <link rel="apple-touch-icon" sizes="192x192" href="app/icons/icon-192x192.png">
+</head>
+
+<body>
+    <!-- preloade -->
+    <div class="preload preload-container">
+        <div class="preload-logo">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    <!-- /preload -->
+    <div class="header">
+        <div class="tf-container">
+            <div class="tf-statusbar d-flex justify-content-center align-items-center">
+                <a href="#" class="back-btn"> <i class="icon-left"></i> </a>
+                <h3>Add new card</h3>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3">
+        <div class="tf-container">
+             <h3 class="fw_6">Input your card info to link</h3>
+             <form class="tf-form mt-5">
+                
+                <div class="group-input">
+                    <label>Card Number</label>
+                    <input type="text" placeholder="0123  4546  0000  2133" value="0123  4546  0000  2133">
+                    <div class="credit-card">
+                        <i class="icon-bankgroup"></i>
+                    </div>
+    
+                </div>
+                <div class="group-input">
+                    <label for="">Account Name</label>
+                    <input type="text" value="Themesflat">
+                </div>
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Expiry Date</label>
+                        <div class="datepicker date">
+                            <input type="text" placeholder="MM/YY">
+                            <span class="input-group-append"><i class="icon-calendar2"></i></span>
+                        </div>
+                    </div>
+                    <div class="group-input">
+                        <label>CVV</label>
+                        <input type="text" placeholder="CVV">
+                        <i class="icon-info"></i>
+                    </div>
+                </div>
+                <div class="bottom-navigation-bar bottom-btn-fixed st2">
+                    <a class="tf-btn accent large" id="btn-popup-down">Continue</a>
+                </div>
+
+             </form>
+
+        </div>
+    </div>
+    
+    <div class="tf-panel down">
+        <div class="panel_overlay"></div>
+        <div class="panel-box panel-down">
+            <div class="header">
+                <div class="tf-container">
+                    <div class="tf-statusbar br-none d-flex justify-content-center align-items-center">
+                        <a href="#" class="clear-panel"> <i class="icon-close1"></i> </a>
+                        <h3>Verification OTP</h3>
+                    </div>
+                    
+                </div>
+            </div>
+            
+            <div class="mt-5">
+                <div class="tf-container">
+                    <form class="tf-form tf-form-verify" action="37_successful.html">
+                        <div class="d-flex group-input-verify">
+                                <input type="tel" maxlength="1" pattern="[0-9]" class="input-verify" value="1">
+                                <input type="tel" maxlength="1" pattern="[0-9]" class="input-verify" value="2">
+                                <input type="tel" maxlength="1" pattern="[0-9]" class="input-verify" value="3">
+                                <input type="tel" maxlength="1" pattern="[0-9]" class="input-verify">
+                        </div>
+                        <div class="text-send-code">
+                                <p class="fw_4">A code has been sent to your phone</p>
+                                <p class="primary_color fw_7">Resend in&nbsp;<span class="js-countdown" data-timer="60" data-labels=" :  ,  : , : , "></span></p>
+                        </div>
+                        <div class="mt-7 mb-6">
+                            <button type="submit" class="tf-btn accent large">Continue</button>
+                        </div>
+                        
+                    </form>
+                </div>
+        
+            </div>
+        
+        </div>
+    </div>
+
+
+
+    <script type="text/javascript" src="javascript/jquery.min.js"></script>
+    <script type="text/javascript" src="javascript/bootstrap.min.js"></script>
+    <script type="text/javascript" src="javascript/data-picker.min.js"></script>
+    <script type="text/javascript" src="javascript/custom-date.js"></script>
+    <script type="text/javascript" src="javascript/main.js"></script>
+
+</body>
+
+</html>
