@@ -1,6 +1,7 @@
 package zw.co.reikan.nanoloansweb.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import zw.co.reikan.nanoloansweb.EncryptionUtils;
 import zw.co.reikan.nanoloansweb.LoanResponse;
 import zw.co.reikan.nanoloansweb.loan.Loan;
 import zw.co.reikan.nanoloansweb.loan.LoanApprovalStatus;
@@ -29,6 +31,7 @@ import static zw.co.reikan.nanoloansweb.loan.Constants.MAXIMUM_LOAN_TENOR;
 import static zw.co.reikan.nanoloansweb.loan.Constants.MINIMUM_LOAN_AMOUNT;
 import static zw.co.reikan.nanoloansweb.loan.Constants.MINIMUM_LOAN_TENOR;
 import static zw.co.reikan.nanoloansweb.loan.Constants.MONTHLY_INTEREST_RATE;
+import static zw.co.reikan.nanoloansweb.loan.Constants.PAYLOAD;
 
 @Controller
 public class LoanApplicationController {
@@ -39,13 +42,23 @@ public class LoanApplicationController {
     @Autowired
     private ParameterService parameterService;
 
+    @Value("${encryption-key}")
+    private String decryptionKey;
+
     @GetMapping("/loan")
-    public String showLoanApplicationPage(@RequestParam("mobileNumber") String mobileNumber,
-                                          @RequestParam("fname") String firstName,
-                                          @RequestParam("lname") String lastName,
-                                          @RequestParam("idNumber") String nationalId,
-                                          @RequestParam("dob") String dob,
-                                          Model model, HttpSession session) {
+    public String showLoanApplicationPage(@RequestParam("payload") String payload,
+                                          Model model, HttpSession session) throws Exception {
+
+
+
+        String decrypt = EncryptionUtils.decrypt(payload, decryptionKey);
+
+        final String[] data = decrypt.split("\\|");
+        String firstName = data[0];
+        String lastName = data[1];
+        String nationalId = data[2];
+        String dob = data[3];
+        String mobileNumber = data[4];
 
         final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
 
@@ -81,6 +94,7 @@ public class LoanApplicationController {
         session.setAttribute(MAXIMUM_LOAN_AMOUNT, new BigDecimal(params.get(MAXIMUM_LOAN_AMOUNT)));
         session.setAttribute(DEFAULT_LOAN_AMOUNT, new BigDecimal(params.get(DEFAULT_LOAN_AMOUNT)));
         session.setAttribute(DEFAULT_LOAN_TENOR, new BigDecimal(params.get(DEFAULT_LOAN_TENOR)));
+        session.setAttribute(PAYLOAD, payload);
 
         return "apply";
     }

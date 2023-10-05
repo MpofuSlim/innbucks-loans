@@ -10,4 +10,5 @@ public interface Constants {
     String MAXIMUM_LOAN_AMOUNT = "maximum_loan_amount";
     String DEFAULT_LOAN_AMOUNT = "default_loan_amount";
     String DEFAULT_LOAN_TENOR = "default_loan_tenor";
+    String PAYLOAD = "payload";
 }

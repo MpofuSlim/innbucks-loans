@@ -6,7 +6,7 @@
     <meta content="IE=edge" http-equiv="X-UA-Compatible">
     <!-- Mobile Specific Metas -->
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport"/>
-    <title>top up</title>
+    <title>Apply</title>
     <!-- Favicon and Touch Icons  -->
     <link rel="shortcut icon" th:href="@{/images/logo.png}"/>
     <link rel="apple-touch-icon-precomposed" th:href="@{/images/logo.png}"/> <!-- Font -->
@@ -17,39 +17,6 @@
     <link rel="apple-touch-icon" sizes="192x192" th:href="@{/app/icons/icon-192x192.png}">
 
     <style>
-        .slidecontainer {
-            width: 100%;
-        }
-
-        .slider {
-            -webkit-appearance: none;
-            width: 75%;
-            height: 1px;
-            border-radius: 1px;
-            border-style: dotted;
-            line-height: 1px;
-            border-bottom: none;
-            border-color: #717171;
-            outline: none;
-            opacity: 0.7;
-            -webkit-transition: .2s;
-            transition: opacity .2s;
-        }
-
-        .slider:hover {
-            opacity: 1;
-        }
-
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 25px;
-            height: 25px;
-            border-radius: 50%;
-            background: #04AA6D;
-            cursor: pointer;
-        }
-
         .amount::-webkit-slider-thumb {
             background: #5BC99A !important;
         }
@@ -66,22 +33,10 @@
             background: #8d2cba !important;
         }
 
-        .slider::-moz-range-thumb {
-            width: 25px;
-            height: 25px;
-            border-radius: 50%;
-            background: #04AA6D;
-            cursor: pointer;
-        }
-
         .errorText {
             color: red;
             margin-top: 5px;
             display: none;
-        }
-
-        .unticked-tc {
-            color: red;
         }
 
         .errorInput {
@@ -161,7 +116,8 @@
                 <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
                        type="hidden">
                 <input id="mobileNumber" th:value="${#session.getAttribute('mobileNumber')}" type="hidden">
-                <input id="nationalId" name="nationalId" th:value="${#session.getAttribute('nationalId')}" type="hidden">
+                <input id="nationalId" name="nationalId" th:value="${#session.getAttribute('nationalId')}"
+                       type="hidden">
                 <input id="minimum_loan_amount" th:value="${#session.getAttribute('minimum_loan_amount')}"
                        type="hidden">
                 <input id="maximum_loan_amount" th:value="${#session.getAttribute('maximum_loan_amount')}"
@@ -170,7 +126,7 @@
                 <input id="minimum_loan_tenor" th:value="${#session.getAttribute('minimum_loan_tenor')}" type="hidden">
 
                 <div class="bottom-navigation-bar bottom-btn-fixed st2">
-                    <button class="tf-btn accent large" id="btnSubmitApplication" type="button">Apply
+                    <button class="tf-btn accent large" id="btn-popup-down" type="button">Apply
                     </button>
                 </div>
 
@@ -213,6 +169,40 @@
         </div>
     </div>
 </div>
+
+<div class="tf-panel down">
+    <div class="panel_overlay"></div>
+    <div class="panel-box panel-down">
+        <div class="header">
+            <div class="tf-container">
+                <div class="tf-statusbar d-flex justify-content-center align-items-center">
+                    <a class="clear-panel" href="#"> <i class="icon-close1"></i> </a>
+                    <h3>Please Confirm</h3>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="mt-5">
+            <div class="tf-container">
+                <form action="50_successful.html" class="tf-form-verify">
+                    <div class="text-send-code">
+                        <p class="fw_4">
+                            Are you certain you want to proceed with applying for this loan?</p>
+                    </div>
+                    <div class="mt-7 mb-6">
+                        <button class="tf-btn accent" id="btnSubmitApplication"
+                                type="button">Proceed
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+
+        </div>
+    </div>
+</div>
+
 
 <script th:src="@{/js/signature_pad.min.js}"></script>
 
@@ -324,8 +314,6 @@
         if (!valid) {
             return;
         }
-
-        alert('submitting form:' + valid);
 
         var form = document.createElement('form');
         form.method = 'POST';
