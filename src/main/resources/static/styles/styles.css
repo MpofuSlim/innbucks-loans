@@ -2624,7 +2624,6 @@ input[type=radio] {
 }
 
 .wrap-success {
-  background: #533dea;
   position: relative;
   overflow: hidden;
   height: 100vh;
