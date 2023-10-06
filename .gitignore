@@ -34,3 +34,6 @@ build/
 /mvnw.cmd
 /mvnw
 /.mvn/
+/loans-embedded-ui/logs/
+/loans-embedded-ui/.mvn/
+/loans-core/logs/
