@@ -50,8 +50,9 @@ public class LoanApplicationController {
     public String showLoanApplicationPage(@RequestParam("payload") String payload,
                                           Model model, HttpSession session) throws Exception {
 
+        final String formattedPayload = payload.replaceAll("\n", "");
 
-        String decrypt = EncryptionUtils.decrypt(payload, decryptionKey);
+        String decrypt = EncryptionUtils.decrypt(formattedPayload, decryptionKey);
 
         final String[] data = decrypt.split("\\|");
         String firstName = data[0];
