@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import zw.co.reikan.loans.core.EncryptionUtils;
 import zw.co.reikan.loans.core.LoanResponse;
+import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanRequest;
@@ -57,7 +58,7 @@ public class LoanApplicationController {
         final String[] data = decrypt.split("\\|");
         String firstName = data[0];
         String lastName = data[1];
-        String nationalId = data[2];
+        String nationalId = Utils.trimSpecialCharacters(data[2]);
         String dob = data[3];
         String mobileNumber = data[4];
 

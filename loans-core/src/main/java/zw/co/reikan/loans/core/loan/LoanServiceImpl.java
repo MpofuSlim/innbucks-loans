@@ -10,6 +10,8 @@ import zw.co.reikan.loans.core.parameter.ParameterService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +30,11 @@ public class LoanServiceImpl implements LoanService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private final LoanRepository loanRepository;
     private final ParameterService parameterService;
+    private final LoanMapper loanMapper;
+
+    public List<LoanDto> findByDateCreated(LocalDate fromDate, LocalDate toDate) {
+        return loanMapper.fromLoans(loanRepository.findByCreatedDateBetween(fromDate.atStartOfDay(), toDate.atTime(LocalTime.MAX)));
+    }
 
     @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
