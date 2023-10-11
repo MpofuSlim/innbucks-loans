@@ -1,4 +1,4 @@
-package zw.co.reikan.loans.loansapi;
+package zw.co.reikan.loans;
 
 import zw.co.reikan.loans.core.loan.LoanDto;
 
