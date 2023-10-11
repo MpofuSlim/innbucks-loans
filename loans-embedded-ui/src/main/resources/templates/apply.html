@@ -215,10 +215,15 @@
         penColor: "rgb(66, 133, 244)"
     });
 
+    signaturePad.addEventListener("endStroke", () => {
+        ensureValidFormInput();
+    }, {once: false});
+
     var button = document.getElementById('clear_signature');
 
     button.onclick = function () {
         signaturePad.clear();
+        ensureValidFormInput();
     };
 
     function calculateLoan() {
@@ -271,8 +276,10 @@
         return repayment.toFixed(2);
     }
 
-    function saveSignature() {
-        var signatureData = signaturePad.toDataURL();
+
+    function ensureValidFormInput() {
+
+        $('#btn-popup-down').hide();
 
         var valid = true;
 
@@ -280,15 +287,14 @@
         $(".errorText").hide();
         $(".terms_and_conditions").removeClass("critical_color");
 
-        if (signaturePad.isEmpty()) {
-            $("#canvas_wrapper").addClass("errorInput");
+        if (!validateEcNumber()) {
             valid = false;
         }
-        var checkbox = document.getElementById("termsAndConditions");
-        if (!checkbox.checked) {
-            $("#termsAndConditions").addClass("errorInput");
-            $(".terms_and_conditions").addClass("critical_color");
+
+        if (isNaN(parseFloat($('#amount').val()))) {
             valid = false;
+            $("#amount").addClass("errorInput");
+            $("#errorAmount").show();
         }
 
         if (isNaN(parseInt($('#tenor').val()))) {
@@ -297,19 +303,65 @@
             valid = false;
         }
 
-        if (isNaN(parseFloat($('#amount').val()))) {
-            $("#amount").addClass("errorInput");
-            $("#errorAmount").show();
+        var checkbox = document.getElementById("termsAndConditions");
+        if (!checkbox.checked) {
+            $("#termsAndConditions").addClass("errorInput");
+            $(".terms_and_conditions").addClass("critical_color");
             valid = false;
         }
 
-        if (!validateEcNumber()) {
+        if (signaturePad.isEmpty()) {
+            $("#canvas_wrapper").addClass("errorInput");
             valid = false;
         }
 
         if (!valid) {
             return;
         }
+
+        $('#btn-popup-down').show();
+    }
+
+
+    function saveSignature() {
+        var signatureData = signaturePad.toDataURL();
+
+        // var valid = true;
+        //
+        // $(".errorInput").removeClass("errorInput");
+        // $(".errorText").hide();
+        // $(".terms_and_conditions").removeClass("critical_color");
+        //
+        // if (signaturePad.isEmpty()) {
+        //     $("#canvas_wrapper").addClass("errorInput");
+        //     valid = false;
+        // }
+        // var checkbox = document.getElementById("termsAndConditions");
+        // if (!checkbox.checked) {
+        //     $("#termsAndConditions").addClass("errorInput");
+        //     $(".terms_and_conditions").addClass("critical_color");
+        //     valid = false;
+        // }
+        //
+        // if (isNaN(parseInt($('#tenor').val()))) {
+        //     $("#tenor").addClass("errorInput");
+        //     $("#tenorError").show();
+        //     valid = false;
+        // }
+        //
+        // if (isNaN(parseFloat($('#amount').val()))) {
+        //     $("#amount").addClass("errorInput");
+        //     $("#errorAmount").show();
+        //     valid = false;
+        // }
+        //
+        // if (!validateEcNumber()) {
+        //     valid = false;
+        // }
+        //
+        // if (!valid) {
+        //     return;
+        // }
 
         var form = document.createElement('form');
         form.method = 'POST';
@@ -340,6 +392,10 @@
 
         form.submit();
     }
+
+    $('form :input').on("change", function () {
+        ensureValidFormInput();
+    });
 
     $("#tenor").on("keyup", function (event) {
         $(this).removeClass("errorInput");
