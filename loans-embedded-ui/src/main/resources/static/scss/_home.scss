@@ -1,0 +1,215 @@
+.app-header {
+    background: url(../images/banner/banner-home.png);
+    padding: 16px 0px 84px;
+    margin: 0px -16px;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center center;
+    position: relative;
+    border-bottom-right-radius: 80px;
+    border-bottom-left-radius: 80px;
+
+    .tf-topbar {
+        padding: 0px 16px;
+        .user-info {
+            p {
+                font-size: 10px;
+                line-height: 16px;
+            }
+        }
+
+        .icon-notification1 {
+            color: $white_color;
+            font-size: 28px;
+        }
+    }
+    &.st1 {
+        padding: 12px 0px 96px;
+    }
+}
+
+.tf-topbar {
+    position: relative;
+    .back-btn,
+    .clear-panel {
+        position: absolute;
+        left: 16px;
+    }
+    .user-info {
+        gap: 8px;
+        img {
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+        }
+    }
+}
+.card-secton {
+    position: relative;
+    margin-top: -63px;
+}
+
+.bottom-navigation-bar {
+    position: fixed;
+    z-index: 1000;
+    background: $white_color;
+    width: 100%;
+    min-height: 60px;
+    bottom: 0;
+    box-shadow: $tf-navigation-bar_shadow;
+    &.st1 {
+        background: $surface_color;
+        box-shadow: none;
+    }
+    &.bottom-btn-fixed {
+        padding: 16px 0px;
+        box-shadow: none;
+    }
+    &.st2 {
+        width: unset;
+        left: 16px;
+        right: 16px;
+    }
+}
+
+.recipient-tes {
+    .recipient-box {
+        width: 64px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        margin-left: -6px;
+        cursor: pointer;
+        img {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+        }
+    }
+}
+.banner-tes {
+    .swiper-slide {
+        transform: scaleY(0.9);
+        -webkit-transform: scaleY(0.9);
+        transition: 0.5s;
+    }
+    img {
+        // width: 290px;
+        height: 162px;
+        border-radius: 8px;
+    }
+}
+#modalhome1 {
+    .modal-content {
+        max-width: 273px;
+
+        .heading {
+            border-bottom: 1px solid $line_color;
+            padding: 16px;
+            h4 {
+                padding: 0px 30px;
+            }
+        }
+        .bottom {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            a {
+                padding: 11px 16px;
+                font-size: 16px;
+                line-height: 24px;
+                text-align: center;
+                &:first-child {
+                    border-right: 1px solid $line_color;
+                }
+            }
+        }
+    }
+}
+#modalhome2 {
+    .modal-content {
+        padding: 20px;
+        max-width: 335px;
+        .heading {
+            h2 {
+                font-size: 22px;
+                line-height: 30px;
+            }
+            .cb {
+                .tf-checkbox.st1 {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 5px;
+                    display: block;
+                    &:checked {
+                        background: $primary_color;
+                    }
+                    &::before {
+                        height: 9px;
+                    }
+                }
+            }
+        }
+    }
+}
+#modal-topup {
+    background-color: $white_color;
+    .modal-dialog {
+        pointer-events: all;
+    }
+}
+.box-service {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 20px 12px;
+
+    li {
+        a {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+            text-align: center;
+        }
+        .icon-box {
+            width: 44px;
+            height: 44px;
+            border-radius: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    }
+}
+.tf-panel {
+    &.repicient {
+        .panel-box {
+            border-radius: unset;
+            top: 0;
+            .content-tab {
+                height: 100vh;
+                overflow-y: scroll;
+                overflow-x: hidden;
+                background: $white_color;
+                scrollbar-width: thin;
+                scrollbar-color: $white_color;
+                &::-webkit-scrollbar {
+                    width: 0 !important;
+                    display: none;
+                }
+                &::-webkit-scrollbar-thumb,
+                &:-webkit-scrollbar-track {
+                    background-color: transparent;
+                }
+            }
+            .clear-panel {
+                min-width: 44px;
+                height: 50px;
+                display: flex;
+                align-items: center;
+                font-size: 16px;
+                color: #1e1e1e;
+            }
+        }
+    }
+}

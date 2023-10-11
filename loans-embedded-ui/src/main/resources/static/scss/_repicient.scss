@@ -1,0 +1,111 @@
+.header-st2 {
+    .tf-statusbar {
+        border-bottom: none;
+        a {
+            position: unset;
+
+            i {
+                font-size: 24px;
+                color: $on_surface_color;
+            }
+        }
+    }
+}
+.box-user {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+   
+    p {
+        font-size: 10px;
+        font-weight: 600;
+        color: $on_surface_color;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        .icon-copy1 {
+            font-size: 16px;
+        }
+    }
+ 
+}
+.box-avatar {
+    width: 96px;
+    height: 96px;
+    position: relative;
+    display: flex;
+    img {
+        border-radius: 50%;
+    }
+    span {
+        position: absolute;
+        top: 60px;
+        right: -5px;
+        width: 24px;
+        height: 24px;
+        font-size: 24px;
+        background: $secondary_color;
+        border-radius: 50%;
+        color: $white_color;
+    }
+}
+.button-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-column-gap: 12px;
+    li {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 10px;
+        line-height: 16px;
+        font-weight: 400;
+        color: $on_surface_color;
+
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: $primary_color;
+            i {
+                font-size: 15px;
+                color: $white_color;
+            }
+        }
+    }
+}
+.panel-detail {
+    .heading {
+        a {
+            &:first-child {
+                border-bottom: 1px solid $line_br_color;
+            }
+        }
+    }
+}
+.edit-repicient.input-field {
+    > input {
+        background: none;
+        padding: 11px 32px;
+        border-radius: unset;
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        &:focus {
+            border-color: $line_br_color;
+        }
+    }
+    .icon {
+        position: absolute;
+        font-size: 18px;
+        color: $on_surface_color;
+        top: 11px;
+    }
+    .icon-clear {
+        top: 12px;
+    }
+}

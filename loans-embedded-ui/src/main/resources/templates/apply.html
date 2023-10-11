@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible">
+    <!-- Mobile Specific Metas -->
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport"/>
+    <title>Loan Application</title>
+    <!-- Favicon and Touch Icons  -->
+    <link rel="shortcut icon" th:href="@{/images/logo.png}"/>
+    <link rel="apple-touch-icon-precomposed" th:href="@{/images/logo.png}"/> <!-- Font -->
+    <link rel="stylesheet" th:href="@{/fonts/fonts.css}"/> <!-- Icons -->
+    <link rel="stylesheet" th:href="@{/fonts/icons-alipay.css}">
+    <link rel="stylesheet" th:href="@{/styles/bootstrap.css}">
+    <link rel="stylesheet" th:href="@{/styles/styles.css}" type="text/css"/>
+    <link rel="apple-touch-icon" sizes="192x192" th:href="@{/app/icons/icon-192x192.png}">
+
+    <style>
+        .amount::-webkit-slider-thumb {
+            background: #5BC99A !important;
+        }
+
+        .amount::-moz-range-thumb {
+            background: #5BC99A !important;
+        }
+
+        .tenor::-webkit-slider-thumb {
+            background: #8d2cba !important;
+        }
+
+        .tenor::-moz-range-thumb {
+            background: #8d2cba !important;
+        }
+
+        .errorText {
+            color: red;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .errorInput {
+            border-color: red !important;
+        }
+    </style>
+</head>
+
+<body>
+<!-- preloader -->
+<div class="preloader js-preloader">
+    <div class="loader loader-inner-1">
+        <div class="loader loader-inner-2">
+            <div class="loader loader-inner-3">
+            </div>
+        </div>
+    </div>
+</div>
+<!-- /preload -->
+
+<div>
+    <div class="bill-payment-content">
+        <div class="tf-container">
+            <div class="tf-spacing-12"></div>
+            <ul class="list-card-info">
+                <li>Name <span th:text="${#session.getAttribute('fname')}"></span></li>
+                <li>Surname <span th:text="${#session.getAttribute('lname')}"></span></li>
+                <li>National ID# <span th:text="${#session.getAttribute('nationalId')}"></span></li>
+                <li>Phone <span th:text="${#session.getAttribute('mobileNumber')}"></span></li>
+                <li>Date Of Birth <span th:text="${#session.getAttribute('dob')}"></span></li>
+            </ul>
+            <form class="tf-form mt-5">
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>EC Number</label>
+                        <input id="ecnumber" name="ecnumber" type="text">
+                        <p class="errorText text-center" id="errorText"></p>
+                    </div>
+                    <div class="group-input">
+                        <label>Required Amount</label>
+                        <input class="valid-number amount" id="amount" name="amount"
+                               style="text-align: right" type="text">
+                        <p class="errorText text-center" id="errorAmount">$20.00-$2,000.00</p>
+                    </div>
+                </div>
+
+                <div class="group-double-ip mb-2">
+                    <div class="group-input mb-0">
+                        <label>Tenor in Months</label>
+                        <input class="valid-number tenor" id="tenor" name="tenor" style="text-align: right" type="text">
+                        <p class="errorText text-center" id="tenorError">1-24</p>
+                    </div>
+                    <div class="group-input mb-0">
+                        <label for="">Monthly Deduction</label>
+                        <input disabled id="repayment_amount"
+                               style="color: #d92e40; font-weight: bolder; text-align: right" type="text">
+                    </div>
+                </div>
+
+                <div class="group-checkbox mb-2">
+                    <input class="tf-checkbox st1" id="termsAndConditions" type="checkbox">
+                    <span class="fw_3 terms_and_conditions" style="display: block !important;"> I understand and accept the <a
+                            class="terms_and_conditions fw_7 clear-panel" data-dismiss="modal" data-target="#modalhome2"
+                            data-toggle="modal" href="#">Terms & Conditions</a></span>
+                </div>
+
+                <div class="input-field d-flex align-items-center" id="canvas_wrapper"
+                     style="border: 1px dashed; border-radius: 8px;">
+                    <h6>Sign here</h6>
+                    <canvas class="w-100" height="100" id="signaturePad"></canvas>
+                </div>
+                <div class="group-input mb-2">
+                    <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
+                </div>
+
+                <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
+                <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
+                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
+                       type="hidden">
+                <input id="mobileNumber" th:value="${#session.getAttribute('mobileNumber')}" type="hidden">
+                <input id="nationalId" name="nationalId" th:value="${#session.getAttribute('nationalId')}"
+                       type="hidden">
+                <input id="minimum_loan_amount" th:value="${#session.getAttribute('minimum_loan_amount')}"
+                       type="hidden">
+                <input id="maximum_loan_amount" th:value="${#session.getAttribute('maximum_loan_amount')}"
+                       type="hidden">
+                <input id="maximum_loan_tenor" th:value="${#session.getAttribute('maximum_loan_tenor')}" type="hidden">
+                <input id="minimum_loan_tenor" th:value="${#session.getAttribute('minimum_loan_tenor')}" type="hidden">
+
+                <div class="bottom-navigation-bar bottom-btn-fixed st2">
+                    <button class="tf-btn accent large" id="btn-popup-down" type="button">Apply
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalhome2">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="heading">
+                <h2>Privacy</h2>
+                <p class="mt-1 fw_3">
+                    A mobile app privacy policy is a legal statement that must be clear, conspicuous, and consented to
+                    by all users. It must disclose how a mobile app gathers, stores, and uses the personally
+                    identifiable information it collects from its users.
+                    A mobile privacy app is developed and presented to users so that mobile app developers stay
+                    compliant with state, federal, and international laws. As a result, they fulfill the legal
+                    requirement to safeguard user privacy while protecting the company itself from legal challenges.
+
+                </p>
+                <h2 class="mt-3">Authorized Users</h2>
+                <p class="fw-3">
+                    A mobile app privacy policy is a legal statement that must be clear, conspicuous, and consented to
+                    by all users. It must disclose how a mobile app gathers, stores, and uses the personally
+                    identifiable information it collects from its users.
+                </p>
+
+            </div>
+            <div class="bottom mt-5">
+                <a class="tf-btn accent large" data-dismiss="modal" href="#">I Accept</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tf-panel down">
+    <div class="panel_overlay"></div>
+    <div class="panel-box panel-down">
+        <div class="header">
+            <div class="tf-container">
+                <div class="tf-statusbar d-flex justify-content-center align-items-center">
+                    <a class="clear-panel" href="#"> <i class="icon-close1"></i> </a>
+                    <h3>Please Confirm</h3>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="mt-5">
+            <div class="tf-container">
+                <form action="50_successful.html" class="tf-form-verify">
+                    <div class="text-send-code">
+                        <p class="fw_4">
+                            Are you sure you want to proceed with applying for this loan?</p>
+                    </div>
+                    <div class="mt-7 mb-6">
+                        <button class="tf-btn accent" id="btnSubmitApplication"
+                                type="button">Proceed
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+
+        </div>
+    </div>
+</div>
+
+
+<script th:src="@{/js/signature_pad.min.js}"></script>
+
+<script th:src="@{/js/jquery.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/bootstrap.min.js}" type="text/javascript"></script>
+<script th:src="@{/js/main.js}" th:version="${#dates.createNow().getTime()}" type="text/javascript"></script>
+
+
+<script th:inline="javascript">
+
+    let canvas = document.getElementById('signaturePad');
+
+    var signaturePad = new SignaturePad(canvas, {
+        penColor: "rgb(66, 133, 244)"
+    });
+
+    signaturePad.addEventListener("endStroke", () => {
+        ensureValidFormInput();
+    }, {once: false});
+
+    var button = document.getElementById('clear_signature');
+
+    button.onclick = function () {
+        signaturePad.clear();
+        ensureValidFormInput();
+    };
+
+    function calculateLoan() {
+        const loanData = {
+            amount: parseFloat($('#amount').val()),
+            ecnumber: $('#ecnumber').val(),
+            mobileNumber: $('#mobileNumber').val(),
+            tenor: parseInt($('#tenor').val()),
+            commissionRate: parseFloat($('#commissionRate').val()),
+            adminFeeRate: parseFloat($('#adminFeeRate').val()),
+            monthlyInterestRate: parseFloat($('#monthlyInterestRate').val())
+        };
+
+        if (isNaN(loanData.amount) || isNaN(loanData.tenor)) {
+            $('#repayment_amount').val('');
+            return;
+        }
+
+        var loanAmount = calculatePrincipal(loanData.amount, loanData.adminFeeRate);
+        var repayment = calculateRepayment(loanAmount, loanData.monthlyInterestRate, loanData.tenor);
+        loanData.regularRepayment = repayment;
+        var grossedMonthlyPayment = repayment / (1 - loanData.commissionRate / 100.00);
+
+        $('#principal_amount').text(formatCurrency(loanAmount));
+        $('#repayment_amount').val(formatCurrency(grossedMonthlyPayment));
+        $('#repayment_amount_2').text(formatCurrency(grossedMonthlyPayment));
+        $('#disbursed_amount').text(formatCurrency(loanData.amount));
+    }
+
+    function formatCurrency(amount) {
+        const numericAmount = Number(amount);
+        if (isNaN(numericAmount)) {
+            return 'Invalid amount';
+        }
+        const formattedAmount = numericAmount.toLocaleString('en-ZW', {
+            style: 'currency',
+            currency: 'USD'
+        });
+        return formattedAmount;
+    }
+
+    function calculatePrincipal(amount, adminFeeRate) {
+        return amount / (1 - adminFeeRate / 100);
+    }
+
+    function calculateRepayment(principal, rate, tenor) {
+        const monthlyRate = rate / 100;
+        const numPayments = tenor;
+        const repayment = (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -numPayments));
+        return repayment.toFixed(2);
+    }
+
+
+    function ensureValidFormInput() {
+
+        $('#btn-popup-down').hide();
+
+        var valid = true;
+
+        $(".errorInput").removeClass("errorInput");
+        $(".errorText").hide();
+        $(".terms_and_conditions").removeClass("critical_color");
+
+        if (!validateEcNumber()) {
+            valid = false;
+        }
+
+        if (isNaN(parseFloat($('#amount').val()))) {
+            valid = false;
+            $("#amount").addClass("errorInput");
+            $("#errorAmount").show();
+        }
+
+        if (isNaN(parseInt($('#tenor').val()))) {
+            $("#tenor").addClass("errorInput");
+            $("#tenorError").show();
+            valid = false;
+        }
+
+        var checkbox = document.getElementById("termsAndConditions");
+        if (!checkbox.checked) {
+            $("#termsAndConditions").addClass("errorInput");
+            $(".terms_and_conditions").addClass("critical_color");
+            valid = false;
+        }
+
+        if (signaturePad.isEmpty()) {
+            $("#canvas_wrapper").addClass("errorInput");
+            valid = false;
+        }
+
+        if (!valid) {
+            return;
+        }
+
+        $('#btn-popup-down').show();
+    }
+
+
+    function saveSignature() {
+        var signatureData = signaturePad.toDataURL();
+
+        // var valid = true;
+        //
+        // $(".errorInput").removeClass("errorInput");
+        // $(".errorText").hide();
+        // $(".terms_and_conditions").removeClass("critical_color");
+        //
+        // if (signaturePad.isEmpty()) {
+        //     $("#canvas_wrapper").addClass("errorInput");
+        //     valid = false;
+        // }
+        // var checkbox = document.getElementById("termsAndConditions");
+        // if (!checkbox.checked) {
+        //     $("#termsAndConditions").addClass("errorInput");
+        //     $(".terms_and_conditions").addClass("critical_color");
+        //     valid = false;
+        // }
+        //
+        // if (isNaN(parseInt($('#tenor').val()))) {
+        //     $("#tenor").addClass("errorInput");
+        //     $("#tenorError").show();
+        //     valid = false;
+        // }
+        //
+        // if (isNaN(parseFloat($('#amount').val()))) {
+        //     $("#amount").addClass("errorInput");
+        //     $("#errorAmount").show();
+        //     valid = false;
+        // }
+        //
+        // if (!validateEcNumber()) {
+        //     valid = false;
+        // }
+        //
+        // if (!valid) {
+        //     return;
+        // }
+
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/apply';
+        form.style.display = 'none';
+
+        var signature_input = document.createElement('input');
+        signature_input.type = 'hidden';
+        signature_input.name = 'signatureData';
+        signature_input.value = signatureData;
+
+        var ecnumber_input = document.getElementById('ecnumber');
+
+        var amount_input = document.getElementById('amount');
+
+        var mobileNumber_input = document.getElementById('mobileNumber');
+        var tenor_input = document.getElementById('tenor');
+        var nationalId_input = document.getElementById('nationalId');
+
+        form.appendChild(amount_input);
+        form.appendChild(ecnumber_input);
+        form.appendChild(mobileNumber_input);
+        form.appendChild(signature_input);
+        form.appendChild(tenor_input);
+        form.appendChild(nationalId_input);
+
+        document.body.appendChild(form);
+
+        form.submit();
+    }
+
+    $('form :input').on("change", function () {
+        ensureValidFormInput();
+    });
+
+    $("#tenor").on("keyup", function (event) {
+        $(this).removeClass("errorInput");
+        const inputValue = Number($(this).val());
+        var minValue = $("#minimum_loan_tenor").val();
+        var maxValue = $("#maximum_loan_tenor").val();
+
+        if (isNaN(inputValue) || inputValue < minValue || inputValue > maxValue) {
+            $("#tenorError").show();
+            $(this).addClass("errorInput");
+        } else {
+            $("#tenorError").hide();
+            calculateLoan();
+        }
+    });
+
+    $("#amount").on("keyup", function (event) {
+        $(this).removeClass("errorInput");
+        const inputValue = Number($(this).val());
+
+        var minimum_loan_amount = $("#minimum_loan_amount").val();
+        var maximum_loan_amount = $("#maximum_loan_amount").val();
+
+        if (isNaN(inputValue) || inputValue < minimum_loan_amount || inputValue > maximum_loan_amount) {
+            $("#errorAmount").show();
+            $(this).addClass("errorInput");
+        } else {
+            $("#errorAmount").hide();
+            calculateLoan();
+        }
+    });
+
+    $("#ecnumber").on("keyup", function () {
+        validateEcNumber();
+    });
+
+    $("#btnSubmitApplication").on("click", function () {
+        saveSignature();
+    });
+
+
+    function validateEcNumber() {
+        let ecnumber = $("#ecnumber");
+        var inputValue = ecnumber.val();
+        var pattern = /^[0-9]{7}[a-zA-Z]$/;
+        if (!pattern.test(inputValue)) {
+            $("#errorText").text("Incorrect format").show();
+            ecnumber.addClass("errorInput");
+            return false;
+        } else {
+            $("#errorText").hide();
+            ecnumber.removeClass("errorInput");
+            return true;
+        }
+    }
+
+</script>
+
+</body>
+
+</html>

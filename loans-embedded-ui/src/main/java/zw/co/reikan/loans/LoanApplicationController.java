@@ -1,0 +1,118 @@
+package zw.co.reikan.loans;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import zw.co.reikan.loans.core.EncryptionUtils;
+import zw.co.reikan.loans.core.LoanResponse;
+import zw.co.reikan.loans.core.Utils;
+import zw.co.reikan.loans.core.loan.Loan;
+import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanRequest;
+import zw.co.reikan.loans.core.loan.LoanServiceImpl;
+import zw.co.reikan.loans.core.parameter.ParameterService;
+
+import javax.servlet.http.HttpSession;
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.Optional;
+
+import static zw.co.reikan.loans.core.loan.Constants.ADMI_FEE_RATE;
+import static zw.co.reikan.loans.core.loan.Constants.COMMISSION_RATE;
+import static zw.co.reikan.loans.core.loan.Constants.DEFAULT_LOAN_AMOUNT;
+import static zw.co.reikan.loans.core.loan.Constants.DEFAULT_LOAN_TENOR;
+import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_TENOR;
+import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_TENOR;
+import static zw.co.reikan.loans.core.loan.Constants.MONTHLY_INTEREST_RATE;
+import static zw.co.reikan.loans.core.loan.Constants.PAYLOAD;
+
+
+@Controller
+public class LoanApplicationController {
+
+    @Autowired
+    private LoanServiceImpl loanService;
+
+    @Autowired
+    private ParameterService parameterService;
+
+    @Value("${encryption-key}")
+    private String decryptionKey;
+
+    @GetMapping("/loan")
+    public String showLoanApplicationPage(@RequestParam("payload") String payload,
+                                          Model model, HttpSession session) throws Exception {
+
+        final String formattedPayload = payload.replaceAll("\n", "");
+
+        String decrypt = EncryptionUtils.decrypt(formattedPayload, decryptionKey);
+
+        final String[] data = decrypt.split("\\|");
+        String firstName = data[0];
+        String lastName = data[1];
+        String nationalId = Utils.trimSpecialCharacters(data[2]);
+        String dob = data[3];
+        String mobileNumber = data[4];
+
+        final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
+
+        if (latestActiveLoan.isPresent()) {
+            final Loan loan = latestActiveLoan.get();
+            model.addAttribute("loan", loan);
+            return "loan-details";
+        }
+
+        final Map<String, String> params = parameterService.getParameterValues(
+                COMMISSION_RATE,
+                ADMI_FEE_RATE,
+                MONTHLY_INTEREST_RATE,
+                MINIMUM_LOAN_TENOR,
+                MAXIMUM_LOAN_TENOR,
+                MINIMUM_LOAN_AMOUNT,
+                MAXIMUM_LOAN_AMOUNT,
+                DEFAULT_LOAN_AMOUNT,
+                DEFAULT_LOAN_TENOR);
+
+        session.setAttribute("mobileNumber", mobileNumber);
+        session.setAttribute("fname", firstName.toUpperCase());
+        session.setAttribute("lname", lastName.toUpperCase());
+        session.setAttribute("nationalId", nationalId);
+        session.setAttribute("dob", dob);
+
+        session.setAttribute(COMMISSION_RATE, new BigDecimal(params.get(COMMISSION_RATE)));
+        session.setAttribute(ADMI_FEE_RATE, new BigDecimal(params.get(ADMI_FEE_RATE)));
+        session.setAttribute(MONTHLY_INTEREST_RATE, new BigDecimal(params.get(MONTHLY_INTEREST_RATE)));
+        session.setAttribute(MINIMUM_LOAN_TENOR, new BigDecimal(params.get(MINIMUM_LOAN_TENOR)));
+        session.setAttribute(MAXIMUM_LOAN_TENOR, new BigDecimal(params.get(MAXIMUM_LOAN_TENOR)));
+        session.setAttribute(MINIMUM_LOAN_AMOUNT, new BigDecimal(params.get(MINIMUM_LOAN_AMOUNT)));
+        session.setAttribute(MAXIMUM_LOAN_AMOUNT, new BigDecimal(params.get(MAXIMUM_LOAN_AMOUNT)));
+        session.setAttribute(DEFAULT_LOAN_AMOUNT, new BigDecimal(params.get(DEFAULT_LOAN_AMOUNT)));
+        session.setAttribute(DEFAULT_LOAN_TENOR, new BigDecimal(params.get(DEFAULT_LOAN_TENOR)));
+        session.setAttribute(PAYLOAD, payload);
+
+        return "apply";
+    }
+
+    @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public String apply(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
+        final String mobileNumber = String.valueOf(session.getAttribute("mobileNumber"));
+        loanRequest.setMobileNumber(mobileNumber);
+        final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
+        model.addAttribute("internalReference", loanResponse.getInternalReference());
+        return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
+    }
+
+
+    @GetMapping("/loanDetails")
+    public String loanDetails() {
+        return "loan-details";
+    }
+}

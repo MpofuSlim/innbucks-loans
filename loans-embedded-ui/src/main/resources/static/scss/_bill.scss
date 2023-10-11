@@ -1,0 +1,186 @@
+.bill-content {
+    .box-search {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        .input-field {
+            flex: 1;
+        }
+        .icon-qrcode4 {
+            font-size: 24px;
+            color: $on_surface_color;
+        }
+    }
+    h3 {
+        a {
+            font-size: 12px;
+            line-height: 20px;
+            color: $primary_color;
+        }
+    }
+    .box-service {
+        margin-bottom: 40px;
+    }
+}
+
+.list-card-invoice {
+    display: flex;
+    gap: 10px;
+    padding-bottom: 8px;
+
+    &:not(:last-child) {
+        margin-bottom: 12px;
+        border-bottom: 1px solid $line_br_color;
+    }
+    .logo {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid $line_br_color;
+        border-radius: 50%;
+
+        i {
+            font-size: 24px;
+            color: $primary_color;
+        }
+    }
+    .content-right {
+        flex: 1;
+        a {
+            display: flex;
+            justify-content: space-between;
+            font-weight: $fw_6;
+            span {
+                font-size: 10px;
+                line-height: 16px;
+                font-weight: $fw_4;
+            }
+        }
+    }
+}
+
+.list-bill-view {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #f5f8fe;
+    border-radius: 8px;
+    .content {
+        flex: 1;
+        p {
+            font-size: 10px;
+            line-height: 16px;
+            color: $on_surface_color;
+            font-weight: $fw_6;
+        }
+    }
+    .icon-right {
+        font-size: 20px;
+    }
+}
+.box-outstanding-service {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-gap: 8px 13px;
+
+    li {
+        padding: 8px 16px;
+        box-shadow: 0px 0px 4px 0px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        .logo {
+            padding: 0px 6px;
+        }
+        a {
+            color: $on_surface_color;
+            font-weight: $fw_6;
+        }
+        i {
+            font-size: 24px;
+            color: $success_color;
+        }
+    }
+}
+
+
+.bill-payment-content {
+    .bill-topbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: $white_color;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid $line_br_color;
+
+        i {
+            font-size: 24px;
+            color: $primary_color;
+        }
+    }
+}
+.wrapper-bill {
+    margin: 20px 0px 60px;
+    .archive-top {
+        background: $white_color;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        text-align: center;
+        padding: 50px 0px 57px;
+        border-bottom: 1px dashed $line_br_color;
+
+        h1 {
+            padding-top: 26px;
+        }
+    }
+    .archive-bottom {
+        background: $white_color;
+        padding: 25px 16px 20px;
+        border-bottom-left-radius: 8px;
+        border-bottom-right-radius: 8px;
+
+        h2 {
+            padding-bottom: 18px;
+        }
+    }
+    .dashed-line {
+        width: 100%;
+
+        margin: 0px 4px;
+        position: relative;
+        &::before,
+        &::after {
+            content: "";
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            left: -17px;
+            top: -16px;
+            // border: 1px solid $line_color;
+            border-radius: 50%;
+            background: $surface_color;
+        }
+        &::after {
+            right: -17px;
+            left: unset;
+        }
+    }
+}
+.list-info-bill {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    line-height: 22px;
+
+    &:not(:last-child) {
+        margin-bottom: 12px;
+    }
+    span {
+        color: $on_surface_color;
+    }
+}
