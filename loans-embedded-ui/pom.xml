@@ -43,6 +43,7 @@
     </dependencies>
 
     <build>
+        <finalName>bulkit-loans</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
