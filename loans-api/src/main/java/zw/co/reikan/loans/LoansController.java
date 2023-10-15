@@ -3,6 +3,7 @@ package zw.co.reikan.loans;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.loan.LoanDto;
 import zw.co.reikan.loans.core.loan.LoanService;
@@ -13,15 +14,21 @@ import java.util.List;
 
 @RestController
 @Slf4j
+@RequestMapping("/loans")
 public class LoansController {
 
     @Autowired
     private LoanService loanService;
 
-    @GetMapping("/loans")
+    @GetMapping
     public LoansWrapper getLoans(@PathParam("endDate") LocalDate startDate,
                                  @PathParam("endDate") LocalDate endDate) {
         final List<LoanDto> loans = loanService.findByDateCreated(startDate, endDate);
         return new LoansWrapper(loans);
+    }
+
+    @GetMapping("/hello")
+    public String checkStatus() {
+        return "Loans Api";
     }
 }
