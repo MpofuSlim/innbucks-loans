@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.HttpMethod.POST;
@@ -86,10 +87,22 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
                 .forEach(this::processDeductionRequestResponse);
     }
 
+    public List<NdasendaDeductionsBatchRequest> findBatches(FindNdasendaBatchRequest request) {
+        log.info("Finding Ndasenda batches: {}", request);
+        try {
+            return findBatchRequestsByDate(request.getStartDate(), request.getEndDate())
+                    .stream().filter(b -> request.getBatchStatus() == null || b.getStatus() == request.getBatchStatus())
+                    .collect(Collectors.toList());
+        } catch (Exception ex) {
+            log.error("", ex);
+            return Collections.emptyList();
+        }
+    }
+
     public void commitDeductionRequestsUntilNow() {
         log.info("Committing batch id");
         try {
-            ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getCommitDeductionsEndpoint(),
+            restTemplate.exchange(ndasendaProps.getCommitDeductionsEndpoint(),
                     POST, new HttpEntity<>(getHttpHeaders()),
                     NdasendaDeductionsBatchRequest.class,
                     ndasendaProps.getDeductionCode());
@@ -99,6 +112,28 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             log.error("Error committing deduction batch: ", ex);
         }
     }
+
+
+    private List<NdasendaDeductionsBatchRequest> findBatchRequestsByDate(LocalDate fromDate, LocalDate toDate) {
+        log.info("Find batches requestsfrom: {} to {}", fromDate, toDate);
+        try {
+            ResponseEntity<List<NdasendaDeductionsBatchRequest>> response = restTemplate.exchange(
+                    ndasendaProps.getDeductionRequestsByDateRangeEndpoint(),
+                    HttpMethod.GET,
+                    new HttpEntity<>(getHttpHeaders()),
+                    new ParameterizedTypeReference<List<NdasendaDeductionsBatchRequest>>() {
+                    },
+                    dateTimeFormatter.format(fromDate),
+                    dateTimeFormatter.format(toDate),
+                    ndasendaProps.getDeductionCode());
+            final List<NdasendaDeductionsBatchRequest> responseBody = response.getBody();
+            return responseBody;
+        } catch (Exception ex) {
+            log.error("", ex);
+            return Collections.emptyList();
+        }
+    }
+
 
     private List<NdasendaDeductionsBatchRequest> findBatchResponsesByDate(LocalDate fromDate, LocalDate toDate) {
         log.info("Find batches from: {} to {}", fromDate, toDate);
@@ -120,7 +155,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         }
     }
 
-    private List<NdasendaDeductionsBatchRequest> findDeductionResponsesByBatchId(String batchId) {
+    public List<NdasendaDeductionsBatchRequest> findDeductionResponsesByBatchId(String batchId) {
         log.info("Find batch id: {}", batchId);
         try {
             ResponseEntity<List<NdasendaDeductionsBatchRequest>> response = restTemplate.exchange(ndasendaProps.getDeductionResponsesByBatchId(),
@@ -134,7 +169,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         }
     }
 
-    private NdasendaDeductionsBatchRequest findBatchById(String batchId) {
+    public NdasendaDeductionsBatchRequest findBatchById(String batchId) {
         log.info("Find batch id: {}", batchId);
         ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(ndasendaProps.getFindBatchEndpoint(),
                 GET, new HttpEntity<>(getHttpHeaders()),

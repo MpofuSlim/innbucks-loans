@@ -2,7 +2,6 @@ package zw.co.reikan.loans.core.loan;
 
 import zw.co.reikan.loans.core.LoanResponse;
 
-import java.time.LocalDate;
 import java.util.List;
 
 public interface LoanService {
@@ -10,5 +9,5 @@ public interface LoanService {
 
     LoanDetails calculate(LoanRequest request);
 
-    List<LoanDto> findByDateCreated(LocalDate fromDate, LocalDate toDate);
+    List<LoanDto> findLoans(FindLoansRequest findLoansRequest);
 }

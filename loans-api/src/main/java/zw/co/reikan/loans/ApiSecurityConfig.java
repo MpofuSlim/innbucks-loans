@@ -31,6 +31,8 @@ public class ApiSecurityConfig {
                 .antMatchers("/auth/logout").permitAll()
                 .antMatchers("/v2/api-docs",
                         "/configuration/ui",
+                        "/v3/api-docs",
+                        "/spec.html",
                         "/swagger-resources/**",
                         "/configuration/security",
                         "/swagger-ui.html",

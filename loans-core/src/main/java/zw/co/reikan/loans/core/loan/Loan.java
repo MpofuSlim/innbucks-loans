@@ -73,6 +73,9 @@ public class Loan extends BaseEntity {
     @Column(name = "national_id_number")
     private String nationalIdNumber;
 
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+
     @Lob
     @Column(name = "signature", columnDefinition = "MEDIUMTEXT")
     private String signature;

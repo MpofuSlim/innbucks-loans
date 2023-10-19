@@ -11,7 +11,7 @@ public class NdasendaParameters {
     private String deductionResponsesByDateRangeEndpoint;
     private String deductionResponsesByBatchId;
     private String findBatchEndpoint;
-    private String findBatchesByDateRangeEndpoint;
+    private String deductionRequestsByDateRangeEndpoint;
     private String commitDeductionsEndpoint;
     private String clientId;
     private String grantType;

@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.loan;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
@@ -9,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface LoanRepository extends JpaRepository<Loan, Long> {
+public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificationExecutor<Loan> {
 
     Optional<Loan> findByEcNumberAndLoanApprovalStatus(String ecNumber, LoanApprovalStatus loanApprovaStatus);
 

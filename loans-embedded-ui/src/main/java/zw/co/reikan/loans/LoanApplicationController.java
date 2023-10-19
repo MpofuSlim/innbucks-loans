@@ -20,6 +20,8 @@ import zw.co.reikan.loans.core.parameter.ParameterService;
 
 import javax.servlet.http.HttpSession;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
 
@@ -38,12 +40,11 @@ import static zw.co.reikan.loans.core.loan.Constants.PAYLOAD;
 @Controller
 public class LoanApplicationController {
 
+    private final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
     @Autowired
     private LoanServiceImpl loanService;
-
     @Autowired
     private ParameterService parameterService;
-
     @Value("${encryption-key}")
     private String decryptionKey;
 
@@ -103,8 +104,14 @@ public class LoanApplicationController {
 
     @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public String apply(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
-        final String mobileNumber = String.valueOf(session.getAttribute("mobileNumber"));
-        loanRequest.setMobileNumber(mobileNumber);
+        loanRequest.setMobileNumber(String.valueOf(session.getAttribute("mobileNumber")));
+        loanRequest.setFname(String.valueOf(session.getAttribute("fname")));
+        loanRequest.setLname(String.valueOf(session.getAttribute("lname")));
+        loanRequest.setNationalId(String.valueOf(session.getAttribute("nationalId")));
+
+        LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
+        loanRequest.setDateOfBirth(dateOfBirth);
+
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";

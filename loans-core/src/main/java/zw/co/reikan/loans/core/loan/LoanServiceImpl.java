@@ -11,6 +11,7 @@ import zw.co.reikan.loans.core.parameter.ParameterService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,9 +19,13 @@ import java.util.Map;
 import java.util.Optional;
 
 import static java.math.BigDecimal.ONE;
+import static org.springframework.data.jpa.domain.Specification.where;
 import static zw.co.reikan.loans.core.loan.Constants.ADMI_FEE_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.COMMISSION_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.MONTHLY_INTEREST_RATE;
+import static zw.co.reikan.loans.core.loan.LoanSpecification.withApprovalStatus;
+import static zw.co.reikan.loans.core.loan.LoanSpecification.withCreatedDateBetween;
+import static zw.co.reikan.loans.core.loan.LoanSpecification.withDisbursementStatus;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -32,8 +37,25 @@ public class LoanServiceImpl implements LoanService {
     private final ParameterService parameterService;
     private final LoanMapper loanMapper;
 
-    public List<LoanDto> findByDateCreated(LocalDate fromDate, LocalDate toDate) {
-        return loanMapper.fromLoans(loanRepository.findByCreatedDateBetween(fromDate.atStartOfDay(), toDate.atTime(LocalTime.MAX)));
+    public List<LoanDto> findLoans(FindLoansRequest findLoansRequest) {
+        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(findLoansRequest.getApprovalStatus()))
+                .and(withDisbursementStatus(findLoansRequest.getDisbursementStatus()))
+                .and(withCreatedDateBetween(atStartOfDay(findLoansRequest.getFromDate()), atEndOfDay(findLoansRequest.getToDate()))));
+        return loanMapper.fromLoans(all);
+    }
+
+    private LocalDateTime atStartOfDay(LocalDate localDate) {
+        if (localDate == null) {
+            return null;
+        }
+        return localDate.atStartOfDay();
+    }
+
+    private LocalDateTime atEndOfDay(LocalDate localDate) {
+        if (localDate == null) {
+            return null;
+        }
+        return localDate.atTime(LocalTime.MAX);
     }
 
     @Override
@@ -71,6 +93,9 @@ public class LoanServiceImpl implements LoanService {
                 .commissionRate(loanDetails.getCommissionRate())
                 .disbursedAmount(loanDetails.getDisbursedAmount())
                 .tenor(loanDetails.getTenor())
+                .firstName(loanRequest.getFname())
+                .lastName(loanRequest.getLname())
+                .dateOfBirth(loanRequest.getDateOfBirth())
                 .build();
 
         loanRepository.save(loan);

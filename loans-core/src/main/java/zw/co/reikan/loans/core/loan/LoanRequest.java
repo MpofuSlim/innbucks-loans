@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Data
 @Builder
@@ -20,6 +21,9 @@ public class LoanRequest implements Serializable {
     private int tenor;
     private String nationalId;
     private LoanAmountType type = LoanAmountType.NET_OF_FEES;
+    private String fname;
+    private String lname;
+    private LocalDate dateOfBirth;
 
     @Override
     public String toString() {
@@ -31,6 +35,9 @@ public class LoanRequest implements Serializable {
         sb.append(", tenor=").append(tenor);
         sb.append(", nationalId='").append(nationalId).append('\'');
         sb.append(", type=").append(type);
+        sb.append(", fname='").append(fname).append('\'');
+        sb.append(", lname='").append(lname).append('\'');
+        sb.append(", dob='").append(dateOfBirth).append('\'');
         sb.append('}');
         return sb.toString();
     }
