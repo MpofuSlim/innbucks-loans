@@ -29,7 +29,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @Slf4j
 @RequestMapping
 @Tag(name = "BULKIT LOANS",
-        description = "### Please note:\n" +
+        description = "### Please Note:\n" +
                 "1. Auth credentials and endpoint will be provided\n" +
                 "2. Please contact  _support@bulkit.co.zw_ for support.\n")
 
