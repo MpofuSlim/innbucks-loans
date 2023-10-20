@@ -59,16 +59,16 @@
             <artifactId>springdoc-openapi-ui</artifactId>
             <version>1.6.1</version>
         </dependency>
-
-
     </dependencies>
 
     <build>
+        <finalName>bulkit-loans-api</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <executable>true</executable>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
