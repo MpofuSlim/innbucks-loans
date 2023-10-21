@@ -18,25 +18,26 @@ import java.io.IOException;
 @Slf4j
 public class SimpleCORSFilter implements Filter {
 
-    private static final String ALLOWED_HTTP_METHODS = "POST, GET, OPTIONS, DELETE,PUT";
-    private static final String ACCESS_CONTROL_MAX_AGE = "3600";
+    private static final String ALLOWED_HTTP_METHODS = "POST, GET, OPTIONS";
+    private static final String ALLOWED_HEADERS = "Content-Type, Accept, Authorization";
     private static final String ACCESS_CONTROL_ALLOWED_ORIGIN = "*";
 
-
+    @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) throws IOException, ServletException {
 
         HttpServletResponse response = (HttpServletResponse) res;
         response.setHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_ALLOWED_ORIGIN);
-        response.setHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, Boolean.TRUE.toString());
         response.setHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, ALLOWED_HTTP_METHODS);
-        response.setHeader(HttpHeaders.ACCESS_CONTROL_MAX_AGE, ACCESS_CONTROL_MAX_AGE);
+        response.setHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, ALLOWED_HEADERS);
         chain.doFilter(req, res);
     }
 
+    @Override
+    public void init(FilterConfig filterConfig) {
+    }
 
-    public void init(FilterConfig filterConfig) {}
-
-
-    public void destroy() {}
+    @Override
+    public void destroy() {
+    }
 
 }

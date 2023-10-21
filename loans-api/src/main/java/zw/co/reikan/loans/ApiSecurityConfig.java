@@ -22,7 +22,7 @@ public class ApiSecurityConfig {
     @Bean
     public SecurityFilterChain resourceServerFilterChain(HttpSecurity http) throws Exception {
 
-        http.cors().and().csrf().disable();
+        http.csrf().disable();
 
         http.authorizeRequests()
                 .antMatchers("/auth/token").permitAll()
