@@ -1,7 +1,6 @@
 package zw.co.reikan.loans;
 
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -23,13 +22,10 @@ public class ApiSecurityConfig {
     @Bean
     public SecurityFilterChain resourceServerFilterChain(HttpSecurity http) throws Exception {
 
-        http.cors().and()
-                .csrf().disable()
-                .authorizeRequests()
-                .antMatchers(HttpMethod.OPTIONS).permitAll()
-                .antMatchers("/auth/*").permitAll()
-                .antMatchers("/auth/refresh").permitAll()
-                .antMatchers("/auth/logout").permitAll()
+        http.cors().and().csrf().disable();
+
+        http.authorizeRequests()
+                .antMatchers("/auth/token").permitAll()
                 .antMatchers("/v2/api-docs",
                         "/configuration/ui",
                         "/v3/api-docs",
