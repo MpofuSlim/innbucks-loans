@@ -20,9 +20,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
                 url = "https://loans.bulkit.co.zw/"),
                 @Server(
                         description = "Sandbox",
-                        url = "https://sandbox.bulkit.co.zw/")},
-        security = {
-                @SecurityRequirement(name = BEARER_TOKEN)}
+                        url = "https://sandbox.bulkit.co.zw/")}
 )
 
 @SecuritySchemes({
