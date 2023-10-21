@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.disbursements;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.DisbursementRequest;
@@ -20,6 +21,7 @@ import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@Profile("scheduled-tasks")
 public class LoanDisbursementServiceJob {
 
     private static final String SMS_MSG = "Your mobile money account %s has been credited with $%s. Ref %s";
