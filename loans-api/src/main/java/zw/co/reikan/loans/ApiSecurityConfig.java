@@ -1,6 +1,7 @@
 package zw.co.reikan.loans;
 
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -25,6 +26,7 @@ public class ApiSecurityConfig {
         http.csrf().disable();
 
         http.authorizeRequests()
+                .antMatchers(HttpMethod.OPTIONS).permitAll()
                 .antMatchers("/auth/token").permitAll()
                 .antMatchers("/v2/api-docs",
                         "/configuration/ui",
