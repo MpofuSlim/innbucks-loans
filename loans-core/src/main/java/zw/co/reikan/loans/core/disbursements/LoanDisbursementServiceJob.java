@@ -38,7 +38,7 @@ public class LoanDisbursementServiceJob {
 
     private void processLoanApproval(Loan loan) {
         final DisbursementResponse response = disbursementService.disburseFunds(DisbursementRequest.builder()
-                .amount(loan.getPrincipal())
+                .amount(loan.getDisbursedAmount())
                 .mobileNumber(loan.getMobileNumber())
                 .reference(loan.getReference())
                 .build());

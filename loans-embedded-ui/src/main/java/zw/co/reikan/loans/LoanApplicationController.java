@@ -40,7 +40,7 @@ import static zw.co.reikan.loans.core.loan.Constants.PAYLOAD;
 @Controller
 public class LoanApplicationController {
 
-    private final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d-MMM-yyyy");
+    private final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-d");
     @Autowired
     private LoanServiceImpl loanService;
     @Autowired
@@ -60,7 +60,7 @@ public class LoanApplicationController {
         String firstName = data[0];
         String lastName = data[1];
         String nationalId = Utils.trimSpecialCharacters(data[2]);
-        String dob = convertDateFormat(data[3]);
+        String dob = data[3];
         String mobileNumber = data[4];
 
         final Optional<Loan> latestActiveLoan = loanService.findLatestActiveLoanByNationalId(nationalId);
@@ -87,6 +87,7 @@ public class LoanApplicationController {
         session.setAttribute("lname", lastName.toUpperCase());
         session.setAttribute("nationalId", nationalId);
         session.setAttribute("dob", dob);
+
 
         session.setAttribute(COMMISSION_RATE, new BigDecimal(params.get(COMMISSION_RATE)));
         session.setAttribute(ADMI_FEE_RATE, new BigDecimal(params.get(ADMI_FEE_RATE)));
@@ -117,15 +118,15 @@ public class LoanApplicationController {
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }
 
-    public String convertDateFormat(String dateStr) {
-        String[] parts = dateStr.split("-");
-        String monthAbbreviation = parts[1];
-        return new StringBuilder(parts[0])
-                .append("-")
-                .append(monthAbbreviation.substring(0, 1).toUpperCase() + monthAbbreviation.substring(1).toLowerCase())
-                .append("-")
-                .append(parts[2]).toString();
-    }
+//    public String convertDateFormat(String dateStr) {
+//        String[] parts = dateStr.split("-");
+//        String monthAbbreviation = parts[1];
+//        return new StringBuilder(parts[0])
+//                .append("-")
+//                .append(monthAbbreviation.substring(0, 1).toUpperCase() + monthAbbreviation.substring(1).toLowerCase())
+//                .append("-")
+//                .append(parts[2]).toString();
+//    }
 
     @GetMapping("/loanDetails")
     public String loanDetails() {

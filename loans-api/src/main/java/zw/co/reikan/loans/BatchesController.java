@@ -1,6 +1,8 @@
 package zw.co.reikan.loans;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.loan.FindLoansRequest;
+import zw.co.reikan.loans.core.loan.LoanDto;
 import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchResponse;
@@ -50,7 +53,9 @@ public class BatchesController {
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
-                    description = "Request received for processing"),
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoansWrapper.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
 
@@ -70,7 +75,9 @@ public class BatchesController {
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
-                    description = "Request received for processing"),
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoanDto.class))}),
             @ApiResponse(responseCode = "404",
                     description = "Resource not found"),
 
@@ -94,7 +101,9 @@ public class BatchesController {
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
-                    description = "Request received for processing"),
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = FindNdasendaBatchResponse.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
 
@@ -114,7 +123,8 @@ public class BatchesController {
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
-                    description = "Request received for processing"),
+                    description = "Request received for processing", content = {@Content(mediaType = "application/json",
+                    schema = @Schema(implementation = NdasendaDeductionsBatchRequest.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
 
