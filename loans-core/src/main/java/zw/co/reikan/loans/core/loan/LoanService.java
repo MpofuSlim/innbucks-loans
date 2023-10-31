@@ -10,4 +10,6 @@ public interface LoanService {
     LoanDetails calculate(LoanRequest request);
 
     List<LoanDto> findLoans(FindLoansRequest findLoansRequest);
+
+    LoanDto getLoan(Long id);
 }

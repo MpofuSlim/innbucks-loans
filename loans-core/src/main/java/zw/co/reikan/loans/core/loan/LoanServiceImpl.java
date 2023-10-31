@@ -44,6 +44,13 @@ public class LoanServiceImpl implements LoanService {
         return loanMapper.fromLoans(all);
     }
 
+    @Override
+    public LoanDto getLoan(Long id) {
+        return loanRepository.findById(id)
+                .map(loanMapper::fromLoan)
+                .orElseThrow();
+    }
+
     private LocalDateTime atStartOfDay(LocalDate localDate) {
         if (localDate == null) {
             return null;

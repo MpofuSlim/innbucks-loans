@@ -1,19 +1,13 @@
 package zw.co.reikan.loans;
 
-import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.enums.SecuritySchemeIn;
-import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
-import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import io.swagger.v3.oas.annotations.security.SecurityScheme;
-import io.swagger.v3.oas.annotations.security.SecuritySchemes;
-import io.swagger.v3.oas.annotations.servers.Server;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -67,6 +61,31 @@ public class BatchesController {
     public LoansWrapper findLoans(@RequestBody FindLoansRequest request) {
         log.info("Find loan request: {}", request);
         return new LoansWrapper(loanService.findLoans(request));
+    }
+
+
+    @Operation(summary = "GET LOAN BY ID",
+            description = "Provided with a loan id, this endpoint returns a loans details",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing"),
+            @ApiResponse(responseCode = "404",
+                    description = "Resource not found"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/{id}")
+    public ResponseEntity findLoans(@PathVariable Long id) {
+        log.info("Find loan by id: {}", id);
+        try {
+            return ResponseEntity.ok(loanService.getLoan(id));
+        } catch (Exception ex) {
+            log.error("", ex);
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @Operation(summary = "SEARCH BATCHES",
