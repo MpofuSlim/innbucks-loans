@@ -11,7 +11,21 @@ public class CryptoHelper {
     private final IvParameterSpec ivspec;
     private final SecretKeySpec keyspec;
     private final Cipher cipher;
-    
+
+
+    public static void main(String[] args) {
+        try {
+            final String secretKey = "5#Gq8H@1*2$7lN!z";
+            final String encrypt = CryptoHelper.encrypt("thomas|nyagwaya|24-Nov-2023|67-7867687786-09", secretKey);
+            System.out.println(encrypt);
+            final String decrypt = CryptoHelper.decrypt(encrypt, secretKey);
+            System.out.println(decrypt);
+        }
+        catch (Exception ex){
+            ex.printStackTrace();
+        }
+    }
+
     public CryptoHelper(String secretKey) throws Exception {
         ivspec = new IvParameterSpec(secretKey.getBytes());
         keyspec = new SecretKeySpec(secretKey.getBytes(), "AES");
