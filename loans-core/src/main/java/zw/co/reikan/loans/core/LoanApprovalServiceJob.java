@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalRequest;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalResponse;
@@ -28,6 +29,8 @@ public class LoanApprovalServiceJob {
     private final LoanApprovalService loanApprovalService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
+    private final LoanBatchService loanBatchService;
+
     Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Ref: %s.",
             LoanApprovalStatus.REJECTED, "Loan application rejected. We understand your disappointment. Feel free to contact us for further information. Ref: %s",
             LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
@@ -57,7 +60,10 @@ public class LoanApprovalServiceJob {
         loan.setDateApproved(LocalDateTime.now());
         loan.setRepaymentStartDate(loanApprovalResponse.getStartDate());
         loan.setRepaymentEndDate(loanApprovalResponse.getEndDate());
+
         loanRepository.save(loan);
+
+        loanBatchService.save(loanApprovalResponse.getBatchNumber());
 
         log.info("Dispatching loan approved sms notification: {}", loanApprovalResponse);
         final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()), String.format("%09d", loan.getId()));

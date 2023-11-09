@@ -5,6 +5,7 @@ import lombok.Data;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 
+import javax.persistence.Column;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,4 +42,6 @@ public class LoanDto implements Serializable {
    private BigDecimal grossedMonthlyDeduction;
    private LocalDate repaymentStartDate;
    private LocalDate repaymentEndDate;
+   private BigDecimal agentCommissionRate;
+   private BigDecimal agentCommission;
 }

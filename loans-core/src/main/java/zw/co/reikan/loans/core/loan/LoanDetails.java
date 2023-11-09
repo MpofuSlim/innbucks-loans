@@ -24,6 +24,8 @@ public class LoanDetails {
     private BigDecimal commissionRate;
     private BigDecimal grossedMonthlyInstallment;
     private LocalDate startDate;
+    private BigDecimal agentCommission;
+    private BigDecimal agentCommissionRate;
 
 
     public LoanDetails add(AmortizationEntry entry) {

@@ -21,6 +21,7 @@ import java.util.Optional;
 import static java.math.BigDecimal.ONE;
 import static org.springframework.data.jpa.domain.Specification.where;
 import static zw.co.reikan.loans.core.loan.Constants.ADMI_FEE_RATE;
+import static zw.co.reikan.loans.core.loan.Constants.AGENT_COMMISSION_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.COMMISSION_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.MONTHLY_INTEREST_RATE;
 import static zw.co.reikan.loans.core.loan.LoanSpecification.withApprovalStatus;
@@ -103,6 +104,8 @@ public class LoanServiceImpl implements LoanService {
                 .firstName(loanRequest.getFname())
                 .lastName(loanRequest.getLname())
                 .dateOfBirth(loanRequest.getDateOfBirth())
+                .agentCommission(loanDetails.getAgentCommission())
+                .agentCommissionRate(loanDetails.getAgentCommissionRate())
                 .build();
 
         loanRepository.save(loan);
@@ -128,11 +131,14 @@ public class LoanServiceImpl implements LoanService {
         final Map<String, String> params = parameterService.getParameterValues(
                 COMMISSION_RATE,
                 ADMI_FEE_RATE,
-                MONTHLY_INTEREST_RATE);
+                MONTHLY_INTEREST_RATE,
+                AGENT_COMMISSION_RATE);
 
         BigDecimal adminFeeRate = new BigDecimal(params.get(ADMI_FEE_RATE));
         BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
+
+        BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
 
         BigDecimal principalLoanAmount = getPrincipalLoanAmount(request, adminFeeRate);
 
@@ -150,7 +156,10 @@ public class LoanServiceImpl implements LoanService {
         BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFeeAmount);
 
         BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
+
+        BigDecimal agentCommissionAmount = principalLoanAmount.multiply(commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
 
         final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)
@@ -163,6 +172,8 @@ public class LoanServiceImpl implements LoanService {
                 .commissionRate(commissionRate)
                 .regularMonthlyInstallment(installment)
                 .grossedMonthlyInstallment(grossedMonthlyPayment)
+                .agentCommission(agentCommissionAmount)
+                .agentCommissionRate(agentCommissionRate)
                 .build();
 
         amortizeLoan(loanDetails);

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 
 import java.math.BigDecimal;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpMethod.GET;
@@ -37,9 +39,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final RestTemplate restTemplate;
     private final NdasendaAuthServiceImpl ndasendaAuthService;
     private final NdasendaParameters ndasendaProps;
-
     private final LoanRepository loanRepository;
-
+    private final LoanBatchService loanBatchService;
 
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
 
@@ -91,12 +92,31 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         log.info("Finding Ndasenda batches: {}", request);
         try {
             return findBatchRequestsByDate(request.getStartDate(), request.getEndDate())
-                    .stream().filter(b -> request.getBatchStatus() == null || b.getStatus() == request.getBatchStatus())
+                    .stream()
+                    .filter(getNdasendaDeductionsBatchRequestPredicate(request))
+                    .map(this::populateCustomerInformation)
                     .collect(Collectors.toList());
         } catch (Exception ex) {
             log.error("", ex);
             return Collections.emptyList();
         }
+    }
+
+    private Predicate<NdasendaDeductionsBatchRequest> getNdasendaDeductionsBatchRequestPredicate(FindNdasendaBatchRequest request) {
+        return b -> loanBatchService.existsByBatchNumber(b.getId())
+                && (request.getBatchStatus() == null || b.getStatus() == request.getBatchStatus());
+    }
+
+
+    private NdasendaDeductionsBatchRequest populateCustomerInformation(NdasendaDeductionsBatchRequest request) {
+        request.getDeductions().stream()
+                .forEach(d -> loanRepository.findById(Long.parseLong(d.getReference()))
+                        .ifPresent(l -> {
+                            d.setFirstName(l.getFirstName());
+                            d.setLastName(l.getLastName());
+                            d.setMobileNumber(l.getMobileNumber());
+                        }));
+        return request;
     }
 
     public void commitDeductionRequestsUntilNow() {
@@ -185,12 +205,17 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             try {
                 id = Long.parseLong(response.getReference());
             } catch (NumberFormatException ex) {
-                log.warn("Invalid referece: {}", response.getReference());
+                log.warn("Invalid reference: {}", response.getReference());
                 return;
             }
 
             loanRepository.findById(id)
                     .ifPresent(loan -> {
+                        if (response.getStatus().getApprovalStatus() == loan.getLoanApprovalStatus()) {
+                            log.info("Loan already updated: {}", response.getStatus().getApprovalStatus());
+                            return;
+                        }
+
                         loan.setLoanApprovalStatus(response.getStatus().getApprovalStatus());
                         loan.setDateApproved(LocalDateTime.now());
                         loan.setApprovalReference(response.getId());
@@ -228,5 +253,4 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         headers.setBearerAuth(ndasendaAuthService.getAccessToken());
         return headers;
     }
-
 }

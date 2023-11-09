@@ -37,7 +37,6 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
         description = "### Please Note:\n" +
                 "1. Auth credentials and endpoint will be provided\n" +
                 "2. Please contact  _support@bulkit.co.zw_ for support.\n")
-
 public class BatchesController {
 
     @Autowired
@@ -115,7 +114,6 @@ public class BatchesController {
         log.info("Searching batches: {}", request);
         return FindNdasendaBatchResponse.builder().batches(ndasendaLoanApprovalService.findBatches(request)).build();
     }
-
 
     @Operation(summary = "GET BATCH BY ID",
             description = "Return the batch and the SSB approval status for the given batch id.",

@@ -22,4 +22,5 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
                                                              LoanDisbursementStatus disbursementStatus);
 
     List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
+
 }

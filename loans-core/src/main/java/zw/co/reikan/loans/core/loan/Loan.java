@@ -121,6 +121,12 @@ public class Loan extends BaseEntity {
     @Column(name = "repayment_end_date")
     private LocalDate repaymentEndDate;
 
+    @Column(name = "agent_commission_rate")
+    private BigDecimal agentCommissionRate;
+
+    @Column(name = "agent_commission")
+    private BigDecimal agentCommission;
+
     public String getReference() {
         return String.format("%09d", getId());
     }

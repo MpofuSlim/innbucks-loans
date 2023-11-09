@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import zw.co.reikan.loans.core.CryptoHelper;
 import zw.co.reikan.loans.core.EncryptionUtils;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
@@ -43,19 +44,33 @@ public class LoanApplicationController {
     private final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-d");
     @Autowired
     private LoanServiceImpl loanService;
+
     @Autowired
     private ParameterService parameterService;
+
     @Value("${encryption-key}")
     private String decryptionKey;
+
+    @Value("${encryption-key-v2}")
+    private String _16BitDescryptionKey;
 
     @GetMapping("/loan")
     public String showLoanApplicationPage(@RequestParam("payload") String payload,
                                           Model model, HttpSession session) throws Exception {
-
         final String formattedPayload = payload.replaceAll("\n", "");
-
         String decrypt = EncryptionUtils.decrypt(formattedPayload, decryptionKey);
+        return decodeDataAndPopulateModel(payload, model, session, decrypt);
+    }
 
+    @GetMapping("/loan?version=2")
+    public String showLoanApplicationPageV2(@RequestParam("payload") String payload,
+                                            Model model, HttpSession session) throws Exception {
+        final String formattedPayload = payload.replaceAll("\n", "");
+        String decrypt = CryptoHelper.decrypt(formattedPayload, _16BitDescryptionKey);
+        return decodeDataAndPopulateModel(payload, model, session, decrypt);
+    }
+
+    private String decodeDataAndPopulateModel(String payload, Model model, HttpSession session, String decrypt) {
         final String[] data = decrypt.split("\\|");
         String firstName = data[0];
         String lastName = data[1];
@@ -117,16 +132,6 @@ public class LoanApplicationController {
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }
-
-//    public String convertDateFormat(String dateStr) {
-//        String[] parts = dateStr.split("-");
-//        String monthAbbreviation = parts[1];
-//        return new StringBuilder(parts[0])
-//                .append("-")
-//                .append(monthAbbreviation.substring(0, 1).toUpperCase() + monthAbbreviation.substring(1).toLowerCase())
-//                .append("-")
-//                .append(parts[2]).toString();
-//    }
 
     @GetMapping("/loanDetails")
     public String loanDetails() {

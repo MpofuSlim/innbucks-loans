@@ -4,7 +4,7 @@ import java.util.List;
 
 public enum LoanApprovalStatus {
 
-    NEW, PROCESSING, APPROVED, REJECTED;
+    NEW, PROCESSING, APPROVED, REJECTED, PAID;
 
     public static List<LoanApprovalStatus> activeLoanStatuses = List.of(NEW, PROCESSING, APPROVED);
 

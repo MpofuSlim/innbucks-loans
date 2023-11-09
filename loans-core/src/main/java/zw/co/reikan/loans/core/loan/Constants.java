@@ -11,4 +11,5 @@ public interface Constants {
     String DEFAULT_LOAN_AMOUNT = "default_loan_amount";
     String DEFAULT_LOAN_TENOR = "default_loan_tenor";
     String PAYLOAD = "payload";
+    String AGENT_COMMISSION_RATE = "agent_commission_rate";
 }
