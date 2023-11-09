@@ -138,8 +138,6 @@ public class LoanServiceImpl implements LoanService {
         BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
 
-        BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
-
         BigDecimal principalLoanAmount = getPrincipalLoanAmount(request, adminFeeRate);
 
         BigDecimal adminFeeAmount = principalLoanAmount
@@ -159,7 +157,8 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
-        BigDecimal agentCommissionAmount = principalLoanAmount.multiply(commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
+        BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
+        BigDecimal agentCommissionAmount = principalLoanAmount.multiply(agentCommissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
 
         final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)

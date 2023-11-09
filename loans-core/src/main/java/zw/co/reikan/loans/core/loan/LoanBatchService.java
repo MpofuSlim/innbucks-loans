@@ -3,11 +3,13 @@ package zw.co.reikan.loans.core.loan;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class LoanBatchService {
     private final LoanBatchRepository loanBatchRepository;
 

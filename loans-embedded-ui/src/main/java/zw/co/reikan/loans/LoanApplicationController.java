@@ -1,5 +1,6 @@
 package zw.co.reikan.loans;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -39,6 +40,7 @@ import static zw.co.reikan.loans.core.loan.Constants.PAYLOAD;
 
 
 @Controller
+@Slf4j
 public class LoanApplicationController {
 
     private final static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-d");
@@ -56,17 +58,14 @@ public class LoanApplicationController {
 
     @GetMapping("/loan")
     public String showLoanApplicationPage(@RequestParam("payload") String payload,
+                                          @RequestParam(value = "version", defaultValue = "0") String version,
                                           Model model, HttpSession session) throws Exception {
-        final String formattedPayload = payload.replaceAll("\n", "");
-        String decrypt = EncryptionUtils.decrypt(formattedPayload, decryptionKey);
-        return decodeDataAndPopulateModel(payload, model, session, decrypt);
-    }
 
-    @GetMapping("/loan?version=2")
-    public String showLoanApplicationPageV2(@RequestParam("payload") String payload,
-                                            Model model, HttpSession session) throws Exception {
+        log.info("Loading application page: version: {}, payload: {}", version, payload);
+
         final String formattedPayload = payload.replaceAll("\n", "");
-        String decrypt = CryptoHelper.decrypt(formattedPayload, _16BitDescryptionKey);
+        String decrypt = "0".equals(version) ? EncryptionUtils.decrypt(formattedPayload, decryptionKey) :
+                CryptoHelper.decrypt(formattedPayload, _16BitDescryptionKey);
         return decodeDataAndPopulateModel(payload, model, session, decrypt);
     }
 

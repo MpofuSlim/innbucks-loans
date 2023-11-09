@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
@@ -24,6 +25,7 @@ import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.REJECTED;
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@Transactional
 public class LoanApprovalServiceJob {
 
     private final LoanApprovalService loanApprovalService;
@@ -53,7 +55,8 @@ public class LoanApprovalServiceJob {
                 .tenor(loan.getTenor())
                 .build());
 
-        log.info("Updating loan status: {}", loanApprovalResponse);
+        log.info(">> Updating loan status: {}", loanApprovalResponse);
+
         loan.setLoanApprovalStatus(loanApprovalResponse.getStatus());
         loan.setApprovalReference(loanApprovalResponse.getReference());
         loan.setBatchNumber(loanApprovalResponse.getBatchNumber());
@@ -62,6 +65,8 @@ public class LoanApprovalServiceJob {
         loan.setRepaymentEndDate(loanApprovalResponse.getEndDate());
 
         loanRepository.save(loan);
+
+        log.info("saving loan batch: {}", loanApprovalResponse.getBatchNumber());
 
         loanBatchService.save(loanApprovalResponse.getBatchNumber());
 
