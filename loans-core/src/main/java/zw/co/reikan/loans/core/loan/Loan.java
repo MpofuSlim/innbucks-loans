@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import javax.persistence.Column;
+import javax.persistence.Embedded;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
@@ -132,6 +133,42 @@ public class Loan extends BaseEntity {
 
     @Column(name = "agent_commission")
     private BigDecimal agentCommission;
+
+    @Column(name = "number_of_dependencies")
+    private int numberOfDependencies;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "education_level")
+    private EducationLevel educationLevel;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "marital_status")
+    private MaritalStatus maritalStatus;
+
+    @Column(name = "alternate_contact_number")
+    private String alternateContactNumber;
+
+    @Column(name = "place_of_birth")
+    private String placeOfBirth;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "title")
+    private Title title;
+
+    @Column(name = "email")
+    private String email;
+
+    @Embedded
+    private Address address;
+
+    @Embedded
+    private EmploymentDetail employmentDetail;
+
+    @Embedded
+    private NextOfKin nextOfKin;
+
+    @Embedded
+    private Witness witness;
 
     public String getReference() {
         return String.format("%09d", getId());

@@ -5,6 +5,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -24,6 +28,17 @@ public class LoanRequest implements Serializable {
     private String fname;
     private String lname;
     private LocalDate dateOfBirth;
+    private int numberOfDependencies;
+    private MaritalStatus maritalStatus;
+    private String alternateContactNumber;
+    private String placeOfBirth;
+    private Title title;
+    private String email;
+    private EducationLevel educationLevel;
+    private Address address;
+    private EmploymentDetail employmentDetail;
+    private NextOfKin nextOfKin;
+    private Witness witness;
 
     @Override
     public String toString() {

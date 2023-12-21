@@ -23,6 +23,10 @@ import static org.springframework.data.jpa.domain.Specification.where;
 import static zw.co.reikan.loans.core.loan.Constants.ADMI_FEE_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.AGENT_COMMISSION_RATE;
 import static zw.co.reikan.loans.core.loan.Constants.COMMISSION_RATE;
+import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_TENOR;
+import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_AMOUNT;
+import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_TENOR;
 import static zw.co.reikan.loans.core.loan.Constants.MONTHLY_INTEREST_RATE;
 import static zw.co.reikan.loans.core.loan.LoanSpecification.withApprovalStatus;
 import static zw.co.reikan.loans.core.loan.LoanSpecification.withCreatedDateBetween;
@@ -106,6 +110,18 @@ public class LoanServiceImpl implements LoanService {
                 .dateOfBirth(loanRequest.getDateOfBirth())
                 .agentCommission(loanDetails.getAgentCommission())
                 .agentCommissionRate(loanDetails.getAgentCommissionRate())
+                .numberOfDependencies(loanRequest.getNumberOfDependencies())
+                .educationLevel(loanRequest.getEducationLevel())
+                .maritalStatus(loanRequest.getMaritalStatus())
+                .alternateContactNumber(loanRequest.getAlternateContactNumber())
+                .placeOfBirth(loanRequest.getPlaceOfBirth())
+                .title(loanRequest.getTitle())
+                .email(loanRequest.getEmail())
+                .educationLevel(loanRequest.getEducationLevel())
+                .address(loanRequest.getAddress())
+                .employmentDetail(loanRequest.getEmploymentDetail())
+                .nextOfKin(loanRequest.getNextOfKin())
+                .witness(loanRequest.getWitness())
                 .build();
 
         loanRepository.save(loan);
@@ -129,21 +145,31 @@ public class LoanServiceImpl implements LoanService {
         List<AmortizationEntry> schedule = new ArrayList<>();
 
         final Map<String, String> params = parameterService.getParameterValues(
-                COMMISSION_RATE,
-                ADMI_FEE_RATE,
-                MONTHLY_INTEREST_RATE,
-                AGENT_COMMISSION_RATE);
+                COMMISSION_RATE, ADMI_FEE_RATE, MONTHLY_INTEREST_RATE,
+                AGENT_COMMISSION_RATE, MINIMUM_LOAN_AMOUNT, MAXIMUM_LOAN_AMOUNT, MINIMUM_LOAN_TENOR, MAXIMUM_LOAN_TENOR);
+
+
+        int minLoanTenor = Integer.parseInt(String.valueOf(params.get(MINIMUM_LOAN_TENOR)));
+        int maxLoanTenor = Integer.parseInt(String.valueOf(params.get(MAXIMUM_LOAN_TENOR)));
+
+        if (request.getTenor() < minLoanTenor || request.getTenor() > maxLoanTenor) {
+            throw new IllegalArgumentException(String.format("Loan tenor should be between %s and %s", minLoanTenor, maxLoanTenor));
+        }
 
         BigDecimal adminFeeRate = new BigDecimal(params.get(ADMI_FEE_RATE));
-        BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
-        BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
-
         BigDecimal principalLoanAmount = getPrincipalLoanAmount(request, adminFeeRate);
+        BigDecimal minLoanAmount = new BigDecimal(params.get(MINIMUM_LOAN_AMOUNT));
+
+        BigDecimal maxLoanAmount = new BigDecimal(params.get(MAXIMUM_LOAN_AMOUNT));
+        if (principalLoanAmount.compareTo(minLoanAmount) < 0 || principalLoanAmount.compareTo(maxLoanAmount) > 0) {
+            throw new IllegalArgumentException(String.format("Loan amount should be between %s and %s", minLoanAmount, maxLoanAmount));
+        }
 
         BigDecimal adminFeeAmount = principalLoanAmount
                 .multiply(adminFeeRate)
                 .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
+        BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
         BigDecimal interestRate = monthlyInterestRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
         BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
@@ -153,6 +179,7 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFeeAmount);
 
+        BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
         BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
@@ -208,6 +235,11 @@ public class LoanServiceImpl implements LoanService {
     }
 
     private BigDecimal getPrincipalLoanAmount(LoanRequest request, BigDecimal adminFeeRate) {
+
+        if (request.getAmount() == null) {
+            throw new IllegalArgumentException("Loan amount is required");
+        }
+
         if (LoanAmountType.NET_OF_FEES == request.getType()) {
             return request.getAmount().divide(ONE.subtract(adminFeeRate.divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
         }
