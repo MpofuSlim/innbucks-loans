@@ -4,14 +4,21 @@ import lombok.Data;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import javax.persistence.Column;
-import javax.persistence.Embeddable;
+import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
+import javax.persistence.ManyToOne;
+import javax.persistence.Table;
 import java.time.LocalDateTime;
 
-@Embeddable
+@Entity
+@Table(name = "loan_disbursement")
 @Data
-public class LoanDisbursement {
+public class LoanDisbursement extends BaseEntity {
+
+    @ManyToOne
+    private Loan loan;
+
     @Enumerated(value = EnumType.STRING)
     @Column(name = "disbursement_status")
     private LoanDisbursementStatus disbursementStatus;

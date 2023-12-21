@@ -103,6 +103,12 @@ public class Loan extends BaseEntity {
     @Column(name = "disbursement_reference")
     private String disbursementReference;
 
+    @Column(name = "disbursement_attempts")
+    private Integer disbursementAttempts;
+
+    @Column(name = "next_disbursement_attempt_date")
+    private LocalDateTime nextDisbursementAttemptDate;
+
     @Column(name = "approval_reference")
     private String approvalReference;
 

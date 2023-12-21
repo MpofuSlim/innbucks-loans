@@ -219,6 +219,11 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
                         loan.setLoanApprovalStatus(response.getStatus().getApprovalStatus());
                         loan.setDateApproved(LocalDateTime.now());
                         loan.setApprovalReference(response.getId());
+
+                        if (LoanApprovalStatus.APPROVED == response.getStatus().getApprovalStatus()) {
+                            loan.setDisbursementAttempts(0);
+                            loan.setNextDisbursementAttemptDate(LocalDateTime.now());
+                        }
                         loanRepository.save(loan);
                     });
         } catch (Exception ex) {

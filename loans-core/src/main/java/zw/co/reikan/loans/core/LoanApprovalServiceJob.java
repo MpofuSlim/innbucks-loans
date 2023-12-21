@@ -18,10 +18,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
-import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.PROCESSING;
-import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.REJECTED;
-
 @Service
 @Slf4j
 @RequiredArgsConstructor

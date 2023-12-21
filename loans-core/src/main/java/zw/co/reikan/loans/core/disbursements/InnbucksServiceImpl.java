@@ -1,6 +1,5 @@
 package zw.co.reikan.loans.core.disbursements;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -14,6 +13,9 @@ import zw.co.reikan.loans.core.DisbursementResponse;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.MsisdnUtil;
 import zw.co.reikan.loans.core.loan.DisbursementStatus;
+import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
+import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
 
@@ -21,15 +23,24 @@ import static zw.co.reikan.loans.core.Utils.generateReference;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
-public class InnbucksServiceImpl implements DisbursementService {
+public class InnbucksServiceImpl extends DisbursementService {
 
     private static final BigDecimal CENTS = new BigDecimal("100");
     private final InnbucksAuthService innbucksAuthService;
     private final RestTemplate restTemplate;
     private final InnbucksParameters parameters;
 
-    @Override
+    public InnbucksServiceImpl(LoanRepository loanRepository, NotificationService notificationService,
+                               LoanDisbursementRepository loanDisbursementRepository,
+                               RestTemplate restTemplate, InnbucksParameters parameters,
+                               InnbucksAuthService innbucksAuthService
+    ) {
+        super(loanRepository, notificationService, loanDisbursementRepository);
+        this.innbucksAuthService = innbucksAuthService;
+        this.restTemplate = restTemplate;
+        this.parameters = parameters;
+    }
+
     public DisbursementResponse disburseFunds(DisbursementRequest request) {
         final String uniqueTxnReference = generateReference(request.getMobileNumber());
         try {

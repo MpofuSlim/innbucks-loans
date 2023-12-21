@@ -70,6 +70,19 @@
             </ul>
             <form class="tf-form mt-5">
 
+                <div class="group-input">
+                    <label>Purpose of Loan</label>
+                    <select id="purposeOfLoan" name="purposeOfLoan">
+                        <option>Home Improvement</option>
+                        <option>Medical</option>
+                        <option>Personal Use</option>
+                        <option>Premiums</option>
+                        <option>School Fees</option>
+                        <option>Vacation</option>
+                        <option>Wedding Expenses</option>
+                    </select>
+                </div>
+
                 <div class="group-double-ip">
                     <div class="group-input">
                         <label>EC Number</label>
@@ -85,16 +98,37 @@
                 </div>
 
                 <div class="group-double-ip mb-2">
-                    <div class="group-input mb-0">
+                    <div class="group-input">
                         <label>Tenor in Months</label>
                         <input class="valid-number tenor" id="tenor" name="tenor" style="text-align: right" type="text">
                         <p class="errorText text-center" id="tenorError">1-24</p>
                     </div>
-                    <div class="group-input mb-0">
+                    <div class="group-input">
                         <label for="">Monthly Deduction</label>
                         <input disabled id="repayment_amount"
                                style="color: #d92e40; font-weight: bolder; text-align: right" type="text">
                     </div>
+                </div>
+
+                <div class="group-double-ip mb-2">
+                    <div class="group-input mb-0">
+                        <label>Station Number</label>
+                        <input class="valid-number tenor" id="stationNumber" name="stationNumber"
+                               style="text-align: right" type="text">
+                        <p class="errorText text-center" id="tenorError">1-24</p>
+                    </div>
+
+                    <div class="group-input mb-0">
+                        <label>Dept Code No.</label>
+                        <input class="valid-number tenor" id="dptCode" name="dptCode" style="text-align: right"
+                               type="text">
+                        <p class="errorText text-center" id="tenorError">1-24</p>
+                    </div>
+                </div>
+
+                <div class="group-checkbox mb-2">
+                    <input class="tf-checkbox st1" id="agreeToSSB" type="checkbox">
+                    <span class="fw_3 terms_and_conditions" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
                 </div>
 
                 <div class="group-checkbox mb-2">
@@ -107,7 +141,7 @@
                 <div class="input-field d-flex align-items-center" id="canvas_wrapper"
                      style="border: 1px dashed; border-radius: 8px;">
                     <h6>Sign here</h6>
-                    <canvas class="w-100" height="100" id="signaturePad"></canvas>
+                    <canvas class="w-100" height="50" id="signaturePad"></canvas>
                 </div>
                 <div class="group-input mb-2">
                     <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
