@@ -135,7 +135,7 @@ public class Loan extends BaseEntity {
     private BigDecimal agentCommission;
 
     @Column(name = "number_of_dependencies")
-    private int numberOfDependencies;
+    private Integer numberOfDependencies;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "education_level")
@@ -174,4 +174,10 @@ public class Loan extends BaseEntity {
         return String.format("%09d", getId());
     }
 
+    public Integer getNumberOfDependencies() {
+        if (numberOfDependencies == null) {
+            return 0;
+        }
+        return numberOfDependencies;
+    }
 }

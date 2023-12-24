@@ -38,6 +38,7 @@ import static zw.co.reikan.loans.core.loan.LoanSpecification.withDisbursementSta
 public class LoanServiceImpl implements LoanService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final String EC_NUMBER_REGEX_FORMAT = "^[0-9]{7}[a-zA-Z]$";
     private final LoanRepository loanRepository;
     private final ParameterService parameterService;
     private final LoanMapper loanMapper;
@@ -76,6 +77,11 @@ public class LoanServiceImpl implements LoanService {
         log.info("Requesting loan approval: {}", loanRequest);
 
         final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+
+        if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
+            throw new IllegalArgumentException("EC Number is not valid");
+        }
+
         final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
 
         boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
