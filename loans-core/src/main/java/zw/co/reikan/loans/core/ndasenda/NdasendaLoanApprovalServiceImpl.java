@@ -91,7 +91,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     public List<NdasendaDeductionsBatchRequest> findBatches(FindNdasendaBatchRequest request) {
         log.info("Finding Ndasenda batches: {}", request);
         try {
-            return findBatchRequestsByDate(request.getStartDate(), request.getEndDate())
+            return findBatchRequestsByDate(request.getFromDate(), request.getToDate())
                     .stream()
                     .filter(getNdasendaDeductionsBatchRequestPredicate(request))
                     .map(this::populateCustomerInformation)

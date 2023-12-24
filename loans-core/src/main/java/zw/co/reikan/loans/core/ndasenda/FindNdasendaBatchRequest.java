@@ -8,8 +8,8 @@ import java.time.LocalDate;
 @Data
 public class FindNdasendaBatchRequest {
     @Schema(description = "format yyyy-MM-dd")
-    private LocalDate startDate;
+    private LocalDate fromDate;
     @Schema(description = "format yyyy-MM-dd")
-    private LocalDate endDate;
+    private LocalDate toDate;
     private DeductionBatchStatus batchStatus;
 }
