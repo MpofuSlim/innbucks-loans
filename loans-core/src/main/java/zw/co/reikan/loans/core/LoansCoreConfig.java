@@ -8,6 +8,7 @@ import zw.co.reikan.loans.core.config.HttpClientConfig;
 import zw.co.reikan.loans.core.disbursements.InnbucksParameters;
 import zw.co.reikan.loans.core.keycloak.AuthProperties;
 import zw.co.reikan.loans.core.ndasenda.NdasendaParameters;
+import zw.co.reikan.loans.core.notifications.NotificationParameters;
 
 
 @EnableScheduling
@@ -15,7 +16,7 @@ import zw.co.reikan.loans.core.ndasenda.NdasendaParameters;
 @EnableConfigurationProperties(value = {HttpClientConfig.class,
         NdasendaParameters.class,
         InnbucksParameters.class,
-        AuthProperties.class})
+        AuthProperties.class, NotificationParameters.class})
 @EnableCaching
 public class LoansCoreConfig {
 }
