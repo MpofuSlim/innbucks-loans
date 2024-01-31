@@ -43,6 +43,7 @@ public class AuthController {
         try {
             return keyCloakService.getAccessToken(authRequest);
         } catch (Exception ex) {
+            log.error("Error getting access token.", ex);
             throw new BadCredentialsException(ex.getMessage());
         }
     }
