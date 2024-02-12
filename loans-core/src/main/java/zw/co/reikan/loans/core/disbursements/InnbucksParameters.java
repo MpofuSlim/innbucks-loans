@@ -10,5 +10,6 @@ public class InnbucksParameters {
     private String password;
     private String authEndpoint;
     private String depositEndpoint;
+    private String createLoanAccountEndpoint;
     private String apiKey;
 }

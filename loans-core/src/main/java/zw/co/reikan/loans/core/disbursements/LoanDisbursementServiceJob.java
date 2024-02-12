@@ -12,7 +12,6 @@ import zw.co.reikan.loans.core.loan.LoanRepository;
 
 import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.PENDING;
 import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS;
-import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
 
 @Service
 @Slf4j
@@ -26,7 +25,7 @@ public class LoanDisbursementServiceJob {
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
-        loanRepository.findByLoanApprovalStatusAndDisbursementStatus(APPROVED, PENDING)
+        loanRepository.findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus.CREATED, PENDING)
                 .forEach(this::processLoanApproval);
     }
 
@@ -41,5 +40,5 @@ public class LoanDisbursementServiceJob {
                 .reference(loan.getReference())
                 .build(), loan);
     }
-    
+
 }

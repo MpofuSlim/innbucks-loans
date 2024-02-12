@@ -4,16 +4,10 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
-import javax.persistence.Column;
-import javax.persistence.Embedded;
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.Index;
-import javax.persistence.Lob;
-import javax.persistence.Table;
+import javax.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -169,6 +163,16 @@ public class Loan extends BaseEntity {
 
     @Embedded
     private Witness witness;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "loan_account_status")
+    private LoanAccountStatus loanAccountStatus;
+
+    @Enumerated(EnumType.STRING)
+    private LineOfBusiness lineOfBusiness;
+
+    @Enumerated(EnumType.STRING)
+    private LoanPurpose loanPurpose;
 
     public String getReference() {
         return String.format("%09d", getId());

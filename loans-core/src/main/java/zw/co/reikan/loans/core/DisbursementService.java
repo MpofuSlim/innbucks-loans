@@ -2,11 +2,8 @@ package zw.co.reikan.loans.core;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import zw.co.reikan.loans.core.loan.DisbursementStatus;
-import zw.co.reikan.loans.core.loan.Loan;
-import zw.co.reikan.loans.core.loan.LoanDisbursement;
-import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
-import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.disbursements.LoanAccountCreationResponse;
+import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
@@ -22,6 +19,8 @@ public abstract class DisbursementService {
     private final LoanDisbursementRepository loanDisbursementRepository;
 
     public abstract DisbursementResponse disburseFunds(DisbursementRequest request);
+
+    public abstract LoanAccountCreationResponse createLoanAccount(Loan loan);
 
     public void processDisbursement(DisbursementRequest request, Loan loan) {
 

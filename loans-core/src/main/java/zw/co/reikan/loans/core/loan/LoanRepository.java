@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.loan;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
+import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import java.time.LocalDateTime;
@@ -18,8 +19,11 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
 
-    List<Loan> findByLoanApprovalStatusAndDisbursementStatus(LoanApprovalStatus loanApprovaStatus,
-                                                             LoanDisbursementStatus disbursementStatus);
+    List<Loan> findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus loanAccountStatus,
+                                                            LoanDisbursementStatus disbursementStatus);
+
+    List<Loan> findByLoanApprovalStatusAndLoanAccountStatus(LoanApprovalStatus loanApprovaStatus,
+                                                            LoanAccountStatus loanAccountStatus);
 
     List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 
