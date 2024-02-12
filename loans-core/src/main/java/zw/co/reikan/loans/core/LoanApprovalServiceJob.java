@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,34 +43,45 @@ public class LoanApprovalServiceJob {
     }
 
     private void processLoanApproval(Loan loan) {
+        if (loan.getApprovalAttempt() != null && loan.getApprovalAttempt() > 3) {
+            log.info("Max approval attempts exceeded: loan id: {}, mobile: {}", loan.getId(), loan.getMobileNumber());
+            return;
+        }
 
-        final LoanApprovalResponse loanApprovalResponse = loanApprovalService.requestApproval(LoanApprovalRequest.builder()
-                .monthlyInstallment(loan.getGrossedMonthlyDeduction())
-                .ecnumber(loan.getEcNumber())
-                .idNumber(loan.getNationalIdNumber())
-                .reference(loan.getReference())
-                .tenor(loan.getTenor())
-                .build());
+        try {
+            final LoanApprovalResponse loanApprovalResponse = loanApprovalService.requestApproval(LoanApprovalRequest.builder()
+                    .monthlyInstallment(loan.getGrossedMonthlyDeduction())
+                    .ecnumber(loan.getEcNumber())
+                    .idNumber(loan.getNationalIdNumber())
+                    .reference(loan.getReference())
+                    .tenor(loan.getTenor())
+                    .build());
 
-        log.info(">> Updating loan status: {}", loanApprovalResponse);
+            log.info(">> Updating loan status: {}", loanApprovalResponse);
 
-        loan.setLoanApprovalStatus(loanApprovalResponse.getStatus());
-        loan.setApprovalReference(loanApprovalResponse.getReference());
-        loan.setBatchNumber(loanApprovalResponse.getBatchNumber());
-        loan.setDateApproved(LocalDateTime.now());
-        loan.setRepaymentStartDate(loanApprovalResponse.getStartDate());
-        loan.setRepaymentEndDate(loanApprovalResponse.getEndDate());
+            loan.setLoanApprovalStatus(loanApprovalResponse.getStatus());
+            loan.setApprovalReference(loanApprovalResponse.getReference());
+            loan.setBatchNumber(loanApprovalResponse.getBatchNumber());
+            loan.setDateApproved(LocalDateTime.now());
+            loan.setRepaymentStartDate(loanApprovalResponse.getStartDate());
+            loan.setRepaymentEndDate(loanApprovalResponse.getEndDate());
 
-        loanRepository.save(loan);
+            loanRepository.save(loan);
 
-        log.info("saving loan batch: {}", loanApprovalResponse.getBatchNumber());
+            log.info("saving loan batch: {}", loanApprovalResponse.getBatchNumber());
 
-        loanBatchService.save(loanApprovalResponse.getBatchNumber());
+            loanBatchService.save(loanApprovalResponse.getBatchNumber());
 
-        log.info("Dispatching loan approved sms notification: {}", loanApprovalResponse);
-        final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()), String.format("%09d", loan.getId()));
-        notificationService.sendSms(loan.getMobileNumber(), text);
+            log.info("Dispatching loan approved sms notification: {}", loanApprovalResponse);
+            final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()), String.format("%09d", loan.getId()));
+            notificationService.sendSms(loan.getMobileNumber(), text);
+        } catch (Exception ex) {
+            log.error("", ex);
+            loan.setApprovalAttempt(loan.getApprovalAttempt() == null ? 1 : loan.getApprovalAttempt() + 1);
+            loan.setLoanApprovalStatus(LoanApprovalStatus.FAILED);
+            loan.setLoanStatusMessage(StringUtils.left(ex.getMessage(), 250));
+            loanRepository.save(loan);
+        }
     }
-
 
 }

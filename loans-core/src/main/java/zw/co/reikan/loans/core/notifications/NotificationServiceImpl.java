@@ -17,6 +17,7 @@ import org.springframework.web.client.RestTemplate;
 public class NotificationServiceImpl implements NotificationService {
 
     private final RestTemplate restTemplate;
+    private final NotificationParameters notificationParameters;
 
     @Override
     @Async
@@ -41,7 +42,7 @@ public class NotificationServiceImpl implements NotificationService {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Basic Z2F0ZXdheS1zbXMtY2xpZW50OiQwMzB2RkhpMFpuTFpmQFlNUVREeUFzWmQ=");
+            headers.setBasicAuth(notificationParameters.getUsername(), notificationParameters.getPassword());
             HttpEntity<Sms> requestEntity = new HttpEntity<>(sms, headers);
             restTemplate.exchange("https://api.bulkit.co.zw/sms", HttpMethod.POST, requestEntity, Sms.class);
         } catch (Exception ex) {

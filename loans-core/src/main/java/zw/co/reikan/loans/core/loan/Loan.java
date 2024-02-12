@@ -107,6 +107,9 @@ public class Loan extends BaseEntity {
     @Column(name = "approval_reference")
     private String approvalReference;
 
+    @Column(name = "approval_attempt")
+    private Integer approvalAttempt;
+
     @Column(name = "batch_number")
     private String batchNumber;
 
