@@ -39,6 +39,7 @@ public class LoanRequest implements Serializable {
     private EmploymentDetail employmentDetail;
     private NextOfKin nextOfKin;
     private Witness witness;
+    private LoanPurpose purposeOfLoan;
 
     @Override
     public String toString() {
@@ -53,6 +54,7 @@ public class LoanRequest implements Serializable {
         sb.append(", fname='").append(fname).append('\'');
         sb.append(", lname='").append(lname).append('\'');
         sb.append(", dob='").append(dateOfBirth).append('\'');
+        sb.append(", purposeOfLoan='").append(purposeOfLoan).append('\'');
         sb.append('}');
         return sb.toString();
     }

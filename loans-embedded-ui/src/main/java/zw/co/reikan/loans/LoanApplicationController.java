@@ -102,7 +102,6 @@ public class LoanApplicationController {
         session.setAttribute("nationalId", nationalId);
         session.setAttribute("dob", dob);
 
-
         session.setAttribute(COMMISSION_RATE, new BigDecimal(params.get(COMMISSION_RATE)));
         session.setAttribute(ADMI_FEE_RATE, new BigDecimal(params.get(ADMI_FEE_RATE)));
         session.setAttribute(MONTHLY_INTEREST_RATE, new BigDecimal(params.get(MONTHLY_INTEREST_RATE)));

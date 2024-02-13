@@ -125,6 +125,7 @@ public class LoanServiceImpl implements LoanService {
                     .employmentDetail(loanRequest.getEmploymentDetail())
                     .nextOfKin(loanRequest.getNextOfKin())
                     .witness(loanRequest.getWitness())
+                    .loanPurpose(loanRequest.getPurposeOfLoan())
                     .build();
 
             loanRepository.save(loan);

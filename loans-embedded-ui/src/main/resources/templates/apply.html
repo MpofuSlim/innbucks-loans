@@ -73,13 +73,13 @@
                 <div class="group-input">
                     <label>Purpose of Loan</label>
                     <select id="purposeOfLoan" name="purposeOfLoan">
-                        <option>Home Improvement</option>
-                        <option>Medical</option>
-                        <option>Personal Use</option>
-                        <option>Premiums</option>
-                        <option>School Fees</option>
-                        <option>Vacation</option>
-                        <option>Wedding Expenses</option>
+                        <option value="HOME_IMPROVEMENT">Home Improvement</option>
+                        <option value="MEDICAL">Medical</option>
+                        <option value="PERSONAL_USE">Personal Use</option>
+                        <option value="PREMIUMS">Premiums</option>
+                        <option value="SCHOOL_FEES">School Fees</option>
+                        <option value="VACATION">Vacation</option>
+                        <option value="WEDDING_EXPENSES">Wedding Expenses</option>
                     </select>
                 </div>
 
@@ -468,12 +468,15 @@
         var tenor_input = document.getElementById('tenor');
         var nationalId_input = document.getElementById('nationalId');
 
+        var purposeOfLoan_Input = document.getElementById('purposeOfLoan');
+
         form.appendChild(amount_input);
         form.appendChild(ecnumber_input);
         form.appendChild(mobileNumber_input);
         form.appendChild(signature_input);
         form.appendChild(tenor_input);
         form.appendChild(nationalId_input);
+        form.appendChild(purposeOfLoan_Input);
 
         document.body.appendChild(form);
 
