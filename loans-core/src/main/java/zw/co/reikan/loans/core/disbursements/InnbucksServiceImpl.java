@@ -41,13 +41,20 @@ public class InnbucksServiceImpl extends DisbursementService {
 
     public LoanAccountCreationResponse createLoanAccount(Loan loan) {
         log.info("Processing loan account creation");
+
+
+        String businessLine = loan.getLineOfBusiness() != null ?
+                loan.getLineOfBusiness().getDescription() : LineOfBusiness.SERVICES.getDescription();
+
+        String loanPurpose = loan.getLoanPurpose() != null ? loan.getLoanPurpose().getDescription() : LoanPurpose.PERSONAL_USE.getDescription();
+
         LoanAccountCreationRequest.LoanAccountCreationRequestBuilder builder = LoanAccountCreationRequest.builder()
                 .currency("USD")
                 .amount(toCents(loan.getPrincipal()))
                 .maritalStatus(loan.getMaritalStatus().getCode())
-                .businessLine(loan.getLineOfBusiness().getCodeId())
-                .loanPurpose(loan.getLoanPurpose().getCodeId())
-                .grossSalary(0)
+                .businessLine(businessLine)
+                .loanPurpose(loanPurpose)
+                .grossSalary(toCents(loan.getEmploymentDetail().getGrossSalary()))
                 .msisdn(loan.getMobileNumber())
                 .nextOfKinIdNumber(trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
                 .numberOfDependents(loan.getNumberOfDependencies())
