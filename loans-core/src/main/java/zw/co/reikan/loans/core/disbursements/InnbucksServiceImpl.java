@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 import static zw.co.reikan.loans.core.Utils.generateReference;
@@ -51,15 +52,15 @@ public class InnbucksServiceImpl extends DisbursementService {
         LoanAccountCreationRequest.LoanAccountCreationRequestBuilder builder = LoanAccountCreationRequest.builder()
                 .currency("USD")
                 .amount(toCents(loan.getPrincipal()))
-                .maritalStatus(loan.getMaritalStatus().getCode())
+                .maritalStatus(loan.getMaritalStatus() == null ? MaritalStatus.SINGLE.getCode() : loan.getMaritalStatus().getCode())
                 .businessLine(businessLine)
                 .loanPurpose(loanPurpose)
-                .grossSalary(toCents(loan.getEmploymentDetail().getGrossSalary()))
+                .grossSalary(toCents(loan.getEmploymentDetail() == null ? BigDecimal.ONE : loan.getEmploymentDetail().getGrossSalary()))
                 .msisdn(loan.getMobileNumber())
-                .nextOfKinIdNumber(trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
+                .nextOfKinIdNumber(loan.getNextOfKin() == null ? "00000000X00" : trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
                 .numberOfDependents(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
-                .placeOfBirth(loan.getPlaceOfBirth())
+                .placeOfBirth(loan.getPlaceOfBirth() == null ? "UNKNOWN" : loan.getPlaceOfBirth())
                 .product(SSBUSD)
                 .tenureInMonths(loan.getTenor())
                 .repaymentFrequency(MONTHLY);
@@ -70,6 +71,11 @@ public class InnbucksServiceImpl extends DisbursementService {
             builder.employerNumber(trimSpecialCharacters(employmentDetail.getEmployeeNumber()))
                     .employer(trimSpecialCharacters(employmentDetail.getEmployerName()))
                     .employmentStartDate(employmentDetail.getEmploymentStartDate()
+                            .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
+        } else {
+            builder.employerNumber(trimSpecialCharacters(loan.getEcNumber()))
+                    .employer("NOTSPECIFIED")
+                    .employmentStartDate(LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
         }
 

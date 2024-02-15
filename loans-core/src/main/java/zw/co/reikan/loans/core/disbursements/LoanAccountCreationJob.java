@@ -36,8 +36,14 @@ public class LoanAccountCreationJob {
         LoanAccountCreationResponse loanAccount = disbursementService.createLoanAccount(loan);
 
         if (loanAccount.isSuccess()) {
+            log.info("Loan account created successfully");
             loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+        } else {
+            loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
+            log.info("Loan account creation failed");
         }
+
+        loanRepository.save(loan);
     }
 
 }

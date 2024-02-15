@@ -7,8 +7,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import javax.persistence.Column;
-
 @Data
 @Builder
 @AllArgsConstructor
@@ -34,6 +32,9 @@ public class NdasendaDeduction {
 
     @JsonProperty("status")
     private NdasendaDeductionStatus status;
+
+    @JsonProperty("message")
+    private String message;
 
     private String firstName;
 

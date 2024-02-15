@@ -4,17 +4,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -22,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -41,6 +40,12 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final NdasendaParameters ndasendaProps;
     private final LoanRepository loanRepository;
     private final LoanBatchService loanBatchService;
+    private final NotificationService notificationService;
+
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Ref: %s.",
+            LoanApprovalStatus.REJECTED, "Loan application Ref: %s has been rejected. %s",
+            LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
+    );
 
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
 
@@ -223,7 +228,13 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
                         if (LoanApprovalStatus.APPROVED == response.getStatus().getApprovalStatus()) {
                             loan.setDisbursementAttempts(0);
                             loan.setNextDisbursementAttemptDate(LocalDateTime.now());
+                            loan.setLoanAccountStatus(LoanAccountStatus.PENDING);
                         }
+
+                        final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
+                                String.format("%09d", loan.getId()), response.getMessage());
+                        notificationService.sendSms(loan.getMobileNumber(), text);
+
                         loanRepository.save(loan);
                     });
         } catch (Exception ex) {
