@@ -7,7 +7,6 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
 import zw.co.reikan.loans.core.DisbursementService;
-import zw.co.reikan.loans.core.MsisdnUtil;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -15,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+import static zw.co.reikan.loans.core.MsisdnUtil.formatMsisdnInternational;
 import static zw.co.reikan.loans.core.Utils.generateReference;
 import static zw.co.reikan.loans.core.Utils.trimSpecialCharacters;
 
@@ -56,7 +56,7 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .businessLine(businessLine)
                 .loanPurpose(loanPurpose)
                 .grossSalary(toCents(loan.getEmploymentDetail() == null ? BigDecimal.ONE : loan.getEmploymentDetail().getGrossSalary()))
-                .msisdn(loan.getMobileNumber())
+                .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
                 .nextOfKinIdNumber(loan.getNextOfKin() == null ? "00000000X00" : trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
                 .numberOfDependents(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
@@ -104,7 +104,7 @@ public class InnbucksServiceImpl extends DisbursementService {
 
             InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
                     .amount(toCents(request.getAmount()))
-                    .destinationMsisdn(MsisdnUtil.formatMsisdnInternational(request.getMobileNumber()))
+                    .destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()))
                     .reference(uniqueTxnReference)
                     .narration(String.format("Ref: %s", request.getReference()))
                     .build();

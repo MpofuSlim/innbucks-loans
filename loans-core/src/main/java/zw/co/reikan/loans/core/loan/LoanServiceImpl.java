@@ -21,6 +21,7 @@ import java.util.Optional;
 
 import static java.math.BigDecimal.ONE;
 import static org.springframework.data.jpa.domain.Specification.where;
+import static zw.co.reikan.loans.core.MsisdnUtil.formatMsisdnInternational;
 import static zw.co.reikan.loans.core.loan.Constants.*;
 import static zw.co.reikan.loans.core.loan.LoanSpecification.*;
 
@@ -66,75 +67,75 @@ public class LoanServiceImpl implements LoanService {
     @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
-            log.info("Requesting loan approval: {}", loanRequest);
+        log.info("Requesting loan approval: {}", loanRequest);
 
-            final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
 
-            if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
-                throw new IllegalArgumentException("EC Number is not valid");
-            }
+        if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
+            throw new IllegalArgumentException("EC Number is not valid");
+        }
 
-            val dateOfBirth = loanRequest.getDateOfBirth();
-            if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
-                throw new IllegalArgumentException("Must be 18+ years");
-            }
+        val dateOfBirth = loanRequest.getDateOfBirth();
+        if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
+            throw new IllegalArgumentException("Must be 18+ years");
+        }
 
-            final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
+        final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
 
-            boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
+        boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
 
-            if (hasPendingLoan) {
-                return LoanResponse.builder()
-                        .loanApprovalStatus(LoanApprovalStatus.REJECTED)
-                        .message("You have a pending loan application.")
-                        .build();
-            }
-
-            final LoanDetails loanDetails = calculate(loanRequest);
-
-            final Loan loan = Loan.builder()
-                    .principal(loanDetails.getPrincipal())
-                    .disbursementStatus(LoanDisbursementStatus.PENDING)
-                    .loanApprovalStatus(LoanApprovalStatus.NEW)
-                    .ecNumber(formattedEcNumber)
-                    .nationalIdNumber(formattedIdNumber)
-                    .mobileNumber(loanRequest.getMobileNumber())
-                    .signature(loanRequest.getSignatureData())
-                    .feeAmount(loanDetails.getAdminFeeAmount())
-                    .feeRate(loanDetails.getAdminFeeRate())
-                    .interestRate(loanDetails.getInterestRate())
-                    .monthlyInstallment(loanDetails.getRegularMonthlyInstallment())
-                    .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
-                    .commissionRate(loanDetails.getCommissionRate())
-                    .disbursedAmount(loanDetails.getDisbursedAmount())
-                    .tenor(loanDetails.getTenor())
-                    .firstName(loanRequest.getFname())
-                    .lastName(loanRequest.getLname())
-                    .dateOfBirth(dateOfBirth)
-                    .agentCommission(loanDetails.getAgentCommission())
-                    .agentCommissionRate(loanDetails.getAgentCommissionRate())
-                    .numberOfDependencies(loanRequest.getNumberOfDependencies())
-                    .educationLevel(loanRequest.getEducationLevel())
-                    .maritalStatus(loanRequest.getMaritalStatus())
-                    .alternateContactNumber(loanRequest.getAlternateContactNumber())
-                    .placeOfBirth(loanRequest.getPlaceOfBirth())
-                    .title(loanRequest.getTitle())
-                    .email(loanRequest.getEmail())
-                    .educationLevel(loanRequest.getEducationLevel())
-                    .address(loanRequest.getAddress())
-                    .employmentDetail(loanRequest.getEmploymentDetail())
-                    .nextOfKin(loanRequest.getNextOfKin())
-                    .witness(loanRequest.getWitness())
-                    .loanPurpose(loanRequest.getPurposeOfLoan())
-                    .build();
-
-            loanRepository.save(loan);
-
+        if (hasPendingLoan) {
             return LoanResponse.builder()
-                    .loanApprovalStatus(LoanApprovalStatus.NEW)
-                    .internalReference(loan.getReference())
-                    .message("Loan Sent For Approval")
+                    .loanApprovalStatus(LoanApprovalStatus.REJECTED)
+                    .message("You have a pending loan application.")
                     .build();
+        }
+
+        final LoanDetails loanDetails = calculate(loanRequest);
+
+        final Loan loan = Loan.builder()
+                .principal(loanDetails.getPrincipal())
+                .disbursementStatus(LoanDisbursementStatus.PENDING)
+                .loanApprovalStatus(LoanApprovalStatus.NEW)
+                .ecNumber(formattedEcNumber)
+                .nationalIdNumber(formattedIdNumber)
+                .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
+                .signature(loanRequest.getSignatureData())
+                .feeAmount(loanDetails.getAdminFeeAmount())
+                .feeRate(loanDetails.getAdminFeeRate())
+                .interestRate(loanDetails.getInterestRate())
+                .monthlyInstallment(loanDetails.getRegularMonthlyInstallment())
+                .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
+                .commissionRate(loanDetails.getCommissionRate())
+                .disbursedAmount(loanDetails.getDisbursedAmount())
+                .tenor(loanDetails.getTenor())
+                .firstName(loanRequest.getFname())
+                .lastName(loanRequest.getLname())
+                .dateOfBirth(dateOfBirth)
+                .agentCommission(loanDetails.getAgentCommission())
+                .agentCommissionRate(loanDetails.getAgentCommissionRate())
+                .numberOfDependencies(loanRequest.getNumberOfDependencies())
+                .educationLevel(loanRequest.getEducationLevel())
+                .maritalStatus(loanRequest.getMaritalStatus())
+                .alternateContactNumber(loanRequest.getAlternateContactNumber())
+                .placeOfBirth(loanRequest.getPlaceOfBirth())
+                .title(loanRequest.getTitle())
+                .email(loanRequest.getEmail())
+                .educationLevel(loanRequest.getEducationLevel())
+                .address(loanRequest.getAddress())
+                .employmentDetail(loanRequest.getEmploymentDetail())
+                .nextOfKin(loanRequest.getNextOfKin())
+                .witness(loanRequest.getWitness())
+                .loanPurpose(loanRequest.getPurposeOfLoan())
+                .build();
+
+        loanRepository.save(loan);
+
+        return LoanResponse.builder()
+                .loanApprovalStatus(LoanApprovalStatus.NEW)
+                .internalReference(loan.getReference())
+                .message("Loan Sent For Approval")
+                .build();
     }
 
     public Optional<Loan> findPendingLoan(String ecNumber) {
