@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import java.util.Map;
 @Slf4j
 @RequiredArgsConstructor
 @Transactional
+@Profile("scheduled-tasks")
 public class LoanApprovalServiceJob {
 
     private final LoanApprovalService loanApprovalService;
@@ -30,8 +32,7 @@ public class LoanApprovalServiceJob {
     private final NotificationService notificationService;
     private final LoanBatchService loanBatchService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Ref: %s.",
-            LoanApprovalStatus.REJECTED, "Loan application rejected. We understand your disappointment. Feel free to contact us for further information. Ref: %s",
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, "Loan application rejected. We understand your disappointment. Feel free to contact us for further information. Ref: %s",
             LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
     );
 

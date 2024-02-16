@@ -42,8 +42,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final LoanBatchService loanBatchService;
     private final NotificationService notificationService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 2 hours. Ref: %s.",
-            LoanApprovalStatus.REJECTED, "Loan application Ref: %s has been rejected. %s",
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 24 hours. Ref: %s.",
+            LoanApprovalStatus.REJECTED, "Your loan application ref: %s has been rejected. %s",
             LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
     );
 
@@ -96,13 +96,15 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     public List<NdasendaDeductionsBatchRequest> findBatches(FindNdasendaBatchRequest request) {
         log.info("Finding Ndasenda batches: {}", request);
         try {
-            return findBatchRequestsByDate(request.getFromDate(), request.getToDate())
+            LocalDate fromDate = request.getFromDate() == null ? LocalDate.MIN : request.getFromDate();
+            LocalDate toDate = request.getToDate() == null ? LocalDate.MAX : request.getToDate();
+            return findBatchRequestsByDate(fromDate, toDate)
                     .stream()
                     .filter(getNdasendaDeductionsBatchRequestPredicate(request))
                     .map(this::populateCustomerInformation)
                     .collect(Collectors.toList());
         } catch (Exception ex) {
-            log.error("", ex);
+            log.warn("Error finding batches: {}", ex.getMessage());
             return Collections.emptyList();
         }
     }
@@ -233,6 +235,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
                         final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
                                 String.format("%09d", loan.getId()), response.getMessage());
+
                         notificationService.sendSms(loan.getMobileNumber(), text);
 
                         loanRepository.save(loan);

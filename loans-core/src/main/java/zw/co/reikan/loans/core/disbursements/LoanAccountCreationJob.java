@@ -32,17 +32,21 @@ public class LoanAccountCreationJob {
             log.info("Loan account already created");
             return;
         }
+        try {
 
-        LoanAccountCreationResponse loanAccount = disbursementService.createLoanAccount(loan);
+            LoanAccountCreationResponse loanAccount = disbursementService.createLoanAccount(loan);
 
-        if (loanAccount.isSuccess()) {
-            log.info("Loan account created successfully");
-            loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
-        } else {
+            if (loanAccount.isSuccess()) {
+                log.info("Loan account created successfully");
+                loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+            } else {
+                loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
+                log.info("Loan account creation failed");
+            }
+        } catch (Exception ex) {
             loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
-            log.info("Loan account creation failed");
+            log.error("Loan account creation failed: ", ex);
         }
-
         loanRepository.save(loan);
     }
 
