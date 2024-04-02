@@ -111,7 +111,6 @@ public class LoanApplicationController {
         loanRequest.setFname(String.valueOf(session.getAttribute("fname")));
         loanRequest.setLname(String.valueOf(session.getAttribute("lname")));
         loanRequest.setNationalId(String.valueOf(session.getAttribute("nationalId")));
-
         LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
         loanRequest.setDateOfBirth(dateOfBirth);
 
