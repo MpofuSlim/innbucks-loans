@@ -93,6 +93,61 @@
 
                 <div class="group-double-ip">
                     <div class="group-input">
+                        <label>Next of Kin Name</label>
+                        <input class="valid-number amount first-page" id="nextOfKinName" name="nextOfKinName"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinName"></p>
+                    </div>
+                    <div class="group-input">
+                        <label>Next of Kin Surname</label>
+                        <input class="valid-number amount first-page" id="nextOfKinSurname" name="nextOfKinName"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinSurname"></p>
+                    </div>
+                </div>
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label># of Dependents</label>
+                        <input id="numberOfDependencies" name="numberOfDependencies" type="text" class="first-page">
+                        <p class="errorText text-center" id="errorNumberOfDependencies"></p>
+                    </div>
+                    <div class="group-input">
+                        <label># of Children</label>
+                        <input class="valid-number amount first-page" id="numberOfChildren" name="numberOfChildren"
+                               type="text">
+                        <p class="errorText text-center" id="errorNumberOfChildren"></p>
+                    </div>
+                </div>
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>EC Number</label>
+                        <input id="ecnumber" name="ecnumber" type="text" class="first-page">
+                        <p class="errorText text-center" id="errorText"></p>
+                    </div>
+                    <div class="group-input">
+                        <label>Required Amount</label>
+                        <input class="valid-number amount first-page" id="amount" name="amount" type="text">
+                        <p class="errorText text-center" id="errorAmount">$20.00-$2,000.00</p>
+                    </div>
+                </div>
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Tenor in Months</label>
+                        <input class="valid-number tenor first-page" id="tenor" name="tenor" type="text">
+                        <p class="errorText text-center" id="tenorError">1-24</p>
+                    </div>
+                    <div class="group-input">
+                        <label for="">Monthly Deduction</label>
+                        <input disabled id="repayment_amount"
+                               style="color: #d92e40; font-weight: bolder" type="text">
+                    </div>
+                </div>
+
+                <div class="group-double-ip">
+                    <div class="group-input">
                         <label>Marital Status</label>
                         <select id="maritalStatus" name="maritalStatus">
                             <option value="SINGLE">Single</option>
@@ -115,70 +170,6 @@
                         </select>
                     </div>
 
-                </div>
-
-                <div class="group-double-ip">
-                    <div class="group-input">
-                        <label>Next if Kin</label>
-                        <input class="valid-number amount first-page" id="nextOfKinName" name="nextOfKinName"
-                               style="text-align: right" type="text">
-                        <p class="errorText text-center" id="errorNextOfKin"></p>
-                    </div>
-                    <div class="group-input">
-                        <label>Literacy Level</label>
-                        <select id="educationLevel" name="educationLevel">
-                            <option value="PRIMARY">Primary School</option>
-                            <option value="SECONDARY">Secondary School</option>
-                            <option value="O_LEVEL">Ordinary Level</option>
-                            <option value="A_LEVEL">Advanced Level</option>
-                            <option value="NATIONAL_DIPLOMA">National Diploma</option>
-                            <option value="DEGREE">Bachelor's Degree</option>
-                            <option value="MASTERS">Master's Degree</option>
-                            <option value="DOCTORATE">Doctorate Degree</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="group-double-ip">
-                    <div class="group-input">
-                        <label># of Dependents</label>
-                        <input id="numberOfDependencies" name="numberOfDependencies" type="text" class="first-page">
-                        <p class="errorText text-center" id="errorNumberOfDependencies"></p>
-                    </div>
-                    <div class="group-input">
-                        <label># of Children</label>
-                        <input class="valid-number amount first-page" id="numberOfChildren" name="numberOfChildren"
-                               style="text-align: right" type="text">
-                        <p class="errorText text-center" id="errorNumberOfChildren"></p>
-                    </div>
-                </div>
-
-                <div class="group-double-ip">
-                    <div class="group-input">
-                        <label>EC Number</label>
-                        <input id="ecnumber" name="ecnumber" type="text" class="first-page">
-                        <p class="errorText text-center" id="errorText"></p>
-                    </div>
-                    <div class="group-input">
-                        <label>Required Amount</label>
-                        <input class="valid-number amount first-page" id="amount" name="amount"
-                               style="text-align: right" type="text">
-                        <p class="errorText text-center" id="errorAmount">$20.00-$2,000.00</p>
-                    </div>
-                </div>
-
-                <div class="group-double-ip mb-2">
-                    <div class="group-input">
-                        <label>Tenor in Months</label>
-                        <input class="valid-number tenor first-page" id="tenor" name="tenor"
-                               style="text-align: right" type="text">
-                        <p class="errorText text-center" id="tenorError">1-24</p>
-                    </div>
-                    <div class="group-input">
-                        <label for="">Monthly Deduction</label>
-                        <input disabled id="repayment_amount"
-                               style="color: #d92e40; font-weight: bolder; text-align: right" type="text">
-                    </div>
                 </div>
 
 
@@ -328,8 +319,9 @@
             <div class="tf-container">
                 <div class="tf-statusbar d-flex justify-content-center align-items-center">
                     <a class="clear-panel" href="#"> <i class="icon-close1"></i> </a>
-                    <h3></h3>
+                    <h3>Please Confirm</h3>
                 </div>
+
             </div>
         </div>
 
@@ -337,72 +329,75 @@
             <div class="tf-container">
                 <form action="50_successful.html" class="tf-form-verify">
                     <div class="text-send-code">
-                        <div class="group-double-ip">
-                            <div class="group-input mb-0">
-                                <label>Employer</label>
-                                <input class="valid-number second-page" id="employer"
-                                       name="employer"
-                                       style="text-align: right" type="text">
-                            </div>
-                            <div class="group-input mb-0">
-                                <label>Profession</label>
-                                <input class="valid-number second-page" id="profession" name="profession"
-                                       style="text-align: right"
-                                       type="text">
-                            </div>
-                        </div>
-
-                        <div class="group-double-ip">
-                            <div class="group-input mb-0">
-                                <label>Gross Salary</label>
-                                <input class="valid-number second-page" id="grossSalary"
-                                       name="grossSalary"
-                                       style="text-align: right" type="text">
-                            </div>
-
-                            <div class="group-input mb-0">
-                                <label>Net Salary</label>
-                                <input class="valid-number second-page" id="netSalary" name="netSalary"
-                                       style="text-align: right"
-                                       type="text">
-                            </div>
+                        <div class="group-input mb-2">
+                            <label>Employer</label>
+                            <input class="valid-number second-page" id="employer"
+                                   name="employer" type="text">
                         </div>
 
                         <div class="group-double-ip mb-2">
                             <div class="group-input mb-0">
                                 <label>Station Number</label>
                                 <input class="valid-number second-page" maxlength="4" id="stationNumber"
-                                       name="stationNumber"
-                                       style="text-align: right" type="text">
+                                       name="stationNumber" type="text">
                             </div>
 
                             <div class="group-input mb-0">
                                 <label>Dept Code No.</label>
                                 <input class="valid-number second-page" maxlength="4" id="dptCode" name="dptCode"
-                                       style="text-align: right"
                                        type="text">
                             </div>
                         </div>
 
                         <div class="group-double-ip mb-2">
-                            <div class="group-checkbox mb-0">
-                                <input class="tf-checkbox st1 second-page" id="agreeToSSB" type="checkbox">
-                                <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
+                            <div class="group-input mb-0">
+                                <label>Profession</label>
+                                <input class="valid-number second-page" id="profession" name="profession"
+                                       type="text">
                             </div>
 
-                            <div class="group-checkbox mb-0">
-                                <input class="tf-checkbox st1 second-page" id="termsAndConditions" type="checkbox">
-                                <span class="fw_3 terms_and_conditions" style="display: block !important;"> I understand and accept the <a
-                                        class="terms_and_conditions fw_7 clear-panel" data-dismiss="modal"
-                                        data-target="#modalhome2"
-                                        data-toggle="modal" href="#">Terms & Conditions</a></span>
+                            <div class="group-input  mb-0">
+                                <label>Literacy Level</label>
+                                <select id="educationLevel" name="educationLevel">
+                                    <option value="PRIMARY">Primary School</option>
+                                    <option value="SECONDARY">Secondary School</option>
+                                    <option value="O_LEVEL">Ordinary Level</option>
+                                    <option value="A_LEVEL">Advanced Level</option>
+                                    <option value="NATIONAL_DIPLOMA">National Diploma</option>
+                                    <option value="DEGREE">Bachelor's Degree</option>
+                                    <option value="MASTERS">Master's Degree</option>
+                                    <option value="DOCTORATE">Doctorate Degree</option>
+                                </select>
                             </div>
                         </div>
 
+                        <div class="group-double-ip mb-2">
+                            <div class="group-input mb-0">
+                                <label>Gross Salary</label>
+                                <input class="valid-number second-page" id="grossSalary"
+                                       name="grossSalary"
+                                       type="text">
+                            </div>
 
+                            <div class="group-input mb-0">
+                                <label>Net Salary</label>
+                                <input class="valid-number second-page" id="netSalary" name="netSalary" type="text">
+                            </div>
+                        </div>
 
+                        <div class="group-checkbox mb-2">
+                            <input class="tf-checkbox st1 second-page" id="agreeToSSB" type="checkbox">
+                            <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
+                        </div>
 
-                        <p class="fw_3" style="text-align: left">
+                        <div class="group-checkbox mb-2">
+                            <input class="tf-checkbox st1 second-page" id="termsAndConditions" type="checkbox">
+                            <span class="fw_3 terms_and_conditions" style="display: block !important;"> I understand and accept the <a
+                                    class="terms_and_conditions fw_7 clear-panel" data-dismiss="modal"
+                                    data-target="#modalhome2"
+                                    data-toggle="modal" href="#">Terms & Conditions</a></span>
+                        </div>
+                        <p class="fw_3" style="text-align: left !important;">
                             Sign below to proceed</p>
 
                         <div class="input-field d-flex align-items-center" id="canvas_wrapper"
