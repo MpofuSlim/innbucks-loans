@@ -39,17 +39,24 @@ public abstract class DisbursementService {
             notificationService.sendSms(loan.getMobileNumber(), message);
         } else {
             loan.setDisbursementAttempts(loan.getDisbursementAttempts() == null ? 1 : loan.getDisbursementAttempts() + 1);
-            final LocalDateTime nextDisbursementAttemptDate = LocalDateTime.now()
-                    .plusHours((int) Math.pow(2.0, loan.getDisbursementAttempts()));
-            loan.setNextDisbursementAttemptDate(nextDisbursementAttemptDate);
-            loanRepository.save(loan);
 
+            if (loan.getDisbursementAttempts() < 3) {
+                final LocalDateTime nextDisbursementAttemptDate = LocalDateTime.now()
+                        .plusHours((int) Math.pow(2.0, loan.getDisbursementAttempts()));
+                loan.setNextDisbursementAttemptDate(nextDisbursementAttemptDate);
+            }
+            else{
+                loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
+                loan.setDateDisbursed(LocalDateTime.now());
+            }
             final LoanDisbursement disbursement = new LoanDisbursement();
             disbursement.setLoan(loan);
             disbursement.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
             disbursement.setDisbursementStatusMessage(response.getMessage());
             disbursement.setDisbursementReference(response.getApprovalCode());
             loanDisbursementRepository.save(disbursement);
+            loanRepository.save(loan);
+
         }
     }
 }

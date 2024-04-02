@@ -166,9 +166,7 @@ public class LoanServiceImpl implements LoanService {
         BigDecimal minLoanAmount = new BigDecimal(params.get(MINIMUM_LOAN_AMOUNT));
 
         BigDecimal maxLoanAmount = new BigDecimal(params.get(MAXIMUM_LOAN_AMOUNT));
-        if (principalLoanAmount.compareTo(minLoanAmount) < 0 || principalLoanAmount.compareTo(maxLoanAmount) > 0) {
-            throw new IllegalArgumentException(String.format("Loan amount should be between %s and %s", minLoanAmount, maxLoanAmount));
-        }
+
 
         BigDecimal adminFeeAmount = principalLoanAmount
                 .multiply(adminFeeRate)
@@ -183,6 +181,10 @@ public class LoanServiceImpl implements LoanService {
                 .divide(powerValue.subtract(ONE), 2, RoundingMode.HALF_UP);
 
         BigDecimal disbursementAmount = principalLoanAmount.subtract(adminFeeAmount);
+
+        if (disbursementAmount.compareTo(minLoanAmount) < 0 || disbursementAmount.compareTo(maxLoanAmount) > 0) {
+            throw new IllegalArgumentException(String.format("Loan amount should be between %s and %s", minLoanAmount, maxLoanAmount));
+        }
 
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
         BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
