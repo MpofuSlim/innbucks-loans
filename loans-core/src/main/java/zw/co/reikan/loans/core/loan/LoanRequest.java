@@ -29,6 +29,7 @@ public class LoanRequest implements Serializable {
     private String lname;
     private LocalDate dateOfBirth;
     private int numberOfDependencies;
+    private int numberOfChildren;
     private MaritalStatus maritalStatus;
     private String alternateContactNumber;
     private String placeOfBirth;
@@ -40,6 +41,9 @@ public class LoanRequest implements Serializable {
     private NextOfKin nextOfKin;
     private Witness witness;
     private LoanPurpose purposeOfLoan;
+    private BigDecimal grossSalary;
+    private BigDecimal netSalary;
+    private String profession;
 
     @Override
     public String toString() {

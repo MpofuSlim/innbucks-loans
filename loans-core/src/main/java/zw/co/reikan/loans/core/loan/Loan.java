@@ -131,8 +131,11 @@ public class Loan extends BaseEntity {
     @Column(name = "agent_commission")
     private BigDecimal agentCommission;
 
-    @Column(name = "number_of_dependencies")
+    @Column(name = "number_of_children")
     private Integer numberOfDependencies;
+
+    @Column(name = "number_of_dependencies")
+    private Integer numberOfChildren;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "education_level")
@@ -176,6 +179,10 @@ public class Loan extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     private LoanPurpose loanPurpose;
+
+    @Column(name = "profession")
+    private String profession;
+
 
     public String getReference() {
         return String.format("%09d", getId());

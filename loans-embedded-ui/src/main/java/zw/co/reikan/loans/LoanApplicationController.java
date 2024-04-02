@@ -14,10 +14,7 @@ import zw.co.reikan.loans.core.CryptoHelper;
 import zw.co.reikan.loans.core.EncryptionUtils;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
-import zw.co.reikan.loans.core.loan.Loan;
-import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
-import zw.co.reikan.loans.core.loan.LoanRequest;
-import zw.co.reikan.loans.core.loan.LoanServiceImpl;
+import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.parameter.ParameterService;
 
 import javax.servlet.http.HttpSession;
@@ -27,16 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
 
-import static zw.co.reikan.loans.core.loan.Constants.ADMI_FEE_RATE;
-import static zw.co.reikan.loans.core.loan.Constants.COMMISSION_RATE;
-import static zw.co.reikan.loans.core.loan.Constants.DEFAULT_LOAN_AMOUNT;
-import static zw.co.reikan.loans.core.loan.Constants.DEFAULT_LOAN_TENOR;
-import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_AMOUNT;
-import static zw.co.reikan.loans.core.loan.Constants.MAXIMUM_LOAN_TENOR;
-import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_AMOUNT;
-import static zw.co.reikan.loans.core.loan.Constants.MINIMUM_LOAN_TENOR;
-import static zw.co.reikan.loans.core.loan.Constants.MONTHLY_INTEREST_RATE;
-import static zw.co.reikan.loans.core.loan.Constants.PAYLOAD;
+import static zw.co.reikan.loans.core.loan.Constants.*;
 
 
 @Controller
@@ -125,6 +113,12 @@ public class LoanApplicationController {
 
         LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
         loanRequest.setDateOfBirth(dateOfBirth);
+
+        final EmploymentDetail employmentDetail = new EmploymentDetail();
+
+        employmentDetail.setEmployerName("Government");
+        employmentDetail.setGrossSalary(loanRequest.getGrossSalary());
+        employmentDetail.setNetSalary(loanRequest.getNetSalary());
 
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
         model.addAttribute("internalReference", loanResponse.getInternalReference());

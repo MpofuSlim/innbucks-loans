@@ -87,44 +87,49 @@
                     </div>
                     <div class="group-input">
                         <label>Place of Birth</label>
-                        <input type="text" id="placeOfBirth" name="placeOfBirth">
+                        <input class="first-page" type="text" id="placeOfBirth" name="placeOfBirth">
+                        <p class="errorText text-center" id="errorPlaceOfBirth"></p>
                     </div>
                 </div>
 
                 <div class="group-double-ip">
                     <div class="group-input">
                         <label>Next of Kin Name</label>
-                        <input class="valid-number amount first-page" id="nextOfKinName" name="nextOfKinName"
+                        <input class="first-page" id="nextOfKinName" name="nextOfKinName"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinName"></p>
                     </div>
                     <div class="group-input">
                         <label>Next of Kin Surname</label>
-                        <input class="valid-number amount first-page" id="nextOfKinSurname" name="nextOfKinName"
+                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinName"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinSurname"></p>
                     </div>
                 </div>
 
                 <div class="group-double-ip">
+
+                    <div class="group-input">
+                        <label>Next of Kin Phone</label>
+                        <input class="first-page" id="nextOfKinPhone" name="nextOfKinPhone"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinPhone"></p>
+                    </div>
+
                     <div class="group-input">
                         <label># of Dependents</label>
-                        <input id="numberOfDependencies" name="numberOfDependencies" type="text" class="first-page">
+                        <input id="numberOfDependencies" name="numberOfDependencies" type="text"
+                               class="first-page valid-number amount">
                         <p class="errorText text-center" id="errorNumberOfDependencies"></p>
-                    </div>
-                    <div class="group-input">
-                        <label># of Children</label>
-                        <input class="valid-number amount first-page" id="numberOfChildren" name="numberOfChildren"
-                               type="text">
-                        <p class="errorText text-center" id="errorNumberOfChildren"></p>
                     </div>
                 </div>
 
                 <div class="group-double-ip">
                     <div class="group-input">
-                        <label>EC Number</label>
-                        <input id="ecnumber" name="ecnumber" type="text" class="first-page">
-                        <p class="errorText text-center" id="errorText"></p>
+                        <label># of Children</label>
+                        <input class="valid-number amount first-page" id="numberOfChildren" name="numberOfChildren"
+                               type="text">
+                        <p class="errorText text-center" id="errorNumberOfChildren"></p>
                     </div>
                     <div class="group-input">
                         <label>Required Amount</label>
@@ -160,9 +165,9 @@
                     <div class="group-input">
                         <label>Purpose of Loan</label>
                         <select id="purposeOfLoan" name="purposeOfLoan">
+                            <option value="PERSONAL_USE">Personal Use</option>
                             <option value="HOME_IMPROVEMENT">Home Improvement</option>
                             <option value="MEDICAL">Medical</option>
-                            <option value="PERSONAL_USE">Personal Use</option>
                             <option value="PREMIUMS">Premiums</option>
                             <option value="SCHOOL_FEES">School Fees</option>
                             <option value="VACATION">Vacation</option>
@@ -329,17 +334,12 @@
             <div class="tf-container">
                 <form action="50_successful.html" class="tf-form-verify">
                     <div class="text-send-code">
-                        <div class="group-input mb-2">
-                            <label>Employer</label>
-                            <input class="valid-number second-page" id="employer"
-                                   name="employer" type="text">
-                        </div>
 
                         <div class="group-double-ip mb-2">
-                            <div class="group-input mb-0">
-                                <label>Station Number</label>
-                                <input class="valid-number second-page" maxlength="4" id="stationNumber"
-                                       name="stationNumber" type="text">
+                            <div class="group-input  mb-0">
+                                <label>EC Number</label>
+                                <input id="ecnumber" name="ecnumber" type="text" class="second-page">
+                                <p class="errorText text-center" id="errorText"></p>
                             </div>
 
                             <div class="group-input mb-0">
@@ -351,24 +351,31 @@
 
                         <div class="group-double-ip mb-2">
                             <div class="group-input mb-0">
+                                <label>Station Number</label>
+                                <input class="valid-number second-page" maxlength="4" id="stationNumber"
+                                       name="stationNumber" type="text">
+                            </div>
+
+                            <div class="group-input mb-0">
                                 <label>Profession</label>
                                 <input class="valid-number second-page" id="profession" name="profession"
                                        type="text">
+                                <p class="errorText text-center" id="errorProfession"></p>
                             </div>
+                        </div>
 
-                            <div class="group-input  mb-0">
-                                <label>Literacy Level</label>
-                                <select id="educationLevel" name="educationLevel">
-                                    <option value="PRIMARY">Primary School</option>
-                                    <option value="SECONDARY">Secondary School</option>
-                                    <option value="O_LEVEL">Ordinary Level</option>
-                                    <option value="A_LEVEL">Advanced Level</option>
-                                    <option value="NATIONAL_DIPLOMA">National Diploma</option>
-                                    <option value="DEGREE">Bachelor's Degree</option>
-                                    <option value="MASTERS">Master's Degree</option>
-                                    <option value="DOCTORATE">Doctorate Degree</option>
-                                </select>
-                            </div>
+                        <div class="group-input  mb-2">
+                            <label>Literacy Level</label>
+                            <select id="educationLevel" name="educationLevel">
+                                <option value="PRIMARY">Primary School</option>
+                                <option value="SECONDARY">Secondary School</option>
+                                <option value="O_LEVEL">Ordinary Level</option>
+                                <option value="A_LEVEL">Advanced Level</option>
+                                <option value="NATIONAL_DIPLOMA">National Diploma</option>
+                                <option value="DEGREE">Bachelor's Degree</option>
+                                <option value="MASTERS">Master's Degree</option>
+                                <option value="DOCTORATE">Doctorate Degree</option>
+                            </select>
                         </div>
 
                         <div class="group-double-ip mb-2">
@@ -377,11 +384,13 @@
                                 <input class="valid-number second-page" id="grossSalary"
                                        name="grossSalary"
                                        type="text">
+                                <p class="errorText text-center" id="errorGrossSalary"></p>
                             </div>
 
                             <div class="group-input mb-0">
                                 <label>Net Salary</label>
                                 <input class="valid-number second-page" id="netSalary" name="netSalary" type="text">
+                                <p class="errorText text-center" id="errorNetSalary"></p>
                             </div>
                         </div>
 
@@ -522,6 +531,10 @@
             valid = false;
         }
 
+        if (!validateEcNumber()) {
+            valid = false;
+        }
+
         var checkbox = document.getElementById("termsAndConditions");
         if (!checkbox.checked) {
             $("#termsAndConditions").addClass("errorInput");
@@ -536,11 +549,31 @@
             valid = false;
         }
 
-
         if (signaturePad.isEmpty()) {
             $("#canvas_wrapper").addClass("errorInput");
             valid = false;
         }
+
+        if ($("#profession").val() == '') {
+            $("#profession").addClass("errorInput");
+            $("#errorProfession").show();
+            valid = false;
+        }
+
+        var grossSalary = parseInt($('#grossSalary').val(), 10);
+        if (isNaN(grossSalary) || grossSalary < 0) {
+            $("#grossSalary").addClass("errorInput");
+            $("#errorGrossSalary").show();
+            valid = false;
+        }
+
+        var netSalary = parseInt($('#netSalary').val(), 10);
+        if (isNaN(netSalary) || netSalary < 0) {
+            $("#netSalary").addClass("errorInput");
+            $("#errorNetSalary").show();
+            valid = false;
+        }
+
 
         if (!valid) {
             return;
@@ -557,11 +590,6 @@
 
         $(".errorInput").removeClass("errorInput");
         $(".errorText").hide();
-        $(".terms_and_conditions").removeClass("critical_color");
-
-        if (!validateEcNumber()) {
-            valid = false;
-        }
 
         var amountValue = parseFloat($('#amount').val());
         if (isNaN(amountValue) || amountValue < $("#minimum_loan_amount").val() || amountValue > $("#maximum_loan_amount").val()) {
@@ -570,17 +598,46 @@
             $("#errorAmount").show();
         }
 
-        var tenor = parseInt($('#tenor').val());
+        var tenor = parseInt($('#tenor').val(), 10);
         if (isNaN(tenor) || tenor < $("#minimum_loan_tenor").val() || tenor > $("#maximum_loan_tenor").val()) {
             $("#tenor").addClass("errorInput");
             $("#tenorError").show();
             valid = false;
         }
 
-        // if (signaturePad.isEmpty()) {
-        //     $("#canvas_wrapper").addClass("errorInput");
-        //     valid = false;
-        // }
+        if ($("#placeOfBirth").val() == '') {
+            $("#placeOfBirth").addClass("errorInput");
+            $("#errorPlaceOfBirth").show();
+            valid = false;
+        }
+
+        if ($("#nextOfKinName").val() == '') {
+            $("#nextOfKinName").addClass("errorInput");
+            $("#errorNextOfKinName").show();
+            valid = false;
+        }
+
+        if ($("#nextOfKinSurname").val() == '') {
+            $("#nextOfKinSurname").addClass("errorInput");
+            $("#errorNextOfKinSurname").show();
+            valid = false;
+        }
+
+        var numberOfDependencies = parseInt($('#numberOfDependencies').val(), 10);
+        console.log('numberOfDependencies-' + numberOfDependencies);
+
+        if (isNaN(numberOfDependencies) || numberOfDependencies < 0) {
+            $("#numberOfDependencies").addClass("errorInput");
+            $("#errorNumberOfDependencies").show();
+            valid = false;
+        }
+
+        var numberOfChildren = parseInt($('#numberOfChildren').val(), 10);
+        if (isNaN(numberOfChildren) || numberOfChildren < 0) {
+            $("#numberOfChildren").addClass("errorInput");
+            $("#errorNumberOfChildren").show();
+            valid = false;
+        }
 
         if (!valid) {
             return;
@@ -604,14 +661,19 @@
         signature_input.value = signatureData;
 
         var ecnumber_input = document.getElementById('ecnumber');
-
         var amount_input = document.getElementById('amount');
-
         var mobileNumber_input = document.getElementById('mobileNumber');
         var tenor_input = document.getElementById('tenor');
         var nationalId_input = document.getElementById('nationalId');
-
         var purposeOfLoan_Input = document.getElementById('purposeOfLoan');
+        var educationLevel_Input = document.getElementById('educationLevel');
+        var placeOfBirth_Input = document.getElementById('placeOfBirth');
+        var numberOfDependencies_Input = document.getElementById('numberOfDependencies');
+        var numberOfChildren_Input = document.getElementById('numberOfChildren');
+        var maritalStatus_Input = document.getElementById('maritalStatus');
+        var profession_Input = document.getElementById('profession');
+        var netSalary_Input = document.getElementById('netSalary');
+        var grossSalary_Input = document.getElementById('grossSalary');
 
         form.appendChild(amount_input);
         form.appendChild(ecnumber_input);
@@ -620,6 +682,14 @@
         form.appendChild(tenor_input);
         form.appendChild(nationalId_input);
         form.appendChild(purposeOfLoan_Input);
+        form.appendChild(educationLevel_Input);
+        form.appendChild(placeOfBirth_Input);
+        form.appendChild(numberOfDependencies_Input);
+        form.appendChild(numberOfChildren_Input);
+        form.appendChild(maritalStatus_Input);
+        form.appendChild(profession_Input);
+        form.appendChild(netSalary_Input);
+        form.appendChild(grossSalary_Input);
 
         document.body.appendChild(form);
 
