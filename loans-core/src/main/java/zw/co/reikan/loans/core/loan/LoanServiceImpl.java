@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
@@ -76,6 +75,10 @@ public class LoanServiceImpl implements LoanService {
             throw new IllegalArgumentException("EC Number is not valid");
         }
 
+        if (loanRequest.getMerchant() == null) {
+            throw new IllegalArgumentException("LoanFor is mandatory");
+        }
+
         val dateOfBirth = loanRequest.getDateOfBirth();
         if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
@@ -129,6 +132,7 @@ public class LoanServiceImpl implements LoanService {
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
                 .loanPurpose(loanRequest.getPurposeOfLoan())
+                .merchant(loanRequest.getMerchant())
                 .build();
 
         loanRepository.save(loan);
@@ -145,7 +149,7 @@ public class LoanServiceImpl implements LoanService {
                 LoanApprovalStatus.NEW);
     }
 
-      @Override
+    @Override
     public LoanDetails calculate(LoanRequest request) {
 
         List<AmortizationEntry> schedule = new ArrayList<>();

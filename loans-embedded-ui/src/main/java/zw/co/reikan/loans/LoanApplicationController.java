@@ -112,6 +112,9 @@ public class LoanApplicationController {
         loanRequest.setLname(String.valueOf(session.getAttribute("lname")));
         loanRequest.setNationalId(String.valueOf(session.getAttribute("nationalId")));
         LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
+
+        loanRequest.setMerchant(Merchant.INNBUCKS);
+
         loanRequest.setDateOfBirth(dateOfBirth);
 
         final EmploymentDetail employmentDetail = new EmploymentDetail();

@@ -1,5 +1,7 @@
 package zw.co.reikan.loans.core.loan;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 import java.io.Serializable;
@@ -29,7 +31,11 @@ public class LoanRequest implements Serializable {
     private String placeOfBirth;
     private Title title;
     private String email;
+
+    @JsonProperty("educationLevel")
+    @JsonAlias("literacyLevel")
     private EducationLevel educationLevel;
+
     private Address address;
     private EmploymentDetail employmentDetail;
     private NextOfKin nextOfKin;
@@ -43,4 +49,7 @@ public class LoanRequest implements Serializable {
     private BigDecimal netSalary;
     private String profession;
 
+    @JsonProperty("merchant")
+    @JsonAlias("loanFor")
+    private Merchant merchant;
 }

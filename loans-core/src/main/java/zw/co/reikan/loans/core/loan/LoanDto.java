@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
+import javax.persistence.Column;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -54,4 +57,8 @@ public class LoanDto implements Serializable {
     private EmploymentDetail employmentDetail;
     private NextOfKin nextOfKin;
     private Witness witness;
+    private LineOfBusiness lineOfBusiness;
+    private LoanPurpose loanPurpose;
+    private String profession;
+    private Merchant merchant;
 }
