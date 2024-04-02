@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -115,14 +116,29 @@ public class LoanApplicationController {
         loanRequest.setDateOfBirth(dateOfBirth);
 
         final EmploymentDetail employmentDetail = new EmploymentDetail();
-
-        employmentDetail.setEmployerName("Government");
+        employmentDetail.setEmployerName("GOVERNMENT");
         employmentDetail.setGrossSalary(loanRequest.getGrossSalary());
         employmentDetail.setNetSalary(loanRequest.getNetSalary());
+        loanRequest.setEmploymentDetail(employmentDetail);
+
+        final NextOfKin nextOfKin = new NextOfKin();
+        nextOfKin.setFirstName(capitalise(loanRequest.getNextOfKinName()));
+        nextOfKin.setLastName(capitalise(loanRequest.getNextOfKinSurname()));
+        nextOfKin.setNationalId(capitalise(loanRequest.getNextOfKinIdNumber()));
+        loanRequest.setNextOfKin(nextOfKin);
 
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
+
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
+    }
+
+
+    public String capitalise(String text) {
+        if (StringUtils.hasText(text)) {
+            return text.toUpperCase();
+        }
+        return "";
     }
 
     @GetMapping("/loanDetails")

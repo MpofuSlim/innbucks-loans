@@ -101,20 +101,28 @@
                     </div>
                     <div class="group-input">
                         <label>Next of Kin Surname</label>
-                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinName"
+                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinSurname"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinSurname"></p>
                     </div>
                 </div>
 
                 <div class="group-double-ip">
-
+                    <div class="group-input">
+                        <label>Next of Kin ID#</label>
+                        <input class="first-page" id="nextOfKinIdNumber" name="nextOfKinIdNumber"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinId"></p>
+                    </div>
                     <div class="group-input">
                         <label>Next of Kin Phone</label>
                         <input class="first-page" id="nextOfKinPhone" name="nextOfKinPhone"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinPhone"></p>
                     </div>
+                </div>
+
+                <div class="group-double-ip">
 
                     <div class="group-input">
                         <label># of Dependents</label>
@@ -122,15 +130,8 @@
                                class="first-page valid-number amount">
                         <p class="errorText text-center" id="errorNumberOfDependencies"></p>
                     </div>
-                </div>
 
-                <div class="group-double-ip">
-                    <div class="group-input">
-                        <label># of Children</label>
-                        <input class="valid-number amount first-page" id="numberOfChildren" name="numberOfChildren"
-                               type="text">
-                        <p class="errorText text-center" id="errorNumberOfChildren"></p>
-                    </div>
+
                     <div class="group-input">
                         <label>Required Amount</label>
                         <input class="valid-number amount first-page" id="amount" name="amount" type="text">
@@ -324,7 +325,7 @@
             <div class="tf-container">
                 <div class="tf-statusbar d-flex justify-content-center align-items-center">
                     <a class="clear-panel" href="#"> <i class="icon-close1"></i> </a>
-                    <h3>Please Confirm</h3>
+                    <h3>Additional Info</h3>
                 </div>
 
             </div>
@@ -358,7 +359,7 @@
 
                             <div class="group-input mb-0">
                                 <label>Profession</label>
-                                <input class="valid-number second-page" id="profession" name="profession"
+                                <input class="second-page" id="profession" name="profession"
                                        type="text">
                                 <p class="errorText text-center" id="errorProfession"></p>
                             </div>
@@ -513,6 +514,9 @@
 
     function ensureValidSecondPageInput() {
 
+        $(".errorInput").removeClass("errorInput");
+        $(".errorText").hide();
+
         $('#btnSubmitApplication').hide();
         $(".terms_and_conditions").removeClass("critical_color");
         $(".agree_to_ssb").removeClass("critical_color");
@@ -554,7 +558,7 @@
             valid = false;
         }
 
-        if ($("#profession").val() == '') {
+        if ($("#profession").val() === '') {
             $("#profession").addClass("errorInput");
             $("#errorProfession").show();
             valid = false;
@@ -605,21 +609,27 @@
             valid = false;
         }
 
-        if ($("#placeOfBirth").val() == '') {
+        if ($("#placeOfBirth").val() === '') {
             $("#placeOfBirth").addClass("errorInput");
             $("#errorPlaceOfBirth").show();
             valid = false;
         }
 
-        if ($("#nextOfKinName").val() == '') {
+        if ($("#nextOfKinName").val() === '') {
             $("#nextOfKinName").addClass("errorInput");
             $("#errorNextOfKinName").show();
             valid = false;
         }
 
-        if ($("#nextOfKinSurname").val() == '') {
+        if ($("#nextOfKinSurname").val() === '') {
             $("#nextOfKinSurname").addClass("errorInput");
             $("#errorNextOfKinSurname").show();
+            valid = false;
+        }
+
+        if ($('#nextOfKinIdNumber').val() === '') {
+            $("#nextOfKinIdNumber").addClass("errorInput");
+            $("#errorNextOfKinId").show();
             valid = false;
         }
 
@@ -629,13 +639,6 @@
         if (isNaN(numberOfDependencies) || numberOfDependencies < 0) {
             $("#numberOfDependencies").addClass("errorInput");
             $("#errorNumberOfDependencies").show();
-            valid = false;
-        }
-
-        var numberOfChildren = parseInt($('#numberOfChildren').val(), 10);
-        if (isNaN(numberOfChildren) || numberOfChildren < 0) {
-            $("#numberOfChildren").addClass("errorInput");
-            $("#errorNumberOfChildren").show();
             valid = false;
         }
 
@@ -669,7 +672,16 @@
         var educationLevel_Input = document.getElementById('educationLevel');
         var placeOfBirth_Input = document.getElementById('placeOfBirth');
         var numberOfDependencies_Input = document.getElementById('numberOfDependencies');
-        var numberOfChildren_Input = document.getElementById('numberOfChildren');
+
+        var numberOfChildren_Input = document.createElement('numberOfChildren');
+        numberOfChildren_Input.type = 'hidden';
+        numberOfChildren_Input.name = 'numberOfChildren';
+        numberOfChildren_Input.value = numberOfDependencies_Input.value;
+
+        var nextOfKinIdNumber_Input = document.getElementById('nextOfKinIdNumber');
+        var nextOfKinName_Input = document.getElementById('nextOfKinName');
+        var nextOfKinSurname_Input = document.getElementById('nextOfKinSurname');
+
         var maritalStatus_Input = document.getElementById('maritalStatus');
         var profession_Input = document.getElementById('profession');
         var netSalary_Input = document.getElementById('netSalary');
@@ -690,6 +702,9 @@
         form.appendChild(profession_Input);
         form.appendChild(netSalary_Input);
         form.appendChild(grossSalary_Input);
+        form.appendChild(nextOfKinIdNumber_Input);
+        form.appendChild(nextOfKinName_Input);
+        form.appendChild(nextOfKinSurname_Input);
 
         document.body.appendChild(form);
 

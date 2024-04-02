@@ -131,10 +131,10 @@ public class Loan extends BaseEntity {
     @Column(name = "agent_commission")
     private BigDecimal agentCommission;
 
-    @Column(name = "number_of_children")
+    @Column(name = "number_of_dependencies")
     private Integer numberOfDependencies;
 
-    @Column(name = "number_of_dependencies")
+    @Column(name = "number_of_children")
     private Integer numberOfChildren;
 
     @Enumerated(EnumType.STRING)
