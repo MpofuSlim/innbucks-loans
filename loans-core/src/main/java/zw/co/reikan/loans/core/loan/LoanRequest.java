@@ -57,4 +57,6 @@ public class LoanRequest implements Serializable {
 
     private BankingDetail bankingDetail;
 
+    private String productDescription;
+
 }

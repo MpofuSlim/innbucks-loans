@@ -194,6 +194,12 @@ public class Loan extends BaseEntity {
     @Embedded
     private BankingDetail bankingDetail;
 
+    @Column(name = "product_description")
+    private String productDescription;
+
+    @Column(name = "disbursement_merchant_account_number")
+    private String disbursementMerchantAccountNumber;
+
     public String getReference() {
         return String.format("%09d", getId());
     }

@@ -15,4 +15,6 @@ public class InnbucksDepositRequest {
     private String narration;
     @JsonProperty("destinationMsisdn")
     private String destinationMsisdn;
+    @JsonProperty("destinationAccount")
+    private String destinationAccount;
 }

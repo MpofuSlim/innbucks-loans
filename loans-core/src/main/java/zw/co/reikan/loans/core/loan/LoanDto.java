@@ -61,4 +61,7 @@ public class LoanDto implements Serializable {
     private LoanPurpose loanPurpose;
     private String profession;
     private Merchant merchant;
+    private Gender gender;
+    private BankingDetail bankingDetail;
+    private String productDescription;
 }

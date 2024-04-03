@@ -13,4 +13,8 @@ public enum Merchant {
     Merchant(DisbursementType disbursementType) {
         this.disbursementType = disbursementType;
     }
+
+    public DisbursementType getDisbursementType() {
+        return disbursementType;
+    }
 }

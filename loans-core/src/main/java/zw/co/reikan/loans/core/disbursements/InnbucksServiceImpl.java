@@ -102,14 +102,20 @@ public class InnbucksServiceImpl extends DisbursementService {
         try {
             log.info("Processing loan disbursement: {}", request);
 
-            InnbucksDepositRequest depositRequest = InnbucksDepositRequest.builder()
+            InnbucksDepositRequest.InnbucksDepositRequestBuilder builder = InnbucksDepositRequest.builder()
                     .amount(toCents(request.getAmount()))
-                    .destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()))
                     .reference(uniqueTxnReference)
-                    .narration(String.format("Ref: %s", request.getReference()))
-                    .build();
+                    .narration(String.format("Ref: %s", request.getReference()));
 
-            HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders(uniqueTxnReference));
+            if (request.getDisbursementType() == null || request.getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
+                log.info("Disbursing to customer:{}", request);
+                builder.destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()));
+            } else {
+                log.info("Disbursing to merchant: {}", request);
+                builder.destinationAccount(request.getAccountNumber());
+            }
+
+            HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(builder.build(), getHttpHeaders(uniqueTxnReference));
 
             ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
                     parameters.getDepositEndpoint(),

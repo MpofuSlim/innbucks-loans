@@ -32,6 +32,7 @@ public abstract class DisbursementService {
             loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
             loan.setDisbursementReference(response.getApprovalCode());
             loan.setDateDisbursed(LocalDateTime.now());
+            loan.setDisbursementMerchantAccountNumber(request.getAccountNumber());
             loanRepository.save(loan);
             log.info("Dispatching loan disbursed sms notification: {}", response);
             final String message = String.format(SMS_MSG, loan.getMobileNumber(),
@@ -44,8 +45,7 @@ public abstract class DisbursementService {
                 final LocalDateTime nextDisbursementAttemptDate = LocalDateTime.now()
                         .plusHours((int) Math.pow(2.0, loan.getDisbursementAttempts()));
                 loan.setNextDisbursementAttemptDate(nextDisbursementAttemptDate);
-            }
-            else{
+            } else {
                 loan.setDisbursementStatus(response.getStatus().getLoanDisbursementStatus());
                 loan.setDateDisbursed(LocalDateTime.now());
             }
