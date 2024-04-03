@@ -187,6 +187,13 @@ public class Loan extends BaseEntity {
     @Column(name = "merchant")
     private Merchant merchant;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender")
+    private Gender gender;
+
+    @Embedded
+    private BankingDetail bankingDetail;
+
     public String getReference() {
         return String.format("%09d", getId());
     }
