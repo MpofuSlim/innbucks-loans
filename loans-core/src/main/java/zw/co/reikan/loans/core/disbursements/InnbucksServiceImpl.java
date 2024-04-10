@@ -11,6 +11,7 @@ import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -59,6 +60,7 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
                 .nextOfKinIdNumber(loan.getNextOfKin() == null ? "00000000X00" : trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
                 .numberOfDependents(loan.getNumberOfDependencies())
+                .numberOfChildren(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
                 .placeOfBirth(loan.getPlaceOfBirth() == null ? "UNKNOWN" : loan.getPlaceOfBirth())
                 .product(SSBUSD)
@@ -68,10 +70,16 @@ public class InnbucksServiceImpl extends DisbursementService {
         EmploymentDetail employmentDetail = loan.getEmploymentDetail();
 
         if (employmentDetail != null) {
-            builder.employerNumber(trimSpecialCharacters(employmentDetail.getEmployeeNumber()))
+            LocalDate employmentStartDate = employmentDetail.getEmploymentStartDate() == null ?
+                    LocalDate.now() :
+                    employmentDetail.getEmploymentStartDate();
+
+
+            String employeeNumber = employmentDetail.getEmployeeNumber() == null ? loan.getEcNumber() : employmentDetail.getEmployeeNumber();
+
+            builder.employerNumber(trimSpecialCharacters(employeeNumber))
                     .employer(trimSpecialCharacters(employmentDetail.getEmployerName()))
-                    .employmentStartDate(employmentDetail.getEmploymentStartDate()
-                            .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
+                    .employmentStartDate(employmentStartDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
         } else {
             builder.employerNumber(trimSpecialCharacters(loan.getEcNumber()))
                     .employer("NOTSPECIFIED")

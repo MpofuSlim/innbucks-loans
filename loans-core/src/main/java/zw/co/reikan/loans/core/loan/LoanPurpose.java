@@ -9,7 +9,7 @@ public enum LoanPurpose {
     MEDICAL("MED", "Medical"),
     PREMIUMS("P", "Premiums"),
     PERSONAL_USE("PU", "Personal Use"),
-    SCHOOL_FEES("SC", "School Fees"),
+//    SCHOOL_FEES("SC", "School Fees"),
     VACATION("V", "Vacation"),
     GENERAL_WORKING_CAPITAL("W", "General Working Capital"),
     WEDDING_EXPENSES("WE", "Wedding Expenses");
