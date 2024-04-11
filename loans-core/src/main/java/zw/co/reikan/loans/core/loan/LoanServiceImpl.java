@@ -135,6 +135,7 @@ public class LoanServiceImpl implements LoanService {
                 .merchant(loanRequest.getMerchant())
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
+                .profession(loanRequest.getProfession())
                 .build();
 
         loanRepository.save(loan);
