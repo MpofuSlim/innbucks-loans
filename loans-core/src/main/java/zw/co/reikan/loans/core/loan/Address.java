@@ -19,4 +19,22 @@ public class Address {
 
     @Column(name = "country")
     private String country;
+
+    @Override
+    public String toString() {
+        final StringBuffer sb = new StringBuffer();
+        if (street != null) {
+            sb.append(street);
+        }
+        if (suburb != null) {
+            sb.append(',').append(suburb);
+        }
+        if (city != null) {
+            sb.append(',').append(city);
+        }
+        if (country != null) {
+            sb.append(',').append(country);
+        }
+        return sb.toString();
+    }
 }

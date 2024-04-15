@@ -16,8 +16,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 import static zw.co.reikan.loans.core.MsisdnUtil.formatMsisdnInternational;
-import static zw.co.reikan.loans.core.Utils.generateReference;
-import static zw.co.reikan.loans.core.Utils.trimSpecialCharacters;
+import static zw.co.reikan.loans.core.Utils.*;
 
 @Slf4j
 @Service
@@ -25,6 +24,7 @@ public class InnbucksServiceImpl extends DisbursementService {
 
     public static final String MONTHLY = "MONTHLY";
     public static final String SSBUSD = "SSBUSD";
+    public static final String COUNTRY_CODE = "263";
     private static final BigDecimal CENTS = new BigDecimal("100");
     private final InnbucksAuthService innbucksAuthService;
     private final RestTemplate restTemplate;
@@ -58,7 +58,6 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .loanPurpose(loanPurpose)
                 .grossSalary(toCents(loan.getEmploymentDetail() == null ? BigDecimal.ONE : loan.getEmploymentDetail().getGrossSalary()))
                 .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
-                .nextOfKinIdNumber(loan.getNextOfKin() == null ? "00000000X00" : trimSpecialCharacters(loan.getNextOfKin().getNationalId()))
                 .numberOfDependents(loan.getNumberOfDependencies())
                 .numberOfChildren(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
@@ -66,6 +65,15 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .product(SSBUSD)
                 .tenureInMonths(loan.getTenor())
                 .repaymentFrequency(MONTHLY);
+
+        NextOfKin nextOfKin = loan.getNextOfKin();
+        if (nextOfKin != null) {
+            builder.nextOfKinIdNumber(trimSpecialCharacters(nextOfKin.getNationalId()))
+                    .nextOfKinFullName(nextOfKin.getLastName() == null ? nextOfKin.getFirstName() : nextOfKin.getFirstName() + " " + nextOfKin.getLastName())
+                    .nextOfKinAddress(nextOfKin.getAddress().toString())
+                    .nextOfKinMsisdn(COUNTRY_CODE + right(nextOfKin.getMobileNumber(), 9))
+                    .nextOfKinRelationship(nextOfKin.getRelationship().getDisplayName());
+        }
 
         EmploymentDetail employmentDetail = loan.getEmploymentDetail();
 
@@ -86,6 +94,7 @@ public class InnbucksServiceImpl extends DisbursementService {
                     .employmentStartDate(LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
         }
+
 
         HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(builder.build(),
                 getHttpHeaders(loan.getReference()));

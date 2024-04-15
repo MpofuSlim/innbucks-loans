@@ -41,7 +41,9 @@ public class LoanRequest implements Serializable {
     private NextOfKin nextOfKin;
     private String nextOfKinIdNumber;
     private String nextOfKinName;
-    private String nextOfKinSurname;
+    private String nextOfKinPhone;
+    private RelationshipType nextOfKinRelationShip;
+    private String nextOfKinAddress;
 
     private Witness witness;
     private LoanPurpose purposeOfLoan;

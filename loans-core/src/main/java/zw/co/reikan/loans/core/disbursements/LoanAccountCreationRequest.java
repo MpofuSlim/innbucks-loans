@@ -27,20 +27,40 @@ public class LoanAccountCreationRequest {
     private Integer numberOfChildren;
     @JsonProperty("msisdn")
     private String msisdn;
+
     @JsonProperty("businessLine")
     private String businessLine;
+
     @JsonProperty("loanPurpose")
     private String loanPurpose;
+
     @JsonProperty("placeOfBirth")
     private String placeOfBirth;
+
     @JsonProperty("employerNumber")
     private String employerNumber;
+
     @JsonProperty("repaymentFrequency")
     private String repaymentFrequency;
+
     @JsonProperty("nextOfKinIdNumber")
     private String nextOfKinIdNumber;
+
+    @JsonProperty("nextOfKinFullName")
+    private String nextOfKinFullName;
+
+    @JsonProperty("nextOfKinMsisdn")
+    private String nextOfKinMsisdn;
+
+    @JsonProperty("nextOfKinAddress")
+    private String nextOfKinAddress;
+
+    @JsonProperty("nextOfKinRelationship")
+    private String nextOfKinRelationship;
+
     @JsonProperty("employmentStartDate")
     private String employmentStartDate;
+
     @JsonProperty("participantReference")
     private String participantReference;
 }

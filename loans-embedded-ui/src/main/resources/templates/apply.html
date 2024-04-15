@@ -61,49 +61,47 @@
     <div class="bill-payment-content">
         <div class="tf-container">
             <div class="tf-spacing-12"></div>
-            <ul class="list-card-info">
-                <li>Full Name <span
-                        th:text="${#session.getAttribute('fname') + ' ' + #session.getAttribute('lname')}"></span></li>
-            </ul>
             <form class="tf-form mt-5">
+
                 <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Name</label>
+                        <input type="text" readonly class="first-page"
+                               th:value="${#session.getAttribute('fname') + ' ' + #session.getAttribute('lname')}">
+                    </div>
+
                     <div class="group-input">
                         <label>National ID#</label>
                         <input type="text" readonly class="first-page"
                                th:value="${#session.getAttribute('nationalId')}">
                     </div>
+                </div>
 
+
+                <div class="group-double-ip">
                     <div class="group-input">
                         <label>Phone</label>
                         <input type="text" readonly class="first-page"
                                th:value="${#session.getAttribute('mobileNumber')}">
                     </div>
-                </div>
-
-                <div class="group-double-ip">
                     <div class="group-input">
                         <label>Date of Birth</label>
                         <input type="text" readonly th:value="${#session.getAttribute('dob')}">
                     </div>
+
+                </div>
+
+                <div class="group-double-ip">
                     <div class="group-input">
                         <label>Place of Birth</label>
                         <input class="first-page" type="text" id="placeOfBirth" name="placeOfBirth">
                         <p class="errorText text-center" id="errorPlaceOfBirth"></p>
                     </div>
-                </div>
-
-                <div class="group-double-ip">
                     <div class="group-input">
-                        <label>Next of Kin Name</label>
+                        <label>Next of Kin Full Name</label>
                         <input class="first-page" id="nextOfKinName" name="nextOfKinName"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinName"></p>
-                    </div>
-                    <div class="group-input">
-                        <label>Next of Kin Surname</label>
-                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinSurname"
-                               type="text">
-                        <p class="errorText text-center" id="errorNextOfKinSurname"></p>
                     </div>
                 </div>
 
@@ -114,12 +112,47 @@
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinId"></p>
                     </div>
+
+                    <div class="group-input">
+                        <label>Next of Kin Address</label>
+                        <input class="first-page" id="nextOfKinAddress" name="nextOfKinAddress"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinAddress"></p>
+                    </div>
+
+                    <!--                    <div class="group-input">-->
+                    <!--                        <label>Next of Kin Surname</label>-->
+                    <!--                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinSurname"-->
+                    <!--                               type="text">-->
+                    <!--                        <p class="errorText text-center" id="errorNextOfKinSurname"></p>-->
+                    <!--                    </div>-->
+                </div>
+
+                <div class="group-double-ip">
                     <div class="group-input">
                         <label>Next of Kin Phone</label>
                         <input class="first-page" id="nextOfKinPhone" name="nextOfKinPhone"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinPhone"></p>
                     </div>
+                    <div class="group-input">
+                        <label>Next of Kin Relationship</label>
+                        <select id="nextOfKinRelationShip" name="nextOfKinRelationShip">
+                            <option value="SIBLING">Sibling</option>
+                            <option value="DAUGHTER">Daughter</option>
+                            <option value="SPOUSE">Spouse</option>
+                            <option value="DAUGHTER_IN_LAW">Daughter in law</option>
+                            <option value="FATHER">Father</option>
+                            <option value="FATHER_IN_LAW">Father in law</option>
+                            <option value="GUARDIAN">Guardian</option>
+                            <option value="MOTHER">Mother</option>
+                            <option value="MOTHER_IN_LAW">Mother in law</option>
+                            <option value="NEPHEW">Nephew</option>
+                            <option value="SISTER_IN_LAW">Sister in law</option>
+                            <option value="SON">Son</option>
+                        </select>
+                    </div>
+
                 </div>
 
                 <div class="group-double-ip">
@@ -678,7 +711,9 @@
 
         var nextOfKinIdNumber_Input = document.getElementById('nextOfKinIdNumber');
         var nextOfKinName_Input = document.getElementById('nextOfKinName');
-        var nextOfKinSurname_Input = document.getElementById('nextOfKinSurname');
+        var nextOfKinPhone_Input = document.getElementById('nextOfKinPhone');
+        var nextOfKinRelationShip_Input = document.getElementById('nextOfKinRelationShip');
+        var nextOfKinAddress_Input = document.getElementById('nextOfKinAddress');
 
         var maritalStatus_Input = document.getElementById('maritalStatus');
         var profession_Input = document.getElementById('profession');
@@ -702,7 +737,9 @@
         form.appendChild(grossSalary_Input);
         form.appendChild(nextOfKinIdNumber_Input);
         form.appendChild(nextOfKinName_Input);
-        form.appendChild(nextOfKinSurname_Input);
+        form.appendChild(nextOfKinRelationShip_Input);
+        form.appendChild(nextOfKinAddress_Input);
+        form.appendChild(nextOfKinPhone_Input);
 
         document.body.appendChild(form);
 

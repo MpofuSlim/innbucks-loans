@@ -6,16 +6,16 @@ public enum RelationshipType {
 
     DAUGHTER("Daughter", "DA"),
     SPOUSE("Spouse", "S"),
-    DAUGHTER_IN_LAW("Daughter-in-law", "DI"),
+    DAUGHTER_IN_LAW("Daughter in law", "DI"),
     FATHER("Father", "F"),
-    FATHER_IN_LAW("Father-in-law", "FI"),
+    FATHER_IN_LAW("Father in law", "FI"),
     GUARDIAN("Guardian", "G"),
     MOTHER("Mother", "M"),
-    MOTHER_IN_LAW("Mother-in-law", "MI"),
+    MOTHER_IN_LAW("Mother in law", "MI"),
 
     NEPHEW("Nephew", "NE"),
 
-    SISTER_IN_LAW("Sister-in-law", "SI"),
+    SISTER_IN_LAW("Sister in law", "SI"),
 
     SON("Son", "S");
 

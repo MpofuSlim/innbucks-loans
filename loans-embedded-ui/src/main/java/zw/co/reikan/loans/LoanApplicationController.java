@@ -125,8 +125,15 @@ public class LoanApplicationController {
 
         final NextOfKin nextOfKin = new NextOfKin();
         nextOfKin.setFirstName(capitalise(loanRequest.getNextOfKinName()));
-        nextOfKin.setLastName(capitalise(loanRequest.getNextOfKinSurname()));
+        nextOfKin.setRelationship(loanRequest.getNextOfKinRelationShip());
+        nextOfKin.setMobileNumber(loanRequest.getNextOfKinPhone());
+        nextOfKin.setLastName("");
         nextOfKin.setNationalId(capitalise(loanRequest.getNextOfKinIdNumber()));
+
+        Address address = new Address();
+        address.setStreet(loanRequest.getNextOfKinAddress());
+        nextOfKin.setAddress(address);
+
         loanRequest.setNextOfKin(nextOfKin);
 
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
