@@ -62,7 +62,7 @@ public class InternalLoanApplicationController {
     })
     @PostMapping("/loans/calculate")
     public LoanDetails calculate(@RequestBody LoanRequest request) {
-        log.info("Create loan request: {}", request);
+        log.info("Calculate loan request: {}", request);
         return loanService.calculate(request);
     }
 
