@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.LoanResponse;
+import zw.co.reikan.loans.core.loan.LoanDetails;
 import zw.co.reikan.loans.core.loan.LoanRequest;
 import zw.co.reikan.loans.core.loan.LoanService;
 
@@ -44,6 +45,25 @@ public class InternalLoanApplicationController {
     public LoanResponse create(@RequestBody LoanRequest request) {
         log.info("Create loan request: {}", request);
         return loanService.requestLoan(request);
+    }
+
+    @Operation(summary = "LOAN CALCULATOR",
+            description = "loan calculator",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing"),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/loans/calculate")
+    public LoanDetails calculate(@RequestBody LoanRequest request) {
+        log.info("Create loan request: {}", request);
+        return loanService.calculate(request);
     }
 
 }
