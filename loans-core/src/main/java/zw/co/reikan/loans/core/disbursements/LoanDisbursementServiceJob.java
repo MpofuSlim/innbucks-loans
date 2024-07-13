@@ -30,11 +30,11 @@ public class LoanDisbursementServiceJob {
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
         loanRepository.findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus.CREATED,
-                        PENDING, InternalApprovalStatus.PENDING)
-                .forEach(this::processLoanApproval);
+                        PENDING, InternalApprovalStatus.APPROVED)
+                .forEach(this::processLoanDisbursement);
     }
 
-    private void processLoanApproval(Loan loan) {
+    private void processLoanDisbursement(Loan loan) {
         if (loan.getDisbursementStatus() == SUCCESS) {
             log.info("Loan already disbursed");
             return;

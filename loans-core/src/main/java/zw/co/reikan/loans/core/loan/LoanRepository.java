@@ -23,8 +23,9 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
                                                                                      LoanDisbursementStatus disbursementStatus,
                                                                                      InternalApprovalStatus internalApprovalStatus);
 
-    List<Loan> findByLoanApprovalStatusAndLoanAccountStatus(LoanApprovalStatus loanApprovaStatus,
-                                                            LoanAccountStatus loanAccountStatus);
+    List<Loan> findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(LoanApprovalStatus loanApprovaStatus,
+                                                                                     InternalApprovalStatus internalApprovalStatus,
+                                                                                     LoanAccountStatus loanAccountStatus);
 
     List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 

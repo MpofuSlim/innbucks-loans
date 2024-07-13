@@ -17,11 +17,18 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
 
     @Override
     public InternalApprovalResponse approveLoan(InternalApprovalRequest request, Long id) {
+
         Loan loan = loanRepository.findById(id).orElseThrow();
+
         if (loan.getInternalApprovalStatus() != InternalApprovalStatus.PENDING
                 && loan.getInternalApprovalStatus() != null) {
             throw new RuntimeException("Loan already approved");
         }
+
+        if (loan.getLoanApprovalStatus() != LoanApprovalStatus.APPROVED) {
+            throw new RuntimeException(String.format("Loan with status %s cannot be approved", loan.getLoanApprovalStatus()));
+        }
+
         loan.setInternalApprovalStatus(request.getStatus());
         loan.setInternalApprovalDate(LocalDateTime.now());
         loan.setInternalApprovalComment(request.getComment());

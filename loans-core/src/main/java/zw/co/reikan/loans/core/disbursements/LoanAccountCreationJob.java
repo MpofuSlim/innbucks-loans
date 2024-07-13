@@ -22,9 +22,11 @@ public class LoanAccountCreationJob {
     private final LoanRepository loanRepository;
 
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
-    public void processFundsDisbursements() {
+    public void processLoanAccountCreation() {
         log.info("LoanAccountCreationJob...");
-        loanRepository.findByLoanApprovalStatusAndLoanAccountStatus(APPROVED, LoanAccountStatus.PENDING)
+        loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(APPROVED,
+                        InternalApprovalStatus.APPROVED,
+                        LoanAccountStatus.PENDING)
                 .forEach(this::createLoanAccount);
     }
 
@@ -34,13 +36,10 @@ public class LoanAccountCreationJob {
             return;
         }
         try {
-
             LoanAccountCreationResponse loanAccount = disbursementService.createLoanAccount(loan);
-
             if (loanAccount.isSuccess()) {
                 log.info("Loan account created successfully");
                 loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
-                loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
             } else {
                 loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
                 log.info("Loan account creation failed");
