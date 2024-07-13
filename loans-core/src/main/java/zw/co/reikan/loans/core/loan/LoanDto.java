@@ -62,5 +62,8 @@ public class LoanDto implements Serializable {
     private BankingDetail bankingDetail;
     private String productDescription;
     private LocalDate dateOfBirth;
-
+    private InternalApprovalStatus internalApprovalStatus;
+    private LocalDateTime internalApprovalDate;
+    private String internalApprovalBy;
+    private String internalApprovalComment;
 }

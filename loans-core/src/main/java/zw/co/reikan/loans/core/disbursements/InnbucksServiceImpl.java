@@ -51,6 +51,11 @@ public class InnbucksServiceImpl extends DisbursementService {
         String loanPurpose = loan.getLoanPurpose() != null ? loan.getLoanPurpose().getDescription() : LoanPurpose.PERSONAL_USE.getDescription();
 
         LoanAccountCreationRequest.LoanAccountCreationRequestBuilder builder = LoanAccountCreationRequest.builder()
+                .firstName(loan.getFirstName())
+                .lastName(loan.getLastName())
+                .idNumber(loan.getNationalIdNumber())
+                .address(loan.getAddress().toString())
+                .dateOfBirth(loan.getDateOfBirth().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")))
                 .currency("USD")
                 .amount(toCents(loan.getPrincipal()))
                 .maritalStatus(loan.getMaritalStatus() == null ? MaritalStatus.SINGLE.getCode() : loan.getMaritalStatus().getCode())

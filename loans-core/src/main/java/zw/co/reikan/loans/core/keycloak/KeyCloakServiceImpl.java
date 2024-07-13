@@ -1,17 +1,17 @@
 package zw.co.reikan.loans.core.keycloak;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.api.AuthRequest;
 import zw.co.reikan.loans.core.api.AuthResponse;
+
 
 @Service
 @RequiredArgsConstructor
@@ -43,4 +43,12 @@ public class KeyCloakServiceImpl {
         return response.getBody();
     }
 
+    public String getLoggedInUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() != null) {
+            Jwt token = (Jwt) auth.getPrincipal();
+            return token.getClaimAsString("preferred_username");
+        }
+        return "SYSTEM";
+    }
 }

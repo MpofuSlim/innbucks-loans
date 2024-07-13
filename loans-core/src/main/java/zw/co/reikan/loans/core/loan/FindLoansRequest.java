@@ -20,4 +20,5 @@ public class FindLoansRequest {
     private LocalDate toDate;
     private LoanApprovalStatus approvalStatus;
     private LoanDisbursementStatus disbursementStatus;
+    private InternalApprovalStatus internalApprovalStatus;
 }

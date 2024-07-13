@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
 import zw.co.reikan.loans.core.parameter.ParameterService;
 
 import java.math.BigDecimal;
@@ -35,11 +36,13 @@ public class LoanServiceImpl implements LoanService {
     private final LoanRepository loanRepository;
     private final ParameterService parameterService;
     private final LoanMapper loanMapper;
+    private final KeyCloakServiceImpl keyCloakService;
 
-    public List<LoanDto> findLoans(FindLoansRequest findLoansRequest) {
-        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(findLoansRequest.getApprovalStatus()))
-                .and(withDisbursementStatus(findLoansRequest.getDisbursementStatus()))
-                .and(withCreatedDateBetween(atStartOfDay(findLoansRequest.getFromDate()), atEndOfDay(findLoansRequest.getToDate()))));
+    public List<LoanDto> findLoans(FindLoansRequest request) {
+        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
+                .and(withDisbursementStatus(request.getDisbursementStatus()))
+                .and(withInternalApprovalStatus(request.getInternalApprovalStatus()))
+                .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
         return loanMapper.fromLoans(all);
     }
 
@@ -101,6 +104,7 @@ public class LoanServiceImpl implements LoanService {
                 .principal(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
+                .internalApprovalStatus(InternalApprovalStatus.PENDING)
                 .ecNumber(formattedEcNumber)
                 .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
@@ -136,6 +140,7 @@ public class LoanServiceImpl implements LoanService {
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())
+                .createdBy(keyCloakService.getLoggedInUsername())
                 .build();
 
         loanRepository.save(loan);

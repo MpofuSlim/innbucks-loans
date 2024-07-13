@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.loan.DisbursementType;
+import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -28,7 +29,8 @@ public class LoanDisbursementServiceJob {
     @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
-        loanRepository.findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus.CREATED, PENDING)
+        loanRepository.findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus.CREATED,
+                        PENDING, InternalApprovalStatus.PENDING)
                 .forEach(this::processLoanApproval);
     }
 

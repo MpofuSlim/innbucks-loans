@@ -7,6 +7,22 @@ import lombok.Data;
 @Data
 @Builder
 public class LoanAccountCreationRequest {
+
+    @JsonProperty("firstName")
+    private String firstName;
+
+    @JsonProperty("lastName")
+    private String lastName;
+
+    @JsonProperty("idNumber")
+    private String idNumber;
+
+    @JsonProperty("address")
+    private String address;
+
+    @JsonProperty("dateOfBirth")
+    private String dateOfBirth;
+
     @JsonProperty("amount")
     private Integer amount;
     @JsonProperty("currency")
@@ -63,4 +79,5 @@ public class LoanAccountCreationRequest {
 
     @JsonProperty("participantReference")
     private String participantReference;
+
 }

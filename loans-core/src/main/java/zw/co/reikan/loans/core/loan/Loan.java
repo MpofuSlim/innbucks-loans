@@ -200,6 +200,22 @@ public class Loan extends BaseEntity {
     @Column(name = "disbursement_merchant_account_number")
     private String disbursementMerchantAccountNumber;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "internal_approval_status")
+    private InternalApprovalStatus internalApprovalStatus;
+
+    @Column(name = "internal_approval_date")
+    private LocalDateTime internalApprovalDate;
+
+    @Column(name = "internal_approval_by")
+    private String internalApprovalBy;
+
+    @Column(name = "internal_approval_comment")
+    private String internalApprovalComment;
+
+    @Column(name = "created_by")
+    private String createdBy;
+
     public String getReference() {
         return String.format("%09d", getId());
     }

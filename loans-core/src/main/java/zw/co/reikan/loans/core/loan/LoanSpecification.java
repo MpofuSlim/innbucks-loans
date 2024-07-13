@@ -8,6 +8,14 @@ import java.time.LocalDateTime;
 
 public class LoanSpecification {
 
+    public static Specification<Loan> withInternalApprovalStatus(InternalApprovalStatus status) {
+        if (status == null) {
+            return null;
+        } else {
+            return (root, query, cb) -> cb.equal(root.get("internalApprovalStatus"), status);
+        }
+    }
+
     public static Specification<Loan> withDisbursementStatus(LoanDisbursementStatus status) {
         if (status == null) {
             return null;

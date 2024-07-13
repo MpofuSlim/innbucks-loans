@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 
@@ -29,7 +30,7 @@ public class LoanAccountCreationJob {
 
     private void createLoanAccount(Loan loan) {
         if (loan.getLoanAccountStatus() == LoanAccountStatus.CREATED) {
-            log.info("Loan account already created");
+            log.info("Loan account already created: {}", loan.getId());
             return;
         }
         try {
@@ -39,6 +40,7 @@ public class LoanAccountCreationJob {
             if (loanAccount.isSuccess()) {
                 log.info("Loan account created successfully");
                 loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+                loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
             } else {
                 loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
                 log.info("Loan account creation failed");
