@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public abstract class DisbursementService {
 
-    private static final String SMS_MSG = "Your mobile money account %s has been credited with $%s. Ref %s";
+    private static final String SMS_MSG = "Your loan of $%s with ref %s has been disbursed to your account %s. Welcome to the family";
 
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
@@ -35,8 +35,9 @@ public abstract class DisbursementService {
             loan.setDisbursementMerchantAccountNumber(request.getAccountNumber());
             loanRepository.save(loan);
             log.info("Dispatching loan disbursed sms notification: {}", response);
-            final String message = String.format(SMS_MSG, loan.getMobileNumber(),
-                    loan.getDisbursedAmount(), loan.getReference());
+            final String message = String.format(SMS_MSG, loan.getDisbursedAmount(),
+                    loan.getMobileNumber()
+                    , loan.getReference());
             notificationService.sendSms(loan.getMobileNumber(), message);
         } else {
             loan.setDisbursementAttempts(loan.getDisbursementAttempts() == null ? 1 : loan.getDisbursementAttempts() + 1);

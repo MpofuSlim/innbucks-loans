@@ -25,6 +25,11 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
             throw new RuntimeException("Loan already approved");
         }
 
+        if (loan.getInternalApprovalStatus() != InternalApprovalStatus.PENDING
+                && loan.getInternalApprovalStatus() != null) {
+            throw new RuntimeException("Loan already approved");
+        }
+
         if (loan.getLoanApprovalStatus() != LoanApprovalStatus.APPROVED) {
             throw new RuntimeException(String.format("Loan with status %s cannot be approved", loan.getLoanApprovalStatus()));
         }

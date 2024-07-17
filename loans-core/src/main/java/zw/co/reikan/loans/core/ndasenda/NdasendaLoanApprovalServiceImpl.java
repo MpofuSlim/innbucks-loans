@@ -42,9 +42,9 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final LoanBatchService loanBatchService;
     private final NotificationService notificationService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "CONGRATULATIONS! Your loan has been approved. Funds will be disbursed within 24 hours. Ref: %s.",
-            LoanApprovalStatus.REJECTED, "Your loan application ref: %s has been rejected. %s",
-            LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "Congratulations! Your loan application with ref %1$s has been approved. Your loan amount of %2$s will be disbursed to your account soon",
+            LoanApprovalStatus.REJECTED, "We regret to inform you that your loan application with ref # %1$s has been declined. %3$s. Kindly get hold of us on 08677569569 for further assistant",
+            LoanApprovalStatus.PROCESSING, "Your loan application with ref # %1$s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing us!"
     );
 
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
