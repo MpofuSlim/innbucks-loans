@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.HttpMethod.POST;
+import static zw.co.reikan.loans.core.loan.SmsMessages.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -42,9 +43,9 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final LoanBatchService loanBatchService;
     private final NotificationService notificationService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, "Congratulations! Your loan application with ref %1$s has been approved. Your loan amount of %2$s will be disbursed to your account soon",
-            LoanApprovalStatus.REJECTED, "We regret to inform you that your loan application with ref # %1$s has been declined. %3$s. Kindly get hold of us on 08677569569 for further assistant",
-            LoanApprovalStatus.PROCESSING, "Your loan application with ref # %1$s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing us!"
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, APPROVED_LOAN,
+            LoanApprovalStatus.REJECTED, REJECTED_LOAN,
+            LoanApprovalStatus.PROCESSING, PROCESSING_LOAN
     );
 
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
@@ -234,9 +235,12 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
                         }
 
                         final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
-                                String.format("%09d", loan.getId()), response.getMessage());
+                                String.format("%09d", loan.getId()), loan.getDisbursedAmount(), response.getMessage());
 
-                        notificationService.sendSms(loan.getMobileNumber(), text);
+                        //Do not send notification for SSB approval. SMS will be sent on internal approval
+                        if (LoanApprovalStatus.APPROVED != response.getStatus().getApprovalStatus()) {
+                            notificationService.sendSms(loan.getMobileNumber(), text);
+                        }
 
                         loanRepository.save(loan);
                     });

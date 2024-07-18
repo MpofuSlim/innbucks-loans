@@ -32,8 +32,8 @@ public class LoanApprovalServiceJob {
     private final NotificationService notificationService;
     private final LoanBatchService loanBatchService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, "Loan application rejected. We understand your disappointment. Feel free to contact us for further information. Ref: %s",
-            LoanApprovalStatus.PROCESSING, "Loan application received. Your request is being processed. We'll update you soon. Ref: %s"
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, "We regret to inform you that your loan application with ref # %s has been declined. Contact Innbucks for more Info.",
+            LoanApprovalStatus.PROCESSING, "Your loan application with ref # %s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing Innbucks!"
     );
 
     @Scheduled(fixedRate = 60000) // Run every 1 minute (60,000 milliseconds)
