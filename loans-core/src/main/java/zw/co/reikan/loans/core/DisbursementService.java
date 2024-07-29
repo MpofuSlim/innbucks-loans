@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public abstract class DisbursementService {
 
-    private static final String SMS_MSG = "Your loan of $%s with ref %s has been disbursed to your account %s. Welcome to the Innbucks family";
+    private static final String SMS_MSG = "Your loan of $%s with ref # %s has been disbursed to your account %s. Welcome to the Innbucks family";
 
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;

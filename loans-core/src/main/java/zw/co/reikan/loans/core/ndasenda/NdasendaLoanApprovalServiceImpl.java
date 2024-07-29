@@ -53,7 +53,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         log.info("Requesting loan deduction");
 
         LocalDate loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
-        LocalDate endDate = loanStartDate.plusMonths(request.getTenor());
+        LocalDate endDate = loanStartDate.plusMonths(request.getTenor() - 1);
         LocalDate loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
 
         final NdasendaDeduction deductionRequest = fromLoanRequest(request, loanStartDate, loanEndDate);

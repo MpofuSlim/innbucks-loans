@@ -11,15 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import zw.co.reikan.loans.core.loan.FindLoansRequest;
-import zw.co.reikan.loans.core.loan.LoanDto;
-import zw.co.reikan.loans.core.loan.LoanService;
+import org.springframework.web.bind.annotation.*;
+import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchResponse;
 import zw.co.reikan.loans.core.ndasenda.NdasendaDeductionsBatchRequest;
@@ -67,6 +60,31 @@ public class BatchesController {
         return new LoansWrapper(loanService.findLoans(request));
     }
 
+
+    @Operation(summary = "GET LOANS PENDING APPROVAL",
+            description = "Get all loans pending internal approval",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoansWrapper.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/find-approvals")
+    public LoansWrapper findPendingApprovals() {
+        log.info("Finding loans pending internal approval");
+        FindLoansRequest request = FindLoansRequest.builder()
+                .approvalStatus(LoanApprovalStatus.APPROVED)
+                .internalApprovalStatus(InternalApprovalStatus.PENDING)
+                .build();
+        return new LoansWrapper(loanService.findLoans(request));
+    }
 
     @Operation(summary = "GET LOAN BY ID",
             description = "Provided with a loan id, this endpoint returns a loans details",

@@ -40,12 +40,14 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
         loan.setInternalApprovalDate(LocalDateTime.now());
         loan.setInternalApprovalComment(request.getComment());
         String username = keyCloakService.getLoggedInUsername();
-        log.info("Logged in username: {}", username);
         loan.setInternalApprovalBy(username);
         Loan savedLoan = loanRepository.save(loan);
 
-        String text = request.getStatus() == InternalApprovalStatus.APPROVED ?
-                SmsMessages.APPROVED_LOAN : SmsMessages.REJECTED_LOAN;
+        String loanReference = String.format("%09d", loan.getId());
+        String text = String.format(request.getStatus() == InternalApprovalStatus.APPROVED ?
+                        SmsMessages.APPROVED_LOAN : SmsMessages.REJECTED_LOAN,
+                loanReference, loan.getDisbursedAmount(), request.getComment());
+
         notificationService.sendSms(loan.getMobileNumber(), text);
 
         InternalApprovalResponse response = new InternalApprovalResponse("Approved successfully");
