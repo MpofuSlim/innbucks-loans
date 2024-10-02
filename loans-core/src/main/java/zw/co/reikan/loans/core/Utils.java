@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 
 public class Utils {
+
     public static String trimSpecialCharacters(final String input) {
         if (input != null) {
             return input.replaceAll("[\\W\\s_]+", "");
