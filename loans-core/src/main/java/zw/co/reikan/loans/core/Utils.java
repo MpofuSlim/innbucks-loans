@@ -26,4 +26,9 @@ public class Utils {
         return input;
     }
 
+    public static String left(String input, int length) {
+        return input.length() <= length ? input : input.substring(0, length);
+    }
+
+
 }

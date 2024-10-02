@@ -7,6 +7,7 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -153,15 +154,15 @@ public class InnbucksServiceImpl extends DisbursementService {
                     .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
                     .approvalCode(depositResponse.getAuthNumber())
                     .internalReference(depositResponse.getStan())
-                    .message(depositResponse.getResponseMsg())
+                    .message(Utils.left(depositResponse.getResponseMsg(), 200))
                     .build();
 
         } catch (Exception ex) {
-            log.error("", ex);
+            log.error("Error disbursing funds", ex);
             return DisbursementResponse.builder()
                     .status(DisbursementStatus.FAILED)
                     .internalReference(uniqueTxnReference)
-                    .message(ex.getMessage())
+                    .message(Utils.left(ex.getMessage(), 200))
                     .build();
         }
     }
