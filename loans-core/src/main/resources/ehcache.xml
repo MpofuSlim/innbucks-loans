@@ -1,5 +1,5 @@
 <ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:noNamespaceSchemaLocation="http://ehcache.org/ehcache.xsd">
+    xsi:noNamespaceSchemaLocation="http://www.ehcache.org/ehcache.xsd">
 
     <cache name="ndasenda-access-token-cache" eternal="false" maxEntriesLocalHeap="1000" overflowToDisk="false"
         timeToLiveSeconds="21600" />

@@ -53,7 +53,7 @@ public class LoanRequest implements Serializable {
 
     @JsonProperty("merchant")
     @JsonAlias("loanFor")
-    private Merchant merchant;
+    private String merchant;
 
     private Gender gender;
 

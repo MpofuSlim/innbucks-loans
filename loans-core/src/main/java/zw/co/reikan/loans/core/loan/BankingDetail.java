@@ -2,10 +2,7 @@ package zw.co.reikan.loans.core.loan;
 
 import lombok.Data;
 
-import javax.persistence.Column;
-import javax.persistence.Embeddable;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
+import jakarta.persistence.*;
 
 @Data
 @Embeddable

@@ -3,12 +3,7 @@ package zw.co.reikan.loans.core.loan;
 import lombok.Data;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.ManyToOne;
-import javax.persistence.Table;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity

@@ -6,8 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.merchant.Merchant;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -183,8 +184,8 @@ public class Loan extends BaseEntity {
     @Column(name = "profession")
     private String profession;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "merchant")
+    @ManyToOne
+    @JoinColumn(name = "merchant_id")
     private Merchant merchant;
 
     @Enumerated(EnumType.STRING)

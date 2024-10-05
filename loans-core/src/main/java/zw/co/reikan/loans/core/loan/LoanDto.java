@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.loan;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
+import zw.co.reikan.loans.core.api.MerchantDto;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import java.io.Serializable;
@@ -57,7 +58,7 @@ public class LoanDto implements Serializable {
     private LineOfBusiness lineOfBusiness;
     private LoanPurpose loanPurpose;
     private String profession;
-    private Merchant merchant;
+    private MerchantDto merchant;
     private Gender gender;
     private BankingDetail bankingDetail;
     private String productDescription;
@@ -66,4 +67,6 @@ public class LoanDto implements Serializable {
     private LocalDateTime internalApprovalDate;
     private String internalApprovalBy;
     private String internalApprovalComment;
+    private String createdBy;
+
 }

@@ -52,12 +52,12 @@ public class LoanDisbursementServiceJob {
     }
 
     private String getAccountNumber(Loan loan) {
-
         if (loan.getMerchant() == null || loan.getMerchant().getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
             return "";
         }
-        return parameterService.getParameterValue(String.format("innbucks.merchant.account.%s", loan.getMerchant().name().toLowerCase()),
-                String.class);
+        return loan.getMerchant().getAccountNumber();
+        //return parameterService.getParameterValue(String.format("innbucks.merchant.account.%s", loan.getMerchant().name().toLowerCase()),
+        //        String.class);
     }
 
 }

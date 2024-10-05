@@ -8,6 +8,8 @@ import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.merchant.Merchant;
+import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
 
 import java.math.BigDecimal;
@@ -37,6 +39,7 @@ public class LoanServiceImpl implements LoanService {
     private final ParameterService parameterService;
     private final LoanMapper loanMapper;
     private final KeyCloakServiceImpl keyCloakService;
+    private final MerchantRepository merchantRepository;
 
     public List<LoanDto> findLoans(FindLoansRequest request) {
         final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
@@ -100,6 +103,12 @@ public class LoanServiceImpl implements LoanService {
 
         final LoanDetails loanDetails = calculate(loanRequest);
 
+        String merchantCode = loanRequest.getMerchant() == null ? Merchant.DEFAULT_MERCHANT_CODE
+                : loanRequest.getMerchant();
+
+        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
+                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
+
         final Loan loan = Loan.builder()
                 .principal(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
@@ -136,7 +145,7 @@ public class LoanServiceImpl implements LoanService {
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
                 .loanPurpose(loanRequest.getPurposeOfLoan())
-                .merchant(loanRequest.getMerchant())
+                .merchant(merchant)
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())

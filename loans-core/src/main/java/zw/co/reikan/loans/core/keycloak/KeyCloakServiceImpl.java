@@ -1,46 +1,67 @@
 package zw.co.reikan.loans.core.keycloak;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.*;
+import org.keycloak.OAuth2Constants;
+import org.keycloak.admin.client.CreatedResponseUtil;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.resource.UsersResource;
+import org.keycloak.representations.AccessTokenResponse;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
-import zw.co.reikan.loans.core.api.AuthRequest;
-import zw.co.reikan.loans.core.api.AuthResponse;
+import org.springframework.util.StringUtils;
+import zw.co.reikan.loans.core.api.*;
+import zw.co.reikan.loans.core.exception.ValidationException;
+import zw.co.reikan.loans.core.merchant.*;
+import zw.co.reikan.loans.core.user.User;
+import zw.co.reikan.loans.core.user.UserGroup;
+import zw.co.reikan.loans.core.user.UserRepository;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 
 @Service
 @RequiredArgsConstructor
-public class KeyCloakServiceImpl {
+public class KeyCloakServiceImpl implements KeycloakService {
 
-    private final RestTemplate restTemplate;
+    public static final String MERCHANT_CODE = "merchant_code";
+    public static final String ID_NUMBER = "id_number";
+    public static final String MOBILE_NUMBER = "mobile_number";
+    private final Keycloak keycloak;
+    private final UserRepository userRepository;
+    private final MerchantRepository merchantRepository;
     private final AuthProperties authProperties;
+    private final MerchantMapper merchantMapper;
 
-    public AuthResponse getAccessToken(final AuthRequest authRequest) {
-        final HttpHeaders headers = new HttpHeaders();
+    public AuthResponse login(AuthRequest request) {
+        AccessTokenResponse tokenResponse = KeycloakBuilder.builder().serverUrl(authProperties.getAuthUrl())
+                .realm(authProperties.getRealm()).clientId(authProperties.getClientId()).username(request.getUsername())
+                .password(request.getPassword()).grantType(OAuth2Constants.PASSWORD).build().tokenManager()
+                .getAccessToken();
+        return getLoginResponse(tokenResponse, request.getUsername());
+    }
 
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
-
-        map.add("grant_type", "password");
-        map.add("client_id", authProperties.getClientId());
-        map.add("password", authRequest.getPassword());
-        map.add("username", authRequest.getUsername());
-
-        HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(map, headers);
-
-        ResponseEntity<AuthResponse> response = restTemplate.exchange(
-                authProperties.getAuthUrl(),
-                HttpMethod.POST,
-                entity,
-                AuthResponse.class);
-
-        return response.getBody();
+    private AuthResponse getLoginResponse(AccessTokenResponse tokenResponse, String username) {
+        AuthResponse loginResponse = new AuthResponse();
+        loginResponse.setExpiresIn(tokenResponse.getExpiresIn());
+        loginResponse.setAccessToken(tokenResponse.getToken());
+        loginResponse.setTokenType(tokenResponse.getTokenType());
+        Optional<User> userResult = userRepository.findByUsername(username);
+        userResult.ifPresent(user -> {
+            loginResponse.setTemporaryPassword(user.getTemporaryPassword());
+            loginResponse.setMerchant(user.getMerchant().getName());
+        });
+        return loginResponse;
     }
 
     public String getLoggedInUsername() {
@@ -50,5 +71,109 @@ public class KeyCloakServiceImpl {
             return token.getClaimAsString("preferred_username");
         }
         return "SYSTEM";
+    }
+
+    public void resetPassword(String newPassword, String userId, String username) {
+        LocalDateTime auditDateTime = LocalDateTime.now();
+        UsersResource userResource = keycloak.realm(authProperties.getRealm()).users();
+        CredentialRepresentation passwordCred = new CredentialRepresentation();
+        passwordCred.setTemporary(false);
+        passwordCred.setType(CredentialRepresentation.PASSWORD);
+        passwordCred.setValue(newPassword.trim());
+        userResource.get(userId).resetPassword(passwordCred);
+        Optional<User> userResult = userRepository.findByUsername(username);
+        userResult.ifPresent(user -> {
+            user.setTemporaryPassword(false);
+            userRepository.save(user);
+        });
+    }
+
+    public String addUser(CreateUserRequest user, String password) {
+        UsersResource usersResource = keycloak.realm(authProperties.getRealm()).users();
+        CredentialRepresentation credentialRepresentation = createPasswordCredentials(password);
+        UserRepresentation kcUser = new UserRepresentation();
+        kcUser.setUsername(user.getUsername());
+        kcUser.setCredentials(Collections.singletonList(credentialRepresentation));
+        kcUser.setFirstName(user.getFirstName());
+        kcUser.setLastName(user.getLastName());
+        kcUser.setEmail(user.getEmail());
+        kcUser.setEnabled(true);
+        kcUser.setEmailVerified(true);
+        kcUser.setGroups(user.getGroups().stream().map(UserGroup::name).collect(Collectors.toList()));
+
+        merchantRepository.findByMerchantCode(user.getMerchantCode())
+                .orElseThrow(() -> new RuntimeException("Could not find merchant"));
+
+        kcUser.singleAttribute(MOBILE_NUMBER, user.getMobileNumber());
+        kcUser.singleAttribute(ID_NUMBER, user.getIdNumber());
+        kcUser.singleAttribute(MERCHANT_CODE, String.valueOf(user.getMerchantCode()));
+        return CreatedResponseUtil.getCreatedId(usersResource.create(kcUser));
+    }
+
+    private CredentialRepresentation createPasswordCredentials(String password) {
+        CredentialRepresentation passwordCredentials = new CredentialRepresentation();
+        passwordCredentials.setTemporary(false);
+        passwordCredentials.setType(CredentialRepresentation.PASSWORD);
+        passwordCredentials.setValue(password);
+        return passwordCredentials;
+    }
+
+    public List<UserDTO> findUsersByMerchantCode(String merchantCode) {
+        return keycloak.realm(authProperties.getRealm()).users()
+                .searchByAttributes(MERCHANT_CODE + ":" + merchantCode).stream()
+                .map(this::convertFromKeycloakUserToUserDTO).collect(Collectors.toList());
+    }
+
+    public List<UserDTO> search(SearchUserRequest searchUserRequest) {
+        validateSearchRequest(searchUserRequest);
+        return keycloak.realm(authProperties.getRealm()).users()
+                .search(searchUserRequest.getSearchText(),
+                        (searchUserRequest.getPageNumber() - 1) * searchUserRequest.getPageSize(),
+                        searchUserRequest.getPageSize())
+                .stream().map(this::convertFromKeycloakUserToUserDTO).collect(Collectors.toList());
+    }
+
+    private void validateSearchRequest(SearchUserRequest searchUserRequest) {
+        if (searchUserRequest == null) {
+            throw new ValidationException("User search criteria is required");
+        }
+        if (!StringUtils.hasText(searchUserRequest.getSearchText())) {
+            throw new ValidationException("User search text required");
+        }
+        if (searchUserRequest.getPageNumber() == null) {
+            throw new ValidationException("User search page number is required");
+        }
+        if (searchUserRequest.getPageSize() == null) {
+            throw new ValidationException("User search page size is required");
+        }
+        if (searchUserRequest.getPageNumber() <= 0) {
+            throw new ValidationException("User search page number cannot be negative or zero");
+        }
+        if (searchUserRequest.getPageSize() <= 0) {
+            throw new ValidationException("User search page size cannot be negative or zero");
+        }
+    }
+
+    private UserDTO convertFromKeycloakUserToUserDTO(UserRepresentation userRepresentation) {
+        UserDTO userDTO = new UserDTO();
+        Map<String, List<String>> userAttributes = userRepresentation.getAttributes();
+        userDTO.setEmail(userRepresentation.getEmail());
+        userDTO.setFirstName(userRepresentation.getFirstName());
+        userDTO.setIdNumber(userAttributes.get(ID_NUMBER).get(0));
+        userDTO.setLastName(userRepresentation.getLastName());
+        userDTO.setMobileNumber(userAttributes.get(MOBILE_NUMBER).get(0));
+        userDTO.setUsername(userRepresentation.getUsername());
+        String merchantCode = userAttributes.get(MERCHANT_CODE).get(0);
+        Optional<Merchant> merchantOptional = merchantRepository.findByMerchantCode(merchantCode);
+        userDTO.setMerchant(merchantMapper.fromMerchant(merchantOptional.orElseThrow(() ->
+                new RuntimeException("Could not find merchant"))));
+        userDTO.setGroups(getGroupsForUser(userRepresentation.getId()).stream().map(UserGroup::valueOf)
+                .collect(Collectors.toList()));
+        return userDTO;
+    }
+
+    private List<String> getGroupsForUser(String userId) {
+        return keycloak.realm(authProperties.getRealm()).users().get(userId).groups().stream()
+                .map(GroupRepresentation::getName).collect(Collectors.toList());
     }
 }

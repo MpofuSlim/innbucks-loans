@@ -11,4 +11,6 @@ public class AuthProperties {
     private String username;
     private String password;
     private String authUrl;
+    private String realm;
+    private String principalAttribute;
 }

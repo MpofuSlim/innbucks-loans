@@ -2,9 +2,7 @@ package zw.co.reikan.loans.core.loan;
 
 import lombok.Data;
 
-import javax.persistence.Column;
-import javax.persistence.Embeddable;
-import javax.persistence.Lob;
+import jakarta.persistence.*;
 import java.time.LocalDate;
 
 @Embeddable

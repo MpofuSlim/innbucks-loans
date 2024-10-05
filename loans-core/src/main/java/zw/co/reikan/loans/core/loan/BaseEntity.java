@@ -1,16 +1,13 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 import org.springframework.util.ObjectUtils;
 
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.MappedSuperclass;
-import javax.persistence.Version;
+
 import java.io.Serializable;
 
 @MappedSuperclass

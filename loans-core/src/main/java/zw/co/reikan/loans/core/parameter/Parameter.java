@@ -3,10 +3,7 @@ package zw.co.reikan.loans.core.parameter;
 import lombok.Data;
 import zw.co.reikan.loans.core.loan.BaseEntity;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Index;
-import javax.persistence.Table;
+import jakarta.persistence.*;
 import java.util.Objects;
 
 @Data

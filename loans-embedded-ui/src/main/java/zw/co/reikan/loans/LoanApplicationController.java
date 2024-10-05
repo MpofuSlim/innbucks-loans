@@ -1,5 +1,6 @@
 package zw.co.reikan.loans;
 
+import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,9 +17,9 @@ import zw.co.reikan.loans.core.EncryptionUtils;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.loan.*;
+import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.parameter.ParameterService;
 
-import javax.servlet.http.HttpSession;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -113,7 +114,7 @@ public class LoanApplicationController {
         loanRequest.setNationalId(String.valueOf(session.getAttribute("nationalId")));
         LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
 
-        loanRequest.setMerchant(Merchant.INNBUCKS);
+        loanRequest.setMerchant(Merchant.DEFAULT_MERCHANT_CODE);
 
         loanRequest.setDateOfBirth(dateOfBirth);
 
