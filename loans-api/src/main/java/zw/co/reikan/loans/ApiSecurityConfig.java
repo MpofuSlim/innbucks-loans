@@ -31,15 +31,13 @@ public class ApiSecurityConfig {
     @Bean
     SecurityFilterChain unsecuredSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .securityMatcher("/auth/**", "/swagger-ui/**",
-                        "/v2/api-docs",
-                        "/configuration/ui",
-                        "/v3/api-docs",
+                .securityMatcher("/auth/**",
+                        "/v3/api-docs/**",
+                        "/swagger-ui/**",
+                        "/swagger-ui.html",
                         "/spec.html",
                         "/swagger-resources/**",
-                        "/configuration/security",
-                        "/swagger-ui.html",
-                        "/webjars/**")
+                        "/configuration/security")
                 .authorizeHttpRequests(auth ->
                         auth.anyRequest().permitAll()
                 )

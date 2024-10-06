@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import zw.co.reikan.loans.core.api.*;
 import zw.co.reikan.loans.core.exception.ValidationException;
-import zw.co.reikan.loans.core.merchant.*;
+import zw.co.reikan.loans.core.merchant.Merchant;
+import zw.co.reikan.loans.core.merchant.MerchantMapper;
+import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
 import zw.co.reikan.loans.core.user.UserRepository;
@@ -64,13 +66,20 @@ public class KeyCloakServiceImpl implements KeycloakService {
         return loginResponse;
     }
 
+    @Override
+    public User getLoggedInUser() {
+        String loggedInUsername = getLoggedInUsername();
+        return userRepository.findByUsername(loggedInUsername)
+                .orElseThrow(() -> new ValidationException("User %s not found".formatted(loggedInUsername)));
+    }
+
     public String getLoggedInUsername() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() != null) {
             Jwt token = (Jwt) auth.getPrincipal();
             return token.getClaimAsString("preferred_username");
         }
-        return "SYSTEM";
+        return "SYSTEM_USER";
     }
 
     public void resetPassword(String newPassword, String userId, String username) {

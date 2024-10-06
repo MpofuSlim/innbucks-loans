@@ -27,6 +27,7 @@ public class InternalLoanApplicationController {
     @Autowired
     private LoanService loanService;
 
+
     @Operation(summary = "APPLY FOR LOAN",
             description = "Apply for loan",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
@@ -40,7 +41,7 @@ public class InternalLoanApplicationController {
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
-    @PostMapping("/loans")
+    @PostMapping("/api/loans")
     public LoanResponse create(@RequestBody LoanRequest request) {
         log.info("Create loan request: {}", request);
         return loanService.requestLoan(request);

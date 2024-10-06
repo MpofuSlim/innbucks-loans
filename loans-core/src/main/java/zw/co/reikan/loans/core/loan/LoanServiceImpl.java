@@ -8,9 +8,9 @@ import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
-import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
+import zw.co.reikan.loans.core.user.User;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -81,10 +81,6 @@ public class LoanServiceImpl implements LoanService {
             throw new IllegalArgumentException("EC Number is not valid");
         }
 
-        if (loanRequest.getMerchant() == null) {
-            throw new IllegalArgumentException("LoanFor is mandatory");
-        }
-
         val dateOfBirth = loanRequest.getDateOfBirth();
         if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
@@ -103,11 +99,13 @@ public class LoanServiceImpl implements LoanService {
 
         final LoanDetails loanDetails = calculate(loanRequest);
 
-        String merchantCode = loanRequest.getMerchant() == null ? Merchant.DEFAULT_MERCHANT_CODE
-                : loanRequest.getMerchant();
+//        String merchantCode = loanRequest.getMerchant() == null ? Merchant.DEFAULT_MERCHANT_CODE
+//                : loanRequest.getMerchant();
+//
+//        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
+//                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
 
-        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
-                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
+        User loggedInUser = keyCloakService.getLoggedInUser();
 
         final Loan loan = Loan.builder()
                 .principal(loanDetails.getPrincipal())
@@ -145,11 +143,11 @@ public class LoanServiceImpl implements LoanService {
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
                 .loanPurpose(loanRequest.getPurposeOfLoan())
-                .merchant(merchant)
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())
-                .createdBy(keyCloakService.getLoggedInUsername())
+                .createdBy(loggedInUser.getUsername())
+                .merchant(loggedInUser.getMerchant())
                 .build();
 
         loanRepository.save(loan);

@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.keycloak;
 
 import zw.co.reikan.loans.core.api.*;
+import zw.co.reikan.loans.core.user.User;
 
 import java.util.List;
 
@@ -8,7 +9,9 @@ public interface KeycloakService {
 
 	AuthResponse login(AuthRequest request);
 
-	void resetPassword(String newPassword, String userId, String username);
+    User getLoggedInUser();
+
+    void resetPassword(String newPassword, String userId, String username);
 
 	String addUser(CreateUserRequest user, String password);
 

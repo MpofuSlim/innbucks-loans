@@ -86,5 +86,4 @@ public class LoanManagementController {
         return internalApprovalService.approveLoan(request, id);
     }
 
-
 }

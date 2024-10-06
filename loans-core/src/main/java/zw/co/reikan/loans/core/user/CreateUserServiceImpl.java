@@ -47,7 +47,6 @@ public class CreateUserServiceImpl implements CreateUserService {
     private final MerchantMapper merchantMapper;
     private final NotificationService notificationService;
 
-
     @Transactional
     public CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode) {
         return create(CreateUserRequest.builder()
