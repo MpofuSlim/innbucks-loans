@@ -48,16 +48,17 @@ public class CreateUserServiceImpl implements CreateUserService {
     private final NotificationService notificationService;
 
     @Transactional
-    public CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode) {
+    public CreateUserResponse create(CreateAgentRequest createAgentRequest, User parentAgent, String merchantCode) {
         return create(CreateUserRequest.builder()
                 .email(createAgentRequest.getEmail())
-                .groups(List.of(createAgentRequest.getGroups()))
+                .groups(List.of(createAgentRequest.getGroup()))
                 .idNumber(createAgentRequest.getIdNumber())
                 .mobileNumber(createAgentRequest.getMobileNumber())
                 .username(createAgentRequest.getUsername())
                 .firstName(createAgentRequest.getFirstName())
                 .lastName(createAgentRequest.getLastName())
                 .merchantCode(merchantCode)
+                .agent(parentAgent)
                 .build());
     }
 
@@ -83,6 +84,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         user.setMerchant(merchant);
         user.setTemporaryPassword(true);
         user.setUsername(createUserRequest.getUsername());
+        user.setAgent(createUserRequest.getAgent());
 
         User savedUser = userRepository.save(user);
 
@@ -97,6 +99,8 @@ public class CreateUserServiceImpl implements CreateUserService {
         userDTO.setGroups(createUserRequest.getGroups());
         userDTO.setUsername(createUserRequest.getUsername());
         userDTO.setTemporaryPassword(true);
+        userDTO.setAgentId(createUserRequest.getAgent() == null ? null : createUserRequest.getAgent().getId());
+
         CreateUserResponse createUserResponse = new CreateUserResponse(userDTO);
         notifyUser(userDTO, generatedPassword);
         logger.info("Create user response for request {} is {}", createUserRequest, createUserResponse);

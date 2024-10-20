@@ -25,6 +25,10 @@ public class AuthResponse implements Serializable {
     private String tokenType;
     @JsonProperty("scope")
     private String scope;
-    @JsonProperty("merchant")
-    protected String merchant;
+    @JsonProperty("merchant_name")
+    private String merchantName;
+    @JsonProperty("merchant_code")
+    private String merchantCode;
+    private Long agentId;
+    private String agentName;
 }

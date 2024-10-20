@@ -12,5 +12,5 @@ public class CreateAgentRequest {
     private String email;
     private String mobileNumber;
     private String idNumber;
-    private UserGroup groups;
+    private UserGroup group;
 }

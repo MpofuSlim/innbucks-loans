@@ -1,20 +1,29 @@
 package zw.co.reikan.loans;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.api.*;
 import zw.co.reikan.loans.core.keycloak.KeycloakService;
+import zw.co.reikan.loans.core.loan.FindLoansInternalRequest;
+import zw.co.reikan.loans.core.loan.FindLoansRequest;
+import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.merchant.FindMerchantsResponse;
 import zw.co.reikan.loans.core.merchant.MerchantService;
-import zw.co.reikan.loans.core.user.CreateUserService;
-import zw.co.reikan.loans.core.user.SaveUserResponse;
+import zw.co.reikan.loans.core.user.*;
 
+import java.security.Principal;
 import java.util.List;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
@@ -27,11 +36,14 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @RestController
 @RequestMapping(value = "/api/merchants")
 @RequiredArgsConstructor
+@Slf4j
 public class MerchantController {
 
     private final MerchantService merchantService;
     private final KeycloakService keycloakService;
     private final CreateUserService createUserService;
+    private final LoanService loanService;
+    private final FindUserService findUserService;
 
 
     @Operation(summary = "FIND MERCHANTS",
@@ -67,17 +79,27 @@ public class MerchantController {
             description = "Create an agent for the merchant",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
-    @PostMapping("/{code}/agents")
+    @PostMapping("/{merchantCode}/agents")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<SaveUserResponse> createAgent(@RequestBody CreateAgentRequest createUserRequest, @PathVariable String code) {
-        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, code);
+    public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
+                                                        @RequestBody CreateAgentRequest createUserRequest, @PathVariable String merchantCode) {
+
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        User loggedInUser = findUserService.resolveUserFromAccessToken(token)
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+
+        User agent = UserGroup.SUB_AGENTS == createUserRequest.getGroup() ? loggedInUser : null;
+
+        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent, merchantCode);
+
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
         return ResponseEntity.ok(saveUserResponse);
     }
+
 
     @Operation(summary = "FIND AGENTS",
             description = "List all agents for the given merchant",
@@ -93,4 +115,55 @@ public class MerchantController {
         return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
     }
 
+//    @Operation(summary = "FIND LOANS",
+//            description = "List all loans for the given merchant",
+//            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+//    )
+//    @GetMapping("/{code}/loans")
+//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
+//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
+//            @ApiResponse(responseCode = "500", description = "Processing error")})
+//    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
+//        List<UserDTO> keycloakUsers = keycloakService.findUsersByMerchantCode(code);
+//        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
+//    }
+
+
+    @Operation(summary = "FIND LOANS",
+            description = "List all loans for the given merchant",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoansWrapper.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/{code}/loans")
+    public LoansWrapper findLoans(Principal principal,
+                                  @RequestBody FindLoansRequest request,
+                                  @PathVariable String code) {
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        User user = findUserService.resolveUserFromAccessToken(token)
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+
+        if (!code.equalsIgnoreCase(user.getMerchant().getMerchantCode())
+                && findUserService.hasRole(token, "admin")) {
+            throw new AccessDeniedException("User not allowed to complete this operation");
+        }
+
+        log.info("Find loan request: {}", request);
+
+        FindLoansInternalRequest internalRequest = (FindLoansInternalRequest) request;
+        internalRequest.setUserId(user.getId());
+        internalRequest.setMerchantCode(code);
+
+        return new LoansWrapper(loanService.findLoansForMerchant(internalRequest));
+    }
 }

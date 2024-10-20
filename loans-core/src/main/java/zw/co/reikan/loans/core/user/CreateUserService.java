@@ -7,5 +7,5 @@ import zw.co.reikan.loans.core.api.CreateUserResponse;
 public interface CreateUserService {
     CreateUserResponse create(CreateUserRequest createUserRequest);
 
-    CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode);
+    CreateUserResponse create(CreateAgentRequest createAgentRequest, User parentAgent, String merchantCode);
 }

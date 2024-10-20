@@ -5,12 +5,13 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import java.time.LocalDate;
 
 @Data
-@Builder
+@SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
 public class FindLoansRequest {

@@ -11,5 +11,7 @@ public interface LoanService {
 
     List<LoanDto> findLoans(FindLoansRequest findLoansRequest);
 
+    List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request);
+
     LoanDto getLoan(Long id);
 }

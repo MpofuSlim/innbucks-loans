@@ -1,5 +1,6 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -7,8 +8,8 @@ import lombok.NoArgsConstructor;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.merchant.Merchant;
+import zw.co.reikan.loans.core.user.User;
 
-import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -216,6 +217,14 @@ public class Loan extends BaseEntity {
 
     @Column(name = "created_by")
     private String createdBy;
+
+    @ManyToOne
+    @JoinColumn(name = "created_by_user_id")
+    private User createdByUser;
+
+    @ManyToOne
+    @JoinColumn(name = "agent_id")
+    private User agent;
 
     public String getReference() {
         return String.format("%09d", getId());

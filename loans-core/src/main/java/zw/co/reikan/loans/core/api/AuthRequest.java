@@ -1,7 +1,10 @@
 package zw.co.reikan.loans.core.api;
 
-import lombok.Data;
+import lombok.*;
 
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Data
 public class AuthRequest {
     private String username;

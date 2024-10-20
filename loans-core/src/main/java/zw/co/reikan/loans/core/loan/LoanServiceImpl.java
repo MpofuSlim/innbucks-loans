@@ -50,6 +50,18 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
+    public List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request) {
+        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
+                .and(withMerchantCode(request.getMerchantCode()))
+                .and(createdByUserOrAsAgent(request.getUserId()))
+                .and(withDisbursementStatus(request.getDisbursementStatus()))
+                .and(withInternalApprovalStatus(request.getInternalApprovalStatus()))
+                .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
+        return loanMapper.fromLoans(all);
+    }
+
+
+    @Override
     public LoanDto getLoan(Long id) {
         return loanRepository.findById(id)
                 .map(loanMapper::fromLoan)
@@ -147,6 +159,8 @@ public class LoanServiceImpl implements LoanService {
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())
                 .createdBy(loggedInUser.getUsername())
+                .createdByUser(loggedInUser)
+                .agent(loggedInUser.getAgent())
                 .merchant(loggedInUser.getMerchant())
                 .build();
 

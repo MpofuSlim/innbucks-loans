@@ -30,6 +30,7 @@ public class UserDTO {
 	private String externalSystemId;
 	private List<UserGroup> groups;
 	private MerchantDto merchant;
+	private Long agentId;
 
 	public static UserDTO fromUser(User user) {
 		UserDTO userDTO = new UserDTO();

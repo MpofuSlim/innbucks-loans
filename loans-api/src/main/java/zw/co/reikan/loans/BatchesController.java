@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.loan.*;
@@ -17,7 +19,9 @@ import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchResponse;
 import zw.co.reikan.loans.core.ndasenda.NdasendaDeductionsBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
+import zw.co.reikan.loans.core.user.FindUserService;
 
+import java.security.Principal;
 import java.util.List;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
@@ -38,6 +42,9 @@ public class BatchesController {
     @Autowired
     private LoanService loanService;
 
+    @Autowired
+    private FindUserService findUserService;
+
 
     @Operation(summary = "SEARCH LOANS",
             description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters",
@@ -55,11 +62,10 @@ public class BatchesController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/search")
-    public LoansWrapper findLoans(@RequestBody FindLoansRequest request) {
+    public LoansWrapper findLoans( @RequestBody FindLoansRequest request) {
         log.info("Find loan request: {}", request);
         return new LoansWrapper(loanService.findLoans(request));
     }
-
 
     @Operation(summary = "GET LOANS PENDING APPROVAL",
             description = "Get all loans pending internal approval",
@@ -154,6 +160,14 @@ public class BatchesController {
             return null;
         }
         return responses.get(0);
+    }
+
+
+    private String getMerchantCode(Principal principal) {
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        return findUserService.resolveUserFromAccessToken(token)
+                .map(u -> u.getMerchant().getMerchantCode())
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
     }
 
 }

@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
 
 import java.util.List;
@@ -23,4 +24,5 @@ public class CreateUserRequest  {
 	private String merchantCode;
 	private String importKey;
 	private List<UserGroup> groups;
+	private User agent;
 }
