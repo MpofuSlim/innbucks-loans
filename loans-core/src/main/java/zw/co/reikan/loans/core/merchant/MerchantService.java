@@ -27,7 +27,7 @@ public class MerchantService {
     public MerchantDto createMerchant(CreateMerchantRequest request) {
         validateRequest(request);
         Merchant merchant = Merchant.builder()
-                .merchantCode(UUID.randomUUID().toString())
+                .merchantCode(StringUtils.hasText(request.getCode()) ? request.getCode() : UUID.randomUUID().toString())
                 .accountNumber(request.getAccountNumber())
                 .disbursementType(request.getDisbursementType())
                 .name(request.getName())
@@ -37,6 +37,10 @@ public class MerchantService {
     }
 
     private void validateRequest(CreateMerchantRequest request) {
+        Boolean exists = merchantRepository.existsByMerchantCode(Merchant.DEFAULT_MERCHANT_CODE);
+        if (exists) {
+            throw new ValidationException("Merchant with merchant code " + Merchant.DEFAULT_MERCHANT_CODE + " already exists");
+        }
 
         if (!StringUtils.hasText(request.getName())) {
             throw new ValidationException("Name is required");

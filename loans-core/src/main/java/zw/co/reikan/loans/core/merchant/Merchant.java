@@ -18,7 +18,8 @@ import jakarta.persistence.*;
 @NoArgsConstructor
 @Entity
 public class Merchant extends BaseEntity {
-    public static final String DEFAULT_MERCHANT_CODE = "INNBUCKS";
+    public static final String DEFAULT_MERCHANT_CODE = "innbucks-2562-4f1f-b961-c546ea7c0481";
+    public static final String DEFAULT_MERCHANT_NAME = "Innbucks";
     private String merchantCode;
     private String name;
     private String accountNumber;

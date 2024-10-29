@@ -41,6 +41,7 @@ public class AuthController {
     @PostMapping("/auth/token")
     public AuthResponse authenticate(@RequestBody AuthRequest authRequest) {
         try {
+            log.info("Authenticating user: {}", authRequest.getUsername());
             return keyCloakService.login(authRequest);
         } catch (Exception ex) {
             log.error("Error getting access token.", ex);

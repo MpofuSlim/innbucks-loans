@@ -160,9 +160,16 @@ public class MerchantController {
 
         log.info("Find loan request: {}", request);
 
-        FindLoansInternalRequest internalRequest = (FindLoansInternalRequest) request;
-        internalRequest.setUserId(user.getId());
-        internalRequest.setMerchantCode(code);
+        FindLoansInternalRequest internalRequest = FindLoansInternalRequest
+                .builder()
+                .userId(user.getId())
+                .merchantCode(code)
+                .approvalStatus(request.getApprovalStatus())
+                .internalApprovalStatus(request.getInternalApprovalStatus())
+                .disbursementStatus(request.getDisbursementStatus())
+                .fromDate(request.getFromDate())
+                .toDate(request.getToDate())
+                .build();
 
         return new LoansWrapper(loanService.findLoansForMerchant(internalRequest));
     }

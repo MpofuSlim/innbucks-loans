@@ -108,6 +108,7 @@ public class LoanApplicationController {
 
     @PostMapping(value = "/apply", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public String apply(@ModelAttribute LoanRequest loanRequest, Model model, HttpSession session) {
+
         loanRequest.setMobileNumber(String.valueOf(session.getAttribute("mobileNumber")));
         loanRequest.setFname(String.valueOf(session.getAttribute("fname")));
         loanRequest.setLname(String.valueOf(session.getAttribute("lname")));
@@ -115,7 +116,6 @@ public class LoanApplicationController {
         LocalDate dateOfBirth = LocalDate.parse(String.valueOf(session.getAttribute("dob")), formatter);
 
         loanRequest.setMerchant(Merchant.DEFAULT_MERCHANT_CODE);
-
         loanRequest.setDateOfBirth(dateOfBirth);
 
         final EmploymentDetail employmentDetail = new EmploymentDetail();
@@ -136,9 +136,7 @@ public class LoanApplicationController {
         nextOfKin.setAddress(address);
 
         loanRequest.setNextOfKin(nextOfKin);
-
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
-
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }
