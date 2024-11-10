@@ -252,15 +252,15 @@ public class LoanServiceImpl implements LoanService {
         }
 
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
+
         BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
-       // BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
-
-        // BigDecimal agentCommissionAmount = principalLoanAmount.multiply(agentCommissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
-
         CommissionGroup commissionGroup = resolveCommissionGroup(loggedInUser, loggedInUser.getMerchant());
+
         BigDecimal agentCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getAgentCommission());
+
         BigDecimal providerCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getProviderCommission());
 
         final LoanDetails loanDetails = LoanDetails.builder()
