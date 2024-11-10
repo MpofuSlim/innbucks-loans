@@ -13,4 +13,5 @@ public class CreateAgentRequest {
     private String mobileNumber;
     private String idNumber;
     private UserGroup group;
+    private Long commissionGroupId;
 }

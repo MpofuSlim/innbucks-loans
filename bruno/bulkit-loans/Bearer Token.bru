@@ -5,16 +5,22 @@ meta {
 }
 
 post {
-  url: http://localhost:8080/auth/token
+  url: {{baseUrl}}/auth/token
   body: json
   auth: none
 }
 
 headers {
   Content-Type: application/json
-  User-Agent: insomnia/10.0.0
 }
 
 body:json {
-  { "username": "thomas_test_2", "password": "&#$5TCL47" }
+  {
+    "username": "thomas_test_2",
+    "password": "&#$5TCL47"
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("token",res.body.access_token);
 }

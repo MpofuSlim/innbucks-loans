@@ -49,19 +49,19 @@ public class StartupTask implements CommandLineRunner {
         createChannel(Channel.builder()
                 .systemUser(systemUser)
                 .channelId(Channel.MOBILE_APP_CHANNEL)
-                .name("Mobile App Channel")
+                .name("Mobile App")
                 .build());
 
         createChannel(Channel.builder()
                 .systemUser(systemUser)
                 .channelId(Channel.ADMIN_PORTAL_CHANNEL)
-                .name("Admin Portal Channel")
+                .name("Admin Portal")
                 .build());
 
         createChannel(Channel.builder()
                 .systemUser(systemUser)
                 .channelId(Channel.WEB_APP_CHANNEL)
-                .name("Web App Channel")
+                .name("Self Service Portal")
                 .build());
 
     }

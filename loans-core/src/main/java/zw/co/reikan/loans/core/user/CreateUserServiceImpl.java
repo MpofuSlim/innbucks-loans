@@ -61,6 +61,7 @@ public class CreateUserServiceImpl implements CreateUserService {
                 .lastName(createAgentRequest.getLastName())
                 .merchantCode(merchantCode)
                 .agent(parentAgent)
+                .commissionGroupId(createAgentRequest.getCommissionGroupId())
                 .build();
         return create(request);
     }

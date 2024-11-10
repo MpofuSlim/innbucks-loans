@@ -15,17 +15,17 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class CreateUserRequest  {
-	private String username;
-	private String firstName;
-	private String lastName;
-	private String email;
-	private String mobileNumber;
-	private String idNumber;
-	private String merchantCode;
-	private String importKey;
-	private List<UserGroup> groups;
-	private User agent;
-	private CommissionStructure commissionStructure;;
-	private Long commissionGroupId;
+public class CreateUserRequest {
+    private String username;
+    private String firstName;
+    private String lastName;
+    private String email;
+    private String mobileNumber;
+    private String idNumber;
+    private String merchantCode;
+    private String importKey;
+    private List<UserGroup> groups;
+    private User agent;
+    private CommissionStructure commissionStructure;
+    private Long commissionGroupId;
 }

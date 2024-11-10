@@ -46,6 +46,9 @@ public class LoanApplicationController {
     @Value("${encryption-key-v2}")
     private String _16BitDescryptionKey;
 
+    @Value("${bulkit.loans.channel-id}")
+    private String channelId;
+
     @GetMapping("/loan")
     public String showLoanApplicationPage(@RequestParam("payload") String payload,
                                           @RequestParam(value = "version", defaultValue = "0") String version,
@@ -135,6 +138,8 @@ public class LoanApplicationController {
         address.setStreet(loanRequest.getNextOfKinAddress());
         nextOfKin.setAddress(address);
         loanRequest.setNextOfKin(nextOfKin);
+
+        loanRequest.setChannelId(channelId);
 
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
 

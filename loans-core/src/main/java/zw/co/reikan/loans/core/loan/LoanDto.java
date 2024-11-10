@@ -68,5 +68,8 @@ public class LoanDto implements Serializable {
     private String internalApprovalBy;
     private String internalApprovalComment;
     private String createdBy;
+    private BigDecimal bulkitCommissionRate;
+    private Boolean totalCommissionRatePercentage;
+    private BigDecimal bulkitCommission;
 
 }
