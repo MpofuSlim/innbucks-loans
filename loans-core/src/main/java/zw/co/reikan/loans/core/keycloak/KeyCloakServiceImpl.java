@@ -31,6 +31,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
+
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +41,7 @@ public class KeyCloakServiceImpl implements KeycloakService {
     public static final String MERCHANT_CODE = "merchant_code";
     public static final String ID_NUMBER = "id_number";
     public static final String MOBILE_NUMBER = "mobile_number";
+
     private final Keycloak keycloak;
     private final UserRepository userRepository;
     private final MerchantRepository merchantRepository;
@@ -84,7 +87,7 @@ public class KeyCloakServiceImpl implements KeycloakService {
             Jwt token = (Jwt) auth.getPrincipal();
             return token.getClaimAsString("preferred_username");
         }
-        return "SYSTEM_USER";
+        return SYSTEM_USER_NAME;
     }
 
     public void resetPassword(String newPassword, String userId, String username) {

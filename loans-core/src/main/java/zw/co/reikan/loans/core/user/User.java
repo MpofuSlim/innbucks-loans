@@ -15,6 +15,8 @@ import zw.co.reikan.loans.core.merchant.Merchant;
 @Data
 public class User extends BaseEntity {
 
+    public static final String SYSTEM_USER_NAME = "SYSTEM_USER";
+
     @Column(nullable = false, length = 100, unique = true)
     private String username;
 

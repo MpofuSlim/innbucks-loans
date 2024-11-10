@@ -1,0 +1,20 @@
+meta {
+  name: Apply for loan
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8080/api/loans
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  User-Agent: insomnia/10.0.0
+}
+
+body:json {
+  { "signatureData": "string", "amount": 100, "ecnumber": "1234568T", "mobileNumber": "0772819815", "tenor": 4, "nationalId": "string", "type": "NET_OF_FEES", "fname": "Thomas 2", "lname": "1731250520380", "dateOfBirth": "1983-08-24", "numberOfDependencies": 0, "numberOfChildren": 0, "maritalStatus": "SINGLE", "alternateContactNumber": "0772819815", "placeOfBirth": "MUTARE", "title": "MR", "email": "tnyaguire@gmail.com", "address": { "street": "520 Patrick Close", "suburb": "Helensvale", "city": "Harare", "country": "Zimbabwe" }, "employmentDetail": { "employerName": "Getsol", "employerContactNumber": "07728919815", "employeeNumber": "123456", "grossSalary": 2000, "netSalary": 1500, "employmentStartDate": "2019-08-24", "employmentEndDate": "2019-08-24", "address": { "street": "520 Patrick Close", "suburb": "Helensvale", "city": "Harare", "country": "Zimbabwe" } }, "nextOfKin": { "firstName": "Randal", "lastName": "Nyagwaya", "nationalId": "123456789", "address": { "street": "520 Patrick Close", "suburb": "Helensvale", "city": "Harare", "country": "Zimbabwe" }, "mobileNumber": "0772819815", "relationship": "SIBLING", "gender": "MALE" }, "nextOfKinIdNumber": "123456789U8", "nextOfKinName": "Randal", "nextOfKinPhone": "0772819815", "nextOfKinRelationShip": "SIBLING", "nextOfKinAddress": "520 Patrick Close", "witness": { "fullName": "Thomas Nyagwaya", "placeOfSignature": "Mutare", "dateSigned": "2019-08-24", "signature": "string" }, "purposeOfLoan": "PURCHASE_OF_ASSETS", "grossSalary": 2000, "netSalary": 1500, "profession": "Developer", "gender": "MALE", "bankingDetail": { "bankName": "CABS", "accountName": "12345678", "branchName": "HARARE", "branchCode": "12345", "accountNumber": "123456789", "accountType": "SAVINGS" }, "productDescription": "Product Foundation", "educationLevel": "PRIMARY" }
+}

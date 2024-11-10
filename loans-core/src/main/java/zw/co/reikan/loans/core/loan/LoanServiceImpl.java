@@ -201,6 +201,7 @@ public class LoanServiceImpl implements LoanService {
         if (merchant.getCommissionStructure() == CommissionStructure.MERCHANT_DEFINED) {
             return merchant.getCommissionGroup();
         }
+
         return user.getCommissionGroup();
     }
 
@@ -259,9 +260,11 @@ public class LoanServiceImpl implements LoanService {
 
         CommissionGroup commissionGroup = resolveCommissionGroup(loggedInUser, loggedInUser.getMerchant());
 
-        BigDecimal agentCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getAgentCommission());
+        BigDecimal totalCommissionAmount = principalLoanAmount.multiply(commissionRateToUse);
 
-        BigDecimal providerCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getProviderCommission());
+        BigDecimal agentCommissionAmount = getCommissionAmount(totalCommissionAmount, commissionGroup.isPercentage(), commissionGroup.getAgentCommission());
+
+        BigDecimal providerCommissionAmount = getCommissionAmount(totalCommissionAmount, commissionGroup.isPercentage(), commissionGroup.getProviderCommission());
 
         final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)
@@ -292,8 +295,8 @@ public class LoanServiceImpl implements LoanService {
                 channelRepository.findChannelByChannelId(loanRequest.getChannelId()) : Optional.empty();
     }
 
-    private BigDecimal getCommissionAmount(BigDecimal principalLoanAmount, boolean percentage, BigDecimal commissionAmount) {
-        return percentage ? principalLoanAmount.multiply(commissionAmount.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP)) : commissionAmount;
+    private BigDecimal getCommissionAmount(BigDecimal totalCommissionAmount, boolean percentage, BigDecimal commissionAmount) {
+        return percentage ? totalCommissionAmount.multiply(commissionAmount.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP)) : commissionAmount;
     }
 
     private void amortizeLoan(LoanDetails loanDetails) {
