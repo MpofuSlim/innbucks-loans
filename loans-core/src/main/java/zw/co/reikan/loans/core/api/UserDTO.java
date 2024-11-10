@@ -31,12 +31,14 @@ public class UserDTO {
 	private List<UserGroup> groups;
 	private MerchantDto merchant;
 	private Long agentId;
+	private CommissionGroupDto commissionGroup;
 
 	public static UserDTO fromUser(User user) {
 		UserDTO userDTO = new UserDTO();
 		userDTO.setUsername(user.getUsername());
 		userDTO.setId(user.getId());
 		userDTO.setExternalSystemId(user.getExternalSystemId());
+		userDTO.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(user.getCommissionGroup()));
 		return userDTO;
 	}
 

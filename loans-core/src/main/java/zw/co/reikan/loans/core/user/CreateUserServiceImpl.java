@@ -5,13 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 import zw.co.reikan.loans.core.MsisdnUtil;
 import zw.co.reikan.loans.core.Utils;
-import zw.co.reikan.loans.core.api.CreateAgentRequest;
-import zw.co.reikan.loans.core.api.CreateUserRequest;
-import zw.co.reikan.loans.core.api.CreateUserResponse;
-import zw.co.reikan.loans.core.api.UserDTO;
+import zw.co.reikan.loans.core.api.*;
+import zw.co.reikan.loans.core.commission.CommissionGroup;
+import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.DuplicateUserByUsernameException;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.keycloak.KeycloakService;
@@ -20,11 +20,12 @@ import zw.co.reikan.loans.core.merchant.MerchantMapper;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.stream.IntStream;
+
+import static zw.co.reikan.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
 
 @Service
 @RequiredArgsConstructor
@@ -46,10 +47,11 @@ public class CreateUserServiceImpl implements CreateUserService {
     private final Random random;
     private final MerchantMapper merchantMapper;
     private final NotificationService notificationService;
+    private final CommissionGroupRepository commissionGroupRepository;
 
     @Transactional
     public CreateUserResponse create(CreateAgentRequest createAgentRequest, User parentAgent, String merchantCode) {
-        return create(CreateUserRequest.builder()
+        CreateUserRequest request = CreateUserRequest.builder()
                 .email(createAgentRequest.getEmail())
                 .groups(List.of(createAgentRequest.getGroup()))
                 .idNumber(createAgentRequest.getIdNumber())
@@ -59,22 +61,41 @@ public class CreateUserServiceImpl implements CreateUserService {
                 .lastName(createAgentRequest.getLastName())
                 .merchantCode(merchantCode)
                 .agent(parentAgent)
-                .build());
+                .build();
+        return create(request);
     }
 
+    private CommissionGroup resolveCommissionGroup(CreateUserRequest request, Merchant merchant) {
+        if (MERCHANT_DEFINED == merchant.getCommissionStructure()) {
+            return merchant.getCommissionGroup();
+        }
+
+        if (request.getAgent() != null) {
+            return request.getAgent().getCommissionGroup();
+        }
+
+        if (ObjectUtils.isEmpty(request.getCommissionGroupId())) {
+            throw new ValidationException("Commission group id is required");
+        }
+
+        return commissionGroupRepository.findById(request.getCommissionGroupId()).orElseThrow();
+    }
 
     @Transactional
     public CreateUserResponse create(CreateUserRequest createUserRequest) {
         logger.info("Creating user {}", createUserRequest);
-        LocalDateTime auditTimestamp = LocalDateTime.now();
+
         validateRequest(createUserRequest);
-        Merchant merchant = merchantRepository.findByMerchantCode(createUserRequest.getMerchantCode())
-                .orElseThrow(() -> new RuntimeException("Merchant not found"));
 
         Optional<User> userByUsername = userRepository.findByUsername(createUserRequest.getUsername());
         if (userByUsername.isPresent()) {
             throw new DuplicateUserByUsernameException(createUserRequest.getUsername());
         }
+
+        Merchant merchant = merchantRepository.findByMerchantCode(createUserRequest.getMerchantCode())
+                .orElseThrow(() -> new RuntimeException("Merchant not found"));
+
+        CommissionGroup commissionGroup = resolveCommissionGroup(createUserRequest, merchant);
 
         String generatedPassword = generatePassword(createUserRequest);
         String externalSystemId = keycloakService.addUser(createUserRequest, generatedPassword);
@@ -85,6 +106,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         user.setTemporaryPassword(true);
         user.setUsername(createUserRequest.getUsername());
         user.setAgent(createUserRequest.getAgent());
+        user.setCommissionGroup(commissionGroup);
 
         User savedUser = userRepository.save(user);
 
@@ -100,6 +122,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         userDTO.setUsername(createUserRequest.getUsername());
         userDTO.setTemporaryPassword(true);
         userDTO.setAgentId(createUserRequest.getAgent() == null ? null : createUserRequest.getAgent().getId());
+        userDTO.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(commissionGroup));
 
         CreateUserResponse createUserResponse = new CreateUserResponse(userDTO);
         notifyUser(userDTO, generatedPassword);

@@ -6,8 +6,13 @@ import lombok.val;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
+import zw.co.reikan.loans.core.channel.Channel;
+import zw.co.reikan.loans.core.channel.ChannelRepository;
+import zw.co.reikan.loans.core.commission.CommissionGroup;
+import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
 import zw.co.reikan.loans.core.user.User;
@@ -40,6 +45,7 @@ public class LoanServiceImpl implements LoanService {
     private final LoanMapper loanMapper;
     private final KeyCloakServiceImpl keyCloakService;
     private final MerchantRepository merchantRepository;
+    private final ChannelRepository channelRepository;
 
     public List<LoanDto> findLoans(FindLoansRequest request) {
         final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
@@ -109,7 +115,13 @@ public class LoanServiceImpl implements LoanService {
                     .build();
         }
 
-        final LoanDetails loanDetails = calculate(loanRequest);
+
+        Optional<Channel> optionalChannel = resolveChannel(loanRequest);
+
+        User loggedInUser  = optionalChannel.map(Channel::getSystemUser)
+                .orElseGet(keyCloakService::getLoggedInUser);
+
+        LoanDetails loanDetails = calculate(loanRequest, loggedInUser);
 
 //        String merchantCode = loanRequest.getMerchant() == null ? Merchant.DEFAULT_MERCHANT_CODE
 //                : loanRequest.getMerchant();
@@ -117,7 +129,6 @@ public class LoanServiceImpl implements LoanService {
 //        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
 //                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
 
-        User loggedInUser = keyCloakService.getLoggedInUser();
 
         final Loan loan = Loan.builder()
                 .principal(loanDetails.getPrincipal())
@@ -141,6 +152,9 @@ public class LoanServiceImpl implements LoanService {
                 .dateOfBirth(dateOfBirth)
                 .agentCommission(loanDetails.getAgentCommission())
                 .agentCommissionRate(loanDetails.getAgentCommissionRate())
+                .providerCommissionRate(loanDetails.getProviderCommissionRate())
+                .providerCommission(loanDetails.getProviderCommission())
+                .commissionRatePercentage(loanDetails.isCommissionPercentage())
                 .numberOfDependencies(loanRequest.getNumberOfDependencies())
                 .numberOfChildren(loanRequest.getNumberOfDependencies())
                 .educationLevel(loanRequest.getEducationLevel())
@@ -162,6 +176,7 @@ public class LoanServiceImpl implements LoanService {
                 .createdByUser(loggedInUser)
                 .agent(loggedInUser.getAgent())
                 .merchant(loggedInUser.getMerchant())
+                .channel(optionalChannel.orElse(null))
                 .build();
 
         loanRepository.save(loan);
@@ -173,13 +188,29 @@ public class LoanServiceImpl implements LoanService {
                 .build();
     }
 
+    private CommissionGroup resolveCommissionGroup(User user, Merchant merchant) {
+
+        if (user == null) {
+            return CommissionGroup.builder()
+                    .percentage(false)
+                    .providerCommission(BigDecimal.ZERO)
+                    .agentCommission(BigDecimal.ZERO)
+                    .build();
+        }
+
+        if (merchant.getCommissionStructure() == CommissionStructure.MERCHANT_DEFINED) {
+            return merchant.getCommissionGroup();
+        }
+        return user.getCommissionGroup();
+    }
+
     public Optional<Loan> findPendingLoan(String ecNumber) {
         return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber).toUpperCase(),
                 LoanApprovalStatus.NEW);
     }
 
     @Override
-    public LoanDetails calculate(LoanRequest request) {
+    public LoanDetails calculate(LoanRequest request, User loggedInUser) {
 
         List<AmortizationEntry> schedule = new ArrayList<>();
 
@@ -222,11 +253,15 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
         BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
-
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
-        BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
-        BigDecimal agentCommissionAmount = principalLoanAmount.multiply(agentCommissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
+       // BigDecimal agentCommissionRate = new BigDecimal(params.get(AGENT_COMMISSION_RATE));
+
+        // BigDecimal agentCommissionAmount = principalLoanAmount.multiply(agentCommissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP));
+
+        CommissionGroup commissionGroup = resolveCommissionGroup(loggedInUser, loggedInUser.getMerchant());
+        BigDecimal agentCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getAgentCommission());
+        BigDecimal providerCommissionAmount = getCommissionAmount(principalLoanAmount, commissionGroup.isPercentage(), commissionGroup.getProviderCommission());
 
         final LoanDetails loanDetails = LoanDetails.builder()
                 .principal(principalLoanAmount)
@@ -240,13 +275,25 @@ public class LoanServiceImpl implements LoanService {
                 .regularMonthlyInstallment(installment)
                 .grossedMonthlyInstallment(grossedMonthlyPayment)
                 .agentCommission(agentCommissionAmount)
-                .agentCommissionRate(agentCommissionRate)
+                .providerCommission(providerCommissionAmount)
+                .agentCommissionRate(commissionGroup.getAgentCommission())
+                .providerCommissionRate(commissionGroup.getProviderCommission())
+                .commissionPercentage(commissionGroup.isPercentage())
                 .build();
 
         amortizeLoan(loanDetails);
 
         return loanDetails;
 
+    }
+
+    private Optional<Channel> resolveChannel(LoanRequest loanRequest) {
+        return loanRequest.getChannelId() != null ?
+                channelRepository.findChannelByChannelId(loanRequest.getChannelId()) : Optional.empty();
+    }
+
+    private BigDecimal getCommissionAmount(BigDecimal principalLoanAmount, boolean percentage, BigDecimal commissionAmount) {
+        return percentage ? principalLoanAmount.multiply(commissionAmount.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP)) : commissionAmount;
     }
 
     private void amortizeLoan(LoanDetails loanDetails) {

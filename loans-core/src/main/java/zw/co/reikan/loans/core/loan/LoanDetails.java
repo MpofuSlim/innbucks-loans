@@ -25,8 +25,10 @@ public class LoanDetails {
     private BigDecimal grossedMonthlyInstallment;
     private LocalDate startDate;
     private BigDecimal agentCommission;
+    private BigDecimal providerCommission;
     private BigDecimal agentCommissionRate;
-
+    private BigDecimal providerCommissionRate;
+    private boolean commissionPercentage;
 
     public LoanDetails add(AmortizationEntry entry) {
         ensureAmortizations().add(entry);

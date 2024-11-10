@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
 
@@ -25,4 +26,6 @@ public class CreateUserRequest  {
 	private String importKey;
 	private List<UserGroup> groups;
 	private User agent;
+	private CommissionStructure commissionStructure;;
+	private Long commissionGroupId;
 }

@@ -86,8 +86,8 @@ public class MerchantController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
                                                         @RequestBody CreateAgentRequest createUserRequest, @PathVariable String merchantCode) {
-
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
+
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
 

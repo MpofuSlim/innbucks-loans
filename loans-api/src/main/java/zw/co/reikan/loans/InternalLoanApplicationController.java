@@ -63,7 +63,9 @@ public class InternalLoanApplicationController {
     @PostMapping("/loans/calculate")
     public LoanDetails calculate(@RequestBody LoanRequest request) {
         log.info("Calculate loan request: {}", request);
-        return loanService.calculate(request);
+
+        //setting null logged in user to allow anonymous loan calculation
+        return loanService.calculate(request, null);
     }
 
 }

@@ -134,9 +134,10 @@ public class LoanApplicationController {
         Address address = new Address();
         address.setStreet(loanRequest.getNextOfKinAddress());
         nextOfKin.setAddress(address);
-
         loanRequest.setNextOfKin(nextOfKin);
+
         final LoanResponse loanResponse = loanService.requestLoan(loanRequest);
+
         model.addAttribute("internalReference", loanResponse.getInternalReference());
         return loanResponse.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED ? "fail" : "success";
     }

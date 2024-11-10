@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.loans.core.channel.Channel;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.merchant.Merchant;
@@ -133,6 +134,15 @@ public class Loan extends BaseEntity {
     @Column(name = "agent_commission")
     private BigDecimal agentCommission;
 
+    @Column(name = "provider_commission_rate")
+    private BigDecimal providerCommissionRate;
+
+    @Column(name = "commission_rate_percentage")
+    private Boolean commissionRatePercentage;
+
+    @Column(name = "provider_commission")
+    private BigDecimal providerCommission;
+
     @Column(name = "number_of_dependencies")
     private Integer numberOfDependencies;
 
@@ -225,6 +235,10 @@ public class Loan extends BaseEntity {
     @ManyToOne
     @JoinColumn(name = "agent_id")
     private User agent;
+
+    @ManyToOne
+    @JoinColumn(name = "channel_id")
+    private Channel channel;
 
     public String getReference() {
         return String.format("%09d", getId());

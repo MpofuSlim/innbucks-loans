@@ -61,4 +61,6 @@ public class LoanRequest implements Serializable {
 
     private String productDescription;
 
+    private String channelId;
+
 }

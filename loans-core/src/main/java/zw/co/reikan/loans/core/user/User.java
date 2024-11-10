@@ -3,6 +3,8 @@ package zw.co.reikan.loans.core.user;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import zw.co.reikan.loans.core.commission.CommissionGroup;
+import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.loan.BaseEntity;
 import zw.co.reikan.loans.core.merchant.Merchant;
 
@@ -27,5 +29,8 @@ public class User extends BaseEntity {
 
     @ManyToOne
     private User agent;
+
+    @ManyToOne
+    private CommissionGroup commissionGroup;
 
 }

@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.loan.DisbursementType;
 
 @Builder
@@ -15,4 +16,6 @@ public class CreateMerchantRequest {
     private String accountNumber;
     private DisbursementType disbursementType;
     private String code;
+    private CommissionStructure commissionStructure;;
+    private Long commissionGroupId;
 }
