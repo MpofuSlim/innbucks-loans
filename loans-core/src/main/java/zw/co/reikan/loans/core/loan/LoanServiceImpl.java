@@ -118,7 +118,7 @@ public class LoanServiceImpl implements LoanService {
 
         Optional<Channel> optionalChannel = resolveChannel(loanRequest);
 
-        User loggedInUser  = optionalChannel.map(Channel::getSystemUser)
+        User loggedInUser = optionalChannel.map(Channel::getSystemUser)
                 .orElseGet(keyCloakService::getLoggedInUser);
 
         LoanDetails loanDetails = calculate(loanRequest, loggedInUser);
@@ -258,7 +258,9 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
-        CommissionGroup commissionGroup = resolveCommissionGroup(loggedInUser, loggedInUser.getMerchant());
+        Merchant merchant = loggedInUser == null ? null : loggedInUser.getMerchant();
+
+        CommissionGroup commissionGroup = resolveCommissionGroup(loggedInUser, merchant);
 
         BigDecimal totalCommissionAmount = principalLoanAmount.multiply(commissionRateToUse);
 

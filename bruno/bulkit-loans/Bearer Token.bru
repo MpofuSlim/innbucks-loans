@@ -7,17 +7,25 @@ meta {
 post {
   url: {{baseUrl}}/auth/token
   body: json
-  auth: none
+  auth: oauth2
 }
 
 headers {
   Content-Type: application/json
 }
 
+auth:oauth2 {
+  grant_type: client_credentials
+  access_token_url: 
+  client_id: 
+  client_secret: 
+  scope: 
+}
+
 body:json {
   {
-    "username": "thomas_test_2",
-    "password": "&#$5TCL47"
+    "username": "admin.qa",
+    "password": "#pass123"
   }
 }
 

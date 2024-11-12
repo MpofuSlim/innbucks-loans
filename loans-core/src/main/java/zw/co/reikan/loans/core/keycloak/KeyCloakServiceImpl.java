@@ -10,6 +10,7 @@ import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -62,6 +63,11 @@ public class KeyCloakServiceImpl implements KeycloakService {
         loginResponse.setAccessToken(tokenResponse.getToken());
         loginResponse.setTokenType(tokenResponse.getTokenType());
         Optional<User> userResult = userRepository.findByUsername(username);
+
+        if (userResult.isEmpty()) {
+            throw new InternalAuthenticationServiceException(String.format("%s not configured", username));
+        }
+
         userResult.ifPresent(user -> {
             loginResponse.setTemporaryPassword(user.getTemporaryPassword());
             loginResponse.setMerchantName(user.getMerchant().getName());
@@ -71,6 +77,7 @@ public class KeyCloakServiceImpl implements KeycloakService {
                 loginResponse.setAgentName(user.getAgent().getUsername());
             }
         });
+
         return loginResponse;
     }
 
