@@ -3,6 +3,8 @@ package zw.co.reikan.loans.core.user;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +21,16 @@ public class FindUserServiceImpl implements FindUserService {
     @Override
     public Optional<User> findUserByUsername(String username) {
         return userRepository.findByUsername(username);
+    }
+
+    @Override
+    public Long countAgentSalesConsultants(Long agentId) {
+        return userRepository.countByAgent_Id(agentId);
+    }
+
+    @Override
+    public Page<User> findSalesConsultants(Long agentId, Pageable pageable) {
+        return userRepository.findAllByAgent_Id(agentId, pageable);
     }
 
     @Override

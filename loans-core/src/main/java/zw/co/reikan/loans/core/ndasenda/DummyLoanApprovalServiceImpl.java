@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.ndasenda;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 
@@ -11,6 +12,7 @@ import static zw.co.reikan.loans.core.Utils.right;
 
 @Slf4j
 @Service
+@Profile("dummy-loan-approval")
 public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
 
     Map<String, String> responseCodes = Map.of("11", "Inaccurate Information"
@@ -21,7 +23,7 @@ public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
     @Override
     public LoanApprovalResponse requestApproval(LoanApprovalRequest loanRequest) {
 
-        log.info("Processing SSB loan request: {}", loanRequest);
+        log.info("Processing DUMMY SSB loan request: {}", loanRequest);
 
         final String rightMostString = right(loanRequest.getEcnumber(), 2);
 

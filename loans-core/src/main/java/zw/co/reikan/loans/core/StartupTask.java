@@ -11,7 +11,6 @@ import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.merchant.MerchantService;
-import zw.co.reikan.loans.core.user.CreateUserService;
 import zw.co.reikan.loans.core.user.FindUserService;
 import zw.co.reikan.loans.core.user.User;
 
@@ -114,7 +113,7 @@ public class StartupTask implements CommandLineRunner {
 
             merchantService.createMerchant(CreateMerchantRequest.builder()
                     .code(DEFAULT_MERCHANT_CODE)
-                    .name(DEFAULT_MERCHANT_NAME)
+                    .companyName(DEFAULT_MERCHANT_NAME)
                     .disbursementType(CUSTOMER_MOBILE_WALLET)
                     .accountNumber(null)
                     .build());

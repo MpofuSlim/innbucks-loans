@@ -12,7 +12,11 @@ import zw.co.reikan.loans.core.loan.DisbursementType;
 @AllArgsConstructor
 @Data
 public class CreateMerchantRequest {
-    private String name;
+    private String companyName;
+    private String physicalAddress;
+    private String contactPersonName;
+    private String contactPersonMobileNumber;
+    private String contactPersonEmail;
     private String accountNumber;
     private DisbursementType disbursementType;
     private String code;

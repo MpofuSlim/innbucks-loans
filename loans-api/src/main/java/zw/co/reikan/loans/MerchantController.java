@@ -16,8 +16,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.api.*;
 import zw.co.reikan.loans.core.keycloak.KeycloakService;
-import zw.co.reikan.loans.core.loan.FindLoansInternalRequest;
-import zw.co.reikan.loans.core.loan.FindLoansRequest;
+import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
+import zw.co.reikan.loans.core.api.FindLoansRequest;
 import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.merchant.FindMerchantsResponse;
 import zw.co.reikan.loans.core.merchant.MerchantService;
@@ -76,10 +76,10 @@ public class MerchantController {
     }
 
     @Operation(summary = "CREATE AGENT",
-            description = "Create an agent for the merchant",
+            description = "Create merchant Agent or User",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
-    @PostMapping("/{merchantCode}/agents")
+    @PostMapping({"/{merchantCode}/agents", "/{merchantCode}/users"})
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
@@ -87,19 +87,14 @@ public class MerchantController {
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
                                                         @RequestBody CreateAgentRequest createUserRequest, @PathVariable String merchantCode) {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
-
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-
         User agent = UserGroup.SUB_AGENTS == createUserRequest.getGroup() ? loggedInUser : null;
-
         CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent, merchantCode);
-
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
         return ResponseEntity.ok(saveUserResponse);
     }
-
 
     @Operation(summary = "FIND AGENTS",
             description = "List all agents for the given merchant",

@@ -7,13 +7,14 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.access.annotation.Secured;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.LoanResponse;
-import zw.co.reikan.loans.core.loan.*;
+import zw.co.reikan.loans.core.loan.LoanDetails;
+import zw.co.reikan.loans.core.loan.LoanRequest;
+import zw.co.reikan.loans.core.loan.LoanService;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 
@@ -63,7 +64,6 @@ public class InternalLoanApplicationController {
     @PostMapping("/loans/calculate")
     public LoanDetails calculate(@RequestBody LoanRequest request) {
         log.info("Calculate loan request: {}", request);
-
         //setting null logged in user to allow anonymous loan calculation
         return loanService.calculate(request, null);
     }

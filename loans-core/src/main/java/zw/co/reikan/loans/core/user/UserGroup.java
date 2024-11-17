@@ -5,5 +5,6 @@ public enum UserGroup {
     SUB_AGENTS,
     BULKIT_ADMIN,
     CREDIT_MANAGER,
-    FINANCE
+    FINANCE,
+    ORGANISATION_SUPER_USER;
 }

@@ -38,9 +38,14 @@ public class MerchantService {
                 .merchantCode(StringUtils.hasText(request.getCode()) ? request.getCode() : UUID.randomUUID().toString())
                 .accountNumber(request.getAccountNumber())
                 .disbursementType(request.getDisbursementType())
-                .name(request.getName())
+                .companyName(request.getCompanyName())
                 .commissionGroup(commissionGroup)
                 .commissionStructure(request.getCommissionStructure())
+                .contactPersonName(request.getContactPersonName())
+                .contactPersonEmail(request.getContactPersonEmail())
+                .contactPersonMobileNumber(request.getContactPersonMobileNumber())
+                .physicalAddress(request.getPhysicalAddress())
+                .physicalAddress(request.getPhysicalAddress())
                 .build();
         Merchant savedMerchant = merchantRepository.save(merchant);
         return merchantMapper.fromMerchant(savedMerchant);
@@ -62,7 +67,7 @@ public class MerchantService {
         if (exists) {
             throw new ValidationException("Merchant with merchant code " + Merchant.DEFAULT_MERCHANT_CODE + " already exists");
         }
-        if (!StringUtils.hasText(request.getName())) {
+        if (!StringUtils.hasText(request.getCompanyName())) {
             throw new ValidationException("Name is required");
         }
         if (request.getDisbursementType() == null) {

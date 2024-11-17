@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.ndasenda;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import static zw.co.reikan.loans.core.loan.SmsMessages.*;
 @RequiredArgsConstructor
 @Service
 @Primary
+@Profile("!dummy-loan-approval")
 public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
     private static final BigDecimal CENTS = new BigDecimal("100");
@@ -50,16 +52,14 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
 
-        log.info("Requesting loan deduction");
+        log.info("Processing Ndasenda loan deduction approval request {}", request);
 
         LocalDate loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
         LocalDate endDate = loanStartDate.plusMonths(request.getTenor());
         LocalDate loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
 
         final NdasendaDeduction deductionRequest = fromLoanRequest(request, loanStartDate, loanEndDate);
-
         final List<NdasendaDeduction> deductions = List.of(deductionRequest);
-
         final NdasendaDeductionsBatchRequest batch = NdasendaDeductionsBatchRequest.builder()
                 .totalAmountInCents(deductionRequest.getAmountInCents())
                 .recordsCount(deductions.size())

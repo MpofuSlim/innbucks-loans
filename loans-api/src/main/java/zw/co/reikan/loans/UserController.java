@@ -31,7 +31,6 @@ public class UserController {
 
     private final CreateUserService createUserService;
 
-
     @Operation(summary = "RESET PASSWORD",
             description = "Reset user password",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
@@ -56,6 +55,8 @@ public class UserController {
                 .username(token.getClaimAsString("preferred_username"))
                 .password(changePasswordRequest.getNewPassword()).build());
     }
+
+
 
 
 //    @GetMapping(path = "/search")

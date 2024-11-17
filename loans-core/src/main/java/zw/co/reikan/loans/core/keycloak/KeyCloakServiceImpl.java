@@ -70,7 +70,7 @@ public class KeyCloakServiceImpl implements KeycloakService {
 
         userResult.ifPresent(user -> {
             loginResponse.setTemporaryPassword(user.getTemporaryPassword());
-            loginResponse.setMerchantName(user.getMerchant().getName());
+            loginResponse.setMerchantName(user.getMerchant().getCompanyName());
             loginResponse.setMerchantCode(user.getMerchant().getMerchantCode());
             if (user.getAgent() != null) {
                 loginResponse.setAgentId(user.getAgent().getId());

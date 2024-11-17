@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
+import zw.co.reikan.loans.core.api.FindLoansRequest;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchResponse;
@@ -161,7 +162,6 @@ public class BatchesController {
         }
         return responses.get(0);
     }
-
 
     private String getMerchantCode(Principal principal) {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();

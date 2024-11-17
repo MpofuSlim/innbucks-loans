@@ -2,7 +2,10 @@ package zw.co.reikan.loans.core.loan;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import zw.co.reikan.loans.core.api.LoanStatisticsResponse;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
@@ -29,4 +32,12 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 
+    @Query("""
+            select new zw.co.reikan.loans.core.api.LoanStatisticsResponse(sum(l.principal), sum(l.agentCommission), count(l)) from Loan l 
+            where l.createdByUser.id = :agentId and l.dateDisbursed between :startDate and :endDate
+            and l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+            """)
+    LoanStatisticsResponse getLoanStatistics(@Param("agentId") Long agentId,
+                                             @Param("startDate") LocalDateTime startDate,
+                                             @Param("endDate") LocalDateTime endDate);
 }

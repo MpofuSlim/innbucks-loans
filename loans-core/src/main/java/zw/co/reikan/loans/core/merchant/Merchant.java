@@ -27,7 +27,8 @@ public class Merchant extends BaseEntity {
 
     private String merchantCode;
 
-    private String name;
+    @Column(name = "name")
+    private String companyName;
 
     private String accountNumber;
 
@@ -39,5 +40,17 @@ public class Merchant extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     private CommissionStructure commissionStructure;
+
+    @Column(name = "physical_addess")
+    private String physicalAddress;
+
+    @Column(name = "contact_person_name")
+    private String contactPersonName;
+
+    @Column(name = "contact_person_mobile_number")
+    private String contactPersonMobileNumber;
+
+    @Column(name = "contact_person_email")
+    private String contactPersonEmail;
 
 }

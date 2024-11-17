@@ -6,6 +6,9 @@ import lombok.val;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
+import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
+import zw.co.reikan.loans.core.api.FindLoansRequest;
+import zw.co.reikan.loans.core.api.LoanStatisticsResponse;
 import zw.co.reikan.loans.core.channel.Channel;
 import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
@@ -47,6 +50,12 @@ public class LoanServiceImpl implements LoanService {
     private final MerchantRepository merchantRepository;
     private final ChannelRepository channelRepository;
 
+    @Override
+    public LoanStatisticsResponse getStatistics(FindLoansInternalRequest request) {
+        return loanRepository.getLoanStatistics(request.getUserId(), atStartOfDay(request.getFromDate()),
+                atEndOfDay(request.getToDate()));
+    }
+
     public List<LoanDto> findLoans(FindLoansRequest request) {
         final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
                 .and(withDisbursementStatus(request.getDisbursementStatus()))
@@ -65,7 +74,6 @@ public class LoanServiceImpl implements LoanService {
                 .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
         return loanMapper.fromLoans(all);
     }
-
 
     @Override
     public LoanDto getLoan(Long id) {
