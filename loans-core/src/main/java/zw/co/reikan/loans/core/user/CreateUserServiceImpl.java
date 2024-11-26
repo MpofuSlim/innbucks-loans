@@ -62,6 +62,7 @@ public class CreateUserServiceImpl implements CreateUserService {
                 .merchantCode(merchantCode)
                 .agent(parentAgent)
                 .commissionGroupId(createAgentRequest.getCommissionGroupId())
+                .physicalAddress(createAgentRequest.getPhysicalAddress())
                 .build();
         return create(request);
     }
@@ -108,6 +109,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         user.setUsername(createUserRequest.getUsername());
         user.setAgent(createUserRequest.getAgent());
         user.setCommissionGroup(commissionGroup);
+        user.setPhysicalAddress(createUserRequest.getPhysicalAddress());
 
         User savedUser = userRepository.save(user);
 
@@ -124,6 +126,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         userDTO.setTemporaryPassword(true);
         userDTO.setAgentId(createUserRequest.getAgent() == null ? null : createUserRequest.getAgent().getId());
         userDTO.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(commissionGroup));
+        userDTO.setPhysicalAddress(createUserRequest.getPhysicalAddress());
 
         CreateUserResponse createUserResponse = new CreateUserResponse(userDTO);
         notifyUser(userDTO, generatedPassword);
@@ -193,7 +196,6 @@ public class CreateUserServiceImpl implements CreateUserService {
         char charAtSecondRandomIndex = passwordBuilder.charAt(secondRandomIndex);
         passwordBuilder.setCharAt(firstRandomIndex, charAtSecondRandomIndex);
         passwordBuilder.setCharAt(secondRandomIndex, charAtFirstRandomIndex);
-
     }
 
 }

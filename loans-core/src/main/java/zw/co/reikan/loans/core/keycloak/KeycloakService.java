@@ -20,4 +20,5 @@ public interface KeycloakService {
 	List<UserDTO> search(SearchUserRequest searchUserRequest);
 
 
+	void deleteUser(String userId);
 }

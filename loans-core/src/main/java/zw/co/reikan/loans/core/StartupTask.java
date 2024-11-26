@@ -5,16 +5,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import zw.co.reikan.loans.core.api.CreateMerchantRequest;
+import zw.co.reikan.loans.core.api.CreateUserRequest;
 import zw.co.reikan.loans.core.channel.Channel;
 import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.merchant.MerchantService;
+import zw.co.reikan.loans.core.user.CreateUserService;
 import zw.co.reikan.loans.core.user.FindUserService;
 import zw.co.reikan.loans.core.user.User;
+import zw.co.reikan.loans.core.user.UserGroup;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 import static zw.co.reikan.loans.core.loan.DisbursementType.CUSTOMER_MOBILE_WALLET;
@@ -27,12 +31,12 @@ import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
 @Slf4j
 public class StartupTask implements CommandLineRunner {
 
-    public static final String FAVORING_BULK_IT = "100-Favoring-BulkIT";
+    public static final String FAVORING_BULK_IT = "100-Favouring-BulkIT";
     private final MerchantService merchantService;
-
     private final CommissionGroupRepository commissionGroupRepository;
     private final ChannelRepository channelRepository;
     private final FindUserService findUserService;
+    private final CreateUserService createUserService;
 
     @Override
     public void run(String... args) throws Exception {
@@ -42,10 +46,18 @@ public class StartupTask implements CommandLineRunner {
     }
 
     private void createDefaultChannel() {
-
+        log.info("Creating default system user");
         User systemUser = findUserService.findUserByUsername(SYSTEM_USER_NAME)
-                .orElseThrow(() -> new RuntimeException("System user not found"));
-
+                .orElseGet(() -> {
+                    createUserService.create(CreateUserRequest.builder()
+                            .mobileNumber("0772819815")
+                            .idNumber(DEFAULT_MERCHANT_CODE)
+                            .username(SYSTEM_USER_NAME)
+                            .lastName("USER")
+                            .groups(List.of(UserGroup.BULKIT_ADMIN))
+                            .build());
+                    return findUserService.findUserByUsername(SYSTEM_USER_NAME).orElseThrow();
+                });
         createChannel(Channel.builder()
                 .systemUser(systemUser)
                 .channelId(Channel.MOBILE_APP_CHANNEL)
@@ -82,7 +94,7 @@ public class StartupTask implements CommandLineRunner {
                 .percentage(true)
                 .providerCommission(new BigDecimal("80.0"))
                 .agentCommission(new BigDecimal("20.0"))
-                .name("80-20-Favoring-BulkIT")
+                .name("80-20-Favouring-BulkIT")
                 .build());
 
         createCommissionGroup(CommissionGroup.builder()

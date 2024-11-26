@@ -16,8 +16,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.api.*;
 import zw.co.reikan.loans.core.keycloak.KeycloakService;
-import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
-import zw.co.reikan.loans.core.api.FindLoansRequest;
 import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.merchant.FindMerchantsResponse;
 import zw.co.reikan.loans.core.merchant.MerchantService;
@@ -79,13 +77,14 @@ public class MerchantController {
             description = "Create merchant Agent or User",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
-    @PostMapping({"/{merchantCode}/agents", "/{merchantCode}/users"})
+    @PostMapping({"/{merchantCode}/agents"})
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
-                                                        @RequestBody CreateAgentRequest createUserRequest, @PathVariable String merchantCode) {
+                                                        @RequestBody CreateAgentRequest createUserRequest,
+                                                        @PathVariable String merchantCode) {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
@@ -94,6 +93,49 @@ public class MerchantController {
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
         return ResponseEntity.ok(saveUserResponse);
+    }
+
+    @Operation(summary = "CREATE SALES CONSULTANT",
+            description = "Add a sales consultant.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @PostMapping({"/{agentUuid}/sales-consultant"})
+    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
+            @ApiResponse(responseCode = "500", description = "Processing error")})
+    public ResponseEntity<SaveUserResponse> createSalesConsultant(Principal principal,
+                                                                  @RequestBody CreateAgentRequest createUserRequest,
+                                                                  @PathVariable String agentUuid) {
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        boolean canAddSubAgent = findUserService.hasAnyRole(token, List.of(UserGroup.AGENTS.name(),
+                UserGroup.ORGANISATION_SUPER_USER.name(), UserGroup.RETAIL_SALES.name()));
+        if (!canAddSubAgent) {
+            throw new RuntimeException("Can't add sub agent");
+        }
+        User agent = findUserService.findUserExyernalSystemId(agentUuid)
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+        createUserRequest.setGroup(UserGroup.SUB_AGENTS);
+        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent,
+                agent.getMerchant().getMerchantCode());
+        SaveUserResponse saveUserResponse = new SaveUserResponse();
+        saveUserResponse.setUser(createUserResponse.user());
+        return ResponseEntity.ok(saveUserResponse);
+    }
+
+    @Operation(summary = "CREATE USER",
+            description = "Create merchant User",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @PostMapping({"/{merchantCode}/users"})
+    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
+            @ApiResponse(responseCode = "500", description = "Processing error")})
+    public ResponseEntity<SaveUserResponse> createUser(Principal principal,
+                                                       @RequestBody CreateAgentRequest createUserRequest,
+                                                       @PathVariable String merchantCode) {
+        return createAgent(principal, createUserRequest, merchantCode);
     }
 
     @Operation(summary = "FIND AGENTS",
@@ -144,20 +186,11 @@ public class MerchantController {
     public LoansWrapper findLoans(Principal principal,
                                   @RequestBody FindLoansRequest request,
                                   @PathVariable String code) {
-        Jwt token = ((JwtAuthenticationToken) principal).getToken();
-        User user = findUserService.resolveUserFromAccessToken(token)
-                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-
-        if (!code.equalsIgnoreCase(user.getMerchant().getMerchantCode())
-                && findUserService.hasRole(token, "admin")) {
-            throw new AccessDeniedException("User not allowed to complete this operation");
-        }
-
         log.info("Find loan request: {}", request);
-
+        Long userId = resolveUserId(principal, code);
         FindLoansInternalRequest internalRequest = FindLoansInternalRequest
                 .builder()
-                .userId(user.getId())
+                .userId(userId)
                 .merchantCode(code)
                 .approvalStatus(request.getApprovalStatus())
                 .internalApprovalStatus(request.getInternalApprovalStatus())
@@ -165,7 +198,28 @@ public class MerchantController {
                 .fromDate(request.getFromDate())
                 .toDate(request.getToDate())
                 .build();
-
         return new LoansWrapper(loanService.findLoansForMerchant(internalRequest));
+    }
+
+    public Long resolveUserId(Principal principal, String merchantCode) {
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        User user = findUserService.resolveUserFromAccessToken(token)
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+        boolean isSuperAdmin = findUserService.hasAnyRole(token, List.of(UserGroup.BULKIT_ADMIN.name(),
+                UserGroup.RETAIL_SALES.name()));
+        if (isSuperAdmin) {
+            return null;
+        }
+        boolean isOrgSuperUser = findUserService.hasRole(token, UserGroup.ORGANISATION_SUPER_USER.name());
+        if (isOrgSuperUser) {
+            if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {
+                throw new AccessDeniedException("User not allowed to complete this operation");
+            }
+            return null;
+        }
+        if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {
+            throw new AccessDeniedException("User not allowed to complete this operation");
+        }
+        return user.getId();
     }
 }

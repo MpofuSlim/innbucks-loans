@@ -29,10 +29,14 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private Boolean temporaryPassword;
 
-    @ManyToOne
+    @ManyToOne(optional = true)
     private User agent;
 
     @ManyToOne
     private CommissionGroup commissionGroup;
+
+    @Column(name = "physical_addess")
+    private String physicalAddress;
+
 
 }

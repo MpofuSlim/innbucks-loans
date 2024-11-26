@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.api;
 
 
+import jakarta.persistence.Column;
 import lombok.Data;
 import zw.co.reikan.loans.core.user.UserGroup;
 
@@ -14,4 +15,5 @@ public class CreateAgentRequest {
     private String idNumber;
     private UserGroup group;
     private Long commissionGroupId;
+    private String physicalAddress;
 }

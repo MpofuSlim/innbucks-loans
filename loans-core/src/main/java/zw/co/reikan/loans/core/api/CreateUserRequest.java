@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.api;
 
 
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -28,4 +29,6 @@ public class CreateUserRequest {
     private User agent;
     private CommissionStructure commissionStructure;
     private Long commissionGroupId;
+    private String physicalAddress;
+
 }

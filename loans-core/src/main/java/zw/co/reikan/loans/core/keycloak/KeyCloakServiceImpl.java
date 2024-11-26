@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.keycloak;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.admin.client.Keycloak;
@@ -37,6 +38,7 @@ import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class KeyCloakServiceImpl implements KeycloakService {
 
     public static final String MERCHANT_CODE = "merchant_code";
@@ -199,5 +201,15 @@ public class KeyCloakServiceImpl implements KeycloakService {
     private List<String> getGroupsForUser(String userId) {
         return keycloak.realm(authProperties.getRealm()).users().get(userId).groups().stream()
                 .map(GroupRepresentation::getName).collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteUser(String userId) {
+        try {
+            log.info("Deleting user {}", userId);
+            keycloak.realm(authProperties.getRealm()).users().delete(userId);
+        } catch (Exception e) {
+            log.error("Error deleting user {}", userId, e);
+        }
     }
 }

@@ -15,6 +15,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUsername(String username);
 
+    Optional<User> findByExternalSystemId(String externalSystemId);
+
     @Query("SELECT u FROM User u WHERE (:merchantId IS NULL OR u.merchant.id= :merchantId)")
     List<User> listAllUsersByMerchant(@Param("merchantId") Long merchantId);
 

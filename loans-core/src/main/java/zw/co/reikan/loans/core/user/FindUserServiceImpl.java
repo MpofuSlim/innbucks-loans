@@ -24,6 +24,11 @@ public class FindUserServiceImpl implements FindUserService {
     }
 
     @Override
+    public Optional<User> findUserExyernalSystemId(String externalSystemId) {
+        return userRepository.findByExternalSystemId(externalSystemId);
+    }
+
+    @Override
     public Long countAgentSalesConsultants(Long agentId) {
         return userRepository.countByAgent_Id(agentId);
     }
@@ -39,12 +44,19 @@ public class FindUserServiceImpl implements FindUserService {
     }
 
     @Override
-    public boolean hasRole(Jwt token, String roleName) {
-        if (token != null) {
-            List<String> roles = token.getClaimAsStringList("realm_access.roles");
-            return roles != null && roles.contains(roleName);
-        }
-        return false;
+    public boolean hasRole(Jwt token, String role) {
+        return token != null &&
+                token.getClaimAsStringList("realm_access.roles")
+                        .stream()
+                        .anyMatch(r -> r.equalsIgnoreCase(role));
+    }
+
+    @Override
+    public boolean hasAnyRole(Jwt token, List<String> roles) {
+        return token != null &&
+                token.getClaimAsStringList("realm_access.roles")
+                        .stream()
+                        .anyMatch(role -> roles.stream().anyMatch(role::equalsIgnoreCase));
     }
 
 }

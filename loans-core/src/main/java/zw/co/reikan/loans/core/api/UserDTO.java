@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -32,6 +33,8 @@ public class UserDTO {
 	private MerchantDto merchant;
 	private Long agentId;
 	private CommissionGroupDto commissionGroup;
+	private String physicalAddress;
+
 
 	public static UserDTO fromUser(User user) {
 		UserDTO userDTO = new UserDTO();
@@ -39,6 +42,7 @@ public class UserDTO {
 		userDTO.setId(user.getId());
 		userDTO.setExternalSystemId(user.getExternalSystemId());
 		userDTO.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(user.getCommissionGroup()));
+		userDTO.setPhysicalAddress(userDTO.getPhysicalAddress());
 		return userDTO;
 	}
 

@@ -45,7 +45,6 @@ public class MerchantService {
                 .contactPersonEmail(request.getContactPersonEmail())
                 .contactPersonMobileNumber(request.getContactPersonMobileNumber())
                 .physicalAddress(request.getPhysicalAddress())
-                .physicalAddress(request.getPhysicalAddress())
                 .build();
         Merchant savedMerchant = merchantRepository.save(merchant);
         return merchantMapper.fromMerchant(savedMerchant);
@@ -63,7 +62,7 @@ public class MerchantService {
     }
 
     private void validateRequest(CreateMerchantRequest request) {
-        Boolean exists = merchantRepository.existsByMerchantCode(Merchant.DEFAULT_MERCHANT_CODE);
+        Boolean exists = merchantRepository.existsByMerchantCode(request.getCode());
         if (exists) {
             throw new ValidationException("Merchant with merchant code " + Merchant.DEFAULT_MERCHANT_CODE + " already exists");
         }
