@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.stream.IntStream;
 
+import static zw.co.reikan.loans.core.StartupTask.ZERO_BASED_DEFAULT;
 import static zw.co.reikan.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
 
 @Service
@@ -80,7 +81,10 @@ public class CreateUserServiceImpl implements CreateUserService {
             throw new ValidationException("Commission group id is required");
         }
 
-        return commissionGroupRepository.findById(request.getCommissionGroupId()).orElseThrow();
+        if (request.getCommissionGroupId() > 0) {
+            return commissionGroupRepository.findById(request.getCommissionGroupId()).orElseThrow();
+        }
+        return commissionGroupRepository.findByNameIgnoreCase(ZERO_BASED_DEFAULT).orElseThrow();
     }
 
     @Transactional

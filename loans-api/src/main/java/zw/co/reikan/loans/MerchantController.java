@@ -99,22 +99,25 @@ public class MerchantController {
             description = "Add a sales consultant.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
-    @PostMapping({"/{agentUuid}/sales-consultant"})
+    @PostMapping({"/agents/{externalSystemId}/sales-consultant"})
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createSalesConsultant(Principal principal,
                                                                   @RequestBody CreateAgentRequest createUserRequest,
-                                                                  @PathVariable String agentUuid) {
+                                                                  @PathVariable String externalSystemId) {
+
+        log.info("Creating sales consultant for user {}", externalSystemId);
+
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         boolean canAddSubAgent = findUserService.hasAnyRole(token, List.of(UserGroup.AGENTS.name(),
                 UserGroup.ORGANISATION_SUPER_USER.name(), UserGroup.RETAIL_SALES.name()));
         if (!canAddSubAgent) {
             throw new RuntimeException("Can't add sub agent");
         }
-        User agent = findUserService.findUserExyernalSystemId(agentUuid)
-                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+        User agent = findUserService.findUserExternalSystemId(externalSystemId)
+                .orElseThrow(() -> new RuntimeException(String.format("User not found for %s - ", externalSystemId)));
         createUserRequest.setGroup(UserGroup.SUB_AGENTS);
         CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent,
                 agent.getMerchant().getMerchantCode());

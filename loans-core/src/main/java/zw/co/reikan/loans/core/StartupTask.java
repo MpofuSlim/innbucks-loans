@@ -32,6 +32,7 @@ import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
 public class StartupTask implements CommandLineRunner {
 
     public static final String FAVORING_BULK_IT = "100-Favouring-BulkIT";
+    public static final String ZERO_BASED_DEFAULT = "Default-BulkIT";
     private final MerchantService merchantService;
     private final CommissionGroupRepository commissionGroupRepository;
     private final ChannelRepository channelRepository;
@@ -102,6 +103,13 @@ public class StartupTask implements CommandLineRunner {
                 .providerCommission(new BigDecimal("100.0"))
                 .agentCommission(new BigDecimal("0.0"))
                 .name(FAVORING_BULK_IT)
+                .build());
+
+        createCommissionGroup(CommissionGroup.builder()
+                .percentage(true)
+                .providerCommission(new BigDecimal("100.0"))
+                .agentCommission(new BigDecimal("0.0"))
+                .name(ZERO_BASED_DEFAULT)
                 .build());
     }
 

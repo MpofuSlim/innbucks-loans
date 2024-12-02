@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -24,7 +25,7 @@ public class FindUserServiceImpl implements FindUserService {
     }
 
     @Override
-    public Optional<User> findUserExyernalSystemId(String externalSystemId) {
+    public Optional<User> findUserExternalSystemId(String externalSystemId) {
         return userRepository.findByExternalSystemId(externalSystemId);
     }
 
@@ -45,18 +46,23 @@ public class FindUserServiceImpl implements FindUserService {
 
     @Override
     public boolean hasRole(Jwt token, String role) {
-        return token != null &&
-                token.getClaimAsStringList("realm_access.roles")
-                        .stream()
-                        .anyMatch(r -> r.equalsIgnoreCase(role));
+        return Optional.ofNullable(token)
+                .map(t -> t.getClaim("realm_access"))
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .map(m -> (List<String>) m.get("roles"))
+                .map(claims -> claims.stream().anyMatch(r -> r.equalsIgnoreCase(role)))
+                .orElse(false);
     }
 
     @Override
     public boolean hasAnyRole(Jwt token, List<String> roles) {
-        return token != null &&
-                token.getClaimAsStringList("realm_access.roles")
-                        .stream()
-                        .anyMatch(role -> roles.stream().anyMatch(role::equalsIgnoreCase));
+        return Optional.ofNullable(token)
+                .map(t -> t.getClaim("realm_access"))
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .map(m -> (List<String>) m.get("roles"))
+                .map(claims -> claims.stream().anyMatch(role -> roles.stream().anyMatch(role::equalsIgnoreCase)))
+                .orElse(false);
     }
-
 }
