@@ -88,7 +88,9 @@ public class MerchantController {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+
         User agent = UserGroup.SUB_AGENTS == createUserRequest.getGroup() ? loggedInUser : null;
+
         CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent, merchantCode);
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
@@ -150,9 +152,25 @@ public class MerchantController {
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
+    public ResponseEntity<UserListingResponse> findAgentsForMerchant(Principal principal, @PathVariable String code) {
+
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+
+        boolean canViewAllUsers = findUserService.hasAnyRole(token, List.of(UserGroup.ORGANISATION_SUPER_USER.name(),
+                UserGroup.RETAIL_SALES.name(), UserGroup.BULKIT_ADMIN.name(), UserGroup.CREDIT_MANAGER.name()));
+
         List<UserDTO> keycloakUsers = keycloakService.findUsersByMerchantCode(code);
-        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
+
+        if (canViewAllUsers) {
+            return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
+        }
+
+        User loggedInUser = findUserService.resolveUserFromAccessToken(token)
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+
+        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers.stream()
+                .filter(u -> loggedInUser.getId().equals(u.getAgentId()))
+                .toList()).build());
     }
 
 //    @Operation(summary = "FIND LOANS",

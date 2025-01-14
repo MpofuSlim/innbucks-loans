@@ -6,6 +6,7 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.idm.CredentialRepresentation;
@@ -189,12 +190,20 @@ public class KeyCloakServiceImpl implements KeycloakService {
         userDTO.setLastName(userRepresentation.getLastName());
         userDTO.setMobileNumber(userAttributes.get(MOBILE_NUMBER).get(0));
         userDTO.setUsername(userRepresentation.getUsername());
+
+        userRepository.findByExternalSystemId(userRepresentation.getId())
+                .ifPresent(u -> userDTO.setAgentId(u.getAgent() == null ? null : u.getAgent().getId()));
+
         String merchantCode = userAttributes.get(MERCHANT_CODE).get(0);
+
         Optional<Merchant> merchantOptional = merchantRepository.findByMerchantCode(merchantCode);
+
         userDTO.setMerchant(merchantMapper.fromMerchant(merchantOptional.orElseThrow(() ->
                 new RuntimeException("Could not find merchant"))));
+
         userDTO.setGroups(getGroupsForUser(userRepresentation.getId()).stream().map(UserGroup::valueOf)
                 .collect(Collectors.toList()));
+
         return userDTO;
     }
 
@@ -211,5 +220,10 @@ public class KeyCloakServiceImpl implements KeycloakService {
         } catch (Exception e) {
             log.error("Error deleting user {}", userId, e);
         }
+    }
+
+    public UserDTO getUser(String userId) {
+        UserRepresentation representation = keycloak.realm(authProperties.getRealm()).users().get(userId).toRepresentation();
+        return convertFromKeycloakUserToUserDTO(representation);
     }
 }

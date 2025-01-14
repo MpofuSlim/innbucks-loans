@@ -45,7 +45,8 @@ public class UserController {
 
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
 
-        keycloakService.login(AuthRequest.builder().username(token.getClaimAsString("preferred_username"))
+        keycloakService.login(AuthRequest.builder()
+                .username(token.getClaimAsString("preferred_username"))
                 .password(changePasswordRequest.getCurrentPassword()).build());
 
         keycloakService.resetPassword(changePasswordRequest.getNewPassword(), token.getSubject(),
@@ -55,52 +56,4 @@ public class UserController {
                 .username(token.getClaimAsString("preferred_username"))
                 .password(changePasswordRequest.getNewPassword()).build());
     }
-
-
-
-
-//    @GetMapping(path = "/search")
-//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-//            @ApiResponse(responseCode = "500", description = "Processing error")})
-//
-//    public ResponseEntity<UserListingResponse> search(@RequestParam("searchText") String searchText,
-//                                                      @RequestParam("pageSize") Integer pageSize, @RequestParam("pageNumber") Integer pageNumber) {
-//        SearchUserRequest searchUserRequest = new SearchUserRequest();
-//        searchUserRequest.setSearchText(searchText);
-//        searchUserRequest.setPageNumber(pageNumber);
-//        searchUserRequest.setPageSize(pageSize);
-//        List<UserDTO> keycloakUsers = keycloakService.search(searchUserRequest);
-//        UserListingResponse userListingResponse = new UserListingResponse();
-//        userListingResponse.setMessage("Ok");
-//        userListingResponse.setUsers(keycloakUsers);
-//        return ResponseEntity.ok(userListingResponse);
-//    }
-//
-//    @PostMapping(path = "/list-all")
-//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-//            @ApiResponse(responseCode = "500", description = "Processing error")})
-//    public ResponseEntity<ListUsersServiceResponse> listUsers(@RequestBody ListUsersRequest listUsersRequest) {
-//        ListUsersResponse response = listUserService.listAll(listUsersRequest);
-//        ListUsersServiceResponse listUsersServiceResponse = new ListUsersServiceResponse(
-//                response.getUsers().stream().map(UserDTO::fromUser).toList());
-//        return ResponseEntity.ok(listUsersServiceResponse);
-//    }
-//
-//    @PostMapping(path = "/report")
-//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-//            @ApiResponse(responseCode = "500", description = "Processing error")})
-//    public ResponseEntity<UserListingResponse> usersReport(@RequestBody UsersReportRequest request) {
-//        List<UserDTO> keycloakUsers = keycloakService.findUsersByPartnerId(request.getPartnerId());
-//        UserListingResponse userListingResponse = new UserListingResponse();
-//        userListingResponse.setMessage("OK");
-//        userListingResponse.setUsers(keycloakUsers);
-//        return ResponseEntity.ok(userListingResponse);
-//    }
-
 }

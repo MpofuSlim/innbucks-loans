@@ -87,6 +87,18 @@ public class CreateUserServiceImpl implements CreateUserService {
         return commissionGroupRepository.findByNameIgnoreCase(ZERO_BASED_DEFAULT).orElseThrow();
     }
 
+    @Override
+    public void resetPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByUsername(request.getUsername())
+                .orElseThrow(() -> new DuplicateUserByUsernameException(request.getUsername()));
+        String generatedPassword = generatePassword();
+        keycloakService.resetPassword(generatedPassword, user.getExternalSystemId(), user.getUsername());
+        UserDTO userDTO = keycloakService.getUser(user.getExternalSystemId());
+        user.setTemporaryPassword(true);
+        userRepository.save(user);
+        notifyUser(userDTO, generatedPassword);
+    }
+
     @Transactional
     public CreateUserResponse create(CreateUserRequest createUserRequest) {
         logger.info("Creating user {}", createUserRequest);
@@ -103,7 +115,8 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         CommissionGroup commissionGroup = resolveCommissionGroup(createUserRequest, merchant);
 
-        String generatedPassword = generatePassword(createUserRequest);
+        String generatedPassword = generatePassword();
+
         String externalSystemId = keycloakService.addUser(createUserRequest, generatedPassword);
 
         User user = new User();
@@ -168,7 +181,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         }
     }
 
-    private String generatePassword(CreateUserRequest user) {
+    private String generatePassword() {
 
         StringBuilder passwordBuilder = new StringBuilder(8);
 

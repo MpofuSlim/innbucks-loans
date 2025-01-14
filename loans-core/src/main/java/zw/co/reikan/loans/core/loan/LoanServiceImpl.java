@@ -66,6 +66,8 @@ public class LoanServiceImpl implements LoanService {
 
     @Override
     public List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request) {
+        log.info("Agent or User Id: {}", request.getUserId());
+
         final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
                 .and(withMerchantCode(request.getMerchantCode()))
                 .and(createdByUserOrAsAgent(request.getUserId()))

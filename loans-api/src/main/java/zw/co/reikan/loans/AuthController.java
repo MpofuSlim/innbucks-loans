@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.api.AuthRequest;
 import zw.co.reikan.loans.core.api.AuthResponse;
+import zw.co.reikan.loans.core.api.ForgotPasswordRequest;
 import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.user.CreateUserService;
 
 @RestController
 @Slf4j
@@ -24,6 +27,9 @@ public class AuthController {
 
     @Autowired
     private KeyCloakServiceImpl keyCloakService;
+
+    @Autowired
+    private CreateUserService createUserService;
 
 
     @Operation(summary = "GET ACCESS TOKEN",
@@ -43,6 +49,27 @@ public class AuthController {
         try {
             log.info("Authenticating user: {}", authRequest.getUsername());
             return keyCloakService.login(authRequest);
+        } catch (Exception ex) {
+            log.error("Error getting access token.", ex);
+            throw new BadCredentialsException(ex.getMessage());
+        }
+    }
+
+    @Operation(summary = "FORGOT PASSWORD",
+            description = "Sends a temporary password to the registered mobile number"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Authenticated"),
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/auth/forgot-password")
+    public ResponseEntity forgotPassword(@RequestBody ForgotPasswordRequest authRequest) {
+        try {
+            log.info("Resetting password for user: {}", authRequest.getUsername());
+            createUserService.resetPassword(authRequest);
+            return ResponseEntity.ok().build();
         } catch (Exception ex) {
             log.error("Error getting access token.", ex);
             throw new BadCredentialsException(ex.getMessage());
