@@ -139,7 +139,6 @@ public class LoanServiceImpl implements LoanService {
 //        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
 //                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
 
-
         final Loan loan = Loan.builder()
                 .principal(loanDetails.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
@@ -149,6 +148,8 @@ public class LoanServiceImpl implements LoanService {
                 .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
                 .signature(loanRequest.getSignatureData())
+                .nationalIdPicture(loanRequest.getNationalIdPicture())
+                .payslipPicture(loanRequest.getPayslipPicture())
                 .feeAmount(loanDetails.getAdminFeeAmount())
                 .feeRate(loanDetails.getAdminFeeRate())
                 .interestRate(loanDetails.getInterestRate())

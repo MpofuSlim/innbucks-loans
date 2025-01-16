@@ -30,6 +30,8 @@ public class LoanDto implements Serializable {
     private String lastName;
     private String nationalIdNumber;
     private String signature;
+    private String nationalIdPicture;
+    private String payslipPicture;
     private LoanApprovalStatus loanApprovalStatus;
     private String loanStatusMessage;
     private LocalDateTime dateApproved;

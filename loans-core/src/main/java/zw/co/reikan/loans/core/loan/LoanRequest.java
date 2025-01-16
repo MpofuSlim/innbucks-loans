@@ -14,7 +14,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @ToString
 public class LoanRequest implements Serializable {
-    private String signatureData;
+
     private BigDecimal amount;
     private String ecnumber;
     private String mobileNumber;
@@ -50,17 +50,17 @@ public class LoanRequest implements Serializable {
     private BigDecimal grossSalary;
     private BigDecimal netSalary;
     private String profession;
-
     @JsonProperty("merchant")
     @JsonAlias("loanFor")
     private String merchant;
-
     private Gender gender;
-
     private BankingDetail bankingDetail;
-
     private String productDescription;
-
     private String channelId;
+
+    //Base64 images
+    private String signatureData;
+    private String nationalIdPicture;
+    private String payslipPicture;
 
 }

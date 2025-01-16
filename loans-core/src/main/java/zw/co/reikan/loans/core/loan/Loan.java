@@ -240,6 +240,14 @@ public class Loan extends BaseEntity {
     @JoinColumn(name = "channel_id")
     private Channel channel;
 
+    @Lob
+    @Column(name = "national_id_picture", columnDefinition = "MEDIUMTEXT")
+    private String nationalIdPicture;
+
+    @Lob
+    @Column(name = "payslip_picture", columnDefinition = "MEDIUMTEXT")
+    private String payslipPicture;
+
     public String getReference() {
         return String.format("%09d", getId());
     }
