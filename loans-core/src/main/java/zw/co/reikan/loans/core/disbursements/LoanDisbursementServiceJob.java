@@ -26,7 +26,7 @@ public class LoanDisbursementServiceJob {
     private final LoanRepository loanRepository;
     private final ParameterService parameterService;
 
-    @Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
+    //@Scheduled(fixedRate = 120_000) // Run every 1 minute (60,000 milliseconds)
     public void processFundsDisbursements() {
         log.info("LoanDisbursementServiceJob...");
         loanRepository.findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus.CREATED,
