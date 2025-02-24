@@ -188,6 +188,7 @@ public class LoanServiceImpl implements LoanService {
                 .agent(loggedInUser.getAgent())
                 .merchant(loggedInUser.getMerchant())
                 .channel(optionalChannel.orElse(null))
+                .loanStartDate(loanDetails.getStartDate())
                 .build();
 
         loanRepository.save(loan);

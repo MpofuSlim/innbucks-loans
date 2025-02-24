@@ -45,11 +45,12 @@ public class InnbucksServiceImpl extends DisbursementService {
     public LoanAccountCreationResponse createLoanAccount(Loan loan) {
         log.info("Processing loan account creation");
 
-
         String businessLine = loan.getLineOfBusiness() != null ?
                 loan.getLineOfBusiness().getDescription() : LineOfBusiness.SERVICES.getDescription();
 
         String loanPurpose = loan.getLoanPurpose() != null ? loan.getLoanPurpose().getDescription() : LoanPurpose.PERSONAL_USE.getDescription();
+
+        DisbursementType disbursementType = loan.getMerchant().getDisbursementType();
 
         LoanAccountCreationRequest.LoanAccountCreationRequestBuilder builder = LoanAccountCreationRequest.builder()
                 .firstName(loan.getFirstName())
@@ -70,7 +71,13 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .placeOfBirth(loan.getPlaceOfBirth() == null ? "UNKNOWN" : loan.getPlaceOfBirth())
                 .product(SSBUSD)
                 .tenureInMonths(loan.getTenor())
+                .type(disbursementType.getLoanType().name())
                 .repaymentFrequency(MONTHLY);
+
+        if (DisbursementType.MERCHANT_MOBILE_WALLET == disbursementType) {
+            log.info("Setting disbursement account: {}", loan.getMerchant().getAccountNumber());
+            builder.settlementAccount(loan.getMerchant().getAccountNumber());
+        }
 
         NextOfKin nextOfKin = loan.getNextOfKin();
         if (nextOfKin != null) {
@@ -87,7 +94,6 @@ public class InnbucksServiceImpl extends DisbursementService {
             LocalDate employmentStartDate = employmentDetail.getEmploymentStartDate() == null ?
                     LocalDate.now() :
                     employmentDetail.getEmploymentStartDate();
-
 
             String employeeNumber = employmentDetail.getEmployeeNumber() == null ? loan.getEcNumber() : employmentDetail.getEmployeeNumber();
 

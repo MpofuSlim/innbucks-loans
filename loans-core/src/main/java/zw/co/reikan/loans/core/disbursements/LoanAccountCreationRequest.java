@@ -80,4 +80,10 @@ public class LoanAccountCreationRequest {
     @JsonProperty("participantReference")
     private String participantReference;
 
+    @JsonProperty("type")
+    private String type;
+
+    @JsonProperty("settlementAccount")
+    private String settlementAccount;
+
 }
