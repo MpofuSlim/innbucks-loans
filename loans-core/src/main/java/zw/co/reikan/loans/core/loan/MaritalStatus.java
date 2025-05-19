@@ -4,7 +4,7 @@ public enum MaritalStatus {
     SINGLE("Single","S" ),
     MARRIED("Married", "M"),
     DIVORCED("Divorced", "D"),
-    WIDOWED("Widowed", "W");
+    WIDOWED("Widowed", "S");
 
     private final String displayName;
     private final String code;

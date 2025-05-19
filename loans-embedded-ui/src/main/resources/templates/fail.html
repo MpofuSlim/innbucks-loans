@@ -58,7 +58,7 @@
                             </li>
 
                             <li class="nav-item xl-none">
-                                <a th:href="@{/apply(mobileNumber=${#session.getAttribute('mobileNumber')}, fname=${#session.getAttribute('fname')}, lname=${#session.getAttribute('lname')})}" class="btn style2">Apply Now</a>
+                                <a th:href="@{/apply(mobileNumber=${mobileNumber}, fname=${fname}, lname=${lname})}" class="btn style2">Apply Now</a>
                             </li>
                         </ul>
                     </div>

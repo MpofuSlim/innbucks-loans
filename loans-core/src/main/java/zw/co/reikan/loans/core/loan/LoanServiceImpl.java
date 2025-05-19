@@ -13,6 +13,7 @@ import zw.co.reikan.loans.core.channel.Channel;
 import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
+import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
 import zw.co.reikan.loans.core.merchant.Merchant;
@@ -84,6 +85,12 @@ public class LoanServiceImpl implements LoanService {
                 .orElseThrow();
     }
 
+
+    @Override
+    public Optional<Loan> findByReference(String reference) {
+        return loanRepository.findById(Long.parseLong(reference));
+    }
+
     private LocalDateTime atStartOfDay(LocalDate localDate) {
         if (localDate == null) {
             return null;
@@ -128,6 +135,8 @@ public class LoanServiceImpl implements LoanService {
 
         Optional<Channel> optionalChannel = resolveChannel(loanRequest);
 
+        log.info("optionalChannel: >> channeId: {}, {}", loanRequest.getChannelId(),  optionalChannel);
+
         User loggedInUser = optionalChannel.map(Channel::getSystemUser)
                 .orElseGet(keyCloakService::getLoggedInUser);
 
@@ -144,6 +153,7 @@ public class LoanServiceImpl implements LoanService {
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
                 .internalApprovalStatus(InternalApprovalStatus.PENDING)
+                .loanAccountStatus(LoanAccountStatus.PENDING)
                 .ecNumber(formattedEcNumber)
                 .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))

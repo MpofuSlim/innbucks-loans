@@ -7,10 +7,9 @@ import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 @Component
@@ -20,36 +19,39 @@ public class LoggingInterceptor implements ClientHttpRequestInterceptor {
 
     @Override
     public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
-        traceRequest(request, body);
+        logRequest(request, body);
         ClientHttpResponse response = execution.execute(request, body);
-        traceResponse(response);
+        logResponse(response);
         return response;
     }
 
-    private void traceRequest(HttpRequest request, byte[] body) throws IOException {
-        logger.info("request begin");
-        logger.info("URI         : {}", request.getURI());
-        logger.info("Method      : {}", request.getMethod());
-        logger.info("Headers     : {}", request.getHeaders());
-        logger.info("Request body: {}", new String(body, StandardCharsets.UTF_8));
-        logger.info("Request End");
+    private void logRequest(HttpRequest request, byte[] body) {
+        if (!logger.isInfoEnabled()) return;
+
+        logger.info("REQUEST: {} {} | Headers: {} | Body: {}",
+                request.getMethod(),
+                request.getURI(),
+                request.getHeaders(),
+                new String(body, StandardCharsets.UTF_8));
     }
 
-    private void traceResponse(ClientHttpResponse response) throws IOException {
-        StringBuilder inputStringBuilder = new StringBuilder();
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(response.getBody(), StandardCharsets.UTF_8));
-        String line = bufferedReader.readLine();
-        while (line != null) {
-            inputStringBuilder.append(line);
-            inputStringBuilder.append('\n');
-            line = bufferedReader.readLine();
+    private void logResponse(ClientHttpResponse response) {
+        if (!logger.isInfoEnabled()) return;
+
+        try {
+            String bodyStr = new String(StreamUtils.copyToByteArray(response.getBody()), StandardCharsets.UTF_8);
+
+            logger.info("RESPONSE: {} {} | Headers: {} | Body: {}",
+                    response.getStatusCode(),
+                    response.getStatusText(),
+                    response.getHeaders(),
+                    bodyStr);
+
+            if (response.getStatusCode().is4xxClientError() || response.getStatusCode().is5xxServerError()) {
+                logger.error("ERROR RESPONSE: {} - {}", response.getStatusCode(), bodyStr);
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to log response: {}", e.getMessage());
         }
-        logger.info("Response Begin");
-        logger.info("Status code  : {}", response.getStatusCode());
-        logger.info("Status text  : {}", response.getStatusText());
-        logger.info("Headers      : {}", response.getHeaders());
-        logger.info("Response body: {}", inputStringBuilder);
-        logger.info("Response end");
     }
-
 }

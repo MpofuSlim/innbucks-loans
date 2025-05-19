@@ -7,8 +7,11 @@ import zw.co.reikan.loans.core.api.LoanStatisticsResponse;
 import zw.co.reikan.loans.core.user.User;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface LoanService {
+    Optional<Loan> findByReference(String reference);
+
     LoanResponse requestLoan(LoanRequest loanRequest);
 
     LoanDetails calculate(LoanRequest request, User loggedInUser);

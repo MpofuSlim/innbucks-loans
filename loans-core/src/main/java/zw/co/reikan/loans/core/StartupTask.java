@@ -138,7 +138,7 @@ public class StartupTask implements CommandLineRunner {
                     .accountNumber(null)
                     .build());
         } catch (Exception e) {
-            log.warn(e.getMessage(), e);
+            log.warn(e.getMessage());
         }
     }
 }

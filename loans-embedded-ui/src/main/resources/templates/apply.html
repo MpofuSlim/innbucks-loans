@@ -42,6 +42,70 @@
         .errorInput {
             border-color: red !important;
         }
+
+        /* Responsive fixes for the navigation bar */
+        .bottom-navigation-bar {
+            background-color: #fff;
+            padding: 15px;
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            position: relative;
+            width: 100%;
+            box-shadow: none;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Specific adjustments for .st2 class */
+        .bottom-navigation-bar.st2 {
+            width: unset;
+            left: auto;
+            right: auto;
+        }
+
+        /* Center the button within the navigation bar */
+        .bottom-navigation-bar button {
+            margin: 0 auto;
+        }
+
+        /* Only fix the navigation bar to bottom on screens larger than 768px */
+        @media (min-width: 768px) {
+            .bottom-navigation-bar {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                z-index: 10;
+            }
+
+            /* Add padding to the bottom of the form to prevent content from being hidden behind fixed nav */
+            .tf-form {
+                padding-bottom: 80px;
+            }
+        }
+
+        /* Additional padding for the bottom of the page on mobile */
+        @media (max-width: 767px) {
+            body {
+                padding-bottom: 20px;
+            }
+
+            .tf-form {
+                margin-bottom: 30px;
+            }
+        }
+
+        /* Styles for the additional info page */
+        .additional-info-page .bottom-navigation-bar {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 0;
+        }
+
+        .additional-info-page .bottom-navigation-bar button {
+            margin: 0;
+            min-width: 120px;
+        }
     </style>
 </head>
 
@@ -57,23 +121,24 @@
 </div>
 <!-- /preload -->
 
-<div>
+<div id="page1">
     <div class="bill-payment-content">
         <div class="tf-container">
             <div class="tf-spacing-12"></div>
+            <h3 class="text-center mb-4">Loan Application: Step 1/2</h3>
             <form class="tf-form mt-5">
 
                 <div class="group-double-ip">
                     <div class="group-input">
                         <label>Name</label>
                         <input type="text" readonly class="first-page"
-                               th:value="${#session.getAttribute('fname') + ' ' + #session.getAttribute('lname')}">
+                               th:value="${fname + ' ' + lname}">
                     </div>
 
                     <div class="group-input">
                         <label>National ID#</label>
                         <input type="text" readonly class="first-page"
-                               th:value="${#session.getAttribute('nationalId')}">
+                               th:value="${nationalId}">
                     </div>
                 </div>
 
@@ -82,61 +147,48 @@
                     <div class="group-input">
                         <label>Phone</label>
                         <input type="text" readonly class="first-page"
-                               th:value="${#session.getAttribute('mobileNumber')}">
+                               th:value="${mobileNumber}">
                     </div>
                     <div class="group-input">
                         <label>Date of Birth</label>
-                        <input type="text" readonly th:value="${#session.getAttribute('dob')}">
+                        <input type="text" readonly th:value="${dob}">
                     </div>
 
                 </div>
 
                 <div class="group-double-ip">
                     <div class="group-input">
-                        <label>Place of Birth</label>
-                        <input class="first-page" type="text" id="placeOfBirth" name="placeOfBirth">
-                        <p class="errorText text-center" id="errorPlaceOfBirth"></p>
-                    </div>
-                    <div class="group-input">
-                        <label>Next of Kin Full Name</label>
+                        <label>Next Of Kin</label>
                         <input class="first-page" id="nextOfKinName" name="nextOfKinName"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinName"></p>
                     </div>
-                </div>
-
-                <div class="group-double-ip">
                     <div class="group-input">
-                        <label>Next of Kin ID#</label>
+                        <label>Next Of Kin ID#</label>
                         <input class="first-page" id="nextOfKinIdNumber" name="nextOfKinIdNumber"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinId"></p>
                     </div>
-
-                    <div class="group-input">
-                        <label>Next of Kin Address</label>
-                        <input class="first-page" id="nextOfKinAddress" name="nextOfKinAddress"
-                               type="text">
-                        <p class="errorText text-center" id="errorNextOfKinAddress"></p>
-                    </div>
-
-                    <!--                    <div class="group-input">-->
-                    <!--                        <label>Next of Kin Surname</label>-->
-                    <!--                        <input class="first-page" id="nextOfKinSurname" name="nextOfKinSurname"-->
-                    <!--                               type="text">-->
-                    <!--                        <p class="errorText text-center" id="errorNextOfKinSurname"></p>-->
-                    <!--                    </div>-->
                 </div>
 
                 <div class="group-double-ip">
                     <div class="group-input">
-                        <label>Next of Kin Phone</label>
+                        <label>Next Of Kin Address</label>
+                        <input class="first-page" id="nextOfKinAddress" name="nextOfKinAddress"
+                               type="text">
+                        <p class="errorText text-center" id="errorNextOfKinAddress"></p>
+                    </div>
+                    <div class="group-input">
+                        <label>Next Of Kin Phone</label>
                         <input class="first-page" id="nextOfKinPhone" name="nextOfKinPhone"
                                type="text">
                         <p class="errorText text-center" id="errorNextOfKinPhone"></p>
                     </div>
+                </div>
+
+                <div class="group-double-ip">
                     <div class="group-input">
-                        <label>Next of Kin Relationship</label>
+                        <label>Next Of Kin Rel.</label>
                         <select id="nextOfKinRelationShip" name="nextOfKinRelationShip">
                             <option value="SIBLING">Sibling</option>
                             <option value="DAUGHTER">Daughter</option>
@@ -152,19 +204,19 @@
                             <option value="SON">Son</option>
                         </select>
                     </div>
-
-                </div>
-
-                <div class="group-double-ip">
-
                     <div class="group-input">
                         <label># of Dependents</label>
                         <input id="numberOfDependencies" name="numberOfDependencies" type="text"
                                class="first-page valid-number amount">
                         <p class="errorText text-center" id="errorNumberOfDependencies"></p>
                     </div>
-
-
+                </div>
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Place of Birth</label>
+                        <input class="first-page" type="text" id="placeOfBirth" name="placeOfBirth">
+                        <p class="errorText text-center" id="errorPlaceOfBirth"></p>
+                    </div>
                     <div class="group-input">
                         <label>Required Amount</label>
                         <input class="valid-number amount first-page" id="amount" name="amount" type="text">
@@ -185,49 +237,23 @@
                     </div>
                 </div>
 
-                <div class="group-double-ip">
-                    <div class="group-input">
-                        <label>Marital Status</label>
-                        <select id="maritalStatus" name="maritalStatus">
-                            <option value="SINGLE">Single</option>
-                            <option value="MARRIED">Married</option>
-                            <option value="DIVORCED">Divorced</option>
-                            <option value="WIDOWED">Widowed</option>
-                        </select>
-                    </div>
 
-                    <div class="group-input">
-                        <label>Purpose of Loan</label>
-                        <select id="purposeOfLoan" name="purposeOfLoan">
-                            <option value="PERSONAL_USE">Personal Use</option>
-                            <option value="HOME_IMPROVEMENT">Home Improvement</option>
-                            <option value="MEDICAL">Medical</option>
-                            <option value="PREMIUMS">Premiums</option>
-                            <option value="SCHOOL_FEES">School Fees</option>
-                            <option value="VACATION">Vacation</option>
-                            <option value="WEDDING_EXPENSES">Wedding Expenses</option>
-                        </select>
-                    </div>
-
-                </div>
-
-
-                <input id="commissionRate" th:value="${#session.getAttribute('commission_rate')}" type="hidden">
-                <input id="adminFeeRate" th:value="${#session.getAttribute('admin_fee_rate')}" type="hidden">
-                <input id="monthlyInterestRate" th:value="${#session.getAttribute('monthly_interest_rate')}"
+                <input id="commissionRate" th:value="${commission_rate}" type="hidden">
+                <input id="adminFeeRate" th:value="${admin_fee_rate}" type="hidden">
+                <input id="monthlyInterestRate" th:value="${monthly_interest_rate}"
                        type="hidden">
-                <input id="mobileNumber" th:value="${#session.getAttribute('mobileNumber')}" type="hidden">
-                <input id="nationalId" name="nationalId" th:value="${#session.getAttribute('nationalId')}"
+                <input id="mobileNumber" th:value="${mobileNumber}" type="hidden">
+                <input id="nationalId" name="nationalId" th:value="${nationalId}"
                        type="hidden">
-                <input id="minimum_loan_amount" th:value="${#session.getAttribute('minimum_loan_amount')}"
+                <input id="minimum_loan_amount" th:value="${minimum_loan_amount}"
                        type="hidden">
-                <input id="maximum_loan_amount" th:value="${#session.getAttribute('maximum_loan_amount')}"
+                <input id="maximum_loan_amount" th:value="${maximum_loan_amount}"
                        type="hidden">
-                <input id="maximum_loan_tenor" th:value="${#session.getAttribute('maximum_loan_tenor')}" type="hidden">
-                <input id="minimum_loan_tenor" th:value="${#session.getAttribute('minimum_loan_tenor')}" type="hidden">
+                <input id="maximum_loan_tenor" th:value="${maximum_loan_tenor}" type="hidden">
+                <input id="minimum_loan_tenor" th:value="${minimum_loan_tenor}" type="hidden">
 
-                <div class="bottom-navigation-bar bottom-btn-fixed st2">
-                    <button class="tf-btn accent large" id="btn-popup-down" type="button">Next
+                <div class="bottom-navigation-bar st2" id="navigation-bar">
+                    <button class="tf-btn accent large" id="next-page-btn" type="button">Next
                     </button>
                 </div>
 
@@ -351,113 +377,135 @@
     </div>
 </div>
 
-<div class="tf-panel down">
-    <div class="panel_overlay"></div>
-    <div class="panel-box panel-down">
-        <div class="header">
-            <div class="tf-container">
-                <div class="tf-statusbar d-flex justify-content-center align-items-center">
-                    <a class="clear-panel" href="#"> <i class="icon-close1"></i> </a>
-                    <h3>Additional Info</h3>
+<!-- Page 2 - Additional Information, hidden by default -->
+<div id="page2" class="additional-info-page" style="display: none;">
+    <div class="bill-payment-content">
+        <div class="tf-container">
+            <div class="tf-spacing-12"></div>
+            <h3 class="text-center mb-4">Loan Application: Step 2/2</h3>
+
+            <form class="tf-form mt-5">
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Marital Status</label>
+                        <select id="maritalStatus" name="maritalStatus">
+                            <option value="SINGLE">Single</option>
+                            <option value="MARRIED">Married</option>
+                            <option value="DIVORCED">Divorced</option>
+                            <option value="WIDOWED">Widowed</option>
+                        </select>
+                    </div>
+
+                    <div class="group-input">
+                        <label>Purpose of Loan</label>
+                        <select id="purposeOfLoan" name="purposeOfLoan">
+                            <option value="PERSONAL_USE">Personal Use</option>
+                            <option value="HOME_IMPROVEMENT">Home Improvement</option>
+                            <option value="MEDICAL">Medical</option>
+                            <option value="PREMIUMS">Premiums</option>
+                            <option value="SCHOOL_FEES">School Fees</option>
+                            <option value="VACATION">Vacation</option>
+                            <option value="WEDDING_EXPENSES">Wedding Expenses</option>
+                        </select>
+                    </div>
+
                 </div>
 
-            </div>
-        </div>
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>EC Number</label>
+                        <input id="ecnumber" name="ecnumber" type="text" class="second-page">
+                        <p class="errorText text-center" id="errorText"></p>
+                    </div>
 
-        <div class="mt-5">
-            <div class="tf-container">
-                <form action="50_successful.html" class="tf-form-verify">
-                    <div class="text-send-code">
+                    <div class="group-input">
+                        <label>Dept Code No.</label>
+                        <input class="valid-number second-page" maxlength="4" id="dptCode" name="dptCode"
+                               type="text">
+                    </div>
+                </div>
 
-                        <div class="group-double-ip mb-2">
-                            <div class="group-input  mb-0">
-                                <label>EC Number</label>
-                                <input id="ecnumber" name="ecnumber" type="text" class="second-page">
-                                <p class="errorText text-center" id="errorText"></p>
-                            </div>
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Station Number</label>
+                        <input class="valid-number second-page" maxlength="4" id="stationNumber"
+                               name="stationNumber" type="text">
+                    </div>
 
-                            <div class="group-input mb-0">
-                                <label>Dept Code No.</label>
-                                <input class="valid-number second-page" maxlength="4" id="dptCode" name="dptCode"
-                                       type="text">
-                            </div>
+                    <div class="group-input">
+                        <label>Profession</label>
+                        <input class="second-page" id="profession" name="profession"
+                               type="text">
+                        <p class="errorText text-center" id="errorProfession"></p>
+                    </div>
+                </div>
+
+                <div class="group-input">
+                    <label>Literacy Level</label>
+                    <select id="educationLevel" name="educationLevel">
+                        <option value="PRIMARY">Primary School</option>
+                        <option value="SECONDARY">Secondary School</option>
+                        <option value="O_LEVEL">Ordinary Level</option>
+                        <option value="A_LEVEL">Advanced Level</option>
+                        <option value="NATIONAL_DIPLOMA">National Diploma</option>
+                        <option value="DEGREE">Bachelor's Degree</option>
+                        <option value="MASTERS">Master's Degree</option>
+                        <option value="DOCTORATE">Doctorate Degree</option>
+                    </select>
+                </div>
+
+                <div class="group-double-ip">
+                    <div class="group-input">
+                        <label>Gross Salary</label>
+                        <input class="valid-number second-page" id="grossSalary"
+                               name="grossSalary"
+                               type="text">
+                        <p class="errorText text-center" id="errorGrossSalary"></p>
+                    </div>
+
+                    <div class="group-input">
+                        <label>Net Salary</label>
+                        <input class="valid-number second-page" id="netSalary" name="netSalary" type="text">
+                        <p class="errorText text-center" id="errorNetSalary"></p>
+                    </div>
+                </div>
+
+                <div class="group-checkbox mb-2">
+                    <input class="tf-checkbox st1 second-page" id="agreeToSSB" type="checkbox">
+                    <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
+                </div>
+
+                <div class="mt-2 group-checkbox mb-2">
+                    <input class="tf-checkbox st1 second-page" id="termsAndConditions" type="checkbox">
+                    <span class="fw_3 terms_and_conditions" style="display: block !important;"> I understand and accept the <a
+                            class="terms_and_conditions fw_7" data-toggle="modal"
+                            data-target="#modalhome2" href="#">Terms & Conditions</a></span>
+                </div>
+
+                <p class="fw_3" style="text-align: left !important;">
+                    Sign below to proceed</p>
+
+                <div class="input-field d-flex align-items-center" id="canvas_wrapper"
+                     style="border: 1px dashed; border-radius: 8px;">
+                    <canvas class="w-100" height="70" id="signaturePad"></canvas>
+                </div>
+
+                <div class="group-input mb-2">
+                    <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
+                </div>
+
+                <div class="bottom-navigation-bar st2">
+                    <div class="row w-100">
+                        <div class="col-6">
+                            <button class="tf-btn secondary" id="back-to-page1" type="button">Back</button>
                         </div>
-
-                        <div class="group-double-ip mb-2">
-                            <div class="group-input mb-0">
-                                <label>Station Number</label>
-                                <input class="valid-number second-page" maxlength="4" id="stationNumber"
-                                       name="stationNumber" type="text">
-                            </div>
-
-                            <div class="group-input mb-0">
-                                <label>Profession</label>
-                                <input class="second-page" id="profession" name="profession"
-                                       type="text">
-                                <p class="errorText text-center" id="errorProfession"></p>
-                            </div>
-                        </div>
-
-                        <div class="group-input  mb-2">
-                            <label>Literacy Level</label>
-                            <select id="educationLevel" name="educationLevel">
-                                <option value="PRIMARY">Primary School</option>
-                                <option value="SECONDARY">Secondary School</option>
-                                <option value="O_LEVEL">Ordinary Level</option>
-                                <option value="A_LEVEL">Advanced Level</option>
-                                <option value="NATIONAL_DIPLOMA">National Diploma</option>
-                                <option value="DEGREE">Bachelor's Degree</option>
-                                <option value="MASTERS">Master's Degree</option>
-                                <option value="DOCTORATE">Doctorate Degree</option>
-                            </select>
-                        </div>
-
-                        <div class="group-double-ip mb-2">
-                            <div class="group-input mb-0">
-                                <label>Gross Salary</label>
-                                <input class="valid-number second-page" id="grossSalary"
-                                       name="grossSalary"
-                                       type="text">
-                                <p class="errorText text-center" id="errorGrossSalary"></p>
-                            </div>
-
-                            <div class="group-input mb-0">
-                                <label>Net Salary</label>
-                                <input class="valid-number second-page" id="netSalary" name="netSalary" type="text">
-                                <p class="errorText text-center" id="errorNetSalary"></p>
-                            </div>
-                        </div>
-
-                        <div class="group-checkbox mb-2">
-                            <input class="tf-checkbox st1 second-page" id="agreeToSSB" type="checkbox">
-                            <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
-                        </div>
-
-                        <div class="group-checkbox">
-                            <input class="tf-checkbox st1 second-page" id="termsAndConditions" type="checkbox">
-                            <span class="fw_3 terms_and_conditions" style="display: block !important;"> I understand and accept the <a
-                                    class="terms_and_conditions fw_7 clear-panel" data-dismiss="modal"
-                                    data-target="#modalhome2"
-                                    data-toggle="modal" href="#">Terms & Conditions</a></span>
-                        </div>
-                        <p class="fw_3" style="text-align: left !important;">
-                            Sign below to proceed</p>
-
-                        <div class="input-field d-flex align-items-center" id="canvas_wrapper"
-                             style="border: 1px dashed; border-radius: 8px;">
-                            <canvas class="w-100" height="50" id="signaturePad"></canvas>
-                        </div>
-                        <div class="group-input mb-2">
-                            <a class="link style1" href="#" id="clear_signature">Clear Signature</a>
+                        <div class="col-6">
+                            <button class="tf-btn accent" id="btnSubmitApplication" type="button">Apply</button>
                         </div>
                     </div>
-                    <div class="mt-2 mb-2">
-                        <button class="tf-btn accent" id="btnSubmitApplication"
-                                type="button">Apply Now
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -471,6 +519,52 @@
 
 
 <script th:inline="javascript">
+    // Function to check screen size and adjust layout
+    function adjustForScreenSize() {
+        const viewportHeight = window.innerHeight;
+        const contentHeight = document.body.scrollHeight;
+        const navigationBar = document.getElementById('navigation-bar');
+
+        if (navigationBar) {
+            // If content is taller than viewport or screen is small, use relative positioning
+            if (contentHeight > viewportHeight || window.innerWidth < 768) {
+                navigationBar.classList.remove('bottom-btn-fixed');
+                // Make sure no box-shadow is applied
+                navigationBar.style.boxShadow = 'none';
+                // Add padding to ensure button is visible and not too close to content
+                document.querySelector('#page1 .tf-form').style.marginBottom = '80px';
+            } else {
+                // For larger screens where all content fits, we can fix the nav bar
+                navigationBar.classList.add('bottom-btn-fixed');
+            }
+        }
+    }
+
+    // Page switching functionality
+    document.getElementById('next-page-btn').addEventListener('click', function(e) {
+        e.preventDefault();
+
+        // Validate first page inputs
+        if (ensureValidFirstPageInput()) {
+            document.getElementById('page1').style.display = 'none';
+            document.getElementById('page2').style.display = 'block';
+            // Scroll to top of page 2
+            window.scrollTo(0, 0);
+        }
+    });
+
+    document.getElementById('back-to-page1').addEventListener('click', function(e) {
+        e.preventDefault();
+        document.getElementById('page2').style.display = 'none';
+        document.getElementById('page1').style.display = 'block';
+        // Scroll to top of page 1
+        window.scrollTo(0, 0);
+    });
+
+    // Run on page load
+    window.addEventListener('load', adjustForScreenSize);
+    // Run on window resize
+    window.addEventListener('resize', adjustForScreenSize);
 
     let canvas = document.getElementById('signaturePad');
 
@@ -489,7 +583,7 @@
         ensureValidSecondPageInput();
     };
 
-    $('#btn-popup-down').hide();
+    $('#next-page-btn').hide();
 
     $('#btnSubmitApplication').hide();
 
@@ -618,8 +712,7 @@
 
 
     function ensureValidFirstPageInput() {
-
-        $('#btn-popup-down').hide();
+        $('#next-page-btn').hide();
 
         var valid = true;
 
@@ -652,15 +745,15 @@
             valid = false;
         }
 
-        if ($("#nextOfKinSurname").val() === '') {
-            $("#nextOfKinSurname").addClass("errorInput");
-            $("#errorNextOfKinSurname").show();
-            valid = false;
-        }
-
         if ($('#nextOfKinIdNumber').val() === '') {
             $("#nextOfKinIdNumber").addClass("errorInput");
             $("#errorNextOfKinId").show();
+            valid = false;
+        }
+
+        if ($("#nextOfKinPhone").val() === '') {
+            $("#nextOfKinPhone").addClass("errorInput");
+            $("#errorNextOfKinPhone").show();
             valid = false;
         }
 
@@ -674,10 +767,11 @@
         }
 
         if (!valid) {
-            return;
+            return false;
         }
 
-        $('#btn-popup-down').show();
+        $('#next-page-btn').show();
+        return true;
     }
 
 
