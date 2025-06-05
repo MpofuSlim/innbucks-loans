@@ -220,7 +220,7 @@
                     <div class="group-input">
                         <label>Required Amount</label>
                         <input class="valid-number amount first-page" id="amount" name="amount" type="text">
-                        <p class="errorText text-center" id="errorAmount">$20.00-$2,000.00</p>
+                        <p class="errorText text-center" id="errorAmount"></p>
                     </div>
                 </div>
 
@@ -231,7 +231,7 @@
                         <p class="errorText text-center" id="tenorError">1-24</p>
                     </div>
                     <div class="group-input">
-                        <label for="">Monthly Deduction</label>
+                        <label>Monthly Deduction</label>
                         <input disabled id="repayment_amount"
                                style="color: #d92e40; font-weight: bolder" type="text">
                     </div>
@@ -423,6 +423,7 @@
                         <label>Dept Code No.</label>
                         <input class="valid-number second-page" maxlength="4" id="dptCode" name="dptCode"
                                type="text">
+                        <p class="errorText text-center" id="errorDptCode"></p>
                     </div>
                 </div>
 
@@ -431,6 +432,7 @@
                         <label>Station Number</label>
                         <input class="valid-number second-page" maxlength="4" id="stationNumber"
                                name="stationNumber" type="text">
+                        <p class="errorText text-center" id="errorStationNumber"></p>
                     </div>
 
                     <div class="group-input">
@@ -473,7 +475,7 @@
 
                 <div class="group-checkbox mb-2">
                     <input class="tf-checkbox st1 second-page" id="agreeToSSB" type="checkbox">
-                    <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</a></span>
+                    <span class="fw_3 agree_to_ssb" style="display: block !important;"> I agree to monthly SSB Deductions</span>
                 </div>
 
                 <div class="mt-2 group-checkbox mb-2">
@@ -683,23 +685,28 @@
             valid = false;
         }
 
-        if ($("#profession").val() === '') {
+        var profession = $("#profession").val();
+        if (profession === '') {
             $("#profession").addClass("errorInput");
-            $("#errorProfession").show();
+            $("#errorProfession").text("Required").show();
+            valid = false;
+        } else if (/[^a-zA-Z\s-]/.test(profession)) {
+            $("#profession").addClass("errorInput");
+            $("#errorProfession").text("Letters only").show();
             valid = false;
         }
 
         var grossSalary = parseInt($('#grossSalary').val(), 10);
         if (isNaN(grossSalary) || grossSalary < 0) {
             $("#grossSalary").addClass("errorInput");
-            $("#errorGrossSalary").show();
+            $("#errorGrossSalary").text("Positive number only").show();
             valid = false;
         }
 
         var netSalary = parseInt($('#netSalary').val(), 10);
         if (isNaN(netSalary) || netSalary < 0) {
             $("#netSalary").addClass("errorInput");
-            $("#errorNetSalary").show();
+            $("#errorNetSalary").text("Positive number only").show();
             valid = false;
         }
 
@@ -720,10 +727,12 @@
         $(".errorText").hide();
 
         var amountValue = parseFloat($('#amount').val());
-        if (isNaN(amountValue) || amountValue < $("#minimum_loan_amount").val() || amountValue > $("#maximum_loan_amount").val()) {
+        var minAmount = $("#minimum_loan_amount").val();
+        var maxAmount = $("#maximum_loan_amount").val();
+        if (isNaN(amountValue) || amountValue < minAmount || amountValue > maxAmount) {
             valid = false;
             $("#amount").addClass("errorInput");
-            $("#errorAmount").show();
+            $("#errorAmount").text("$" + parseFloat(minAmount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "-$" + parseFloat(maxAmount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")).show();
         }
 
         var tenor = parseInt($('#tenor').val(), 10);
@@ -733,27 +742,47 @@
             valid = false;
         }
 
-        if ($("#placeOfBirth").val() === '') {
+        var placeOfBirth = $("#placeOfBirth").val();
+        if (placeOfBirth === '') {
             $("#placeOfBirth").addClass("errorInput");
-            $("#errorPlaceOfBirth").show();
+            $("#errorPlaceOfBirth").text("Required").show();
+            valid = false;
+        } else if (/[^a-zA-Z\s-]/.test(placeOfBirth)) {
+            $("#placeOfBirth").addClass("errorInput");
+            $("#errorPlaceOfBirth").text("Letters only").show();
             valid = false;
         }
 
-        if ($("#nextOfKinName").val() === '') {
+        var nextOfKinName = $("#nextOfKinName").val();
+        if (nextOfKinName === '') {
             $("#nextOfKinName").addClass("errorInput");
-            $("#errorNextOfKinName").show();
+            $("#errorNextOfKinName").text("Required").show();
+            valid = false;
+        } else if (/\d/.test(nextOfKinName)) {
+            $("#nextOfKinName").addClass("errorInput");
+            $("#errorNextOfKinName").text("No digits allowed").show();
             valid = false;
         }
 
-        if ($('#nextOfKinIdNumber').val() === '') {
+        var nextOfKinId = $('#nextOfKinIdNumber').val();
+        if (nextOfKinId === '') {
             $("#nextOfKinIdNumber").addClass("errorInput");
-            $("#errorNextOfKinId").show();
+            $("#errorNextOfKinId").text("Required").show();
+            valid = false;
+        } else if (!/^\d{2}-\d{6,7}[A-Za-z]\d{2}$/.test(nextOfKinId)) {
+            $("#nextOfKinIdNumber").addClass("errorInput");
+            $("#errorNextOfKinId").text("Format: 00-000000X00").show();
             valid = false;
         }
 
-        if ($("#nextOfKinPhone").val() === '') {
+        var nextOfKinPhone = $("#nextOfKinPhone").val();
+        if (nextOfKinPhone === '') {
             $("#nextOfKinPhone").addClass("errorInput");
-            $("#errorNextOfKinPhone").show();
+            $("#errorNextOfKinPhone").text("Required").show();
+            valid = false;
+        } else if (!/^\d+$/.test(nextOfKinPhone)) {
+            $("#nextOfKinPhone").addClass("errorInput");
+            $("#errorNextOfKinPhone").text("Digits only").show();
             valid = false;
         }
 
@@ -762,7 +791,7 @@
 
         if (isNaN(numberOfDependencies) || numberOfDependencies < 0) {
             $("#numberOfDependencies").addClass("errorInput");
-            $("#errorNumberOfDependencies").show();
+            $("#errorNumberOfDependencies").text("Positive number only").show();
             valid = false;
         }
 
@@ -877,7 +906,7 @@
         var maximum_loan_amount = $("#maximum_loan_amount").val();
 
         if (isNaN(inputValue) || inputValue < minimum_loan_amount || inputValue > maximum_loan_amount) {
-            $("#errorAmount").show();
+            $("#errorAmount").text("$" + parseFloat(minimum_loan_amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "-$" + parseFloat(maximum_loan_amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")).show();
             $(this).addClass("errorInput");
         } else {
             $("#errorAmount").hide();
@@ -899,7 +928,7 @@
         var inputValue = ecnumber.val();
         var pattern = /^[0-9]{7}[a-zA-Z]$/;
         if (!pattern.test(inputValue)) {
-            $("#errorText").text("Incorrect format").show();
+            $("#errorText").text("Invalid format").show();
             ecnumber.addClass("errorInput");
             return false;
         } else {
@@ -915,9 +944,11 @@
         var pattern = /^[0-9]+$/;
         if (!pattern.test(inputValue)) {
             stationNumber.addClass("errorInput");
+            $("#errorStationNumber").text("Numbers only").show();
             return false;
         } else {
             stationNumber.removeClass("errorInput");
+            $("#errorStationNumber").hide();
             return true;
         }
     }
@@ -928,9 +959,11 @@
         var pattern = /^[0-9]+$/;
         if (!pattern.test(inputValue)) {
             dptCode.addClass("errorInput");
+            $("#errorDptCode").text("Numbers only").show();
             return false;
         } else {
             dptCode.removeClass("errorInput");
+            $("#errorDptCode").hide();
             return true;
         }
     }
