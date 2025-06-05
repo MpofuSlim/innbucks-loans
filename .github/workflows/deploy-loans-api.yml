@@ -1,13 +1,16 @@
 name: Deploy Loans API to AWS EC2
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'loans-api/**'
-      - 'loans-core/**'
-      - 'pom.xml'
+# Workflow disabled - will only run when manually triggered
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'loans-api/**'
+#       - 'loans-core/**'
+#       - 'pom.xml'
+
+on: workflow_dispatch
 
 # Add permissions for GitHub token
 permissions:
