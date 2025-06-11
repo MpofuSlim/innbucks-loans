@@ -8,4 +8,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class NotificationParameters {
     private String username;
     private String password;
+    private String senderName;
 }

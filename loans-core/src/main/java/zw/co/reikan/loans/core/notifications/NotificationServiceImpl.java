@@ -23,7 +23,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Async
     public void sendSms(String mobileNumber, String text) {
         Sms sms = Sms.builder()
-                .from("BulkIT")
+                .from(notificationParameters.getSenderName())
                 .text(text)
                 .to(mobileNumber)
                 .build();
