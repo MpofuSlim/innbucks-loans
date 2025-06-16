@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.disbursements;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -43,5 +44,16 @@ public class InnbucksAuthService {
 
         return responseEntity.getBody().getAccessToken();
 
+    }
+
+    /**
+     * Refreshes the access token by evicting the current token from the cache.
+     * This forces a new token to be fetched the next time getAccessToken() is called.
+     * 
+     * @return The new access token
+     */
+    @CacheEvict(value = "innbucks-access-token-cache", allEntries = true)
+    public String refreshToken() {
+        return getAccessToken();
     }
 }

@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.disbursements;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
@@ -107,8 +108,22 @@ public class InnbucksServiceImpl extends DisbursementService {
                             .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
         }
 
+        LoanAccountCreationRequest requestBody = builder.build();
+        try {
+            return executeCreateLoanAccount(loan, requestBody);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+                log.warn("Token expired during loan account creation. Refreshing token and retrying...");
+                // Refresh token and retry
+                innbucksAuthService.refreshToken();
+                return executeCreateLoanAccount(loan, requestBody);
+            }
+            throw e;
+        }
+    }
 
-        HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(builder.build(),
+    private LoanAccountCreationResponse executeCreateLoanAccount(Loan loan, LoanAccountCreationRequest requestBody) {
+        HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(requestBody,
                 getHttpHeaders(loan.getReference()));
 
         ResponseEntity<String> responseEntity = restTemplate.exchange(
@@ -144,25 +159,18 @@ public class InnbucksServiceImpl extends DisbursementService {
                 builder.destinationAccount(request.getAccountNumber());
             }
 
-            HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(builder.build(), getHttpHeaders(uniqueTxnReference));
-
-            ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
-                    parameters.getDepositEndpoint(),
-                    HttpMethod.POST,
-                    requestEntity,
-                    InnbucksDepositResponse.class);
-
-            final InnbucksDepositResponse depositResponse = responseEntity.getBody();
-
-            final boolean success = depositResponse.getResponseCode() == 0;
-
-            return DisbursementResponse.builder()
-                    .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
-                    .approvalCode(depositResponse.getAuthNumber())
-                    .internalReference(depositResponse.getStan())
-                    .message(Utils.left(depositResponse.getResponseMsg(), 200))
-                    .build();
-
+            InnbucksDepositRequest depositRequest = builder.build();
+            try {
+                return executeDisburseFunds(depositRequest, uniqueTxnReference);
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+                    log.warn("Token expired during funds disbursement. Refreshing token and retrying...");
+                    // Refresh token and retry
+                    innbucksAuthService.refreshToken();
+                    return executeDisburseFunds(depositRequest, uniqueTxnReference);
+                }
+                throw e;
+            }
         } catch (Exception ex) {
             log.error("Error disbursing funds", ex);
             return DisbursementResponse.builder()
@@ -171,6 +179,27 @@ public class InnbucksServiceImpl extends DisbursementService {
                     .message(Utils.left(ex.getMessage(), 200))
                     .build();
         }
+    }
+
+    private DisbursementResponse executeDisburseFunds(InnbucksDepositRequest depositRequest, String uniqueTxnReference) {
+        HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders(uniqueTxnReference));
+
+        ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
+                parameters.getDepositEndpoint(),
+                HttpMethod.POST,
+                requestEntity,
+                InnbucksDepositResponse.class);
+
+        final InnbucksDepositResponse depositResponse = responseEntity.getBody();
+
+        final boolean success = depositResponse.getResponseCode() == 0;
+
+        return DisbursementResponse.builder()
+                .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
+                .approvalCode(depositResponse.getAuthNumber())
+                .internalReference(depositResponse.getStan())
+                .message(Utils.left(depositResponse.getResponseMsg(), 200))
+                .build();
     }
 
     private HttpHeaders getHttpHeaders(String traceId) {

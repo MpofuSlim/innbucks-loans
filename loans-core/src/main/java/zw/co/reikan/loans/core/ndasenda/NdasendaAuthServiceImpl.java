@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.ndasenda;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -44,5 +45,17 @@ public class NdasendaAuthServiceImpl {
 
         return responseEntity.getBody().getAccessToken();
 
+    }
+
+    /**
+     * Refreshes the access token by evicting the current token from the cache.
+     * This forces a new token to be fetched the next time getAccessToken() is called.
+     * 
+     * @return The new access token
+     */
+    @CacheEvict(value = "ndasenda-access-token-cache", allEntries = true)
+    public String refreshToken() {
+        log.info("Refreshing Ndasenda access token");
+        return getAccessToken();
     }
 }
