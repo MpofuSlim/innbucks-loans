@@ -40,7 +40,7 @@ public class LoanAccountCreationJob {
                 LoanAccountStatus.PENDING
         ).forEach(this::createLoanAccount);
     }
-    
+
     private void createLoanAccount(Loan loan) {
         if (isLoanAccountAlreadyCreated(loan)) {
             return;
@@ -72,12 +72,12 @@ public class LoanAccountCreationJob {
         log.info("Loan account created successfully for loan: {}", loan.getId());
 
         loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
-        loan.setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
+        loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
         loan.setDisbursementReference(response.getReference());
-        loan.setDateDisbursed(LocalDateTime.now());
+        // Don't set date disbursed yet as the disbursement is pending
         loan.setDisbursementMerchantAccountNumber(loan.getMerchant().getAccountNumber());
 
-        notifyCustomer(loan);
+        // Don't notify customer yet as the disbursement is pending
     }
 
     private void notifyCustomer(Loan loan) {

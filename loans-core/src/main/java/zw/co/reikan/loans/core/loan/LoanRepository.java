@@ -26,6 +26,9 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
                                                                                      LoanDisbursementStatus disbursementStatus,
                                                                                      InternalApprovalStatus internalApprovalStatus);
 
+    List<Loan> findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus loanAccountStatus,
+                                                           LoanDisbursementStatus disbursementStatus);
+
     List<Loan> findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(LoanApprovalStatus loanApprovaStatus,
                                                                                      InternalApprovalStatus internalApprovalStatus,
                                                                                      LoanAccountStatus loanAccountStatus);

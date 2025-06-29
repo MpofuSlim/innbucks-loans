@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import zw.co.reikan.loans.core.disbursements.LoanAccountCreationResponse;
+import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatusResponse;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -22,6 +23,8 @@ public abstract class DisbursementService {
     public abstract DisbursementResponse disburseFunds(DisbursementRequest request);
 
     public abstract LoanAccountCreationResponse createLoanAccount(Loan loan);
+
+    public abstract LoanDisbursementStatusResponse checkLoanDisbursementStatus(Loan loan);
 
     public void processDisbursement(DisbursementRequest request, Loan loan) {
         DisbursementResponse response = disburseFunds(request);

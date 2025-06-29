@@ -215,4 +215,81 @@ public class InnbucksServiceImpl extends DisbursementService {
         return amount.multiply(CENTS).intValue();
     }
 
+    @Override
+    public LoanDisbursementStatusResponse checkLoanDisbursementStatus(Loan loan) {
+        log.info("Checking loan disbursement status for loan: {} with reference: {}", loan.getId(), loan.getReference());
+
+        try {
+            return executeCheckLoanDisbursementStatus(loan);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+                log.warn("Token expired during loan status check for loan: {}. Refreshing token and retrying...", loan.getId());
+                // Refresh token and retry
+                innbucksAuthService.refreshToken();
+                return executeCheckLoanDisbursementStatus(loan);
+            } else if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                log.warn("Loan not found in Innbucks system for loan: {}", loan.getId());
+                return buildErrorResponse(loan, "Loan not found in Innbucks system: " + e.getMessage());
+            } else {
+                log.error("HTTP error checking loan disbursement status for loan: {}, status: {}", 
+                        loan.getId(), e.getStatusCode(), e);
+                return buildErrorResponse(loan, "HTTP error: " + e.getStatusCode() + " - " + e.getMessage());
+            }
+        } catch (Exception e) {
+            log.error("Unexpected error checking loan disbursement status for loan: {}", loan.getId(), e);
+            return buildErrorResponse(loan, "Unexpected error: " + e.getMessage());
+        }
+    }
+
+    private LoanDisbursementStatusResponse executeCheckLoanDisbursementStatus(Loan loan) {
+        String url = parameters.getLoanInquiryEndpoint().replace("{participantReference}", loan.getReference());
+        log.debug("Checking loan disbursement status at URL: {} for loan: {}", url, loan.getId());
+
+        HttpEntity<Void> requestEntity = new HttpEntity<>(getHttpHeaders(loan.getReference()));
+
+        ResponseEntity<LoanDisbursementStatusResponse> responseEntity = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                requestEntity,
+                LoanDisbursementStatusResponse.class);
+
+        log.debug("Received HTTP status: {} for loan: {}", responseEntity.getStatusCode(), loan.getId());
+
+        LoanDisbursementStatusResponse response = responseEntity.getBody();
+
+        if (response == null) {
+            log.warn("Received null response body from Innbucks API for loan: {}", loan.getId());
+            return buildErrorResponse(loan, "Null response received from Innbucks API");
+        }
+
+        log.info("Loan disbursement status response for loan {}: responseCode={}, description={}, status={}",
+                loan.getId(), response.getResponseCode(), response.getResponseDescription(),
+                response.getAdditionalData() != null && response.getAdditionalData().getLoanDetails() != null ? 
+                        response.getAdditionalData().getLoanDetails().getStatus() : "N/A");
+
+        response.setSuccess(responseEntity.getStatusCode().is2xxSuccessful());
+
+        // Set the loan status based on the response
+        if (response.isSuccess() && response.isApproved()) {
+            response.setStatus(response.determineLoanStatus());
+            log.info("Determined loan status for loan {}: {}", loan.getId(), response.getStatus());
+        } else {
+            response.setStatus(LoanDisbursementStatus.PENDING);
+            log.info("Setting loan status to PENDING for loan {}", loan.getId());
+        }
+
+        return response;
+    }
+
+    private LoanDisbursementStatusResponse buildErrorResponse(Loan loan, String errorMessage) {
+        return LoanDisbursementStatusResponse.builder()
+                .responseCode("999")
+                .responseDescription("Error checking loan status: " + errorMessage)
+                .reference(loan.getReference())
+                .participantReference(loan.getReference())
+                .status(LoanDisbursementStatus.PENDING)
+                .statusMessage(errorMessage)
+                .success(false)
+                .build();
+    }
 }
