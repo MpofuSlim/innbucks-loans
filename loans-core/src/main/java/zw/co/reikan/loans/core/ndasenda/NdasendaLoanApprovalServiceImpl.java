@@ -151,6 +151,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             });
         } catch (ResourceAccessException rae) {
             log.warn("No pending batch to commit");
+        } catch (HttpClientErrorException.NotFound ex) {
+            log.warn("Error committing deduction batch: {}", ex.getMessage());
         } catch (Exception ex) {
             log.error("Error committing deduction batch: ", ex);
         }
