@@ -1,0 +1,4 @@
+# Trivy vulnerability ignore list for the release image scan.
+# Add one CVE ID per line (e.g. CVE-2024-1234) to suppress a finding that has
+# been triaged. The scan in release.yml is report-only by default; once you
+# flip it to gating (--exit-code 1), entries here are what keep it green.
