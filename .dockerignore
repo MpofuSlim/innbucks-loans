@@ -1,0 +1,9 @@
+# Applies to root-context image builds. The per-module Dockerfiles build from
+# their own subdirectory (see docker-compose.yml) and only need target/*.jar.
+.git
+.github
+.idea
+*.iml
+.DS_Store
+.env
+bruno
