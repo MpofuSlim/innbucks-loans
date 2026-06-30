@@ -1,0 +1,18 @@
+version: "1.0"
+
+profile:
+  name: qodana.starter
+
+projectJDK: "21"
+
+# No failureConditions yet: this is the first scan of an existing codebase, so
+# the run is report-only (PR comment + annotations) and never fails the build.
+# Once the initial findings are triaged, add e.g.
+#   failureConditions:
+#     severityThresholds:
+#       any: 15
+#       critical: 5
+# to make Qodana gating. (Test-coverage thresholds are intentionally omitted —
+# the project has no JaCoCo coverage data to evaluate them against.)
+
+linter: jetbrains/qodana-jvm-community:2025.3
