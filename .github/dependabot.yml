@@ -1,0 +1,67 @@
+version: 2
+updates:
+
+  # Maven dependencies for the whole reactor (root pom aggregates the modules).
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "java"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      spring-ecosystem:
+        patterns:
+          - "org.springframework*"
+          - "org.springframework.boot*"
+          - "org.springframework.security*"
+        update-types: ["minor", "patch"]
+      jackson:
+        patterns:
+          - "com.fasterxml.jackson*"
+        update-types: ["minor", "patch"]
+
+  # Base images in each runnable module's Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/loans-api"
+    schedule: { interval: "weekly", day: "monday", time: "08:00", timezone: "Etc/UTC" }
+    open-pull-requests-limit: 3
+    target-branch: "main"
+    labels: ["dependencies", "docker"]
+    commit-message: { prefix: "docker(loans-api)" }
+
+  - package-ecosystem: "docker"
+    directory: "/loans-embedded-ui"
+    schedule: { interval: "weekly", day: "monday", time: "08:00", timezone: "Etc/UTC" }
+    open-pull-requests-limit: 3
+    target-branch: "main"
+    labels: ["dependencies", "docker"]
+    commit-message: { prefix: "docker(loans-embedded-ui)" }
+
+  # GitHub Actions used by the workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    groups:
+      docker-actions:
+        patterns:
+          - "docker/*"

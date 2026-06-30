@@ -1,0 +1,108 @@
+name: Release
+
+# Builds, scans and publishes the runnable service images to GHCR.
+#
+# This does NOT deploy. Deployment stays manual via the existing
+# deploy-loans-api.yml / deploy-loans-embedded-ui.yml workflows. The bare
+# commit-SHA tag pushed here is what rollback.yml pulls to redeploy a known
+# good build.
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "**/Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/release.yml"
+      - "**/pom.xml"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build, scan, push (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - loans-api
+          - loans-embedded-ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # The Dockerfiles COPY a prebuilt jar from target/, so build it first.
+      # -am also builds the loans-core dependency.
+      - name: Build jar
+        run: mvn -B -ntp clean package -DskipTests -pl ${{ matrix.module }} -am
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.module }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=ref,event=pr
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.module }}
+          file: ./${{ matrix.module }}/Dockerfile
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.module }}
+          cache-to: type=gha,scope=${{ matrix.module }},mode=max
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sudo sh -s -- -b /usr/local/bin
+
+      # Report-only (exit-code 0): surfaces CRITICAL/HIGH CVEs in the build log
+      # without failing the release. Flip --exit-code to 1 to make it gating
+      # once the base-image findings have been triaged into .trivyignore.
+      - name: Scan image with Trivy
+        run: |
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --vuln-type os,library \
+            --exit-code 0 \
+            --no-progress \
+            --ignorefile .trivyignore \
+            "$IMAGE"
