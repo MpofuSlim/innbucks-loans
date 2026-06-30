@@ -2,7 +2,7 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-COPY target/loans-embedded-ui-*.jar app.jar
+COPY target/bulkit-loans.jar app.jar
 
 # Create directory for external config
 RUN mkdir -p /app/config
