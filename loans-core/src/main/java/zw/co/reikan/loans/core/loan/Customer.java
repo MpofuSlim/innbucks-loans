@@ -23,6 +23,6 @@ public class Customer {
     private String nationalIdNumber;
 
     @Lob
-    @Column(name = "signature", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "signature", columnDefinition = "text")
     private String signature;
 }

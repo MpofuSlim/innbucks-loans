@@ -19,6 +19,6 @@ public class Witness {
     private LocalDate dateSigned;
 
     @Lob
-    @Column(name = "witness_signature", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "witness_signature", columnDefinition = "text")
     private String signature;
 }

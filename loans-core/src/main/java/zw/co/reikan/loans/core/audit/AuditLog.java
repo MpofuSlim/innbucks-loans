@@ -63,14 +63,14 @@ public class AuditLog implements Serializable {
     private String channelUsed;
 
     /** Compact JSON: {"from":"CREDIT_APPROVED","to":"DISBURSEMENT_PENDING"} */
-    @Column(name = "state_transition_delta", columnDefinition = "TEXT")
+    @Column(name = "state_transition_delta", columnDefinition = "text")
     private String stateTransitionDelta;
 
     /** SHA-256 hex snapshot of the triggering payload. */
     @Column(name = "payload_hash", length = 64)
     private String payloadHash;
 
-    @Column(name = "detail", columnDefinition = "TEXT")
+    @Column(name = "detail", columnDefinition = "text")
     private String detail;
 
     /** Ties multi-step flows together (batch run reference, saga id, idempotency key). */

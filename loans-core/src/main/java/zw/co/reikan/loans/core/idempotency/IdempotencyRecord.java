@@ -71,7 +71,7 @@ public class IdempotencyRecord implements Serializable {
     private String responseContentType;
 
     /** Cached response body replayed verbatim to retried calls. */
-    @Column(name = "response_body", columnDefinition = "TEXT")
+    @Column(name = "response_body", columnDefinition = "text")
     private String responseBody;
 
     @Column(name = "created_at", nullable = false, updatable = false)

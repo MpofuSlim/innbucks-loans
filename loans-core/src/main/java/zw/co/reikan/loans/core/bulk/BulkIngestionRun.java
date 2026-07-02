@@ -57,7 +57,7 @@ public class BulkIngestionRun implements Serializable {
     private String channelUsed;
 
     /** Compact per-item failure map: "idx 14: Ndasenda timeout; idx 89: bad EC number". */
-    @Column(name = "error_summary", columnDefinition = "TEXT")
+    @Column(name = "error_summary", columnDefinition = "text")
     private String errorSummary;
 
     @Column(name = "created_at", nullable = false, updatable = false)
