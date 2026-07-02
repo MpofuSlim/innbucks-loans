@@ -60,7 +60,6 @@ public class ApiSecurityConfig {
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                         jwt.jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())))
-                .oauth2Login(oauth2Login -> {})
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .build();
     }
