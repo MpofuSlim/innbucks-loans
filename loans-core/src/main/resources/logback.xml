@@ -26,8 +26,7 @@
         </filter>
     </appender>
 
-    <root>
-        <level value="INFO" />
+    <root level="INFO">
         <appender-ref ref="consoleAppender" />
         <appender-ref ref="fileAppender" />
     </root>
@@ -38,10 +37,6 @@
     <logger name="org.apache.http.client.protocol" level="ERROR" />
 
     <!-- Spring Web Service Payload Logging-->
-    <logger name="org.springframework.ws.client.MessageTracing">
-        <level value="TRACE" />
-    </logger>
-    <logger name="org.springframework.ws.server.MessageTracing">
-        <level value="TRACE" />
-    </logger>
+    <logger name="org.springframework.ws.client.MessageTracing" level="TRACE" />
+    <logger name="org.springframework.ws.server.MessageTracing" level="TRACE" />
 </configuration>
