@@ -41,17 +41,9 @@ spring:
 
   security:
     oauth2:
-      client:
-        provider:
-          keycloak:
-            issuer-uri: "${bulkit.auth-url}/realms/${bulkit.realm}"
-            user-name-attribute: preferred_username
       resourceserver:
         jwt:
-          issuer-uri: "${spring.security.oauth2.client.provider.keycloak.issuer-uri}"
-
-encryption-key: "${ENCRYPTION_KEY:}"
-encryption-key-v2: "${ENCRYPTION_KEY_V2:}"
+          issuer-uri: "${bulkit.auth-url}/realms/${bulkit.realm}"
 
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
@@ -94,8 +86,6 @@ notification:
 bulkit:
   client-id: "${BULKIT_CLIENT_ID:}"
   auth-url: "${BULKIT_AUTH_URL:http://ec2-13-246-17-72.af-south-1.compute.amazonaws.com:8380}"
-  client-secret: "${BULKIT_CLIENT_SECRET:}"
-  principal-attribute: preferred_username
   realm: "${BULKIT_REALM:bulkit-loans-prod-realm}"
   username: "${BULKIT_USERNAME:admin}"
   password: "${BULKIT_PASSWORD:}"
