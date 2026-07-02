@@ -116,6 +116,14 @@ public class Loan extends BaseEntity {
     @Column(name = "batch_number")
     private String batchNumber;
 
+    /**
+     * Human-facing sequential reference (LN-2026-00042), assigned by
+     * {@link LoanPublicReferenceService}. Additive — the internal
+     * {@link #getReference()} used by the Ndasenda integration is unchanged.
+     */
+    @Column(name = "public_reference", length = 20)
+    private String publicReference;
+
     @Column(name = "commission_rate")
     private BigDecimal commissionRate;
 
