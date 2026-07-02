@@ -1,4 +1,5 @@
-package zw.co.reikan.loans;
+package zw.co.reikan.loans.controller;
+import zw.co.reikan.loans.dto.ChangePasswordRequest;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

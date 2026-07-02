@@ -1,4 +1,4 @@
-package zw.co.reikan.loans;
+package zw.co.reikan.loans.advice;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
