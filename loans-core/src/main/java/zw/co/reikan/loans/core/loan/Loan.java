@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 
 @Data
 @Table(name = "loan_request", indexes = {
-        @Index(name = "idx_batch_number", columnList = "batch_number"),
+        @Index(name = "idx_loan_request_batch_number", columnList = "batch_number"),
         @Index(name = "idx_ec_number", columnList = "ec_number")
 })
 @Builder

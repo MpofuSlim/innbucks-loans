@@ -9,7 +9,7 @@ import jakarta.persistence.*;
 
 @Data
 @Table(name = "loan_batch", indexes = {
-        @Index(name = "idx_batch_number", columnList = "batch_number", unique = true)
+        @Index(name = "uq_loan_batch_batch_number", columnList = "batch_number", unique = true)
 })
 @Builder
 @AllArgsConstructor
