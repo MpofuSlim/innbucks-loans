@@ -49,7 +49,7 @@ jobs:
           echo "Rolling back ${{ inputs.service }} to ${{ inputs.target_sha }}"
 
       - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
