@@ -3,9 +3,8 @@ name: Release
 # Builds, scans and publishes the runnable service images to GHCR.
 #
 # This does NOT deploy. Deployment stays manual via the existing
-# deploy-loans-api.yml / deploy-loans-embedded-ui.yml workflows. The bare
-# commit-SHA tag pushed here is what rollback.yml pulls to redeploy a known
-# good build.
+# deploy-loans-api.yml workflow. The bare commit-SHA tag pushed here is what
+# rollback.yml pulls to redeploy a known good build.
 on:
   push:
     branches: [main]
@@ -36,7 +35,6 @@ jobs:
       matrix:
         module:
           - loans-api
-          - loans-embedded-ui
 
     steps:
       - name: Checkout

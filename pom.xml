@@ -12,6 +12,5 @@
     <modules>
         <module>loans-api</module>
         <module>loans-core</module>
-        <module>loans-embedded-ui</module>
     </modules>
 </project>

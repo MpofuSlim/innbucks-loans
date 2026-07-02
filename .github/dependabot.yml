@@ -38,14 +38,6 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message: { prefix: "docker(loans-api)" }
 
-  - package-ecosystem: "docker"
-    directory: "/loans-embedded-ui"
-    schedule: { interval: "weekly", day: "monday", time: "08:00", timezone: "Etc/UTC" }
-    open-pull-requests-limit: 3
-    target-branch: "main"
-    labels: ["dependencies", "docker"]
-    commit-message: { prefix: "docker(loans-embedded-ui)" }
-
   # GitHub Actions used by the workflows.
   - package-ecosystem: "github-actions"
     directory: "/"
