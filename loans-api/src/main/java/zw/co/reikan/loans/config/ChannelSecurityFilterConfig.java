@@ -1,4 +1,4 @@
-package zw.co.reikan.loans;
+package zw.co.reikan.loans.config;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;

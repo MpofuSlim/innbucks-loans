@@ -1,4 +1,4 @@
-package zw.co.reikan.loans;
+package zw.co.reikan.loans.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -1,4 +1,4 @@
-package zw.co.reikan.loans;
+package zw.co.reikan.loans.security;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletResponse;
