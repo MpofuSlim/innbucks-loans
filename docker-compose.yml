@@ -48,7 +48,7 @@ services:
       # Load the packaged config, then override only the datasource so the app
       # talks to the postgres service instead of localhost. (The image's
       # default SPRING_CONFIG_LOCATION points at an empty /app/config mount.)
-      SPRING_CONFIG_LOCATION: classpath:/application.properties
+      SPRING_CONFIG_LOCATION: classpath:/application.yml
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bulkit_loans}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
