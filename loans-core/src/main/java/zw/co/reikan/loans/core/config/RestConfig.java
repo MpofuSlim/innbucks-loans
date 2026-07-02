@@ -18,8 +18,10 @@ public class RestConfig {
 
     @Bean
     public RestTemplate restTemplate(LoggingInterceptor loggingInterceptor) {
+        // setOutputStreaming(false) was removed in Spring Framework 7; the
+        // BufferingClientHttpRequestFactory wrapper below provides the same
+        // request/response buffering (needed by the logging interceptor).
         final SimpleClientHttpRequestFactory simpleClientHttpRequestFactory = new SimpleClientHttpRequestFactory();
-        simpleClientHttpRequestFactory.setOutputStreaming(false);
         final BufferingClientHttpRequestFactory
                 bufferingClientHttpRequestFactory = new BufferingClientHttpRequestFactory(simpleClientHttpRequestFactory);
         RestTemplate restTemplate = new RestTemplate(bufferingClientHttpRequestFactory);
