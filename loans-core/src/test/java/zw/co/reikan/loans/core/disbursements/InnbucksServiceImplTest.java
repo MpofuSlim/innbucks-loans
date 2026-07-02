@@ -163,7 +163,7 @@ class InnbucksServiceImplTest {
     @Test
     void checkLoanDisbursementStatus_shouldHandleNullResponse() {
         // Arrange
-        ResponseEntity<LoanDisbursementStatusResponse> responseEntity = new ResponseEntity<>(null, HttpStatus.OK);
+        ResponseEntity<LoanDisbursementStatusResponse> responseEntity = new ResponseEntity<>((LoanDisbursementStatusResponse) null, HttpStatus.OK);
         when(restTemplate.exchange(
                 anyString(),
                 eq(HttpMethod.GET),
