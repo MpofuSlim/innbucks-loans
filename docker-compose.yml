@@ -3,11 +3,11 @@ name: innbucks-loans
 # Local development stack for the loans platform.
 #
 #   docker compose up -d                 # just PostgreSQL (for `mvn spring-boot:run`)
-#   docker compose --profile apps up -d  # PostgreSQL + the API and embedded UI
+#   docker compose --profile apps up -d  # PostgreSQL + the API
 #
-# The app services are opt-in (profile "apps") because they require a jar to be
+# The app service is opt-in (profile "apps") because it requires a jar to be
 # built first and the application context contacts an external Keycloak issuer
-# at startup. Build the jars before bringing them up:
+# at startup. Build the jar before bringing it up:
 #
 #   mvn clean package -DskipTests
 #   docker compose --profile apps up -d --build
@@ -54,25 +54,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "8080:8080"
-
-  loans-embedded-ui:
-    profiles: ["apps"]
-    build:
-      context: ./loans-embedded-ui
-      dockerfile: Dockerfile
-    image: loans-embedded-ui:dev
-    container_name: innbucks-loans-ui
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      SPRING_CONFIG_LOCATION: classpath:/application.properties
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bulkit_loans}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "8090:8080"
 
 volumes:
   postgres_data:

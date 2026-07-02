@@ -32,16 +32,16 @@ jobs:
           java-version: "21"
           cache: maven
 
-      # Build the whole reactor and run the unit tests. The two
-      # @SpringBootTest contextLoads() tests (LoansApiApplicationTests,
-      # LoansEmbeddedUiApplicationTests) boot the full application context,
-      # which eagerly contacts the Keycloak issuer and a live database — both
-      # unreachable from CI — so they are excluded here. Everything else
-      # (compilation of all three modules + the loans-core unit tests) runs.
+      # Build the whole reactor and run the unit tests. The
+      # @SpringBootTest contextLoads() test (LoansApiApplicationTests) boots
+      # the full application context, which eagerly contacts the Keycloak
+      # issuer and a live database — both unreachable from CI — so it is
+      # excluded here. Everything else (compilation of both modules + the
+      # loans-core unit tests) runs.
       - name: Build + test
         run: >
           mvn -B -ntp clean verify
-          -Dtest='!LoansApiApplicationTests,!LoansEmbeddedUiApplicationTests'
+          -Dtest='!LoansApiApplicationTests'
           -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Upload Surefire reports

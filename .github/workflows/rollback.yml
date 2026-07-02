@@ -12,7 +12,6 @@ on:
         type: choice
         options:
           - loans-api
-          - loans-embedded-ui
       target_sha:
         description: "Full 40-char commit SHA to roll back to (image pulled at tag <this>)."
         required: true
@@ -74,10 +73,6 @@ jobs:
               loans-api)
                 CONTAINER=loans-api-container
                 PORT_MAP=8080:8080
-                ;;
-              loans-embedded-ui)
-                CONTAINER=loans-embedded-ui-container
-                PORT_MAP=8081:8080
                 ;;
               *)
                 echo "::error::Unknown service: $SERVICE"; exit 1 ;;
