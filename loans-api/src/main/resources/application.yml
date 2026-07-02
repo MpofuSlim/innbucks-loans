@@ -1,0 +1,128 @@
+server:
+  port: 8090
+  error:
+    whitelabel:
+      enabled: false
+
+spring:
+  profiles:
+    active: api,dummy-loan-approval
+
+  # --- PostgreSQL (local development) ---
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/bulkit_loans
+    username: postgres
+    password: postgres
+    hikari:
+      maximum-pool-size: 19
+      minimum-idle: 7
+      data-source-properties:
+        stringtype: unspecified
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    defer-datasource-initialization: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 1000
+        hbm2dll:
+          create_namespaces: true
+        globally_quoted_identifiers: true
+      org:
+        hibernate:
+          envers:
+            default_schema: audit
+
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            issuer-uri: "${bulkit.auth-url}/realms/${bulkit.realm}"
+            user-name-attribute: preferred_username
+      resourceserver:
+        jwt:
+          issuer-uri: "${spring.security.oauth2.client.provider.keycloak.issuer-uri}"
+
+encryption-key: "${ENCRYPTION_KEY:}"
+encryption-key-v2: "${ENCRYPTION_KEY_V2:}"
+
+ndasenda:
+  base-url: https://sandbox.deductions.ndasenda.co.zw
+  auth-endpoint: "${ndasenda.base-url}/connect/token"
+  deduction-requests-endpoint: "${ndasenda.base-url}/api/v1/deductions/requests"
+  find-batch-endpoint: "${ndasenda.base-url}/api/v1/deductions/requests/{id}"
+  commit-deductions-endpoint: "${ndasenda.base-url}/api/v1/deductions/requests/commit/{id}"
+  deduction-requests-by-date-range-endpoint: "${ndasenda.base-url}/api/v1/deductions/requests/{fromDate}/{toDate}/{deductionCode}"
+  deduction-responses-by-date-range-endpoint: "${ndasenda.base-url}/api/v1/deductions/responses/{fromDate}/{toDate}/{deductionCode}"
+  deduction-responses-by-batch-id: "${ndasenda.base-url}/api/v1/deductions/responses/{id}"
+  grant-type: password
+  password: "${NDASENDA_PASSWORD:}"
+  username: "${NDASENDA_USERNAME:}"
+  security-code: "${NDASENDA_SECURITY_CODE:}"
+  deduction-code: "${NDASENDA_DEDUCTION_CODE:}"
+  commit:
+    deduction:
+      batch:
+        requests:
+          cron: "0 */5 * * * ?"
+  fetch:
+    deduction:
+      batch:
+        responses:
+          cron: "0 */10 * * * ?"
+
+innbucks:
+  api-key: "${INNBUCKS_API_KEY:}"
+  username: "${INNBUCKS_USERNAME:}"
+  password: "${INNBUCKS_PASSWORD:}"
+  base-url: "${INNBUCKS_BASE_URL:https://staging.innbucks.co.zw}"
+  auth-endpoint: "${innbucks.base-url}/auth/merchant/login"
+  deposit-endpoint: "${innbucks.base-url}/api/transaction/deposit"
+
+notification:
+  username: "${NOTIFICATION_USERNAME:autoloan@bulkit.co.zw}"
+  password: "${NOTIFICATION_PASSWORD:}"
+  senderName: InnBucks
+
+bulkit:
+  client-id: "${BULKIT_CLIENT_ID:}"
+  auth-url: "${BULKIT_AUTH_URL:http://ec2-13-246-17-72.af-south-1.compute.amazonaws.com:8380}"
+  client-secret: "${BULKIT_CLIENT_SECRET:}"
+  principal-attribute: preferred_username
+  realm: "${BULKIT_REALM:bulkit-loans-prod-realm}"
+  username: "${BULKIT_USERNAME:admin}"
+  password: "${BULKIT_PASSWORD:}"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# --- Cross-channel security & idempotency engine ---------------------------
+# Modes: DISABLED | MONITOR | ENFORCE.
+# MONITOR (default) verifies, audits and replays idempotent responses but never
+# rejects — existing traffic is unaffected. Flip to ENFORCE per environment
+# once every channel gateway signs its requests (docs/integration/channel-signing.js).
+channel-security:
+  mode: "${CHANNEL_SECURITY_MODE:MONITOR}"
+  clock-skew: "${CHANNEL_SECURITY_CLOCK_SKEW:5m}"
+  idempotency-ttl: "${CHANNEL_SECURITY_IDEMPOTENCY_TTL:24h}"
+  velocity-limit: "${CHANNEL_SECURITY_VELOCITY_LIMIT:50}"
+  velocity-window: "${CHANNEL_SECURITY_VELOCITY_WINDOW:60s}"
+  # Per-channel HMAC secrets — supply via env/vault, never commit values:
+  #secrets:
+  #  whatsapp_gateway: "${CHANNEL_SECRET_WHATSAPP:}"
+  #  admin_portal: "${CHANNEL_SECRET_ADMIN_PORTAL:}"
+
+# --- Bulk ingestion pipeline ------------------------------------------------
+bulk-ingestion:
+  chunk-size: "${BULK_INGESTION_CHUNK_SIZE:100}"
+  max-batch-size: "${BULK_INGESTION_MAX_BATCH_SIZE:5000}"
