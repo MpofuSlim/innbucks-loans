@@ -75,7 +75,7 @@ public class Loan extends BaseEntity {
     private LocalDate dateOfBirth;
 
     @Lob
-    @Column(name = "signature", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "signature", columnDefinition = "text")
     private String signature;
 
     @Enumerated(value = EnumType.STRING)
@@ -249,11 +249,11 @@ public class Loan extends BaseEntity {
     private Channel channel;
 
     @Lob
-    @Column(name = "national_id_picture", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "national_id_picture", columnDefinition = "text")
     private String nationalIdPicture;
 
     @Lob
-    @Column(name = "payslip_picture", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "payslip_picture", columnDefinition = "text")
     private String payslipPicture;
 
     public String getReference() {

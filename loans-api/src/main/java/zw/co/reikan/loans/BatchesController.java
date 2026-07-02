@@ -37,7 +37,14 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
                 "2. Please contact  _support@bulkit.co.zw_ for support.\n")
 public class BatchesController {
 
-    @Autowired
+    /**
+     * Optional: {@link NdasendaLoanApprovalServiceImpl} is only registered under
+     * {@code @Profile("!dummy-loan-approval")}. When the dummy-loan-approval
+     * profile is active (local/dev), this stays null and the two endpoints
+     * below that depend on it fail fast with a clear message instead of
+     * preventing the whole application context from starting.
+     */
+    @Autowired(required = false)
     private NdasendaLoanApprovalServiceImpl ndasendaLoanApprovalService;
 
     @Autowired
@@ -137,7 +144,7 @@ public class BatchesController {
     @PostMapping("/batches/search")
     public FindNdasendaBatchResponse findNdasendaBatches(@RequestBody FindNdasendaBatchRequest request) {
         log.info("Searching batches: {}", request);
-        return FindNdasendaBatchResponse.builder().batches(ndasendaLoanApprovalService.findBatches(request)).build();
+        return FindNdasendaBatchResponse.builder().batches(requireNdasendaService().findBatches(request)).build();
     }
 
     @Operation(summary = "GET BATCH BY ID",
@@ -156,7 +163,7 @@ public class BatchesController {
     })
     @GetMapping("/batches/{batchId}")
     public NdasendaDeductionsBatchRequest getBatchDetails(@PathVariable String batchId) {
-        final List<NdasendaDeductionsBatchRequest> responses = ndasendaLoanApprovalService.findDeductionResponsesByBatchId(batchId);
+        final List<NdasendaDeductionsBatchRequest> responses = requireNdasendaService().findDeductionResponsesByBatchId(batchId);
         if (CollectionUtils.isEmpty(responses)) {
             return null;
         }
@@ -168,6 +175,14 @@ public class BatchesController {
         return findUserService.resolveUserFromAccessToken(token)
                 .map(u -> u.getMerchant().getMerchantCode())
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+    }
+
+    private NdasendaLoanApprovalServiceImpl requireNdasendaService() {
+        if (ndasendaLoanApprovalService == null) {
+            throw new IllegalStateException(
+                    "Ndasenda batch endpoints are unavailable: the dummy-loan-approval profile is active");
+        }
+        return ndasendaLoanApprovalService;
     }
 
 }
