@@ -55,7 +55,8 @@ public class BatchesController {
     private FindUserService findUserService;
 
 
-    @Operation(summary = "SEARCH LOANS",
+    @Operation(operationId = "searchLoans",
+            summary = "SEARCH LOANS",
             description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
@@ -101,7 +102,8 @@ public class BatchesController {
         return new LoansWrapper(loanService.findLoans(request));
     }
 
-    @Operation(summary = "GET LOAN BY ID",
+    @Operation(operationId = "getLoanById",
+            summary = "GET LOAN BY ID",
             description = "Provided with a loan id, this endpoint returns a loans details",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )

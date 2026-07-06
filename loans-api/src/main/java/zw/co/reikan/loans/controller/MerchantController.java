@@ -74,7 +74,8 @@ public class MerchantController {
         return ResponseEntity.ok(merchant);
     }
 
-    @Operation(summary = "CREATE AGENT",
+    @Operation(operationId = "createMerchantAgent",
+            summary = "CREATE AGENT",
             description = "Create merchant Agent or User",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
@@ -189,7 +190,8 @@ public class MerchantController {
 //    }
 
 
-    @Operation(summary = "FIND LOANS",
+    @Operation(operationId = "findMerchantLoans",
+            summary = "FIND LOANS",
             description = "List all loans for the given merchant",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
