@@ -34,10 +34,9 @@ jobs:
 
       # Build the whole reactor and run the unit tests. The
       # @SpringBootTest contextLoads() test (LoansApiApplicationTests) boots
-      # the full application context, which eagerly contacts the Keycloak
-      # issuer and a live database — both unreachable from CI — so it is
-      # excluded here. Everything else (compilation of both modules + the
-      # loans-core unit tests) runs.
+      # the full application context, which needs a live database —
+      # unreachable from CI — so it is excluded here. Everything else
+      # (compilation of both modules + the loans-core unit tests) runs.
       - name: Build + test
         run: >
           mvn -B -ntp clean verify

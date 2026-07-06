@@ -1,10 +1,9 @@
 package zw.co.reikan.loans.core;
 
-import org.apache.commons.codec.binary.Base64;
-
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.util.Base64;
 
 public class CryptoHelper {
 
@@ -34,7 +33,7 @@ public class CryptoHelper {
 
     public static String encrypt(String data, String secretKey) throws Exception {
         CryptoHelper enc = new CryptoHelper(secretKey);
-        return Base64.encodeBase64String(enc.encryptInternal(data));
+        return Base64.getEncoder().encodeToString(enc.encryptInternal(data));
     }
 
     public static String decrypt(String data, String secretKey) throws Exception {
@@ -65,7 +64,7 @@ public class CryptoHelper {
         byte[] decrypted = null;
         try {
             cipher.init(Cipher.DECRYPT_MODE, keyspec, ivspec);
-            decrypted = cipher.doFinal(Base64.decodeBase64(code));
+            decrypted = cipher.doFinal(Base64.getDecoder().decode(code));
         } catch (Exception e) {
             throw new Exception("[decrypt] " + e.getMessage());
         }

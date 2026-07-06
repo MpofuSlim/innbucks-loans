@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.api.AuthRequest;
 import zw.co.reikan.loans.core.api.AuthResponse;
 import zw.co.reikan.loans.core.api.ForgotPasswordRequest;
-import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.user.CreateUserService;
 
 @RestController
@@ -26,7 +26,7 @@ import zw.co.reikan.loans.core.user.CreateUserService;
 public class AuthController {
 
     @Autowired
-    private KeyCloakServiceImpl keyCloakService;
+    private AuthService authService;
 
     @Autowired
     private CreateUserService createUserService;
@@ -48,7 +48,7 @@ public class AuthController {
     public AuthResponse authenticate(@RequestBody AuthRequest authRequest) {
         try {
             log.info("Authenticating user: {}", authRequest.getUsername());
-            return keyCloakService.login(authRequest);
+            return authService.login(authRequest);
         } catch (Exception ex) {
             log.error("Error getting access token.", ex);
             throw new BadCredentialsException(ex.getMessage());

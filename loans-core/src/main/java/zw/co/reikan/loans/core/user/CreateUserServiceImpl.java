@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.user;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
@@ -14,15 +15,16 @@ import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.DuplicateUserByUsernameException;
 import zw.co.reikan.loans.core.exception.ValidationException;
-import zw.co.reikan.loans.core.keycloak.KeycloakService;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantMapper;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static zw.co.reikan.loans.core.StartupTask.ZERO_BASED_DEFAULT;
@@ -44,7 +46,7 @@ public class CreateUserServiceImpl implements CreateUserService {
     private static final Logger logger = LoggerFactory.getLogger(CreateUserServiceImpl.class);
     private final MerchantRepository merchantRepository;
     private final UserRepository userRepository;
-    private final KeycloakService keycloakService;
+    private final PasswordEncoder passwordEncoder;
     private final Random random;
     private final MerchantMapper merchantMapper;
     private final NotificationService notificationService;
@@ -92,10 +94,14 @@ public class CreateUserServiceImpl implements CreateUserService {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new DuplicateUserByUsernameException(request.getUsername()));
         String generatedPassword = generatePassword();
-        keycloakService.resetPassword(generatedPassword, user.getExternalSystemId(), user.getUsername());
-        UserDTO userDTO = keycloakService.getUser(user.getExternalSystemId());
+        user.setPassword(passwordEncoder.encode(generatedPassword));
         user.setTemporaryPassword(true);
         userRepository.save(user);
+
+        UserDTO userDTO = new UserDTO();
+        userDTO.setFirstName(user.getFirstName());
+        userDTO.setUsername(user.getUsername());
+        userDTO.setMobileNumber(user.getMobileNumber());
         notifyUser(userDTO, generatedPassword);
     }
 
@@ -117,13 +123,19 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         String generatedPassword = generatePassword();
 
-        String externalSystemId = keycloakService.addUser(createUserRequest, generatedPassword);
-
         User user = new User();
-        user.setExternalSystemId(externalSystemId);
+        user.setExternalSystemId(UUID.randomUUID().toString());
         user.setMerchant(merchant);
         user.setTemporaryPassword(true);
         user.setUsername(createUserRequest.getUsername());
+        user.setPassword(passwordEncoder.encode(generatedPassword));
+        user.setFirstName(createUserRequest.getFirstName());
+        user.setLastName(createUserRequest.getLastName());
+        user.setEmail(createUserRequest.getEmail());
+        user.setMobileNumber(MsisdnUtil.formatMsisdnInternational(createUserRequest.getMobileNumber()));
+        user.setIdNumber(Utils.trimSpecialCharacters(createUserRequest.getIdNumber()).toUpperCase());
+        user.setGroups(createUserRequest.getGroups() == null ? new HashSet<>()
+                : new HashSet<>(createUserRequest.getGroups()));
         user.setAgent(createUserRequest.getAgent());
         user.setCommissionGroup(commissionGroup);
         user.setPhysicalAddress(createUserRequest.getPhysicalAddress());

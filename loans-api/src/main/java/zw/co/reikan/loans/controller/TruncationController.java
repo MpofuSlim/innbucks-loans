@@ -13,7 +13,6 @@ import zw.co.reikan.loans.core.api.CreateAgentRequest;
 import zw.co.reikan.loans.core.api.CreateUserResponse;
 import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.ValidationException;
-import zw.co.reikan.loans.core.keycloak.KeycloakService;
 import zw.co.reikan.loans.core.loan.LoanBatchRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.merchant.Merchant;
@@ -38,7 +37,6 @@ public class TruncationController {
     private final UserRepository userRepository;
     private final LoanRepository loanRepository;
     private final LoanBatchRepository loanBatchRepository;
-    private final KeycloakService keycloakService;
     private final MerchantRepository merchantRepository;
     private final CreateUserService createUserService;
     private final CommissionGroupRepository commissionGroupRepository;
@@ -104,7 +102,6 @@ public class TruncationController {
         users.forEach(u -> {
                     if (!u.getUsername().equalsIgnoreCase(User.SYSTEM_USER_NAME)) {
                         log.info("Deleting user {}", u.getUsername());
-                        keycloakService.deleteUser(u.getExternalSystemId());
                         try {
                             userRepository.delete(u);
                         } catch (DataIntegrityViolationException e) {

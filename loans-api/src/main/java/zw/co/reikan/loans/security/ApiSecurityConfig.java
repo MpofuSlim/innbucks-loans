@@ -17,7 +17,7 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
-import zw.co.reikan.loans.core.keycloak.KeycloakJwtAuthenticationConverter;
+import zw.co.reikan.loans.core.auth.RolesJwtAuthenticationConverter;
 
 import java.util.List;
 
@@ -59,7 +59,7 @@ public class ApiSecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
-                        jwt.jwtAuthenticationConverter(new KeycloakJwtAuthenticationConverter())))
+                        jwt.jwtAuthenticationConverter(new RolesJwtAuthenticationConverter())))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .build();
     }

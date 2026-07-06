@@ -16,7 +16,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.api.*;
-import zw.co.reikan.loans.core.keycloak.KeycloakService;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.merchant.FindMerchantsResponse;
 import zw.co.reikan.loans.core.merchant.MerchantService;
@@ -39,7 +39,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 public class MerchantController {
 
     private final MerchantService merchantService;
-    private final KeycloakService keycloakService;
+    private final AuthService authService;
     private final CreateUserService createUserService;
     private final LoanService loanService;
     private final FindUserService findUserService;
@@ -160,16 +160,16 @@ public class MerchantController {
         boolean canViewAllUsers = findUserService.hasAnyRole(token, List.of(UserGroup.ORGANISATION_SUPER_USER.name(),
                 UserGroup.RETAIL_SALES.name(), UserGroup.BULKIT_ADMIN.name(), UserGroup.CREDIT_MANAGER.name()));
 
-        List<UserDTO> keycloakUsers = keycloakService.findUsersByMerchantCode(code);
+        List<UserDTO> merchantUsers = authService.findUsersByMerchantCode(code);
 
         if (canViewAllUsers) {
-            return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
+            return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers).build());
         }
 
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
 
-        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers.stream()
+        return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers.stream()
                 .filter(u -> loggedInUser.getId().equals(u.getAgentId()))
                 .toList()).build());
     }
