@@ -1,5 +1,6 @@
 package zw.co.reikan.loans.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +43,7 @@ public class TruncationController {
     private final CommissionGroupRepository commissionGroupRepository;
 
 
+    @Operation(operationId = "seedTestAgent", summary = "SEED TEST AGENT")
     @PostMapping({"/auth/6fab0a61-637b-4cb9-a9ac-ddf61af32400"})
     public ResponseEntity<SaveUserResponse> createAgent(@RequestBody CreateAgentRequest createUserRequest) {
 

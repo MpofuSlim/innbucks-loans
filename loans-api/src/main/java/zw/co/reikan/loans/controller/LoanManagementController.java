@@ -36,7 +36,8 @@ public class LoanManagementController {
     @Autowired
     private InternalApprovalService internalApprovalService;
 
-    @Operation(summary = "DISBURSE LOANS",
+    @Operation(operationId = "disburseLoan",
+            summary = "DISBURSE LOANS",
             description = "Disburses a pending loan",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
