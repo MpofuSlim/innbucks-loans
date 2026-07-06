@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.api.LoanStatisticsResponse;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -43,4 +44,27 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     LoanStatisticsResponse getLoanStatistics(@Param("agentId") Long agentId,
                                              @Param("startDate") LocalDateTime startDate,
                                              @Param("endDate") LocalDateTime endDate);
+
+    // --- Admin dashboard aggregates -----------------------------------------
+
+    long countByLoanApprovalStatusAndInternalApprovalStatus(LoanApprovalStatus loanApprovalStatus,
+                                                            InternalApprovalStatus internalApprovalStatus);
+
+    @Query("select l.loanApprovalStatus, count(l) from Loan l group by l.loanApprovalStatus")
+    List<Object[]> countGroupedByApprovalStatus();
+
+    @Query("select l.disbursementStatus, count(l) from Loan l where l.disbursementStatus is not null group by l.disbursementStatus")
+    List<Object[]> countGroupedByDisbursementStatus();
+
+    @Query("""
+            select coalesce(sum(l.disbursedAmount), 0) from Loan l
+            where l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+            """)
+    BigDecimal sumDisbursedAmountForSuccessfulDisbursements();
+
+    @Query("""
+            select coalesce(sum(l.agentCommission), 0) from Loan l
+            where l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+            """)
+    BigDecimal sumAgentCommissionForSuccessfulDisbursements();
 }
