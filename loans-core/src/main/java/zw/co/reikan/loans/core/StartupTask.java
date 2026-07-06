@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import static zw.co.reikan.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
 import static zw.co.reikan.loans.core.loan.DisbursementType.CUSTOMER_MOBILE_WALLET;
 import static zw.co.reikan.loans.core.merchant.Merchant.DEFAULT_MERCHANT_CODE;
 import static zw.co.reikan.loans.core.merchant.Merchant.DEFAULT_MERCHANT_NAME;
@@ -134,18 +135,25 @@ public class StartupTask implements CommandLineRunner {
     private void createDefaultMerchant() {
         log.info("Attempting to create Innbucks default merchant service");
         try {
+            if (merchantRepository.existsByMerchantCode(DEFAULT_MERCHANT_CODE)) {
+                log.info("Default merchant already exists");
+                return;
+            }
 
-            commissionGroupRepository.findByNameIgnoreCase(FAVORING_BULK_IT)
+            CommissionGroup defaultGroup = commissionGroupRepository.findByNameIgnoreCase(FAVORING_BULK_IT)
                     .orElseThrow(() -> new ValidationException("Default commission group not found"));
 
             merchantService.createMerchant(CreateMerchantRequest.builder()
                     .code(DEFAULT_MERCHANT_CODE)
                     .companyName(DEFAULT_MERCHANT_NAME)
                     .disbursementType(CUSTOMER_MOBILE_WALLET)
+                    .commissionStructure(MERCHANT_DEFINED)
+                    .commissionGroupId(defaultGroup.getId())
                     .accountNumber(null)
                     .build());
+            log.info("Created default merchant");
         } catch (Exception e) {
-            log.warn(e.getMessage());
+            log.warn("Could not create default merchant", e);
         }
     }
 }
