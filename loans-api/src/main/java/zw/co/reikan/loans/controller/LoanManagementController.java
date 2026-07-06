@@ -21,10 +21,10 @@ import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCE
 @Slf4j
 @RequestMapping
 
-@Tag(name = "BULKIT LOANS",
+@Tag(name = "INNBUCKS LOANS",
         description = "### Please Note:\n" +
                 "1. Auth credentials and endpoint will be provided\n" +
-                "2. Please contact  _support@bulkit.co.zw_ for support.\n")
+                "2. Please contact  _support@innbucks.co.zw_ for support.\n")
 public class LoanManagementController {
 
     @Autowired
