@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.api.AuthRequest;
 import zw.co.reikan.loans.core.api.AuthResponse;
-import zw.co.reikan.loans.core.keycloak.KeycloakService;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.user.CreateUserService;
 
 import java.security.Principal;
@@ -28,7 +28,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @RequiredArgsConstructor
 public class UserController {
 
-    private final KeycloakService keycloakService;
+    private final AuthService authService;
 
     private final CreateUserService createUserService;
 
@@ -46,14 +46,14 @@ public class UserController {
 
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
 
-        keycloakService.login(AuthRequest.builder()
+        authService.login(AuthRequest.builder()
                 .username(token.getClaimAsString("preferred_username"))
                 .password(changePasswordRequest.getCurrentPassword()).build());
 
-        keycloakService.resetPassword(changePasswordRequest.getNewPassword(), token.getSubject(),
+        authService.resetPassword(changePasswordRequest.getNewPassword(), token.getSubject(),
                 token.getClaimAsString("preferred_username"));
 
-        return keycloakService.login(AuthRequest.builder()
+        return authService.login(AuthRequest.builder()
                 .username(token.getClaimAsString("preferred_username"))
                 .password(changePasswordRequest.getNewPassword()).build());
     }

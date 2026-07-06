@@ -15,7 +15,7 @@ import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
-import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -47,7 +47,7 @@ public class LoanServiceImpl implements LoanService {
     private final LoanRepository loanRepository;
     private final ParameterService parameterService;
     private final LoanMapper loanMapper;
-    private final KeyCloakServiceImpl keyCloakService;
+    private final AuthService authService;
     private final MerchantRepository merchantRepository;
     private final ChannelRepository channelRepository;
 
@@ -138,7 +138,7 @@ public class LoanServiceImpl implements LoanService {
         log.info("optionalChannel: >> channeId: {}, {}", loanRequest.getChannelId(),  optionalChannel);
 
         User loggedInUser = optionalChannel.map(Channel::getSystemUser)
-                .orElseGet(keyCloakService::getLoggedInUser);
+                .orElseGet(authService::getLoggedInUser);
 
         LoanDetails loanDetails = calculate(loanRequest, loggedInUser);
 

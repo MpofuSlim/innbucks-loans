@@ -3,7 +3,7 @@ package zw.co.reikan.loans.core.loan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import zw.co.reikan.loans.core.keycloak.KeyCloakServiceImpl;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Service
 public class InternalApprovalServiceImpl implements InternalApprovalService {
     private final LoanRepository loanRepository;
-    private final KeyCloakServiceImpl keyCloakService;
+    private final AuthService authService;
     private final LoanMapper loanMapper;
     private final NotificationService notificationService;
 
@@ -39,7 +39,7 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
         loan.setInternalApprovalStatus(request.getStatus());
         loan.setInternalApprovalDate(LocalDateTime.now());
         loan.setInternalApprovalComment(request.getComment());
-        String username = keyCloakService.getLoggedInUsername();
+        String username = authService.getLoggedInUsername();
         loan.setInternalApprovalBy(username);
         Loan savedLoan = loanRepository.save(loan);
 
