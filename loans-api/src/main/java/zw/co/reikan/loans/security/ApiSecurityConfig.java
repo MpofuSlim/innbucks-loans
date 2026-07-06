@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -22,6 +23,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class ApiSecurityConfig {
 
     private static final String[] UNSECURED_PATHS = {
@@ -51,11 +53,17 @@ public class ApiSecurityConfig {
                 .build();
     }
 
+    /**
+     * Default chain for everything not matched by {@link #unsecuredSecurityFilterChain}.
+     * It deliberately has NO {@code securityMatcher} so it is a catch-all: any route
+     * that is not an explicitly public path requires a valid token. This closes the
+     * gap where root-mapped controllers ({@code /loans/**}, {@code /batches/**}) fell
+     * outside the old {@code /api/**} matcher and were reachable with no authentication.
+     */
     @Bean
     @Order(2)
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .securityMatcher("/api/**")
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
