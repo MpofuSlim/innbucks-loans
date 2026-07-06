@@ -22,7 +22,7 @@ public class SecurityConfig {
     @Bean
     Keycloak keycloak(AuthProperties params) {
 
-        log.info("Creating keyclok: username: {}, password: {}", params.getUsername(), params.getPassword() );
+        log.info("Creating Keycloak admin client for user: {}", params.getUsername());
         return KeycloakBuilder.builder()
                 .serverUrl(params.getAuthUrl())
                 .realm(MASTER_REALM)
