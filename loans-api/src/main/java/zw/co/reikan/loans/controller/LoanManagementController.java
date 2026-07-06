@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.annotation.Secured;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementService;
@@ -80,7 +80,7 @@ public class LoanManagementController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/{id}/approve")
-    @Secured("ROLE_APPROVE_LOAN")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','BULKIT_ADMIN')")
     public InternalApprovalResponse approve(@RequestBody InternalApprovalRequest request,
                                             @PathVariable Long id) {
         log.info("Loan internal approval request: {}", request);
