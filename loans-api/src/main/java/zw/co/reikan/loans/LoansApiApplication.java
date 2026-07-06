@@ -10,19 +10,19 @@ import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@OpenAPIDefinition(info = @Info(title = "LOANS.bulkit.co.zw", version = "1.0.0",
-        description = "RESTful endpoints provided for Bulkit Loans."),
+@OpenAPIDefinition(info = @Info(title = "LOANS.innbucks.co.zw", version = "1.0.0",
+        description = "RESTful endpoints provided for Innbucks Loans."),
         servers = {
                 @Server(
                         description = "Sandbox",
-                        url = "https://sandbox.bulkit.co.zw/"),
+                        url = "https://sandbox.innbucks.co.zw/"),
                 @Server(
                         description = "Local",
                         url = "http://localhost:8080/"),
 
                 @Server(
                         description = "QA",
-                        url = "https://loans-qa-api.bulkit.co.zw/")
+                        url = "https://loans-qa-api.innbucks.co.zw/")
         }
 )
 

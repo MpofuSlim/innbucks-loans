@@ -22,7 +22,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @Slf4j
 @RequestMapping
 
-@Tag(name = "BULKIT LOANS")
+@Tag(name = "INNBUCKS LOANS")
 public class InternalLoanApplicationController {
 
     @Autowired

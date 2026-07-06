@@ -31,7 +31,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @Tag(name = "MERCHANTS",
         description = "### Please Note:\n" +
                 "1. Auth credentials and endpoint will be provided\n" +
-                "2. Please contact  _support@bulkit.co.zw_ for support.\n")
+                "2. Please contact  _support@innbucks.co.zw_ for support.\n")
 @RestController
 @RequestMapping(value = "/api/merchants")
 @RequiredArgsConstructor
