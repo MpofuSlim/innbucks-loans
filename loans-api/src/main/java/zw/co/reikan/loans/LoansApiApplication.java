@@ -18,7 +18,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
                         url = "https://sandbox.innbucks.co.zw/"),
                 @Server(
                         description = "Local",
-                        url = "http://localhost:8080/"),
+                        url = "http://localhost:8090/"),
 
                 @Server(
                         description = "QA",
