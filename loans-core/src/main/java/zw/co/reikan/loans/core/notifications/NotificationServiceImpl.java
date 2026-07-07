@@ -2,51 +2,34 @@ package zw.co.reikan.loans.core.notifications;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestTemplate;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class NotificationServiceImpl implements NotificationService {
 
-    private final RestTemplate restTemplate;
-    private final NotificationParameters notificationParameters;
+    private final SmsNotificationClient smsNotificationClient;
+    private final EmailNotificationClient emailNotificationClient;
 
     @Override
     @Async
     public void sendSms(String mobileNumber, String text) {
-        Sms sms = Sms.builder()
-                .from(notificationParameters.getSenderName())
-                .text(text)
-                .to(mobileNumber)
-                .build();
-        sendSms(sms);
+        try {
+            smsNotificationClient.sendSms(mobileNumber, text, null);
+        } catch (NotificationDeliveryException ex) {
+            log.error("SMS delivery failed: {}", ex.getMessage());
+        }
     }
 
     @Override
     @Async
-    public void sendSms(Sms sms) {
+    public void sendEmail(String to, String subject, String message) {
         try {
-
-            if (StringUtils.isEmpty(sms.getTo())) {
-                log.info("Empty sms recipient");
-                return;
-            }
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBasicAuth(notificationParameters.getUsername(), notificationParameters.getPassword());
-            HttpEntity<Sms> requestEntity = new HttpEntity<>(sms, headers);
-            restTemplate.exchange("https://api.bulkit.co.zw/sms", HttpMethod.POST, requestEntity, Sms.class);
-        } catch (Exception ex) {
-            log.error("Error:", ex);
+            emailNotificationClient.sendEmail(to, subject, message, null);
+        } catch (NotificationDeliveryException ex) {
+            log.error("Email delivery failed: {}", ex.getMessage());
         }
     }
 }

@@ -10,7 +10,6 @@ import zw.co.reikan.loans.core.auth.JwtProperties;
 import zw.co.reikan.loans.core.config.HttpClientConfig;
 import zw.co.reikan.loans.core.disbursements.InnbucksParameters;
 import zw.co.reikan.loans.core.ndasenda.NdasendaParameters;
-import zw.co.reikan.loans.core.notifications.NotificationParameters;
 
 
 @EnableScheduling
@@ -18,7 +17,7 @@ import zw.co.reikan.loans.core.notifications.NotificationParameters;
 @EnableConfigurationProperties(value = {HttpClientConfig.class,
         NdasendaParameters.class,
         InnbucksParameters.class,
-        JwtProperties.class, NotificationParameters.class,
+        JwtProperties.class,
         ChannelSecurityProperties.class, BulkIngestionProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
