@@ -42,10 +42,10 @@ public class ChannelSecurityProperties {
     private Duration idempotencyTtl = Duration.ofHours(24);
 
     /** Mutating paths guarded by the filter. */
-    private List<String> protectedPaths = List.of("/api/**", "/loans/**", "/batches/**");
+    private List<String> protectedPaths = List.of("/api/**");
 
     /** Paths always exempt (public auth + docs). */
-    private List<String> exemptPaths = List.of("/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/spec.html");
+    private List<String> exemptPaths = List.of("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/spec.html");
 
     /** Velocity: max mutating submissions per actor within the window. */
     private int velocityLimit = 50;

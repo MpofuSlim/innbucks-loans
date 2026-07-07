@@ -21,7 +21,7 @@ import zw.co.reikan.loans.core.user.CreateUserService;
 
 @RestController
 @Slf4j
-@RequestMapping
+@RequestMapping("/api")
 @Tag(name = "AUTHENTICATION")
 public class AuthController {
 

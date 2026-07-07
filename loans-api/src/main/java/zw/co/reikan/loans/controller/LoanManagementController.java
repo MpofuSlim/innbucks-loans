@@ -19,7 +19,7 @@ import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCE
 
 @RestController
 @Slf4j
-@RequestMapping
+@RequestMapping("/api")
 
 @Tag(name = "INNBUCKS LOANS",
         description = "### Please Note:\n" +

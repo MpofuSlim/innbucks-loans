@@ -30,7 +30,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 
 @RestController
 @Slf4j
-@RequestMapping
+@RequestMapping("/api")
 
 @Tag(name = "INNBUCKS LOANS",
         description = "### Please Note:\n" +

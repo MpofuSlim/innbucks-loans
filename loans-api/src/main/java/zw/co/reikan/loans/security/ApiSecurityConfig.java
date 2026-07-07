@@ -27,7 +27,7 @@ import java.util.List;
 public class ApiSecurityConfig {
 
     private static final String[] UNSECURED_PATHS = {
-            "/auth/**",
+            "/api/auth/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -48,7 +48,7 @@ public class ApiSecurityConfig {
                 .securityMatcher(UNSECURED_PATHS)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/auth/**"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/auth/**"))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .build();
     }
