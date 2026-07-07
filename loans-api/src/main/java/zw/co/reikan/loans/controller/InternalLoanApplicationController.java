@@ -20,7 +20,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 
 @RestController
 @Slf4j
-@RequestMapping
+@RequestMapping("/api")
 
 @Tag(name = "INNBUCKS LOANS")
 public class InternalLoanApplicationController {
@@ -42,7 +42,7 @@ public class InternalLoanApplicationController {
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
-    @PostMapping("/api/loans")
+    @PostMapping("/loans")
     public LoanResponse create(@RequestBody LoanRequest request) {
         log.info("Create loan request: {}", request);
         return loanService.requestLoan(request);

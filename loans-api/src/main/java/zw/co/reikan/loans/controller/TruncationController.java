@@ -30,6 +30,7 @@ import static zw.co.reikan.loans.core.StartupTask.FAVORING_BULK_IT;
 
 @Tag(name = "TRUNCATE")
 @RestController
+@RequestMapping("/api")
 @RequiredArgsConstructor
 @Slf4j
 @Profile("test-environment")
