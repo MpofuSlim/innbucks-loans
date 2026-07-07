@@ -58,6 +58,7 @@ public class StartupTask implements CommandLineRunner {
                 .providerCommission(new BigDecimal("80.0"))
                 .agentCommission(new BigDecimal("20.0"))
                 .name("80-20-Favouring-BulkIT")
+                .enabled(true)
                 .build());
 
         createCommissionGroup(CommissionGroup.builder()
@@ -65,6 +66,7 @@ public class StartupTask implements CommandLineRunner {
                 .providerCommission(new BigDecimal("100.0"))
                 .agentCommission(new BigDecimal("0.0"))
                 .name(FAVORING_BULK_IT)
+                .enabled(true)
                 .build());
 
         createCommissionGroup(CommissionGroup.builder()
@@ -72,6 +74,7 @@ public class StartupTask implements CommandLineRunner {
                 .providerCommission(new BigDecimal("100.0"))
                 .agentCommission(new BigDecimal("0.0"))
                 .name(ZERO_BASED_DEFAULT)
+                .enabled(true)
                 .build());
     }
 
@@ -80,7 +83,16 @@ public class StartupTask implements CommandLineRunner {
         log.info("Attempting to create CommissionGroup: {}", commissionGroup);
         Optional<CommissionGroup> optionalCommissionGroup = commissionGroupRepository.findByNameIgnoreCase(commissionGroup.getName());
         if (optionalCommissionGroup.isPresent()) {
-            log.warn("CommissionGroup already exists: {}", commissionGroup.getName());
+            // Heal DBs seeded before commission groups were created enabled: a
+            // disabled default is invisible to GET /api/parameters/commission-groups.
+            CommissionGroup existing = optionalCommissionGroup.get();
+            if (!existing.isEnabled()) {
+                existing.setEnabled(true);
+                commissionGroupRepository.save(existing);
+                log.info("Enabled existing CommissionGroup: {}", existing.getName());
+            } else {
+                log.warn("CommissionGroup already exists: {}", commissionGroup.getName());
+            }
             return;
         }
         commissionGroupRepository.save(commissionGroup);
