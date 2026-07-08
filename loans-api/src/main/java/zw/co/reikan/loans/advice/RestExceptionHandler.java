@@ -9,6 +9,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import zw.co.reikan.loans.core.exception.BusinessException;
+import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
 @ControllerAdvice
 @Slf4j
@@ -47,6 +48,13 @@ public class RestExceptionHandler {
         ErrorResponse errorResponse = new ErrorResponse(HttpStatus.FORBIDDEN, ex.getMessage());
         log.warn("Access denied: {}", ex.getMessage());
         return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
+    }
+
+    @ExceptionHandler(NotificationDeliveryException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationDeliveryException(NotificationDeliveryException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
+        log.warn("Notification delivery failed: {}", ex.getMessage());
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
     }
 
     @Data
