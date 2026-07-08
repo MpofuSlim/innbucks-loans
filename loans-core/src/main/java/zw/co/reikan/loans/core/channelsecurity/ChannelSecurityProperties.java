@@ -44,8 +44,17 @@ public class ChannelSecurityProperties {
     /** Mutating paths guarded by the filter. */
     private List<String> protectedPaths = List.of("/api/**");
 
-    /** Paths always exempt (public auth + docs). */
-    private List<String> exemptPaths = List.of("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/spec.html");
+    /**
+     * Paths always exempt: public auth + docs, plus read-only endpoints that use
+     * POST for their request body but perform no mutation (searches, the loan
+     * calculator). These carry no transaction to sign or de-duplicate, so the
+     * channel-signature / idempotency contract does not apply — exempting them
+     * avoids false-positive audit noise and keeps them working under ENFORCE.
+     */
+    private List<String> exemptPaths = List.of(
+            "/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/spec.html",
+            "/api/loans/search", "/api/batches/search", "/api/loans/calculate",
+            "/api/merchants/*/loans");
 
     /** Velocity: max mutating submissions per actor within the window. */
     private int velocityLimit = 50;
