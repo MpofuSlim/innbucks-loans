@@ -7,6 +7,7 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 import zw.co.reikan.loans.core.api.CreateMerchantRequest;
 import zw.co.reikan.loans.core.api.MerchantDto;
+import zw.co.reikan.loans.core.api.UpdateMerchantRequest;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionGroupRepository;
 import zw.co.reikan.loans.core.exception.ValidationException;
@@ -48,6 +49,41 @@ public class MerchantService {
                 .build();
         Merchant savedMerchant = merchantRepository.save(merchant);
         return merchantMapper.fromMerchant(savedMerchant);
+    }
+
+    /**
+     * Update a merchant's editable details, identified by its immutable code.
+     * The code, commission structure and commission group are intentionally not
+     * touched — they are fixed at creation.
+     */
+    @Transactional
+    public MerchantDto updateMerchant(String code, UpdateMerchantRequest request) {
+        Merchant merchant = merchantRepository.findByMerchantCode(code)
+                .orElseThrow(() -> new ValidationException("Merchant with merchant code " + code + " not found"));
+        validateUpdateRequest(request);
+
+        merchant.setCompanyName(request.getCompanyName());
+        merchant.setPhysicalAddress(request.getPhysicalAddress());
+        merchant.setContactPersonName(request.getContactPersonName());
+        merchant.setContactPersonMobileNumber(request.getContactPersonMobileNumber());
+        merchant.setContactPersonEmail(request.getContactPersonEmail());
+        merchant.setAccountNumber(request.getAccountNumber());
+        merchant.setDisbursementType(request.getDisbursementType());
+
+        return merchantMapper.fromMerchant(merchantRepository.save(merchant));
+    }
+
+    private void validateUpdateRequest(UpdateMerchantRequest request) {
+        if (!StringUtils.hasText(request.getCompanyName())) {
+            throw new ValidationException("Name is required");
+        }
+        if (request.getDisbursementType() == null) {
+            throw new ValidationException("Disbursement type is required");
+        }
+        if (request.getDisbursementType() == DisbursementType.MERCHANT_MOBILE_WALLET
+                && !StringUtils.hasText(request.getAccountNumber())) {
+            throw new ValidationException("Account number is required");
+        }
     }
 
     private CommissionGroup resolveCommissionGroup(CreateMerchantRequest request) {
