@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.bulk.BulkLoanIngestionService;
 import zw.co.reikan.loans.core.bulk.BulkLoanIngestionService.BulkResult;
-import zw.co.reikan.loans.core.channelsecurity.ChannelSecurityFilter;
 import zw.co.reikan.loans.core.loan.LoanRequest;
 
 import java.security.Principal;
@@ -46,20 +45,16 @@ public class BulkLoanController {
     @Operation(summary = "BULK LOAN SUBMISSION",
             description = "Submits a batch of loan applications. Processed in isolated chunks: "
                     + "a failing application is rejected alone with its error context while the "
-                    + "rest of the batch continues. Requires an Idempotency-Key header — retries "
-                    + "replay the original outcome instead of re-submitting the batch.",
+                    + "rest of the batch continues.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)})
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Batch processed; response lists per-item outcomes"),
             @ApiResponse(responseCode = "400", description = "Empty or oversized batch"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "409", description = "Same Idempotency-Key still in progress"),
-            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload"),
-            @ApiResponse(responseCode = "429", description = "Transaction velocity limit exceeded"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @PostMapping
     public BulkResult submit(@RequestBody BulkLoanSubmission submission,
-                             @RequestHeader(value = ChannelSecurityFilter.HDR_CHANNEL_ID, required = false)
+                             @RequestHeader(value = "X-Channel-Id", required = false)
                              String channelId,
                              Principal principal) {
         String actor = principal == null ? "anonymous" : principal.getName();
