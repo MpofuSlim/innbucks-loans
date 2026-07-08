@@ -24,8 +24,8 @@ public class LoanRequest implements Serializable {
     private String fname;
     private String lname;
     private LocalDate dateOfBirth;
-    private int numberOfDependencies;
-    private int numberOfChildren;
+    private Integer numberOfDependencies;
+    private Integer numberOfChildren;
     private MaritalStatus maritalStatus;
     private String alternateContactNumber;
     private String placeOfBirth;
