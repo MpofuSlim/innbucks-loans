@@ -4,6 +4,8 @@ import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.ObjectUtils;
+
+import static org.springframework.data.jpa.domain.Specification.unrestricted;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.merchant.Merchant;
 
@@ -13,7 +15,7 @@ public class LoanSpecification {
 
     public static Specification<Loan> withInternalApprovalStatus(InternalApprovalStatus status) {
         if (status == null) {
-            return null;
+            return unrestricted();
         } else {
             return (root, query, cb) -> cb.equal(root.get("internalApprovalStatus"), status);
         }
@@ -33,7 +35,7 @@ public class LoanSpecification {
 
     public static Specification<Loan> withDisbursementStatus(LoanDisbursementStatus status) {
         if (status == null) {
-            return null;
+            return unrestricted();
         } else {
             return (root, query, cb) -> cb.equal(root.get("disbursementStatus"), status);
         }
@@ -41,7 +43,7 @@ public class LoanSpecification {
 
     public static Specification<Loan> withApprovalStatus(LoanApprovalStatus status) {
         if (status == null) {
-            return null;
+            return unrestricted();
         } else {
             return (root, query, cb) -> cb.equal(root.get("loanApprovalStatus"), status);
         }
@@ -59,7 +61,7 @@ public class LoanSpecification {
 
     public static Specification<Loan> withCreatedDateBetween(LocalDateTime fromDate, LocalDateTime toDate) {
         if (ObjectUtils.isEmpty(fromDate) || ObjectUtils.isEmpty(toDate)) {
-            return null;
+            return unrestricted();
         } else {
             return (root, query, cb) -> cb.between(root.get("createdDate"), fromDate, toDate);
         }
