@@ -74,6 +74,23 @@ public class MerchantController {
         return ResponseEntity.ok(merchant);
     }
 
+    @PutMapping("/{code}")
+    @Operation(operationId = "updateMerchant",
+            summary = "UPDATE MERCHANT",
+            description = "Update an existing merchant's editable details. The merchant code, commission "
+                    + "structure and commission group are fixed at creation and cannot be changed.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
+            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields or unknown merchant code"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+            @ApiResponse(responseCode = "500", description = "Processing error")})
+    public ResponseEntity<MerchantDto> updateMerchant(@PathVariable String code,
+                                                      @RequestBody UpdateMerchantRequest updateMerchantRequest) {
+        MerchantDto merchant = merchantService.updateMerchant(code, updateMerchantRequest);
+        return ResponseEntity.ok(merchant);
+    }
+
     @Operation(operationId = "createMerchantAgent",
             summary = "CREATE AGENT",
             description = "Create merchant Agent or User",
