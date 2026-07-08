@@ -97,6 +97,16 @@
             <version>2.0.0</version>
         </dependency>
 
+        <!-- WireMock (standalone shaded jar) — stubs the InnBucks gateway / notification
+             API in the SMS/email client contract tests, so a change in the upstream wire
+             shape fails the build at PR time. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.2</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>

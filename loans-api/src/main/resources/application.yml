@@ -81,10 +81,18 @@ innbucks:
   auth-endpoint: "${innbucks.base-url}/auth/merchant/login"
   deposit-endpoint: "${innbucks.base-url}/api/transaction/deposit"
 
-notification:
-  username: "${NOTIFICATION_USERNAME:autoloan@bulkit.co.zw}"
-  password: "${NOTIFICATION_PASSWORD:}"
-  senderName: InnBucks
+# --- Notifications ---------------------------------------------------------
+# SMS is delivered through the InnBucks core gateway adapter; email through the
+# InnBucks public notification API (X-Api-Key + third-party bearer). Supply the
+# URLs and credentials via env in every deployed environment.
+innbucks-gateway:
+  base-url: "${INNBUCKS_GATEWAY_URL:}"
+
+innbucks-notify:
+  base-url: "${INNBUCKS_NOTIFY_URL:}"
+  api-key: "${INNBUCKS_NOTIFY_API_KEY:}"
+  username: "${INNBUCKS_NOTIFY_USERNAME:}"
+  password: "${INNBUCKS_NOTIFY_PASSWORD:}"
 
 springdoc:
   api-docs:
