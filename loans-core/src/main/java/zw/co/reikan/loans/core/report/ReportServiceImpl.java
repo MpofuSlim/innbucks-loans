@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.report;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import zw.co.reikan.loans.core.api.AgentPerformanceReportResponse;
 import zw.co.reikan.loans.core.api.AgentPerformanceReportResponse.AgentPerformance;
 import zw.co.reikan.loans.core.api.CommissionsReportResponse;
@@ -16,6 +17,7 @@ import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse.MerchantPer
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.merchant.MerchantRepository;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -30,15 +32,17 @@ import java.util.List;
 public class ReportServiceImpl implements ReportService {
 
     private final LoanRepository loanRepository;
+    private final MerchantRepository merchantRepository;
 
     @Override
     @Transactional(readOnly = true)
-    public DisbursementsReportResponse disbursementsReport(LocalDate fromDate, LocalDate toDate) {
+    public DisbursementsReportResponse disbursementsReport(LocalDate fromDate, LocalDate toDate, String merchantCode) {
         Range range = resolveRange(fromDate, toDate);
+        String code = resolveMerchantCode(merchantCode);
         List<DailyDisbursement> days = new ArrayList<>();
         long totalCount = 0;
         BigDecimal totalDisbursed = BigDecimal.ZERO;
-        for (Object[] row : loanRepository.disbursementsByDay(range.start(), range.end())) {
+        for (Object[] row : loanRepository.disbursementsByDay(range.start(), range.end(), code)) {
             long count = asLong(row[1]);
             BigDecimal amount = asBigDecimal(row[2]);
             days.add(new DailyDisbursement(asLocalDate(row[0]), count, amount));
@@ -50,12 +54,13 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    public LoanPortfolioReportResponse loanPortfolioReport(LocalDate fromDate, LocalDate toDate) {
+    public LoanPortfolioReportResponse loanPortfolioReport(LocalDate fromDate, LocalDate toDate, String merchantCode) {
         Range range = resolveRange(fromDate, toDate);
+        String code = resolveMerchantCode(merchantCode);
         List<StatusBreakdown> breakdown = new ArrayList<>();
         long totalLoans = 0;
         BigDecimal totalPrincipal = BigDecimal.ZERO;
-        for (Object[] row : loanRepository.portfolioByApprovalStatus(range.start(), range.end())) {
+        for (Object[] row : loanRepository.portfolioByApprovalStatus(range.start(), range.end(), code)) {
             String status = row[0] == null ? "UNKNOWN" : ((LoanApprovalStatus) row[0]).name();
             long count = asLong(row[1]);
             BigDecimal principal = asBigDecimal(row[2]);
@@ -68,12 +73,13 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    public CommissionsReportResponse commissionsReport(LocalDate fromDate, LocalDate toDate) {
+    public CommissionsReportResponse commissionsReport(LocalDate fromDate, LocalDate toDate, String merchantCode) {
         Range range = resolveRange(fromDate, toDate);
+        String code = resolveMerchantCode(merchantCode);
         List<MerchantCommission> merchants = new ArrayList<>();
         BigDecimal totalAgent = BigDecimal.ZERO;
         BigDecimal totalProvider = BigDecimal.ZERO;
-        for (Object[] row : loanRepository.commissionsByMerchant(range.start(), range.end())) {
+        for (Object[] row : loanRepository.commissionsByMerchant(range.start(), range.end(), code)) {
             BigDecimal agent = asBigDecimal(row[3]);
             BigDecimal provider = asBigDecimal(row[4]);
             merchants.add(new MerchantCommission((String) row[0], (String) row[1], asLong(row[2]), agent, provider));
@@ -85,10 +91,12 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    public MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate) {
+    public MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate,
+                                                                       String merchantCode) {
         Range range = resolveRange(fromDate, toDate);
+        String code = resolveMerchantCode(merchantCode);
         List<MerchantPerformance> merchants = new ArrayList<>();
-        for (Object[] row : loanRepository.merchantPerformance(range.start(), range.end())) {
+        for (Object[] row : loanRepository.merchantPerformance(range.start(), range.end(), code)) {
             merchants.add(new MerchantPerformance((String) row[0], (String) row[1], asLong(row[2]),
                     asBigDecimal(row[3]), asLong(row[4]), asBigDecimal(row[5])));
         }
@@ -97,10 +105,12 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    public AgentPerformanceReportResponse agentPerformanceReport(LocalDate fromDate, LocalDate toDate) {
+    public AgentPerformanceReportResponse agentPerformanceReport(LocalDate fromDate, LocalDate toDate,
+                                                                 String merchantCode) {
         Range range = resolveRange(fromDate, toDate);
+        String code = resolveMerchantCode(merchantCode);
         List<AgentPerformance> agents = new ArrayList<>();
-        for (Object[] row : loanRepository.agentPerformance(range.start(), range.end())) {
+        for (Object[] row : loanRepository.agentPerformance(range.start(), range.end(), code)) {
             agents.add(new AgentPerformance(asLong(row[0]), (String) row[1], asLong(row[2]),
                     asBigDecimal(row[3]), asBigDecimal(row[4])));
         }
@@ -115,6 +125,21 @@ public class ReportServiceImpl implements ReportService {
             throw new ValidationException("fromDate must not be after toDate");
         }
         return new Range(from, to);
+    }
+
+    /**
+     * Blank means "no filter". A supplied code must exist — a typo silently
+     * returning an all-zero report is worse than a 400.
+     */
+    private String resolveMerchantCode(String merchantCode) {
+        if (!StringUtils.hasText(merchantCode)) {
+            return null;
+        }
+        String code = merchantCode.trim();
+        if (!merchantRepository.existsByMerchantCode(code)) {
+            throw new ValidationException("Merchant with merchant code " + code + " not found");
+        }
+        return code;
     }
 
     private record Range(LocalDate from, LocalDate to) {

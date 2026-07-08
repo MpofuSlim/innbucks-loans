@@ -25,7 +25,8 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 /**
  * Admin reporting endpoints. Every report accepts an optional inclusive
  * {@code fromDate}/{@code toDate} (ISO {@code yyyy-MM-dd}); omitted bounds
- * default to month-to-date.
+ * default to month-to-date. An optional {@code merchantCode} scopes any report
+ * to a single merchant; omitted means platform-wide.
  */
 @Tag(name = "REPORTS")
 @RestController
@@ -47,8 +48,9 @@ public class ReportsController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/disbursements")
     public DisbursementsReportResponse disbursements(@RequestParam(required = false) LocalDate fromDate,
-                                                     @RequestParam(required = false) LocalDate toDate) {
-        return reportService.disbursementsReport(fromDate, toDate);
+                                                     @RequestParam(required = false) LocalDate toDate,
+                                                     @RequestParam(required = false) String merchantCode) {
+        return reportService.disbursementsReport(fromDate, toDate, merchantCode);
     }
 
     @Operation(operationId = "loanPortfolioReport",
@@ -62,8 +64,9 @@ public class ReportsController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/loan-portfolio")
     public LoanPortfolioReportResponse loanPortfolio(@RequestParam(required = false) LocalDate fromDate,
-                                                     @RequestParam(required = false) LocalDate toDate) {
-        return reportService.loanPortfolioReport(fromDate, toDate);
+                                                     @RequestParam(required = false) LocalDate toDate,
+                                                     @RequestParam(required = false) String merchantCode) {
+        return reportService.loanPortfolioReport(fromDate, toDate, merchantCode);
     }
 
     @Operation(operationId = "commissionsReport",
@@ -77,8 +80,9 @@ public class ReportsController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/commissions")
     public CommissionsReportResponse commissions(@RequestParam(required = false) LocalDate fromDate,
-                                                 @RequestParam(required = false) LocalDate toDate) {
-        return reportService.commissionsReport(fromDate, toDate);
+                                                 @RequestParam(required = false) LocalDate toDate,
+                                                 @RequestParam(required = false) String merchantCode) {
+        return reportService.commissionsReport(fromDate, toDate, merchantCode);
     }
 
     @Operation(operationId = "merchantPerformanceReport",
@@ -92,8 +96,9 @@ public class ReportsController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/merchant-performance")
     public MerchantPerformanceReportResponse merchantPerformance(@RequestParam(required = false) LocalDate fromDate,
-                                                                 @RequestParam(required = false) LocalDate toDate) {
-        return reportService.merchantPerformanceReport(fromDate, toDate);
+                                                                 @RequestParam(required = false) LocalDate toDate,
+                                                                 @RequestParam(required = false) String merchantCode) {
+        return reportService.merchantPerformanceReport(fromDate, toDate, merchantCode);
     }
 
     @Operation(operationId = "agentPerformanceReport",
@@ -107,7 +112,8 @@ public class ReportsController {
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/agent-performance")
     public AgentPerformanceReportResponse agentPerformance(@RequestParam(required = false) LocalDate fromDate,
-                                                           @RequestParam(required = false) LocalDate toDate) {
-        return reportService.agentPerformanceReport(fromDate, toDate);
+                                                           @RequestParam(required = false) LocalDate toDate,
+                                                           @RequestParam(required = false) String merchantCode) {
+        return reportService.agentPerformanceReport(fromDate, toDate, merchantCode);
     }
 }
