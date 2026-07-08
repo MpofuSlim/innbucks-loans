@@ -67,4 +67,64 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             where l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
             """)
     BigDecimal sumAgentCommissionForSuccessfulDisbursements();
+
+    // --- Reporting aggregates ------------------------------------------------
+
+    /** Daily disbursement totals (successful disbursements only). Native for the day grouping. */
+    @Query(value = """
+            select cast(l.date_disbursed as date) as day,
+                   count(*) as loan_count,
+                   coalesce(sum(l.disburse_amount), 0) as total_disbursed
+            from loan_request l
+            where l.disbursement_status = 'SUCCESS'
+              and l.date_disbursed between :startDate and :endDate
+            group by day
+            order by day
+            """, nativeQuery = true)
+    List<Object[]> disbursementsByDay(@Param("startDate") LocalDateTime startDate,
+                                      @Param("endDate") LocalDateTime endDate);
+
+    @Query("""
+            select l.loanApprovalStatus, count(l), coalesce(sum(l.principal), 0) from Loan l
+            where l.createdDate between :startDate and :endDate
+            group by l.loanApprovalStatus
+            """)
+    List<Object[]> portfolioByApprovalStatus(@Param("startDate") LocalDateTime startDate,
+                                             @Param("endDate") LocalDateTime endDate);
+
+    @Query("""
+            select m.merchantCode, m.companyName, count(l),
+                   coalesce(sum(l.agentCommission), 0), coalesce(sum(l.providerCommission), 0)
+            from Loan l join l.merchant m
+            where l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+              and l.dateDisbursed between :startDate and :endDate
+            group by m.merchantCode, m.companyName
+            order by m.companyName
+            """)
+    List<Object[]> commissionsByMerchant(@Param("startDate") LocalDateTime startDate,
+                                         @Param("endDate") LocalDateTime endDate);
+
+    @Query("""
+            select m.merchantCode, m.companyName, count(l), coalesce(sum(l.principal), 0),
+                   count(case when l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS then 1 end),
+                   coalesce(sum(case when l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS then l.disbursedAmount end), 0)
+            from Loan l join l.merchant m
+            where l.createdDate between :startDate and :endDate
+            group by m.merchantCode, m.companyName
+            order by m.companyName
+            """)
+    List<Object[]> merchantPerformance(@Param("startDate") LocalDateTime startDate,
+                                       @Param("endDate") LocalDateTime endDate);
+
+    @Query("""
+            select u.id, u.username, count(l),
+                   coalesce(sum(l.disbursedAmount), 0), coalesce(sum(l.agentCommission), 0)
+            from Loan l join l.createdByUser u
+            where l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+              and l.dateDisbursed between :startDate and :endDate
+            group by u.id, u.username
+            order by u.username
+            """)
+    List<Object[]> agentPerformance(@Param("startDate") LocalDateTime startDate,
+                                    @Param("endDate") LocalDateTime endDate);
 }
