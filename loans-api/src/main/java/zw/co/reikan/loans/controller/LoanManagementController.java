@@ -10,12 +10,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.loan.*;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
-import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS;
 
 @RestController
 @Slf4j
@@ -26,9 +24,6 @@ import static zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCE
                 "1. Auth credentials and endpoint will be provided\n" +
                 "2. Please contact  _support@innbucks.co.zw_ for support.\n")
 public class LoanManagementController {
-
-    @Autowired
-    private LoanRepository loanRepository;
 
     @Autowired
     private DisbursementService disbursementService;
@@ -53,17 +48,10 @@ public class LoanManagementController {
     @PostMapping("/loans/{id}/disburse")
     public ResponseEntity findLoans(@PathVariable Long id) {
         log.info("Disbursing loan: {}", id);
-        final Loan loan = loanRepository.findById(id).orElseThrow();
-        if (loan.getDisbursementStatus() == SUCCESS) {
-            log.info("Loan already disbursed");
-            return ResponseEntity.badRequest().build();
-        }
-        disbursementService.processDisbursement(DisbursementRequest.builder()
-                .amount(loan.getDisbursedAmount())
-                .mobileNumber(loan.getMobileNumber())
-                .reference(loan.getReference())
-                .build(), loan);
-        return ResponseEntity.noContent().build();
+        // Race-safe + idempotent: the service loads the loan under a row lock,
+        // so a concurrent or repeated disburse for the same loan cannot pay twice.
+        boolean disbursed = disbursementService.disburse(id);
+        return disbursed ? ResponseEntity.noContent().build() : ResponseEntity.badRequest().build();
     }
 
     @Operation(summary = "LOAN INTERNAL APPROVAL",

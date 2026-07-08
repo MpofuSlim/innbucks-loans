@@ -2,8 +2,11 @@ package zw.co.reikan.loans.core;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.disbursements.LoanAccountCreationResponse;
+import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatusResponse;
+import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -25,6 +28,36 @@ public abstract class DisbursementService {
     public abstract LoanAccountCreationResponse createLoanAccount(Loan loan);
 
     public abstract LoanDisbursementStatusResponse checkLoanDisbursementStatus(Loan loan);
+
+    /**
+     * Idempotent, race-safe entry point for disbursing a loan. Loads the loan
+     * under a pessimistic write lock so concurrent disburse calls for the same
+     * loan are serialised: the first performs the payout and sets SUCCESS; any
+     * caller that acquires the lock afterwards observes SUCCESS and returns
+     * without a second external disbursement. Replaces the previous
+     * read-then-act check, which had a race window that could double-pay.
+     *
+     * @return {@code true} if this call performed the disbursement, {@code false}
+     *         if the loan was already disbursed (no external call was made).
+     */
+    @Transactional
+    public boolean disburse(Long loanId) {
+        Loan loan = loanRepository.findByIdForUpdate(loanId)
+                .orElseThrow(() -> new ValidationException("Loan %d not found".formatted(loanId)));
+
+        if (LoanDisbursementStatus.SUCCESS == loan.getDisbursementStatus()) {
+            log.info("Loan {} already disbursed (ref {}); skipping re-disbursement",
+                    loanId, loan.getDisbursementReference());
+            return false;
+        }
+
+        processDisbursement(DisbursementRequest.builder()
+                .amount(loan.getDisbursedAmount())
+                .mobileNumber(loan.getMobileNumber())
+                .reference(loan.getReference())
+                .build(), loan);
+        return true;
+    }
 
     public void processDisbursement(DisbursementRequest request, Loan loan) {
         DisbursementResponse response = disburseFunds(request);
