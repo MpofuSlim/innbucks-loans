@@ -67,15 +67,15 @@ public class UserController {
     @Operation(operationId = "adminResetPassword",
             summary = "ADMIN RESET PASSWORD",
             description = "Super-admin resets a user's password to a fresh temporary one and delivers it over the "
-                    + "chosen channel (EMAIL or SMS). The password is delivered before it is applied — if delivery "
-                    + "fails the reset is aborted and the old password stays valid. The temporary password is never "
-                    + "returned in the response.",
+                    + "chosen channel (EMAIL, SMS or WHATSAPP). The password is delivered before it is applied — if "
+                    + "delivery fails the reset is aborted and the old password stays valid. The temporary password is "
+                    + "never returned in the response.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping(value = "/admin-reset-password")
     @PreAuthorize("hasRole('BULKIT_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Password reset and temporary password delivered"),
-            @ApiResponse(responseCode = "400", description = "Unknown user, missing channel, or no email/mobile on file"),
+            @ApiResponse(responseCode = "400", description = "Unknown user, missing channel, or no email/mobile number on file for the chosen channel"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "403", description = "Forbidden. caller is not a super admin"),
             @ApiResponse(responseCode = "502", description = "Notification channel rejected or unreachable; password unchanged")})

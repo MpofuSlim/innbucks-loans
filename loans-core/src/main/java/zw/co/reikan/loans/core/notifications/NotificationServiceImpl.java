@@ -12,6 +12,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     private final SmsNotificationClient smsNotificationClient;
     private final EmailNotificationClient emailNotificationClient;
+    private final WhatsAppNotificationClient whatsAppNotificationClient;
 
     @Override
     @Async
@@ -30,6 +31,16 @@ public class NotificationServiceImpl implements NotificationService {
             emailNotificationClient.sendEmail(to, subject, message, null);
         } catch (NotificationDeliveryException ex) {
             log.error("Email delivery failed: {}", ex.getMessage());
+        }
+    }
+
+    @Override
+    @Async
+    public void sendWhatsApp(String mobileNumber, String text) {
+        try {
+            whatsAppNotificationClient.sendCustomNotification(mobileNumber, text);
+        } catch (NotificationDeliveryException ex) {
+            log.error("WhatsApp delivery failed: {}", ex.getMessage());
         }
     }
 }

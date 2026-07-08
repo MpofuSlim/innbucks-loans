@@ -8,8 +8,8 @@ import zw.co.reikan.loans.core.notifications.NotificationChannel;
 
 /**
  * Super-admin request to reset a user's password. A fresh temporary password is
- * generated server-side and delivered to the user over {@code channel} (EMAIL or
- * SMS); it is never returned in the response.
+ * generated server-side and delivered to the user over {@code channel} (EMAIL,
+ * SMS or WHATSAPP); it is never returned in the response.
  */
 @Data
 @Builder

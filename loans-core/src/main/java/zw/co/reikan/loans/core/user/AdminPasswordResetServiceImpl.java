@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.notifications.EmailNotificationClient;
 import zw.co.reikan.loans.core.notifications.NotificationChannel;
 import zw.co.reikan.loans.core.notifications.SmsNotificationClient;
+import zw.co.reikan.loans.core.notifications.WhatsAppNotificationClient;
 
 import java.security.SecureRandom;
 
@@ -40,6 +41,7 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
     private final PasswordEncoder passwordEncoder;
     private final SmsNotificationClient smsNotificationClient;
     private final EmailNotificationClient emailNotificationClient;
+    private final WhatsAppNotificationClient whatsAppNotificationClient;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
@@ -49,7 +51,7 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
             throw new ValidationException("Username is required");
         }
         if (request.getChannel() == null) {
-            throw new ValidationException("Delivery channel is required (EMAIL or SMS)");
+            throw new ValidationException("Delivery channel is required (EMAIL, SMS or WHATSAPP)");
         }
 
         User user = userRepository.findByUsername(request.getUsername().trim())
@@ -87,6 +89,12 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
                     throw new ValidationException("User %s has no mobile number on file".formatted(user.getUsername()));
                 }
                 smsNotificationClient.sendSms(user.getMobileNumber(), message, null);
+            }
+            case WHATSAPP -> {
+                if (!StringUtils.hasText(user.getMobileNumber())) {
+                    throw new ValidationException("User %s has no mobile number on file".formatted(user.getUsername()));
+                }
+                whatsAppNotificationClient.sendCustomNotification(user.getMobileNumber(), message);
             }
         }
     }
