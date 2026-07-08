@@ -10,4 +10,6 @@ public interface NotificationService {
     void sendSms(String mobileNumber, String text);
 
     void sendEmail(String to, String subject, String message);
+
+    void sendWhatsApp(String mobileNumber, String text);
 }

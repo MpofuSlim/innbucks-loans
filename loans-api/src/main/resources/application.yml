@@ -94,6 +94,15 @@ innbucks-notify:
   username: "${INNBUCKS_NOTIFY_USERNAME:}"
   password: "${INNBUCKS_NOTIFY_PASSWORD:}"
 
+# WhatsApp is delivered through the external WhatsApp notification gateway
+# (x-api-key auth). Uses the same key names as the ticketing platform so one set
+# of env values configures both — supply the values via env in every deployment.
+whatsapp:
+  base-url: "${WHATSAPP_GATEWAY_URL:}"
+  api-key: "${WHATSAPP_API_KEY:}"
+  connect-timeout-ms: "${WHATSAPP_CONNECT_TIMEOUT_MS:2000}"
+  read-timeout-ms: "${WHATSAPP_READ_TIMEOUT_MS:10000}"
+
 springdoc:
   api-docs:
     path: /v3/api-docs
