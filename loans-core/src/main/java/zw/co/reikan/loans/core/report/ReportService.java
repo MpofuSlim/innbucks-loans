@@ -9,18 +9,20 @@ import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse;
 import java.time.LocalDate;
 
 /**
- * Admin reporting over the loan book. All reports take an inclusive date range;
- * a null bound defaults to the first day of the current month / today.
+ * Admin reporting over the loan book. All reports take an inclusive date range
+ * (a null bound defaults to the first day of the current month / today) and an
+ * optional merchant code that scopes the report to one merchant; a null/blank
+ * code means platform-wide.
  */
 public interface ReportService {
 
-    DisbursementsReportResponse disbursementsReport(LocalDate fromDate, LocalDate toDate);
+    DisbursementsReportResponse disbursementsReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
-    LoanPortfolioReportResponse loanPortfolioReport(LocalDate fromDate, LocalDate toDate);
+    LoanPortfolioReportResponse loanPortfolioReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
-    CommissionsReportResponse commissionsReport(LocalDate fromDate, LocalDate toDate);
+    CommissionsReportResponse commissionsReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
-    MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate);
+    MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
-    AgentPerformanceReportResponse agentPerformanceReport(LocalDate fromDate, LocalDate toDate);
+    AgentPerformanceReportResponse agentPerformanceReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 }
