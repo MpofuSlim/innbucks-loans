@@ -28,7 +28,7 @@ import java.security.SecureRandom;
 @Slf4j
 public class AdminPasswordResetServiceImpl implements AdminPasswordResetService {
 
-    private static final String EMAIL_SUBJECT = "Innbucks Loans — password reset";
+    private static final String EMAIL_SUBJECT = "Innbucks Loans Password Reset";
     private static final String MESSAGE_TEMPLATE =
             "%s, your Innbucks Loans password has been reset. Username: %s, Temporary password: %s. "
                     + "Please change it after you log in.";
