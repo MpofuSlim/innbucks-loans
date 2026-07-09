@@ -1,7 +1,9 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,6 +18,16 @@ import java.util.Optional;
 
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificationExecutor<Loan> {
+
+    /**
+     * Loads a loan under a row-level write lock (SELECT ... FOR UPDATE). Used by
+     * the disbursement flow to serialise concurrent disburse calls for the same
+     * loan across all app nodes: a second caller blocks here until the first
+     * commits, then sees the SUCCESS status and skips a duplicate payout.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select l from Loan l where l.id = :id")
+    Optional<Loan> findByIdForUpdate(@Param("id") Long id);
 
     Optional<Loan> findByEcNumberAndLoanApprovalStatus(String ecNumber, LoanApprovalStatus loanApprovaStatus);
 
