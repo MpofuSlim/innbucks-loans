@@ -18,7 +18,7 @@ public class LoanRequest implements Serializable {
     private BigDecimal amount;
     private String ecnumber;
     private String mobileNumber;
-    private int tenor;
+    private Integer tenor;
     private String nationalId;
     private LoanAmountType type = LoanAmountType.NET_OF_FEES;
     private String fname;

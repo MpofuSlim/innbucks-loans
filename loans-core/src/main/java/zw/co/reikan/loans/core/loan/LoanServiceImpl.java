@@ -105,10 +105,32 @@ public class LoanServiceImpl implements LoanService {
         return localDate.atTime(LocalTime.MAX);
     }
 
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
+
+        // Required fields — each returns a clean 400 (IllegalArgumentException -> BAD_REQUEST).
+        // Guard the string fields here so a null no longer NPEs (500) on the trim/format below.
+        if (isBlank(loanRequest.getEcnumber())) {
+            throw new IllegalArgumentException("EC Number is required");
+        }
+        if (isBlank(loanRequest.getNationalId())) {
+            throw new IllegalArgumentException("National ID is required");
+        }
+        if (isBlank(loanRequest.getMobileNumber())) {
+            throw new IllegalArgumentException("Mobile number is required");
+        }
+        if (loanRequest.getAmount() == null) {
+            throw new IllegalArgumentException("Loan amount is required");
+        }
+        if (loanRequest.getTenor() == null || loanRequest.getTenor() <= 0) {
+            throw new IllegalArgumentException("Loan tenor is required");
+        }
 
         final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
 
@@ -117,7 +139,10 @@ public class LoanServiceImpl implements LoanService {
         }
 
         val dateOfBirth = loanRequest.getDateOfBirth();
-        if (dateOfBirth == null || dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
+        if (dateOfBirth == null) {
+            throw new IllegalArgumentException("Date of birth is required");
+        }
+        if (dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
         }
 
@@ -241,6 +266,10 @@ public class LoanServiceImpl implements LoanService {
                 COMMISSION_RATE, ADMI_FEE_RATE, MONTHLY_INTEREST_RATE,
                 AGENT_COMMISSION_RATE, MINIMUM_LOAN_AMOUNT, MAXIMUM_LOAN_AMOUNT, MINIMUM_LOAN_TENOR, MAXIMUM_LOAN_TENOR);
 
+
+        if (request.getTenor() == null || request.getTenor() <= 0) {
+            throw new IllegalArgumentException("Loan tenor is required");
+        }
 
         int minLoanTenor = Integer.parseInt(String.valueOf(params.get(MINIMUM_LOAN_TENOR)));
         int maxLoanTenor = Integer.parseInt(String.valueOf(params.get(MAXIMUM_LOAN_TENOR)));
