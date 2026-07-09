@@ -61,7 +61,8 @@ class EmailNotificationClientContractTest {
                 .baseUrl("http://localhost:" + port)
                 .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
-        return new EmailNotificationClient(restClient, props);
+        NotificationApiAuthenticator authenticator = new NotificationApiAuthenticator(restClient, props);
+        return new EmailNotificationClient(restClient, authenticator);
     }
 
     @Test
