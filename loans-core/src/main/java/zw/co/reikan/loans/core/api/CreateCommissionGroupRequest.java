@@ -1,4 +1,6 @@
 package zw.co.reikan.loans.core.api;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,10 +14,12 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateCommissionGroupRequest {
+    @NotBlank(message = "Commission group name is required")
     private String name;
+    @NotNull(message = "Agent commission is required")
     private BigDecimal agentCommission;
+    @NotNull(message = "Provider commission is required")
     private BigDecimal providerCommission;
-
     /** When true, the commissions are percentages and must sum to 100. */
-    private boolean percentage;
+    private Boolean percentage;
 }

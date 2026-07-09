@@ -1,4 +1,6 @@
 package zw.co.reikan.loans.controller;
+
+import jakarta.validation.Valid;
 import zw.co.reikan.loans.dto.ChangePasswordRequest;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -48,7 +50,7 @@ public class UserController {
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public AuthResponse updatePassword(Principal principal,
-                                       @RequestBody ChangePasswordRequest changePasswordRequest) {
+                                       @Valid @RequestBody ChangePasswordRequest changePasswordRequest) {
 
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
 
@@ -79,7 +81,7 @@ public class UserController {
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "403", description = "Forbidden. caller is not a super admin"),
             @ApiResponse(responseCode = "502", description = "Notification channel rejected or unreachable; password unchanged")})
-    public UserDTO adminResetPassword(@RequestBody AdminResetPasswordRequest request) {
+    public UserDTO adminResetPassword(@Valid @RequestBody AdminResetPasswordRequest request) {
         return adminPasswordResetService.resetPassword(request);
     }
 }

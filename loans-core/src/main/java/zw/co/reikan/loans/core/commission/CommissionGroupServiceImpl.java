@@ -29,7 +29,7 @@ public class CommissionGroupServiceImpl implements CommissionGroupService {
                 .name(request.getName().trim())
                 .agentCommission(request.getAgentCommission())
                 .providerCommission(request.getProviderCommission())
-                .percentage(request.isPercentage())
+                .percentage(Boolean.TRUE.equals(request.getPercentage()))
                 .enabled(true)
                 .build());
 
@@ -53,7 +53,7 @@ public class CommissionGroupServiceImpl implements CommissionGroupService {
         if (commissionGroupRepository.findByNameIgnoreCase(request.getName().trim()).isPresent()) {
             throw new ValidationException("Commission group %s already exists".formatted(request.getName().trim()));
         }
-        if (request.isPercentage()
+        if (Boolean.TRUE.equals(request.getPercentage())
                 && request.getAgentCommission().add(request.getProviderCommission()).compareTo(ONE_HUNDRED) != 0) {
             throw new ValidationException("Agent and provider percentages must add up to 100");
         }

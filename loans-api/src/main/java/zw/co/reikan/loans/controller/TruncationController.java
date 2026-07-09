@@ -1,5 +1,7 @@
 package zw.co.reikan.loans.controller;
 
+import jakarta.validation.Valid;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -46,7 +48,7 @@ public class TruncationController {
 
     @Operation(operationId = "seedTestAgent", summary = "SEED TEST AGENT")
     @PostMapping({"/auth/6fab0a61-637b-4cb9-a9ac-ddf61af32400"})
-    public ResponseEntity<SaveUserResponse> createAgent(@RequestBody CreateAgentRequest createUserRequest) {
+    public ResponseEntity<SaveUserResponse> createAgent(@Valid @RequestBody CreateAgentRequest createUserRequest) {
 
         Long defaultComission = commissionGroupRepository.findByNameIgnoreCase(FAVORING_BULK_IT)
                 .orElseThrow(() -> new ValidationException("Default commission group not found")).getId();
