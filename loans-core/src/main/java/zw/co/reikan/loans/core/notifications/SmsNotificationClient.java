@@ -12,13 +12,17 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Sends SMS notifications through the InnBucks core gateway adapter, which
- * routes them to the InnBucks messenger interface.
+ * Sends SMS notifications through the InnBucks core gateway adapter
+ * ({@code POST /notifications/sms}), which routes them to the InnBucks messenger
+ * interface. The gateway is reached via an explicit URL backed by
+ * {@link InnbucksGatewayProperties} and is fronted by the same auth as the
+ * notification API, so calls carry an {@code X-Api-Key} header plus a bearer
+ * token via the shared {@link NotificationApiAuthenticator} (refreshed once on a
+ * 401).
  *
- * <p>The adapter is a host-resident service reached via an explicit URL backed
- * by {@link InnbucksGatewayProperties}. Failures are surfaced as
- * {@link NotificationDeliveryException}; the best-effort {@link NotificationService}
- * facade catches them so an inline business flow is never failed by an SMS outage.
+ * <p>Failures are surfaced as {@link NotificationDeliveryException}; the
+ * best-effort {@link NotificationService} facade catches them so an inline
+ * business flow is never failed by an SMS outage.
  *
  * <p>Never logs the message body — it may contain a temporary password.
  */
@@ -29,9 +33,12 @@ public class SmsNotificationClient {
     private static final String SMS_PATH = "/notifications/sms";
 
     private final RestClient restClient;
+    private final NotificationApiAuthenticator authenticator;
 
-    public SmsNotificationClient(@Qualifier("innbucksGatewayRestClient") RestClient restClient) {
+    public SmsNotificationClient(@Qualifier("innbucksGatewayRestClient") RestClient restClient,
+                                 NotificationApiAuthenticator authenticator) {
         this.restClient = restClient;
+        this.authenticator = authenticator;
     }
 
     /**
@@ -46,6 +53,7 @@ public class SmsNotificationClient {
         if (message == null || message.isBlank()) {
             throw new NotificationDeliveryException("SMS message is blank");
         }
+        authenticator.requireConfigured();
         String ref = (reference != null && !reference.isBlank())
                 ? reference
                 : "LOANS-SMS-" + UUID.randomUUID();
@@ -54,24 +62,35 @@ public class SmsNotificationClient {
         body.put("message", message);
         body.put("reference", ref);
         body.put("senderId", "INNBUCKS");
-        try {
-            restClient.post()
-                    .uri(SMS_PATH)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity();
-            log.info("SMS notification accepted by gateway destination={} ref={}", destination, ref);
-        } catch (RestClientResponseException ex) {
-            log.warn("InnBucks gateway rejected SMS destination={} ref={} status={} body={}",
-                    destination, ref, ex.getStatusCode(), ex.getResponseBodyAsString());
-            throw new NotificationDeliveryException(
-                    "InnBucks gateway rejected SMS: HTTP " + ex.getStatusCode().value(), ex);
-        } catch (RuntimeException ex) {
-            log.warn("InnBucks gateway unreachable destination={} ref={} error={}",
-                    destination, ref, ex.getMessage());
-            throw new NotificationDeliveryException(
-                    "InnBucks gateway unreachable: " + ex.getMessage(), ex);
-        }
+
+        authenticator.withAuthRetryOn401(token -> {
+            try {
+                restClient.post()
+                        .uri(SMS_PATH)
+                        .header(NotificationApiAuthenticator.API_KEY_HEADER, authenticator.apiKey())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .toBodilessEntity();
+                log.info("SMS notification accepted by gateway destination={} ref={}", destination, ref);
+                return null;
+            } catch (RestClientResponseException ex) {
+                if (ex.getStatusCode().value() == 401) {
+                    throw new NotificationApiAuthenticator.UnauthorizedException();
+                }
+                log.warn("InnBucks gateway rejected SMS destination={} ref={} status={} body={}",
+                        destination, ref, ex.getStatusCode(), ex.getResponseBodyAsString());
+                throw new NotificationDeliveryException(
+                        "InnBucks gateway rejected SMS: HTTP " + ex.getStatusCode().value(), ex);
+            } catch (NotificationDeliveryException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                log.warn("InnBucks gateway unreachable destination={} ref={} error={}",
+                        destination, ref, ex.getMessage());
+                throw new NotificationDeliveryException(
+                        "InnBucks gateway unreachable: " + ex.getMessage(), ex);
+            }
+        });
     }
 }
