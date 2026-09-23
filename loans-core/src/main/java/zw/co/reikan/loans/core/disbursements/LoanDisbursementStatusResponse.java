@@ -1,5 +1,6 @@
 package zw.co.reikan.loans.core.disbursements;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -8,9 +9,19 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * The InnBucks loan-inquiry response.
+ *
+ * <p>Jackson MUST bind through the no-args constructor + setters, hence the
+ * {@code @JsonCreator} on it. Without that, Jackson 3 picks Lombok's all-args
+ * constructor, passes {@code null} for {@link #success} — which we derive from
+ * the HTTP status and which never appears on the wire — and fails on the
+ * primitive, so every real inquiry came back as "Unexpected error" and the loan
+ * sat PENDING forever. Pinned by {@code InnbucksLoanApiContractTest}.
+ */
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(onConstructor_ = @JsonCreator)
 @AllArgsConstructor
 public class LoanDisbursementStatusResponse {
     private String responseCode;

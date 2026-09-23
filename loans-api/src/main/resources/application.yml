@@ -78,8 +78,17 @@ innbucks:
   username: "${INNBUCKS_USERNAME:}"
   password: "${INNBUCKS_PASSWORD:}"
   base-url: "${INNBUCKS_BASE_URL:https://staging.innbucks.co.zw}"
-  auth-endpoint: "${innbucks.base-url}/auth/merchant/login"
+  # Login, apply and inquiry follow the InnBucks IT team's loans collection:
+  # POST /auth/third-party (X-Api-Key + username/password -> accessToken), then
+  # bearer + X-Api-Key on /bank/api/loan/**. The previous /auth/merchant/login
+  # predates it and does not mint the PRE_APPROVED_LOAN_APPLICATION grant.
+  auth-endpoint: "${innbucks.base-url}/auth/third-party"
   deposit-endpoint: "${innbucks.base-url}/api/transaction/deposit"
+  create-loan-account-endpoint: "${innbucks.base-url}/bank/api/loan/apply/pre-approved"
+  loan-inquiry-endpoint: "${innbucks.base-url}/bank/api/loan/inquiry/{participantReference}"
+  # Which InnBucks product the loan is booked against. NANOUS is the value in
+  # the IT collection; confirm it with InnBucks per deployment.
+  loan-product: "${INNBUCKS_LOAN_PRODUCT:NANOUS}"
 
 # --- Notifications ---------------------------------------------------------
 # SMS is delivered through the InnBucks core gateway adapter; email through the
