@@ -18,6 +18,7 @@ import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -321,8 +322,13 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     }
 
 
+    /**
+     * Rounds to the cent rather than truncating ({@code intValue()} dropped any
+     * sub-cent remainder: 10.005 went out as 1000), and converts exactly, so an
+     * amount too large for an int fails here instead of wrapping to a wrong one.
+     */
     private int toCents(BigDecimal amount) {
-        return amount.multiply(CENTS).intValue();
+        return amount.multiply(CENTS).setScale(0, RoundingMode.HALF_UP).intValueExact();
     }
 
     private String formatDate(LocalDate localDate) {

@@ -300,7 +300,7 @@ public class LoanServiceImpl implements LoanService {
                 .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
         BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
-        BigDecimal interestRate = monthlyInterestRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal interestRate = percentToFraction(monthlyInterestRate);
 
         BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
 
@@ -315,7 +315,7 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
 
-        BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal commissionRateToUse = percentToFraction(commissionRate);
 
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
@@ -359,11 +359,24 @@ public class LoanServiceImpl implements LoanService {
     }
 
     private BigDecimal getCommissionAmount(BigDecimal totalCommissionAmount, boolean percentage, BigDecimal commissionAmount) {
-        return percentage ? totalCommissionAmount.multiply(commissionAmount.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP)) : commissionAmount;
+        // The share is a rate (exact); the amount it produces is money (to the cent).
+        return percentage
+                ? totalCommissionAmount.multiply(percentToFraction(commissionAmount)).setScale(2, RoundingMode.HALF_UP)
+                : commissionAmount;
+    }
+
+    /**
+     * Percent to fraction ("2.5" -> 0.025), exact: dividing by 100 always
+     * terminates, so no scale is needed and none may be imposed. This used to
+     * round the FRACTION to two decimals, which priced 2.5% as 3% and 3.75% as
+     * 4%. Rates stay exact; only the money amounts they produce are rounded.
+     */
+    private static BigDecimal percentToFraction(BigDecimal percent) {
+        return percent.divide(ONE_HUNDRED);
     }
 
     private void amortizeLoan(LoanDetails loanDetails) {
-        BigDecimal interestRate = loanDetails.getInterestRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal interestRate = percentToFraction(loanDetails.getInterestRate());
         BigDecimal remainingPrincipal = loanDetails.getPrincipal();
 
         for (int paymentNumber = 1; paymentNumber <= loanDetails.getTenor(); paymentNumber++) {
@@ -395,7 +408,7 @@ public class LoanServiceImpl implements LoanService {
         }
 
         if (LoanAmountType.NET_OF_FEES == request.getType()) {
-            return request.getAmount().divide(ONE.subtract(adminFeeRate.divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
+            return request.getAmount().divide(ONE.subtract(percentToFraction(adminFeeRate)), 2, RoundingMode.HALF_UP);
         }
         return request.getAmount();
     }
