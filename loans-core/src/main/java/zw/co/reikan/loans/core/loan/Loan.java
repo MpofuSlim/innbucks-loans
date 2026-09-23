@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import zw.co.reikan.loans.core.channel.Channel;
+import zw.co.reikan.loans.core.disbursements.BookingFailureKind;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.merchant.Merchant;
@@ -193,6 +194,15 @@ public class Loan extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "loan_account_status")
     private LoanAccountStatus loanAccountStatus;
+
+    /**
+     * Why the InnBucks pre-approved booking failed, when it did. Null on success and on
+     * every loan booked before this was recorded — neither of which proves anything, so
+     * only REFUSED makes a loan eligible for a manual recovery payout.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "booking_failure_kind")
+    private BookingFailureKind bookingFailureKind;
 
     @Enumerated(EnumType.STRING)
     private LineOfBusiness lineOfBusiness;

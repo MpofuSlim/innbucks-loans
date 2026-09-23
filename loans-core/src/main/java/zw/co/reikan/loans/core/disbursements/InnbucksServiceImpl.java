@@ -3,7 +3,9 @@ package zw.co.reikan.loans.core.disbursements;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
@@ -34,9 +36,10 @@ public class InnbucksServiceImpl extends DisbursementService {
     public InnbucksServiceImpl(LoanRepository loanRepository, NotificationService notificationService,
                                LoanDisbursementRepository loanDisbursementRepository,
                                RestTemplate restTemplate, InnbucksParameters parameters,
-                               InnbucksAuthService innbucksAuthService
+                               InnbucksAuthService innbucksAuthService,
+                               PlatformTransactionManager transactionManager
     ) {
-        super(loanRepository, notificationService, loanDisbursementRepository);
+        super(loanRepository, notificationService, loanDisbursementRepository, transactionManager);
         this.innbucksAuthService = innbucksAuthService;
         this.restTemplate = restTemplate;
         this.parameters = parameters;
@@ -142,48 +145,80 @@ public class InnbucksServiceImpl extends DisbursementService {
     }
 
 
+    /**
+     * One deposit under the caller's stable reference. Never re-sent, except the single
+     * replay after a 401 (an unauthenticated request was not processed), which carries the
+     * SAME reference. Classifies rather than throws:
+     * <ul>
+     *   <li>SUCCESS — a 2xx with responseCode 0;</li>
+     *   <li>FAILED — only when nothing can have been paid: a 2xx with responseCode != 0, a
+     *       4xx carrying InnBucks' own refusal, or a failure before the request left;</li>
+     *   <li>UNKNOWN — everything else (timeouts, resets, 5xx, unreadable answers), because
+     *       the money may have moved. This used to be FAILED under a fresh reference per
+     *       call, so a payout that landed but timed out was simply paid again.</li>
+     * </ul>
+     */
     public DisbursementResponse disburseFunds(DisbursementRequest request) {
-        final String uniqueTxnReference = generateReference(request.getMobileNumber());
+        final String reference = request.getTransactionReference();
+        final InnbucksDepositRequest depositRequest;
+        final HttpHeaders headers;
         try {
-            log.info("Processing loan disbursement: {}", request);
+            depositRequest = buildDepositRequest(request, reference);
+            headers = getHttpHeaders(reference);
+        } catch (RuntimeException ex) {
+            // Nothing has been written to InnBucks yet, so nothing can have been paid.
+            log.error("Deposit {} not sent", reference, ex);
+            return disbursementFailed(reference, "Not sent to InnBucks: " + describe(ex));
+        }
 
-            InnbucksDepositRequest.InnbucksDepositRequestBuilder builder = InnbucksDepositRequest.builder()
-                    .amount(toCents(request.getAmount()))
-                    .reference(uniqueTxnReference)
-                    .narration(String.format("Ref: %s", request.getReference()));
-
-            if (request.getDisbursementType() == null || request.getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
-                log.info("Disbursing to customer:{}", request);
-                builder.destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()));
-            } else {
-                log.info("Disbursing to merchant: {}", request);
-                builder.destinationAccount(request.getAccountNumber());
-            }
-
-            InnbucksDepositRequest depositRequest = builder.build();
+        try {
+            log.info("Processing loan disbursement {}: {}", reference, request);
             try {
-                return executeDisburseFunds(depositRequest, uniqueTxnReference);
+                return executeDisburseFunds(depositRequest, headers, reference);
             } catch (HttpClientErrorException e) {
-                if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                    log.warn("Token expired during funds disbursement. Refreshing token and retrying...");
-                    // Refresh token and retry
-                    innbucksAuthService.refreshToken();
-                    return executeDisburseFunds(depositRequest, uniqueTxnReference);
+                if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) {
+                    throw e;
                 }
-                throw e;
+                log.warn("Token expired during funds disbursement. Refreshing token and replaying {} once...", reference);
+                innbucksAuthService.refreshToken();
+                return executeDisburseFunds(depositRequest, getHttpHeaders(reference), reference);
             }
+        } catch (HttpClientErrorException e) {
+            return classifyClientError(e, reference);
         } catch (Exception ex) {
-            log.error("Error disbursing funds", ex);
-            return DisbursementResponse.builder()
-                    .status(DisbursementStatus.FAILED)
-                    .internalReference(uniqueTxnReference)
-                    .message(Utils.left(ex.getMessage(), 200))
-                    .build();
+            log.error("Deposit {} outcome unknown", reference, ex);
+            return disbursementUnknown(reference, describe(ex));
         }
     }
 
-    private DisbursementResponse executeDisburseFunds(InnbucksDepositRequest depositRequest, String uniqueTxnReference) {
-        HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, getHttpHeaders(uniqueTxnReference));
+    private InnbucksDepositRequest buildDepositRequest(DisbursementRequest request, String reference) {
+        if (reference == null || reference.isBlank()) {
+            throw new IllegalArgumentException("a deposit needs the caller's stable transaction reference");
+        }
+        InnbucksDepositRequest.InnbucksDepositRequestBuilder builder = InnbucksDepositRequest.builder()
+                .amount(toCents(request.getAmount()))
+                .reference(reference)
+                .narration(String.format("Ref: %s", request.getReference()));
+
+        // A missing destination is never guessed as the customer: a merchant (consumer-finance)
+        // loan paid to the customer is money sent to the wrong party.
+        if (request.getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
+            log.info("Disbursing to customer:{}", request);
+            builder.destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()));
+        } else if (request.getDisbursementType() == DisbursementType.MERCHANT_MOBILE_WALLET
+                && request.getAccountNumber() != null && !request.getAccountNumber().isBlank()) {
+            log.info("Disbursing to merchant: {}", request);
+            builder.destinationAccount(request.getAccountNumber());
+        } else {
+            throw new IllegalArgumentException("no disbursement destination (type "
+                    + request.getDisbursementType() + ")");
+        }
+        return builder.build();
+    }
+
+    private DisbursementResponse executeDisburseFunds(InnbucksDepositRequest depositRequest, HttpHeaders headers,
+                                                      String reference) {
+        HttpEntity<InnbucksDepositRequest> requestEntity = new HttpEntity<>(depositRequest, headers);
 
         ResponseEntity<InnbucksDepositResponse> responseEntity = restTemplate.exchange(
                 parameters.getDepositEndpoint(),
@@ -193,14 +228,75 @@ public class InnbucksServiceImpl extends DisbursementService {
 
         final InnbucksDepositResponse depositResponse = responseEntity.getBody();
 
-        final boolean success = depositResponse.getResponseCode() == 0;
+        if (!responseEntity.getStatusCode().is2xxSuccessful()
+                || depositResponse == null || depositResponse.getResponseCode() == null) {
+            // An answer we cannot read says nothing about whether the money moved.
+            return disbursementUnknown(reference, "InnBucks answered HTTP "
+                    + responseEntity.getStatusCode().value() + " without a response code");
+        }
+        if (depositResponse.getResponseCode() != 0) {
+            return disbursementFailed(reference, "responseCode " + depositResponse.getResponseCode()
+                    + " " + depositResponse.getResponseMsg());
+        }
 
         return DisbursementResponse.builder()
-                .status(success ? DisbursementStatus.SUCCESS : DisbursementStatus.FAILED)
+                .status(DisbursementStatus.SUCCESS)
                 .approvalCode(depositResponse.getAuthNumber())
                 .internalReference(depositResponse.getStan())
-                .message(Utils.left(depositResponse.getResponseMsg(), 200))
+                .message(depositResponse.getResponseMsg() == null ? null : Utils.left(depositResponse.getResponseMsg(), 200))
                 .build();
+    }
+
+    /**
+     * A 4xx proves nothing was paid only when it is InnBucks' own refusal: its deposit
+     * envelope with a non-zero responseCode. A body we cannot read (a proxy or WAF page) proves
+     * nothing; neither does a 408 (it stopped reading) or a 409 (most plausibly this reference
+     * already exists — i.e. an earlier attempt landed).
+     */
+    private DisbursementResponse classifyClientError(HttpClientErrorException e, String reference) {
+        int status = e.getStatusCode().value();
+        InnbucksDepositResponse body = readDepositBody(e);
+        if (status != 408 && status != 409
+                && body != null && body.getResponseCode() != null && body.getResponseCode() != 0) {
+            log.warn("Deposit {} refused by InnBucks: HTTP {} {}", reference, status, e.getResponseBodyAsString());
+            return disbursementFailed(reference, "HTTP " + status + " responseCode " + body.getResponseCode()
+                    + " " + body.getResponseMsg());
+        }
+        log.error("Deposit {} answered HTTP {} with no refusal we can rely on: {}",
+                reference, status, e.getResponseBodyAsString());
+        return disbursementUnknown(reference, describe(e));
+    }
+
+    private static InnbucksDepositResponse readDepositBody(HttpClientErrorException e) {
+        try {
+            return e.getResponseBodyAs(InnbucksDepositResponse.class);
+        } catch (RuntimeException unreadable) {
+            return null;
+        }
+    }
+
+    private static DisbursementResponse disbursementFailed(String reference, String message) {
+        return DisbursementResponse.builder()
+                .status(DisbursementStatus.FAILED)
+                .internalReference(reference)
+                .message(Utils.left(message, 200))
+                .build();
+    }
+
+    private static DisbursementResponse disbursementUnknown(String reference, String message) {
+        return DisbursementResponse.builder()
+                .status(DisbursementStatus.UNKNOWN)
+                .internalReference(reference)
+                .message(Utils.left(message, 200))
+                .build();
+    }
+
+    private static String describe(Exception ex) {
+        if (ex instanceof RestClientResponseException http) {
+            String body = http.getResponseBodyAsString();
+            return "HTTP " + http.getStatusCode().value() + (body.isBlank() ? "" : " " + body.strip());
+        }
+        return ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
     }
 
     private HttpHeaders getHttpHeaders(String traceId) {

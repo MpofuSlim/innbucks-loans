@@ -5,10 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientResponseException;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
+import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -26,6 +28,7 @@ public class LoanAccountCreationJob {
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
+    private final LoanDisbursementRepository loanDisbursementRepository;
 
     /**
      * Processes pending loan accounts that have been approved.
@@ -43,7 +46,7 @@ public class LoanAccountCreationJob {
     }
 
     private void createLoanAccount(Loan loan) {
-        if (isLoanAccountAlreadyCreated(loan)) {
+        if (isLoanAccountAlreadyCreated(loan) || mustNotBook(loan)) {
             return;
         }
         try {
@@ -69,9 +72,32 @@ public class LoanAccountCreationJob {
         return false;
     }
 
+    /**
+     * InnBucks pays on the booking, so booking a loan that is already paid, or whose payout
+     * is in flight, pays it again. Defence in depth: this job only picks account-PENDING
+     * loans, but other code (an SSB re-approval) can put a loan back to PENDING.
+     */
+    private boolean mustNotBook(Loan loan) {
+        if (loan.getDisbursementStatus() == LoanDisbursementStatus.SUCCESS) {
+            log.warn("Loan {} is already disbursed; not booking it again", loan.getId());
+            return true;
+        }
+        if (loan.getBookingFailureKind() == BookingFailureKind.AMBIGUOUS) {
+            log.warn("Loan {}: an earlier InnBucks booking has an unknown outcome and may have paid it;"
+                    + " held for an operator, not re-booked", loan.getId());
+            return true;
+        }
+        if (loanDisbursementRepository.existsByLoanId(loan.getId())) {
+            log.warn("Loan {} has a manual payout attempt; not booking it", loan.getId());
+            return true;
+        }
+        return false;
+    }
+
     private void handleSuccessfulAccountCreation(Loan loan, LoanAccountCreationResponse response) {
         log.info("Loan account created successfully for loan: {}", loan.getId());
 
+        loan.setBookingFailureKind(null);
         loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
         loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
         loan.setDisbursementReference(response.getReference());
@@ -98,9 +124,11 @@ public class LoanAccountCreationJob {
         }
     }
 
+    /** A non-2xx InnBucks answered and we read: a definite refusal. */
     private void handleFailedAccountCreation(Loan loan, LoanAccountCreationResponse response) {
         log.info("Loan account creation failed for loan: {}", loan.getId());
 
+        loan.setBookingFailureKind(BookingFailureKind.REFUSED);
         loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
         loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
         loan.setDisbursementReference(response.getReference());
@@ -109,11 +137,43 @@ public class LoanAccountCreationJob {
     }
 
     private void handleAccountCreationException(Loan loan, Exception ex) {
-        log.error("Loan account creation failed for loan: {} with exception", loan.getId(), ex);
+        BookingFailureKind kind = classify(ex);
+        loan.setBookingFailureKind(kind);
 
-        loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
-        loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
-        loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
+        if (kind == BookingFailureKind.REFUSED) {
+            log.error("Loan account creation refused for loan: {}", loan.getId(), ex);
+            loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
+            loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
+            loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
+            return;
+        }
+
+        // The booking may have landed, and InnBucks pays on booking. Marking it FAILED would
+        // read as "definitively not paid" and invite a recovery payout. Treat it as booked
+        // instead: the inquiry job resolves a booking that landed, and one that did not
+        // simply stays PENDING for an operator — never re-booked, never re-paid.
+        log.error("Loan account creation outcome unknown for loan: {}; holding it for the inquiry job",
+                loan.getId(), ex);
+        loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+        loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
+        loan.setDisbursementReference(loan.getReference());
+        loan.setDisbursementStatusMessage(truncate("InnBucks loan application outcome unknown (held, not failed): "
+                + describe(ex)));
+    }
+
+    /**
+     * Only InnBucks' own 4xx answer proves it did not book. A 5xx, a timeout, a reset after
+     * the request left, a parse error — anything that is not a 4xx — may follow a booking
+     * that landed. So may a 409 (plausibly "this participantReference already exists") and
+     * a 408 (it stopped reading, which is not a statement of what it did). A 401 reaching
+     * here is the answer to our one re-authenticated replay, so it counts as a refusal.
+     */
+    private static BookingFailureKind classify(Exception ex) {
+        if (ex instanceof HttpClientErrorException http) {
+            int status = http.getStatusCode().value();
+            return status == 408 || status == 409 ? BookingFailureKind.AMBIGUOUS : BookingFailureKind.REFUSED;
+        }
+        return BookingFailureKind.AMBIGUOUS;
     }
 
     /**
