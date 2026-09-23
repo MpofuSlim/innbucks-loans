@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -103,7 +104,8 @@ class InnbucksLoanApiContractTest {
 
         InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
         return new InnbucksServiceImpl(mock(LoanRepository.class), mock(NotificationService.class),
-                mock(LoanDisbursementRepository.class), restTemplate, params, auth);
+                mock(LoanDisbursementRepository.class), restTemplate, params, auth,
+                mock(PlatformTransactionManager.class));
     }
 
     /** The collection's sample applicant, as a loan this system would hold. */
