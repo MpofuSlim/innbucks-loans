@@ -136,6 +136,18 @@ class DeductionCancellationServiceTest {
     }
 
     @Test
+    @DisplayName("an IN DOUBT flag tells the operator to confirm with InnBucks before cancelling; others say cancel")
+    void inDoubtActionSaysConfirmFirst() {
+        assertThat(DeductionCancellationService.operatorAction("BOOKING_IN_DOUBT"))
+                .contains("customer may hold this loan",
+                        "confirm with InnBucks that no loan was booked under this reference before cancelling");
+        for (String reason : List.of("CREDIT_REJECTED", "BOOKING_FAILED", "LODGEMENT_FAILED", "ACCEPTED_AFTER_CLOSE")) {
+            assertThat(DeductionCancellationService.operatorAction(reason))
+                    .as(reason).contains("cancel the deduction").doesNotContain("confirm with InnBucks");
+        }
+    }
+
+    @Test
     @DisplayName("withdraw clears a REQUIRED flag and audits it; a recorded cancellation is left alone")
     void withdraw() {
         Loan flagged = lodgedLoan(42L);
@@ -164,6 +176,7 @@ class DeductionCancellationServiceTest {
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.REQUIRED);
         loan.setDeductionCancellationReason("CREDIT_REJECTED");
         loan.setDeductionCancellationRequestedAt(LocalDateTime.of(2026, 9, 20, 8, 30));
+        loan.setDisbursementStatusMessage("InnBucks loan application failed: HTTP 400 Invalid idNumber");
         when(loanRepository.findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(
                 DeductionCancellationStatus.REQUIRED)).thenReturn(List.of(loan));
 
@@ -180,6 +193,9 @@ class DeductionCancellationServiceTest {
             assertThat(dto.getBatchNumber()).isEqualTo("BATCH-20260901-07");
             assertThat(dto.getNdasendaDeductionId()).isEqualTo("ND-7002");
             assertThat(dto.getReason()).isEqualTo("CREDIT_REJECTED");
+            assertThat(dto.getAction()).contains("cancel the deduction on Ndasenda's portal");
+            assertThat(dto.getDisbursementStatusMessage())
+                    .isEqualTo("InnBucks loan application failed: HTTP 400 Invalid idNumber");
             assertThat(dto.getRequestedAt()).isEqualTo(LocalDateTime.of(2026, 9, 20, 8, 30));
             assertThat(dto.getStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         });
@@ -204,6 +220,7 @@ class DeductionCancellationServiceTest {
         assertThat(dto.getStatus()).isEqualTo(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         assertThat(dto.getCancelledBy()).isEqualTo("finance.officer");
         assertThat(dto.getNote()).isEqualTo("Cancelled on portal, ref NDC-551");
+        assertThat(dto.getAction()).isNull();
 
         AuditLog audit = audits(2).get(1);
         assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLED_EXTERNALLY");

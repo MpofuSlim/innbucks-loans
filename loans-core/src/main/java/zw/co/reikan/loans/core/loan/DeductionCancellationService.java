@@ -37,8 +37,14 @@ public class DeductionCancellationService {
 
     /** Credit declined a loan whose deduction Ndasenda had already accepted. */
     public static final String REASON_CREDIT_REJECTED = "CREDIT_REJECTED";
-    /** InnBucks booking/payout failed definitively and the saga compensated. */
+    /** InnBucks answered and refused the booking, or its inquiry reported the loan FAILED: nothing was booked. */
     public static final String REASON_BOOKING_FAILED = "BOOKING_FAILED";
+    /**
+     * The booking or payout failed without InnBucks saying so (a timeout, a 5xx, a 409, an unreadable
+     * answer, or a failure no writer classified). InnBucks books AND pays on one call, so the
+     * customer may hold the loan: cancelling its repayment before checking would be the worse error.
+     */
+    public static final String REASON_BOOKING_IN_DOUBT = "BOOKING_IN_DOUBT";
     /** The lodgement reached Ndasenda, but a later step threw and the loan was marked FAILED. */
     public static final String REASON_LODGEMENT_FAILED = "LODGEMENT_FAILED";
     /** Ndasenda reported the deduction accepted for a loan we had already closed (declined or FAILED). */
@@ -50,6 +56,17 @@ public class DeductionCancellationService {
     private final AuditService auditService;
     private final AuthService authService;
 
+    /** What the operator must do about a flag, shown in its ERROR line and in the queue. */
+    public static String operatorAction(String reason) {
+        if (REASON_BOOKING_IN_DOUBT.equals(reason)) {
+            return "The InnBucks booking failed without a definitive answer, so the customer may hold this loan:"
+                    + " confirm with InnBucks that no loan was booked under this reference before cancelling"
+                    + " the deduction on Ndasenda's portal";
+        }
+        return "The loan will not be paid but its payroll deduction reached Ndasenda:"
+                + " cancel the deduction on Ndasenda's portal";
+    }
+
     /** A batch number, or Ndasenda's own id for the deduction, is the evidence a lodgement reached Ndasenda. */
     public static boolean wasLodged(Loan loan) {
         return StringUtils.isNotBlank(loan.getBatchNumber()) || StringUtils.isNotBlank(loan.getApprovalReference());
@@ -60,7 +77,8 @@ public class DeductionCancellationService {
      * with that evidence in hand ({@link #wasLodged}, a credit decision that requires Ndasenda's
      * acceptance, or Ndasenda's own report). Idempotent: a loan already flagged keeps its first
      * reason and time, and one already cancelled is never re-flagged. Only mutates the loan; the
-     * caller saves it.
+     * caller saves it. The audit row commits on its own (REQUIRES_NEW) before that save, so a save
+     * that then fails leaves an audit row for a flag that did not persist.
      *
      * @return whether this call set the flag
      */
@@ -73,10 +91,9 @@ public class DeductionCancellationService {
         loan.setDeductionCancellationRequestedAt(LocalDateTime.now());
 
         log.error("DEDUCTION CANCELLATION REQUIRED ({}): loan {} reference {} batch {} ec {} instalment {}"
-                        + " - the loan will not be paid but its payroll deduction reached Ndasenda;"
-                        + " cancel it on Ndasenda's portal and record it (audited)",
+                        + " - {}, then record it (audited)",
                 reason, loan.getId(), loan.getReference(), loan.getBatchNumber(),
-                maskEcNumber(loan.getEcNumber()), loan.getGrossedMonthlyDeduction());
+                maskEcNumber(loan.getEcNumber()), loan.getGrossedMonthlyDeduction(), operatorAction(reason));
         audit(CANCELLATION_REQUIRED, loan, actor, channel, null, DeductionCancellationStatus.REQUIRED,
                 "reason=" + reason, null);
         return true;

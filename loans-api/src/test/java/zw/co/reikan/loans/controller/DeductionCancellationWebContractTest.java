@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -88,7 +89,9 @@ class DeductionCancellationWebContractTest {
         return DeductionCancellationDto.builder()
                 .id(42L).reference("000000042").ecNumber("*****67A")
                 .instalmentLodged(new BigDecimal("98.50")).batchNumber("BATCH-20260901-07")
-                .reason("CREDIT_REJECTED").requestedAt(LocalDateTime.of(2026, 9, 20, 8, 30))
+                .reason("BOOKING_IN_DOUBT").requestedAt(LocalDateTime.of(2026, 9, 20, 8, 30))
+                .action(DeductionCancellationService.operatorAction("BOOKING_IN_DOUBT"))
+                .disbursementStatusMessage("InnBucks loan application failed: I/O error: Read timed out")
                 .status(DeductionCancellationStatus.REQUIRED)
                 .build();
     }
@@ -106,7 +109,11 @@ class DeductionCancellationWebContractTest {
                 .andExpect(jsonPath("$[0].ecNumber").value("*****67A"))
                 .andExpect(jsonPath("$[0].instalmentLodged").value(98.50))
                 .andExpect(jsonPath("$[0].batchNumber").value("BATCH-20260901-07"))
-                .andExpect(jsonPath("$[0].reason").value("CREDIT_REJECTED"))
+                .andExpect(jsonPath("$[0].reason").value("BOOKING_IN_DOUBT"))
+                .andExpect(jsonPath("$[0].action").value(containsString(
+                        "confirm with InnBucks that no loan was booked")))
+                .andExpect(jsonPath("$[0].disbursementStatusMessage")
+                        .value("InnBucks loan application failed: I/O error: Read timed out"))
                 .andExpect(jsonPath("$[0].status").value("REQUIRED"))
                 .andExpect(jsonPath("$[0].requestedAt").exists())
                 .andExpect(jsonPath("$[0].note").doesNotExist());

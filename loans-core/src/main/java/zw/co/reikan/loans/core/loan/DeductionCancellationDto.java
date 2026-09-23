@@ -27,6 +27,10 @@ public class DeductionCancellationDto {
     /** Ndasenda's own id for the deduction, once it has answered. */
     private String ndasendaDeductionId;
     private String reason;
+    /** What to do while it is REQUIRED; for BOOKING_IN_DOUBT, confirm with InnBucks that nothing was booked first. */
+    private String action;
+    /** Why the InnBucks booking or payout failed, as recorded on the loan (e.g. its HTTP answer or a timeout). */
+    private String disbursementStatusMessage;
     private LocalDateTime requestedAt;
     private DeductionCancellationStatus status;
     private String note;
@@ -42,6 +46,10 @@ public class DeductionCancellationDto {
                 .batchNumber(loan.getBatchNumber())
                 .ndasendaDeductionId(loan.getApprovalReference())
                 .reason(loan.getDeductionCancellationReason())
+                // Nothing left to do once the cancellation is recorded.
+                .action(loan.getDeductionCancellationStatus() == DeductionCancellationStatus.REQUIRED
+                        ? DeductionCancellationService.operatorAction(loan.getDeductionCancellationReason()) : null)
+                .disbursementStatusMessage(loan.getDisbursementStatusMessage())
                 .requestedAt(loan.getDeductionCancellationRequestedAt())
                 .status(loan.getDeductionCancellationStatus())
                 .note(loan.getDeductionCancellationNote())

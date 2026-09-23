@@ -89,7 +89,10 @@ public class LoanManagementController {
             description = "Loans whose Ndasenda payroll deduction was lodged but which will not be paid, oldest first."
                     + " Each must be cancelled on Ndasenda's portal and then recorded with"
                     + " PUT /api/loans/{id}/deduction-cancellation. Reasons: CREDIT_REJECTED, BOOKING_FAILED,"
-                    + " LODGEMENT_FAILED, ACCEPTED_AFTER_CLOSE.",
+                    + " BOOKING_IN_DOUBT, LODGEMENT_FAILED, ACCEPTED_AFTER_CLOSE. BOOKING_IN_DOUBT means the InnBucks"
+                    + " booking failed without a definitive answer and the customer may hold the loan: confirm with"
+                    + " InnBucks that no loan was booked before cancelling (each row's action and"
+                    + " disbursementStatusMessage say so).",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses(value = {

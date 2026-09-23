@@ -7,6 +7,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
@@ -33,6 +34,9 @@ class LoanDisbursementStatusJobTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private DeductionCancellationService deductionCancellationService;
 
     @InjectMocks
     private LoanDisbursementStatusJob loanDisbursementStatusJob;
@@ -161,6 +165,7 @@ class LoanDisbursementStatusJobTest {
         verify(testLoan).setDateDisbursed(any(LocalDateTime.class));
         verify(notificationService).sendSms(anyString(), anyString());
         verify(loanRepository).save(testLoan);
+        verifyNoInteractions(deductionCancellationService);
     }
 
     @Test
@@ -207,6 +212,9 @@ class LoanDisbursementStatusJobTest {
         verify(testLoan, never()).setDateDisbursed(any(LocalDateTime.class));
         verify(notificationService, never()).sendSms(anyString(), anyString());
         verify(loanRepository).save(testLoan);
+        // InnBucks itself reported it FAILED: the lodged deduction is flagged, independent of the saga.
+        verify(deductionCancellationService).markRequired(testLoan, "BOOKING_FAILED",
+                "loan-disbursement-status-job", "system");
     }
 
     @Test

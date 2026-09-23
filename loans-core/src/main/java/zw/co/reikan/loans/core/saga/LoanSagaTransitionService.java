@@ -136,9 +136,11 @@ public class LoanSagaTransitionService {
      *   <li><b>Saga:</b> transition to COMPENSATED with a full audit trail.
      *       The loan's status columns are untouched — failed loans keep
      *       surfacing in the existing back-office workflow exactly as before.</li>
-     *   <li><b>Payroll deduction:</b> flag it for cancellation. It was lodged
-     *       with Ndasenda before credit and booking, and stays live on the
-     *       customer's salary for a loan that will now never be paid.</li>
+     *   <li><b>Payroll deduction:</b> a backstop flag. It was lodged with
+     *       Ndasenda before credit and booking, and stays live on the customer's
+     *       salary. The jobs that write the failure flag it first with the reason
+     *       they know; this catches one no writer classified (a payout that
+     *       exhausted its retries), and says it is in doubt.</li>
      * </ol>
      */
     private void applyCompensation(LoanSaga saga, Loan loan) {
@@ -168,8 +170,10 @@ public class LoanSagaTransitionService {
         auditService.recordTransition("LOAN_SAGA", String.valueOf(loan.getId()), SYSTEM_ACTOR, "system",
                 from.name(), LoanSagaState.COMPENSATED.name(), ledgerOutcome, correlationId(loan));
 
-        // Idempotent: a replayed compensation, or a loan already flagged, is left as it is.
-        if (deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_FAILED,
+        // The saga sees only disbursementStatus FAILED, not why: a timeout or 5xx lands there too, and
+        // the customer may hold the loan, so it never asserts a definitive failure. Idempotent: a loan
+        // the booking job already flagged keeps that job's reason.
+        if (deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_IN_DOUBT,
                 SYSTEM_ACTOR, "system")) {
             loanRepository.save(loan);
         }

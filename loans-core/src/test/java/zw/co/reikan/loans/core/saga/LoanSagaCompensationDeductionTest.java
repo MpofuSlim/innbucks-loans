@@ -27,9 +27,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * A definitive booking failure ends at the saga's compensation, which is the one place that records
- * that outcome; the payroll deduction lodged before credit is still live there, so it is flagged
- * for cancellation — once, whichever path (first pass or retry) runs the compensation.
+ * The saga's compensation is a BACKSTOP flag for the payroll deduction lodged before credit: the jobs
+ * that write a booking failure flag it first with the reason they know. The saga sees only
+ * {@code disbursementStatus: FAILED}, which a timeout or 5xx also produces while the customer may
+ * hold the loan, so it flags IN DOUBT, never BOOKING_FAILED — once, whichever path runs it.
  */
 class LoanSagaCompensationDeductionTest {
 
@@ -79,15 +80,15 @@ class LoanSagaCompensationDeductionTest {
     }
 
     @Test
-    @DisplayName("a booking failure that the saga compensates flags the deduction for cancellation")
-    void compensationFlagsDeductionCancellation() {
+    @DisplayName("a failure no writer flagged is flagged IN DOUBT by the compensation, never BOOKING_FAILED")
+    void compensationFlagsDeductionCancellationInDoubt() {
         LoanSaga saga = saga(LoanSagaState.CREDIT_APPROVED);
 
         service.reconcileLoan(42L);
 
         assertThat(saga.getCurrentState()).isEqualTo(LoanSagaState.COMPENSATED);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
-        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_IN_DOUBT");
         verify(loanRepository).save(loan);
         AuditLog audit = requiredAuditedOnce();
         assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_REQUIRED");
@@ -105,11 +106,11 @@ class LoanSagaCompensationDeductionTest {
         assertThat(saga.getCurrentState()).isEqualTo(LoanSagaState.COMPENSATED);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         verify(loanRepository).save(loan);
-        assertThat(requiredAuditedOnce().getDetail()).contains("reason=BOOKING_FAILED");
+        assertThat(requiredAuditedOnce().getDetail()).contains("reason=BOOKING_IN_DOUBT");
     }
 
     @Test
-    @DisplayName("a retry over a loan already flagged neither re-flags nor re-saves it")
+    @DisplayName("a loan the booking job already flagged keeps that job's reason: not re-flagged, not re-saved")
     void compensationRetryIsIdempotent() {
         saga(LoanSagaState.DISBURSEMENT_FAILED);
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.REQUIRED);
@@ -117,6 +118,7 @@ class LoanSagaCompensationDeductionTest {
 
         service.compensate(42L);
 
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
         verify(loanRepository, never()).save(any());
         verify(auditService, never()).record(any());
     }
