@@ -5,12 +5,14 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import zw.co.reikan.loans.core.exception.BusinessException;
+import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
 import java.util.stream.Collectors;
@@ -70,6 +72,24 @@ public class RestExceptionHandler {
         ErrorResponse errorResponse = new ErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
         log.warn("Business rule violation: {}", ex.getMessage());
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(NotFoundException ex) {
+        log.warn("Not found: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage()), HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * An unparseable body — malformed JSON, an enum value that is not one of the
+     * names (e.g. "Married" for MARRIED), a date not in yyyy-MM-dd. It is the
+     * caller's input, so a 400; the catch-all used to answer it with a 500.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.warn("Unreadable request body: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.BAD_REQUEST,
+                "Malformed request body — check enum values and yyyy-MM-dd dates"), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(AuthenticationException.class)

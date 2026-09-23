@@ -1,5 +1,9 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
 import jakarta.persistence.*;
@@ -10,21 +14,27 @@ import java.time.LocalDate;
 @Embeddable
 public class EmploymentDetail {
 
+    @NotBlank(groups = LoanApplicationChecks.class, message = "Employer name is required")
     @Column(name = "employee_name")
     private String employerName;
 
     @Column(name = "employee_contact_number")
     private String employerContactNumber;
 
+    @NotBlank(groups = LoanApplicationChecks.class, message = "Employee number is required")
     @Column(name = "employee_number")
     private String employeeNumber;
 
+    @NotNull(groups = LoanApplicationChecks.class, message = "Gross salary is required")
+    @Positive(groups = LoanApplicationChecks.class, message = "Gross salary must be greater than zero")
     @Column(name = "gross_salary")
     private BigDecimal grossSalary;
 
     @Column(name = "net_salary")
     private BigDecimal netSalary;
 
+    @NotNull(groups = LoanApplicationChecks.class, message = "Employment start date is required")
+    @PastOrPresent(groups = LoanApplicationChecks.class, message = "Employment start date cannot be in the future")
     @Column(name = "employment_start_date")
     private LocalDate employmentStartDate;
 

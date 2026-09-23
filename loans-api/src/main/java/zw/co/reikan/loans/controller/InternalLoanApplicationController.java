@@ -6,13 +6,16 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.groups.Default;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.LoanResponse;
+import zw.co.reikan.loans.core.loan.LoanApplicationChecks;
 import zw.co.reikan.loans.core.loan.LoanDetails;
 import zw.co.reikan.loans.core.loan.LoanRequest;
 import zw.co.reikan.loans.core.loan.LoanService;
@@ -44,7 +47,11 @@ public class InternalLoanApplicationController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans")
-    public LoanResponse create(@Valid @RequestBody LoanRequest request) {
+    public LoanResponse create(
+            // Default + LoanApplicationChecks: an application must carry what the
+            // InnBucks step needs, reported in ONE 400. The calculator below stays
+            // on Default alone so a quote needs only the loan terms.
+            @Validated({Default.class, LoanApplicationChecks.class}) @RequestBody LoanRequest request) {
         log.info("Create loan request: {}", request);
         return loanService.requestLoan(request);
     }
