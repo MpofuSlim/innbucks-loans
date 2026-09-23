@@ -13,6 +13,10 @@ import java.time.LocalDateTime;
 
 public class LoanSpecification {
 
+    public static Specification<Loan> withId(Long id) {
+        return (root, query, cb) -> cb.equal(root.get("id"), id);
+    }
+
     public static Specification<Loan> withInternalApprovalStatus(InternalApprovalStatus status) {
         if (status == null) {
             return unrestricted();

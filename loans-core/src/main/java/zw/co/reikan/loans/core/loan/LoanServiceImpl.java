@@ -18,6 +18,7 @@ import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
@@ -85,10 +86,41 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
+    public List<LoanDto> findLoans(FindLoansRequest request, LoanReadScope scope) {
+        if (scope.platformWide()) {
+            return findLoans(request);
+        }
+        // The same merchant + originator predicates MerchantController's search uses.
+        return findLoansForMerchant(FindLoansInternalRequest.builder()
+                .merchantCode(scope.merchantCode())
+                .userId(scope.userId())
+                .approvalStatus(request.getApprovalStatus())
+                .internalApprovalStatus(request.getInternalApprovalStatus())
+                .disbursementStatus(request.getDisbursementStatus())
+                .fromDate(request.getFromDate())
+                .toDate(request.getToDate())
+                .build());
+    }
+
+    @Override
     public LoanDto getLoan(Long id) {
         return loanRepository.findById(id)
                 .map(loanMapper::fromLoan)
-                .orElseThrow();
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
+    }
+
+    @Override
+    public LoanDto getLoan(Long id, LoanReadScope scope) {
+        if (scope.platformWide()) {
+            return getLoan(id);
+        }
+        // Scope applied IN the query, so an out-of-scope loan is simply not found —
+        // the same 404 as a missing id, which keeps this from being an existence oracle.
+        return loanRepository.findOne(where(withId(id))
+                        .and(withMerchantCode(scope.merchantCode()))
+                        .and(createdByUserOrAsAgent(scope.userId())))
+                .map(loanMapper::fromLoan)
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
     }
 
 
