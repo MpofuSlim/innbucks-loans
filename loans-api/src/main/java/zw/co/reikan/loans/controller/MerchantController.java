@@ -1,4 +1,6 @@
 package zw.co.reikan.loans.controller;
+
+import jakarta.validation.Valid;
 import zw.co.reikan.loans.dto.LoansWrapper;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -69,7 +71,7 @@ public class MerchantController {
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<MerchantDto> createMerchant(@RequestBody CreateMerchantRequest createMerchantRequest) {
+    public ResponseEntity<MerchantDto> createMerchant(@Valid @RequestBody CreateMerchantRequest createMerchantRequest) {
         MerchantDto merchant = merchantService.createMerchant(createMerchantRequest);
         return ResponseEntity.ok(merchant);
     }
@@ -102,7 +104,7 @@ public class MerchantController {
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
-                                                        @RequestBody CreateAgentRequest createUserRequest,
+                                                        @Valid @RequestBody CreateAgentRequest createUserRequest,
                                                         @PathVariable String merchantCode) {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
@@ -126,7 +128,7 @@ public class MerchantController {
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createSalesConsultant(Principal principal,
-                                                                  @RequestBody CreateAgentRequest createUserRequest,
+                                                                  @Valid @RequestBody CreateAgentRequest createUserRequest,
                                                                   @PathVariable String externalSystemId) {
 
         log.info("Creating sales consultant for user {}", externalSystemId);
@@ -157,7 +159,7 @@ public class MerchantController {
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createUser(Principal principal,
-                                                       @RequestBody CreateAgentRequest createUserRequest,
+                                                       @Valid @RequestBody CreateAgentRequest createUserRequest,
                                                        @PathVariable String merchantCode) {
         return createAgent(principal, createUserRequest, merchantCode);
     }

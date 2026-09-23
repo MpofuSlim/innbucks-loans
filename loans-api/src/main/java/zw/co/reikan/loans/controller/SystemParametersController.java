@@ -1,5 +1,7 @@
 package zw.co.reikan.loans.controller;
 
+import jakarta.validation.Valid;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -59,7 +61,7 @@ public class SystemParametersController {
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
             @ApiResponse(responseCode = "403", description = "Forbidden. caller lacks the BULKIT_ADMIN role"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public CommissionGroupDto createCommissionGroup(@RequestBody CreateCommissionGroupRequest request) {
+    public CommissionGroupDto createCommissionGroup(@Valid @RequestBody CreateCommissionGroupRequest request) {
         return commissionGroupService.create(request);
     }
 }

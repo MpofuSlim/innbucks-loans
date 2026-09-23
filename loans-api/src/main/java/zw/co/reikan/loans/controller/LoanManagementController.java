@@ -1,5 +1,7 @@
 package zw.co.reikan.loans.controller;
 
+import jakarta.validation.Valid;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -69,7 +71,7 @@ public class LoanManagementController {
     })
     @PostMapping("/loans/{id}/approve")
     @PreAuthorize("hasAnyRole('CREDIT_MANAGER','BULKIT_ADMIN')")
-    public InternalApprovalResponse approve(@RequestBody InternalApprovalRequest request,
+    public InternalApprovalResponse approve(@Valid @RequestBody InternalApprovalRequest request,
                                             @PathVariable Long id) {
         log.info("Loan internal approval request: {}", request);
         return internalApprovalService.approveLoan(request, id);

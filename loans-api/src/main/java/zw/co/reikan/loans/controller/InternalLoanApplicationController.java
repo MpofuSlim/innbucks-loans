@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,7 +44,7 @@ public class InternalLoanApplicationController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans")
-    public LoanResponse create(@RequestBody LoanRequest request) {
+    public LoanResponse create(@Valid @RequestBody LoanRequest request) {
         log.info("Create loan request: {}", request);
         return loanService.requestLoan(request);
     }
@@ -62,7 +63,7 @@ public class InternalLoanApplicationController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/calculate")
-    public LoanDetails calculate(@RequestBody LoanRequest request) {
+    public LoanDetails calculate(@Valid @RequestBody LoanRequest request) {
         log.info("Calculate loan request: {}", request);
         //setting null logged in user to allow anonymous loan calculation
         return loanService.calculate(request, null);

@@ -2,6 +2,10 @@ package zw.co.reikan.loans.core.loan;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.Positive;
 import lombok.*;
 
 import java.io.Serializable;
@@ -15,14 +19,29 @@ import java.time.LocalDate;
 @ToString
 public class LoanRequest implements Serializable {
 
+    @NotNull(message = "Loan amount is required")
+    @Positive(message = "Loan amount must be greater than zero")
     private BigDecimal amount;
+
+    @NotBlank(message = "EC Number is required")
     private String ecnumber;
+
+    @NotBlank(message = "Mobile number is required")
     private String mobileNumber;
+
+    @NotNull(message = "Loan tenor is required")
+    @Positive(message = "Loan tenor must be greater than zero")
     private Integer tenor;
+
+    @NotBlank(message = "National ID is required")
     private String nationalId;
+
     private LoanAmountType type = LoanAmountType.NET_OF_FEES;
     private String fname;
     private String lname;
+
+    @NotNull(message = "Date of birth is required")
+    @Past(message = "Date of birth must be in the past")
     private LocalDate dateOfBirth;
     private Integer numberOfDependencies;
     private Integer numberOfChildren;

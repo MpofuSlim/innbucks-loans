@@ -105,33 +105,15 @@ public class LoanServiceImpl implements LoanService {
         return localDate.atTime(LocalTime.MAX);
     }
 
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
     @Override
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
 
-        // Required fields — each returns a clean 400 (IllegalArgumentException -> BAD_REQUEST).
-        // Guard the string fields here so a null no longer NPEs (500) on the trim/format below.
-        if (isBlank(loanRequest.getEcnumber())) {
-            throw new IllegalArgumentException("EC Number is required");
-        }
-        if (isBlank(loanRequest.getNationalId())) {
-            throw new IllegalArgumentException("National ID is required");
-        }
-        if (isBlank(loanRequest.getMobileNumber())) {
-            throw new IllegalArgumentException("Mobile number is required");
-        }
-        if (loanRequest.getAmount() == null) {
-            throw new IllegalArgumentException("Loan amount is required");
-        }
-        if (loanRequest.getTenor() == null || loanRequest.getTenor() <= 0) {
-            throw new IllegalArgumentException("Loan tenor is required");
-        }
-
+        // Presence of the required fields is enforced declaratively by bean validation
+        // (@Valid on the controller). What remains here are the business rules that need
+        // runtime context: EC-number format, the 18+ age rule, and (in calculate) the
+        // DB-driven amount/tenor ranges and the pending-loan check.
         final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
 
         if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
@@ -139,9 +121,6 @@ public class LoanServiceImpl implements LoanService {
         }
 
         val dateOfBirth = loanRequest.getDateOfBirth();
-        if (dateOfBirth == null) {
-            throw new IllegalArgumentException("Date of birth is required");
-        }
         if (dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
         }

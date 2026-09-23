@@ -1,5 +1,7 @@
 package zw.co.reikan.loans.controller;
 
+import jakarta.validation.Valid;
+
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -45,7 +47,7 @@ public class AuthController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/auth/token")
-    public AuthResponse authenticate(@RequestBody AuthRequest authRequest) {
+    public AuthResponse authenticate(@Valid @RequestBody AuthRequest authRequest) {
         try {
             log.info("Authenticating user: {}", authRequest.getUsername());
             return authService.login(authRequest);
@@ -65,7 +67,7 @@ public class AuthController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/auth/forgot-password")
-    public ResponseEntity forgotPassword(@RequestBody ForgotPasswordRequest authRequest) {
+    public ResponseEntity forgotPassword(@Valid @RequestBody ForgotPasswordRequest authRequest) {
         try {
             log.info("Resetting password for user: {}", authRequest.getUsername());
             createUserService.resetPassword(authRequest);

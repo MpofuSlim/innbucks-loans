@@ -1,4 +1,6 @@
 package zw.co.reikan.loans.core.api;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,6 +18,8 @@ import zw.co.reikan.loans.core.notifications.NotificationChannel;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AdminResetPasswordRequest {
+    @NotBlank(message = "Username is required")
     private String username;
+    @NotNull(message = "Delivery channel is required (EMAIL, SMS or WHATSAPP)")
     private NotificationChannel channel;
 }
