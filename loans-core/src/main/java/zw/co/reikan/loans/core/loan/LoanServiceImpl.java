@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
@@ -111,7 +112,12 @@ public class LoanServiceImpl implements LoanService {
         return localDate.atTime(LocalTime.MAX);
     }
 
+    /**
+     * Transactional so the applicant lock below spans the pending check AND the
+     * insert. The bulk path joins its per-item REQUIRES_NEW transaction here.
+     */
     @Override
+    @Transactional
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
@@ -127,7 +133,10 @@ public class LoanServiceImpl implements LoanService {
         // (@Valid on the controller). What remains here are the business rules that need
         // runtime context: EC-number format, the 18+ age rule, and (in calculate) the
         // DB-driven amount/tenor ranges and the pending-loan check.
-        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+
+        // Stored upper-cased, as the national ID already is, so the pending check
+        // compares like with like ("1234567a" and "1234567A" are one person).
+        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber()).toUpperCase();
 
         if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
             throw new IllegalArgumentException("EC Number is not valid");
@@ -140,9 +149,11 @@ public class LoanServiceImpl implements LoanService {
 
         final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
 
-        boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
+        lockApplicant(formattedEcNumber, formattedIdNumber);
+        Optional<Long> pendingLoanId = findPendingLoan(formattedEcNumber, formattedIdNumber);
 
-        if (hasPendingLoan) {
+        if (pendingLoanId.isPresent()) {
+            log.info("Refusing loan application: loan {} for this applicant is still in flight", pendingLoanId.get());
             return LoanResponse.builder()
                     .loanApprovalStatus(LoanApprovalStatus.REJECTED)
                     .message("You have a pending loan application.")
@@ -262,9 +273,40 @@ public class LoanServiceImpl implements LoanService {
         return user.getCommissionGroup();
     }
 
-    public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber).toUpperCase(),
-                LoanApprovalStatus.NEW);
+    /**
+     * Serialises applications for the same person across every node. Without it
+     * two concurrent submissions both read "nothing pending" before either has
+     * inserted, and both are lodged with Ndasenda. Transaction-scoped, so it is
+     * held until {@link #requestLoan}'s insert commits. Always EC then national
+     * ID, so every submission takes the two in the same order.
+     */
+    private void lockApplicant(String ecNumber, String nationalIdNumber) {
+        loanRepository.lockApplicant("loan-application:ec:" + ecNumber);
+        if (!nationalIdNumber.isEmpty()) {
+            loanRepository.lockApplicant("loan-application:nid:" + nationalIdNumber);
+        }
+    }
+
+    /**
+     * The id of this applicant's application still in flight, if any — see
+     * {@link LoanStatusSnapshot#isInFlight()} for what that means. Matched by EC
+     * number and then by national ID, so the same person under a mistyped EC
+     * number is caught too. A national ID that normalises to nothing identifies
+     * nobody, so it is not matched against other blank rows.
+     */
+    private Optional<Long> findPendingLoan(String ecNumber, String nationalIdNumber) {
+        Optional<Long> pending = firstInFlight(loanRepository.findStatusesByEcNumber(ecNumber));
+        if (pending.isEmpty() && !nationalIdNumber.isEmpty()) {
+            pending = firstInFlight(loanRepository.findStatusesByNationalId(nationalIdNumber));
+        }
+        return pending;
+    }
+
+    private static Optional<Long> firstInFlight(List<LoanStatusSnapshot> loans) {
+        return loans.stream()
+                .filter(LoanStatusSnapshot::isInFlight)
+                .map(LoanStatusSnapshot::id)
+                .findFirst();
     }
 
     @Override

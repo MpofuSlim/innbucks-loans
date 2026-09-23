@@ -29,7 +29,35 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     @Query("select l from Loan l where l.id = :id")
     Optional<Loan> findByIdForUpdate(@Param("id") Long id);
 
-    Optional<Loan> findByEcNumberAndLoanApprovalStatus(String ecNumber, LoanApprovalStatus loanApprovaStatus);
+    /**
+     * Every loan on file under this EC number, as its status columns only. The
+     * column is compared upper-cased because rows stored before the EC number
+     * was normalised can carry a lower-case check letter. Which of them count as
+     * a pending application is {@link LoanStatusSnapshot#isInFlight()}'s call.
+     */
+    @Query("""
+            select new zw.co.reikan.loans.core.loan.LoanStatusSnapshot(l.id, l.loanApprovalStatus,
+                   l.internalApprovalStatus, l.loanAccountStatus, l.disbursementStatus)
+            from Loan l where upper(l.ecNumber) = :ecNumber
+            """)
+    List<LoanStatusSnapshot> findStatusesByEcNumber(@Param("ecNumber") String ecNumber);
+
+    /** As {@link #findStatusesByEcNumber}, by national ID. */
+    @Query("""
+            select new zw.co.reikan.loans.core.loan.LoanStatusSnapshot(l.id, l.loanApprovalStatus,
+                   l.internalApprovalStatus, l.loanAccountStatus, l.disbursementStatus)
+            from Loan l where upper(l.nationalIdNumber) = :nationalIdNumber
+            """)
+    List<LoanStatusSnapshot> findStatusesByNationalId(@Param("nationalIdNumber") String nationalIdNumber);
+
+    /**
+     * Takes a transaction-scoped Postgres advisory lock on {@code key}, waiting
+     * while another transaction holds it. It is released when the CALLER'S
+     * transaction ends, so it only guards work inside that same transaction.
+     * Selected FROM the function so the result is a plain integer, not Postgres' void.
+     */
+    @Query(value = "select 1 from pg_advisory_xact_lock(hashtext(:key))", nativeQuery = true)
+    Integer lockApplicant(@Param("key") String key);
 
     Optional<Loan> findTopByNationalIdNumberAndLoanApprovalStatusIn(String idNumber, List<LoanApprovalStatus> statuses);
 
