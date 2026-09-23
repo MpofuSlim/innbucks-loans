@@ -8,9 +8,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import zw.co.reikan.loans.core.exception.BusinessException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
@@ -90,6 +93,24 @@ public class RestExceptionHandler {
         log.warn("Unreadable request body: {}", ex.getMessage());
         return new ResponseEntity<>(new ErrorResponse(HttpStatus.BAD_REQUEST,
                 "Malformed request body — check enum values and yyyy-MM-dd dates"), HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * A wrong verb (e.g. GET on the POST-only test-data wipe) is the caller's
+     * mistake; the catch-all used to answer it with a 500.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not allowed: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.METHOD_NOT_ALLOWED, ex.getMessage()),
+                ex.getHeaders(), HttpStatus.METHOD_NOT_ALLOWED);
+    }
+
+    /** An unmapped path is a 404, not a 500 that reads like a server fault. */
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNoHandler(Exception ex) {
+        log.warn("No handler: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.NOT_FOUND, "Not found"), HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(AuthenticationException.class)
