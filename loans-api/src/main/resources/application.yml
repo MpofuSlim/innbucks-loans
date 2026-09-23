@@ -41,12 +41,24 @@ spring:
 
 # --- Self-issued JWT authentication ----------------------------------------
 # Tokens are signed and validated with a shared HS256 secret; the platform is
-# its own issuer (no external identity provider). JWT_SECRET must be at least
-# 32 bytes and MUST be supplied in every deployed environment.
+# its own issuer (no external identity provider), and a token whose iss is not
+# jwt.issuer is rejected. JWT_SECRET must be at least 32 bytes and MUST be
+# supplied in every deployed environment: the default below is a public
+# placeholder, and the app refuses to boot on it unless a dev/test/local/it
+# profile is active.
 jwt:
   secret: "${JWT_SECRET:innbucks-loans-local-dev-secret-change-me-please}"
   expiration: "${JWT_EXPIRATION_MS:86400000}"
   issuer: "${JWT_ISSUER:innbucks-loans}"
+
+# --- Bootstrap super-admin ---------------------------------------------------
+# Created once, on the first boot where no user with this username exists. With
+# no password and no dev/test/local/it profile, NO admin is created (an ERROR is
+# logged); set BULKIT_PASSWORD, or bootstrap.admin.password in /app/config.
+bootstrap:
+  admin:
+    username: "${BOOTSTRAP_ADMIN_USERNAME:admin}"
+    password: "${BULKIT_PASSWORD:}"
 
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
