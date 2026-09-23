@@ -16,8 +16,19 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public abstract class DisbursementService {
 
-    public static final String SMS_MSG = "Your loan of $%s with ref # %s has been disbursed to your account %s. Welcome to the Innbucks family";
+    /** Render through {@link #walletDisbursementSms}, never directly — it masks the number. */
+    public static final String SMS_MSG = "Your loan of $%s with ref # %s has been disbursed to your Innbucks wallet ending %s. Welcome to the Innbucks family";
     public static final String SMS_MSG_CONSUMER_FINANCE = "Your loan of $%s with ref # %s been paid to %s, you can proceed to collect goods. Thank you for Banking with Innbucks";
+
+    /**
+     * The wallet-disbursement SMS for {@code loan}, naming the wallet by its last
+     * four digits. It used to print the full mobile number, which adds nothing
+     * for its owner and is exposed wherever the text is shown or logged.
+     */
+    public static String walletDisbursementSms(Loan loan) {
+        return String.format(SMS_MSG, loan.getDisbursedAmount(), loan.getReference(),
+                MsisdnUtil.lastFourDigits(loan.getMobileNumber()));
+    }
 
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
@@ -118,10 +129,7 @@ public abstract class DisbursementService {
         String message;
 
         if (loan.getMerchant().getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
-            message = String.format(SMS_MSG,
-                    loan.getDisbursedAmount(),
-                    loan.getReference(),
-                    loan.getMobileNumber());
+            message = walletDisbursementSms(loan);
         } else {
             message = String.format(SMS_MSG_CONSUMER_FINANCE,
                     loan.getDisbursedAmount(),
