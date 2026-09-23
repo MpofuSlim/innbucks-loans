@@ -121,7 +121,7 @@ public class RestExceptionHandler {
     }
 
     @Data
-    private static class ErrorResponse {
+    public static class ErrorResponse {
         private final int status;
         private final String error;
 
