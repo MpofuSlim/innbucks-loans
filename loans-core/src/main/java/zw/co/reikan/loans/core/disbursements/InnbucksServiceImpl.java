@@ -130,9 +130,14 @@ public class InnbucksServiceImpl extends DisbursementService {
 
         log.info("Account creation response: {}", responseEntity.getBody());
 
+        // Any 2xx is a created application. This used to compare against 200
+        // only, so a 201 Created — a normal answer to a POST that creates —
+        // would have marked a loan InnBucks had just booked as FAILED.
+        boolean created = responseEntity.getStatusCode().is2xxSuccessful();
         return LoanAccountCreationResponse.builder()
                 .reference(loan.getReference())
-                .success(responseEntity.getStatusCode() == HttpStatus.OK)
+                .success(created)
+                .message(created ? null : "InnBucks answered HTTP " + responseEntity.getStatusCode().value())
                 .build();
     }
 

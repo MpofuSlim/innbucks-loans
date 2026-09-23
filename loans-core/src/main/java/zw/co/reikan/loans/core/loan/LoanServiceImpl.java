@@ -1,5 +1,8 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
+import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
@@ -30,6 +33,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.math.BigDecimal.ONE;
 import static org.springframework.data.jpa.domain.Specification.where;
@@ -50,6 +55,7 @@ public class LoanServiceImpl implements LoanService {
     private final AuthService authService;
     private final MerchantRepository merchantRepository;
     private final ChannelRepository channelRepository;
+    private final Validator validator;
 
     @Override
     public LoanStatisticsResponse getStatistics(FindLoansInternalRequest request) {
@@ -109,6 +115,13 @@ public class LoanServiceImpl implements LoanService {
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
+
+        // The HTTP body is already checked by @Validated on the controller (one
+        // 400 listing every field). This repeats it for callers that reach the
+        // service directly — bulk upload above all — so an application missing
+        // what InnBucks needs is refused HERE, not accepted and then failed at
+        // the InnBucks step after the customer believed they had applied.
+        requireCompleteApplication(loanRequest);
 
         // Presence of the required fields is enforced declaratively by bean validation
         // (@Valid on the controller). What remains here are the business rules that need
@@ -194,6 +207,7 @@ public class LoanServiceImpl implements LoanService {
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
                 .loanPurpose(loanRequest.getPurposeOfLoan())
+                .lineOfBusiness(loanRequest.getLineOfBusiness())
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())
@@ -212,6 +226,23 @@ public class LoanServiceImpl implements LoanService {
                 .internalReference(loan.getReference())
                 .message("Loan Sent For Approval")
                 .build();
+    }
+
+    /**
+     * Refuses an application that fails the Default or {@link LoanApplicationChecks}
+     * constraints, in the same {@code field: message; ...} shape (full property
+     * path, sorted) the web layer's validation 400 uses, so a bulk row and an
+     * HTTP call report a missing field identically.
+     */
+    private void requireCompleteApplication(LoanRequest loanRequest) {
+        Set<ConstraintViolation<LoanRequest>> violations =
+                validator.validate(loanRequest, Default.class, LoanApplicationChecks.class);
+        if (!violations.isEmpty()) {
+            throw new IllegalArgumentException(violations.stream()
+                    .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                    .sorted()
+                    .collect(Collectors.joining("; ")));
+        }
     }
 
     private CommissionGroup resolveCommissionGroup(User user, Merchant merchant) {

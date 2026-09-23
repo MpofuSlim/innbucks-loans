@@ -8,4 +8,6 @@ import lombok.Data;
 public class LoanAccountCreationResponse {
     private String reference;
     private boolean success;
+    /** Why the application did not succeed; null on success. */
+    private String message;
 }

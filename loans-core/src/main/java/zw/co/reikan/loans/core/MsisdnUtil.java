@@ -13,6 +13,23 @@ public class MsisdnUtil {
 
     private static final String INTERNATIONAL_CODE = "263";
 
+    /**
+     * A Zimbabwean MOBILE number, in any of the forms people type:
+     * {@code 0772123123}, {@code 772123123}, {@code 263772123123} or
+     * {@code +263772123123}. Mobile prefixes only — 71 NetOne, 73 Telecel,
+     * 77/78 Econet — because these numbers receive SMS and InnBucks wallet
+     * credits. Deliberately NOT {@link #MSISDN_REGEX_EXPRESSION}, which is
+     * Eswatini's {@code 268} with an 8-digit body and matches no Zimbabwean
+     * number at all.
+     *
+     * <p>Before this, the loan application took ANY string and kept its last
+     * nine characters ({@link #formatMsisdnMinimum}), so a typo became a wrong
+     * but well-formed number on the loan and at InnBucks.
+     */
+    public static final String ZIMBABWE_MOBILE_REGEX = "^(?:\\+?263|0)?7[1378]\\d{7}$";
+    public static final String ZIMBABWE_MOBILE_MESSAGE =
+            "must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123";
+
     public static void validateMsisdn(final String msisdn) {
 
         final boolean isValid = !StringUtils.isEmpty(msisdn) && msisdn.matches(MSISDN_REGEX_EXPRESSION);

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientResponseException;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
@@ -103,6 +104,8 @@ public class LoanAccountCreationJob {
         loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
         loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
         loan.setDisbursementReference(response.getReference());
+        loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: "
+                + (response.getMessage() == null ? "unsuccessful response" : response.getMessage())));
     }
 
     private void handleAccountCreationException(Loan loan, Exception ex) {
@@ -110,5 +113,27 @@ public class LoanAccountCreationJob {
 
         loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
         loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
+        loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
+    }
+
+    /**
+     * The reason an operator (and the portal) can act on. For an HTTP refusal
+     * that is InnBucks' own status + body — its error text is the most useful
+     * thing we hold; for anything else, the exception's message. Before this,
+     * a failed loan read only {@code disbursementStatus: FAILED}, with nothing
+     * to say whether to fix the data, retry, or call InnBucks.
+     */
+    private static String describe(Exception ex) {
+        if (ex instanceof RestClientResponseException http) {
+            String body = http.getResponseBodyAsString();
+            return "HTTP " + http.getStatusCode().value()
+                    + (body == null || body.isBlank() ? "" : " " + body.strip());
+        }
+        return ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+    }
+
+    /** disbursement_status_message is a VARCHAR(255). */
+    private static String truncate(String message) {
+        return message.length() <= 255 ? message : message.substring(0, 252) + "...";
     }
 }

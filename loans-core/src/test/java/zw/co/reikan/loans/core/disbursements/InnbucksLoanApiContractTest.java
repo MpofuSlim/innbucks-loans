@@ -237,6 +237,18 @@ class InnbucksLoanApiContractTest {
     }
 
     @Test
+    @DisplayName("apply: any 2xx is success — a 201 Created must not mark a booked loan FAILED")
+    void apply201IsSuccess() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(aResponse().withStatus(201)));
+
+        LoanAccountCreationResponse response =
+                service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET));
+
+        assertThat(response.isSuccess()).isTrue();
+        assertThat(response.getMessage()).isNull();
+    }
+
+    @Test
     @DisplayName("apply: a 401 re-authenticates and replays exactly once")
     void applyReplaysOnceAfter401() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).inScenario("expired")

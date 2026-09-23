@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.loan;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import zw.co.reikan.loans.core.api.MerchantDto;
+import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 
 import java.io.Serializable;
@@ -36,6 +37,12 @@ public class LoanDto implements Serializable {
     private String loanStatusMessage;
     private LocalDateTime dateApproved;
     private LoanDisbursementStatus disbursementStatus;
+    /**
+     * The InnBucks account-creation step (between internal approval and
+     * disbursement). Was not exposed, so a loan that failed at InnBucks was
+     * indistinguishable from one still waiting.
+     */
+    private LoanAccountStatus loanAccountStatus;
     private String disbursementStatusMessage;
     private LocalDateTime dateDisbursed;
     private String disbursementReference;

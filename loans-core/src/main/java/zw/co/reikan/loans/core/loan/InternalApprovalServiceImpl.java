@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.exception.LoanApprovalException;
+import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
@@ -20,19 +22,23 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
     @Override
     public InternalApprovalResponse approveLoan(InternalApprovalRequest request, Long id) {
 
-        Loan loan = loanRepository.findById(id).orElseThrow();
+        Loan loan = loanRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
 
         if (request.getStatus() == InternalApprovalStatus.PENDING) {
-            throw new RuntimeException("Invalid status");
+            throw new LoanApprovalException("Invalid status: a decision must be APPROVED or REJECTED");
         }
 
+        // Names the decision actually held — the old "Loan already approved" was
+        // also the message for a loan that had been REJECTED.
         if (loan.getInternalApprovalStatus() != InternalApprovalStatus.PENDING
                 && loan.getInternalApprovalStatus() != null) {
-            throw new RuntimeException("Loan already approved");
+            throw new LoanApprovalException(String.format("Loan has already been %s",
+                    loan.getInternalApprovalStatus().name().toLowerCase()));
         }
 
         if (loan.getLoanApprovalStatus() != LoanApprovalStatus.APPROVED) {
-            throw new RuntimeException(String.format("Loan with status %s cannot be approved",
+            throw new LoanApprovalException(String.format("Loan with status %s cannot be approved",
                     loan.getLoanApprovalStatus()));
         }
 

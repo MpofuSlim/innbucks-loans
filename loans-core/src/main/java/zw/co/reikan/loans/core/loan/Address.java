@@ -1,5 +1,6 @@
 package zw.co.reikan.loans.core.loan;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 import jakarta.persistence.*;
@@ -7,12 +8,14 @@ import jakarta.persistence.*;
 @Data
 @Embeddable
 public class Address {
+    @NotBlank(groups = LoanApplicationChecks.class, message = "Street is required")
     @Column(name = "street")
     private String street;
 
     @Column(name = "suburb")
     private String suburb;
 
+    @NotBlank(groups = LoanApplicationChecks.class, message = "City is required")
     @Column(name = "city")
     private String city;
 
