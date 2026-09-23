@@ -48,6 +48,10 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 
+    /** Oldest first, id as the tie-break, so the operators' queue has a stable order. */
+    List<Loan> findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(
+            DeductionCancellationStatus deductionCancellationStatus);
+
     @Query("""
             select new zw.co.reikan.loans.core.api.LoanStatisticsResponse(sum(l.principal), sum(l.agentCommission), count(l)) from Loan l 
             where l.createdByUser.id = :agentId and l.dateDisbursed between :startDate and :endDate

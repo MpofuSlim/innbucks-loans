@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.ledger.LedgerAccount;
 import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
 import zw.co.reikan.loans.core.ledger.LedgerService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -39,6 +40,7 @@ public class LoanSagaTransitionService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final AuditService auditService;
     private final LoanPublicReferenceService publicReferenceService;
+    private final DeductionCancellationService deductionCancellationService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileLoan(Long loanId) {
@@ -132,8 +134,13 @@ public class LoanSagaTransitionService {
      *       pair {@code DISB-REV-*}. The failed movement and its reversal both
      *       remain in the immutable history.</li>
      *   <li><b>Saga:</b> transition to COMPENSATED with a full audit trail.
-     *       The loan row itself is untouched — failed loans keep surfacing in
-     *       the existing back-office workflow exactly as before.</li>
+     *       The loan's status columns are untouched — failed loans keep
+     *       surfacing in the existing back-office workflow exactly as before.</li>
+     *   <li><b>Payroll deduction:</b> a backstop flag. It was lodged with
+     *       Ndasenda before credit and booking, and stays live on the customer's
+     *       salary. The jobs that write the failure flag it first with the reason
+     *       they know; this catches one no writer classified (a payout that
+     *       exhausted its retries), and says it is in doubt.</li>
      * </ol>
      */
     private void applyCompensation(LoanSaga saga, Loan loan) {
@@ -162,6 +169,14 @@ public class LoanSagaTransitionService {
                 loan.getId(), loan.getReference(), from, ledgerOutcome);
         auditService.recordTransition("LOAN_SAGA", String.valueOf(loan.getId()), SYSTEM_ACTOR, "system",
                 from.name(), LoanSagaState.COMPENSATED.name(), ledgerOutcome, correlationId(loan));
+
+        // The saga sees only disbursementStatus FAILED, not why: a timeout or 5xx lands there too, and
+        // the customer may hold the loan, so it never asserts a definitive failure. Idempotent: a loan
+        // the booking job already flagged keeps that job's reason.
+        if (deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_IN_DOUBT,
+                SYSTEM_ACTOR, "system")) {
+            loanRepository.save(loan);
+        }
     }
 
     private LoanSaga newSaga(Loan loan) {

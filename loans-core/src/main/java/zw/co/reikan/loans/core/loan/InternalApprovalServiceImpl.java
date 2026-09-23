@@ -18,6 +18,7 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
     private final AuthService authService;
     private final LoanMapper loanMapper;
     private final NotificationService notificationService;
+    private final DeductionCancellationService deductionCancellationService;
 
     @Override
     public InternalApprovalResponse approveLoan(InternalApprovalRequest request, Long id) {
@@ -47,6 +48,12 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
         loan.setInternalApprovalComment(request.getComment());
         String username = authService.getLoggedInUsername();
         loan.setInternalApprovalBy(username);
+        if (request.getStatus() == InternalApprovalStatus.REJECTED) {
+            // Lodged with Ndasenda before this decision (only an Ndasenda-APPROVED loan reaches it),
+            // so the refusal leaves a live payroll deduction for a loan that will never be paid.
+            deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_CREDIT_REJECTED,
+                    username, DeductionCancellationService.PORTAL_CHANNEL);
+        }
         Loan savedLoan = loanRepository.save(loan);
 
         String loanReference = String.format("%09d", loan.getId());

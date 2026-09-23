@@ -3,6 +3,9 @@ package zw.co.reikan.loans.core.loan;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import zw.co.reikan.loans.core.audit.AuditLog;
+import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.exception.BusinessException;
 import zw.co.reikan.loans.core.exception.LoanApprovalException;
@@ -24,13 +27,18 @@ import static org.mockito.Mockito.*;
 class InternalApprovalServiceImplTest {
 
     private LoanRepository loanRepository;
+    private AuditService auditService;
     private InternalApprovalServiceImpl service;
 
     @BeforeEach
     void setUp() {
         loanRepository = mock(LoanRepository.class);
-        service = new InternalApprovalServiceImpl(loanRepository, mock(AuthService.class),
-                mock(LoanMapper.class), mock(NotificationService.class));
+        auditService = mock(AuditService.class);
+        AuthService authService = mock(AuthService.class);
+        when(authService.getLoggedInUsername()).thenReturn("credit.manager");
+        service = new InternalApprovalServiceImpl(loanRepository, authService,
+                mock(LoanMapper.class), mock(NotificationService.class),
+                new DeductionCancellationService(loanRepository, auditService, authService));
     }
 
     private static InternalApprovalRequest decide(InternalApprovalStatus status) {
@@ -39,10 +47,12 @@ class InternalApprovalServiceImplTest {
         return request;
     }
 
-    private void given(LoanApprovalStatus payroll, InternalApprovalStatus internal) {
-        Loan loan = Loan.builder().loanApprovalStatus(payroll).internalApprovalStatus(internal).build();
+    private Loan given(LoanApprovalStatus payroll, InternalApprovalStatus internal) {
+        Loan loan = Loan.builder().loanApprovalStatus(payroll).internalApprovalStatus(internal)
+                .batchNumber("BATCH-20260901-07").ecNumber("1234567A").build();
         loan.setId(42L);
         when(loanRepository.findById(42L)).thenReturn(Optional.of(loan));
+        return loan;
     }
 
     @Test
@@ -85,6 +95,45 @@ class InternalApprovalServiceImplTest {
         assertThatThrownBy(() -> service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L))
                 .isInstanceOf(LoanApprovalException.class)
                 .hasMessage("Loan with status NEW cannot be approved");
+    }
+
+    @Test
+    @DisplayName("a credit REJECT flags the lodged deduction for cancellation, audited, before the save")
+    void creditRejectFlagsDeductionCancellation() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.save(any())).thenAnswer(i -> {
+            // Saved together with the decision, not in a second write.
+            assertThat(i.<Loan>getArgument(0).getDeductionCancellationStatus())
+                    .isEqualTo(DeductionCancellationStatus.REQUIRED);
+            return i.getArgument(0);
+        });
+
+        service.approveLoan(decide(InternalApprovalStatus.REJECTED), 42L);
+
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("CREDIT_REJECTED");
+        assertThat(loan.getDeductionCancellationRequestedAt()).isNotNull();
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService).record(captor.capture());
+        AuditLog audit = captor.getValue().build();
+        assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_REQUIRED");
+        assertThat(audit.getEntityId()).isEqualTo("42");
+        assertThat(audit.getActorId()).isEqualTo("credit.manager");
+        assertThat(audit.getCorrelationId()).isEqualTo("BATCH-20260901-07");
+        assertThat(audit.getDetail()).contains("reason=CREDIT_REJECTED", "ecNumber=*****67A")
+                .doesNotContain("1234567A");
+    }
+
+    @Test
+    @DisplayName("a credit APPROVE leaves the deduction alone — it is what repays the loan")
+    void creditApproveDoesNotFlag() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L);
+
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
     }
 
     @Test
