@@ -11,11 +11,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.api.FindLoansRequest;
+import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchRequest;
 import zw.co.reikan.loans.core.ndasenda.FindNdasendaBatchResponse;
@@ -54,10 +56,18 @@ public class BatchesController {
     @Autowired
     private FindUserService findUserService;
 
+    @Autowired
+    private LoanReadScopeResolver loanReadScopeResolver;
+
+    @Autowired
+    private LoanBatchService loanBatchService;
+
 
     @Operation(operationId = "searchLoans",
             summary = "SEARCH LOANS",
-            description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters",
+            description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters. "
+                    + "BULKIT_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; ORGANISATION_SUPER_USER and "
+                    + "RETAIL_SALES their own merchant's; everyone else only the loans they originated.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses(value = {
@@ -72,9 +82,9 @@ public class BatchesController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/search")
-    public LoansWrapper findLoans( @RequestBody FindLoansRequest request) {
+    public LoansWrapper findLoans(Principal principal, @RequestBody FindLoansRequest request) {
         log.info("Find loan request: {}", request);
-        return new LoansWrapper(loanService.findLoans(request));
+        return new LoansWrapper(loanService.findLoans(request, resolveReadScope(principal)));
     }
 
     @Operation(summary = "GET LOANS PENDING APPROVAL",
@@ -88,11 +98,15 @@ public class BatchesController {
                             schema = @Schema(implementation = LoansWrapper.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not credit staff"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/loans/find-approvals")
+    // The credit queue: the same roles that may act on it via POST /api/loans/{id}/approve.
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER')")
     public LoansWrapper findPendingApprovals() {
         log.info("Finding loans pending internal approval");
         FindLoansRequest request = FindLoansRequest.builder()
@@ -113,20 +127,17 @@ public class BatchesController {
                     content = {@Content(mediaType = "application/json",
                             schema = @Schema(implementation = LoanDto.class))}),
             @ApiResponse(responseCode = "404",
-                    description = "Resource not found"),
+                    description = "No such loan, or the loan is outside the caller's scope (deliberately the same answer)"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/loans/{id}")
-    public ResponseEntity findLoans(@PathVariable Long id) {
+    public ResponseEntity<LoanDto> findLoans(Principal principal, @PathVariable Long id) {
         log.info("Find loan by id: {}", id);
-        try {
-            return ResponseEntity.ok(loanService.getLoan(id));
-        } catch (Exception ex) {
-            log.error("", ex);
-            return ResponseEntity.notFound().build();
-        }
+        // Only NotFoundException becomes a 404 (via RestExceptionHandler); a database or
+        // mapping failure is a real fault and must surface as one, not as "no such loan".
+        return ResponseEntity.ok(loanService.getLoan(id, resolveReadScope(principal)));
     }
 
     @Operation(summary = "SEARCH BATCHES",
@@ -140,11 +151,15 @@ public class BatchesController {
                             schema = @Schema(implementation = FindNdasendaBatchResponse.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not lender-side staff"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/batches/search")
+    // SSB deduction batches list every borrower under the lender's code — lender-side staff only.
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
     public FindNdasendaBatchResponse findNdasendaBatches(@RequestBody FindNdasendaBatchRequest request) {
         log.info("Searching batches: {}", request);
         return FindNdasendaBatchResponse.builder().batches(requireNdasendaService().findBatches(request)).build();
@@ -160,12 +175,22 @@ public class BatchesController {
                     schema = @Schema(implementation = NdasendaDeductionsBatchRequest.class))}),
             @ApiResponse(responseCode = "400",
                     description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not lender-side staff"),
+            @ApiResponse(responseCode = "404",
+                    description = "Not a batch this system submitted"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/batches/{batchId}")
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
     public NdasendaDeductionsBatchRequest getBatchDetails(@PathVariable String batchId) {
+        // The same "ours" filter /batches/search applies. Ndasenda answers for any batch
+        // under the lender's code, so without it this returned whatever id it was handed.
+        if (!loanBatchService.existsByBatchNumber(batchId)) {
+            throw new NotFoundException("Batch " + batchId + " not found");
+        }
         final List<NdasendaDeductionsBatchRequest> responses = requireNdasendaService().findDeductionResponsesByBatchId(batchId);
         if (CollectionUtils.isEmpty(responses)) {
             return null;
@@ -178,6 +203,10 @@ public class BatchesController {
         return findUserService.resolveUserFromAccessToken(token)
                 .map(u -> u.getMerchant().getMerchantCode())
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+    }
+
+    private LoanReadScope resolveReadScope(Principal principal) {
+        return loanReadScopeResolver.resolve(((JwtAuthenticationToken) principal).getToken());
     }
 
     private NdasendaLoanApprovalServiceImpl requireNdasendaService() {
