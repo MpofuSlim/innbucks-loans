@@ -46,10 +46,14 @@ public class InnbucksServiceImpl extends DisbursementService {
     public LoanAccountCreationResponse createLoanAccount(Loan loan) {
         log.info("Processing loan account creation");
 
-        String businessLine = loan.getLineOfBusiness() != null ?
-                loan.getLineOfBusiness().getDescription() : LineOfBusiness.SERVICES.getDescription();
-
-        String loanPurpose = loan.getLoanPurpose() != null ? loan.getLoanPurpose().getDescription() : LoanPurpose.PERSONAL_USE.getDescription();
+        // Pass through the loan's real values; when a field is absent it is left
+        // null (and omitted from the outbound JSON) rather than filled with a
+        // placeholder default. currency/product/repaymentFrequency remain fixed
+        // integration constants, not input defaults.
+        String businessLine = loan.getLineOfBusiness() == null ? null : loan.getLineOfBusiness().getDescription();
+        String loanPurpose = loan.getLoanPurpose() == null ? null : loan.getLoanPurpose().getDescription();
+        BigDecimal grossSalary = (loan.getEmploymentDetail() == null || loan.getEmploymentDetail().getGrossSalary() == null)
+                ? null : loan.getEmploymentDetail().getGrossSalary();
 
         DisbursementType disbursementType = loan.getMerchant().getDisbursementType();
 
@@ -61,15 +65,15 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .dateOfBirth(loan.getDateOfBirth().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")))
                 .currency("USD")
                 .amount(toCents(loan.getPrincipal()))
-                .maritalStatus(loan.getMaritalStatus() == null ? MaritalStatus.SINGLE.getCode() : loan.getMaritalStatus().getCode())
+                .maritalStatus(loan.getMaritalStatus() == null ? null : loan.getMaritalStatus().getCode())
                 .businessLine(businessLine)
                 .loanPurpose(loanPurpose)
-                .grossSalary(toCents(loan.getEmploymentDetail() == null ? BigDecimal.ONE : loan.getEmploymentDetail().getGrossSalary()))
+                .grossSalary(grossSalary == null ? null : toCents(grossSalary))
                 .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
                 .numberOfDependents(loan.getNumberOfDependencies())
                 .numberOfChildren(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
-                .placeOfBirth(loan.getPlaceOfBirth() == null ? "UNKNOWN" : loan.getPlaceOfBirth())
+                .placeOfBirth(loan.getPlaceOfBirth())
                 .product(SSBUSD)
                 .tenureInMonths(loan.getTenor())
                 .type(disbursementType.getLoanType().name())
@@ -91,21 +95,16 @@ public class InnbucksServiceImpl extends DisbursementService {
 
         EmploymentDetail employmentDetail = loan.getEmploymentDetail();
 
+        // Only send employment fields we actually have; no employment detail means
+        // employer/employerNumber/employmentStartDate are left unset (omitted),
+        // not defaulted to NOTSPECIFIED / the EC number / today's date.
         if (employmentDetail != null) {
-            LocalDate employmentStartDate = employmentDetail.getEmploymentStartDate() == null ?
-                    LocalDate.now() :
-                    employmentDetail.getEmploymentStartDate();
-
-            String employeeNumber = employmentDetail.getEmployeeNumber() == null ? loan.getEcNumber() : employmentDetail.getEmployeeNumber();
-
-            builder.employerNumber(trimSpecialCharacters(employeeNumber))
+            builder.employerNumber(employmentDetail.getEmployeeNumber() == null
+                            ? null : trimSpecialCharacters(employmentDetail.getEmployeeNumber()))
                     .employer(trimSpecialCharacters(employmentDetail.getEmployerName()))
-                    .employmentStartDate(employmentStartDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
-        } else {
-            builder.employerNumber(trimSpecialCharacters(loan.getEcNumber()))
-                    .employer("NOTSPECIFIED")
-                    .employmentStartDate(LocalDateTime.now()
-                            .format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
+                    .employmentStartDate(employmentDetail.getEmploymentStartDate() == null
+                            ? null
+                            : employmentDetail.getEmploymentStartDate().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
         }
 
         LoanAccountCreationRequest requestBody = builder.build();
