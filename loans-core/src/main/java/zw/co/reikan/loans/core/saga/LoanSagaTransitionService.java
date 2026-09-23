@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.ledger.LedgerAccount;
 import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
 import zw.co.reikan.loans.core.ledger.LedgerService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -39,6 +40,7 @@ public class LoanSagaTransitionService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final AuditService auditService;
     private final LoanPublicReferenceService publicReferenceService;
+    private final DeductionCancellationService deductionCancellationService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileLoan(Long loanId) {
@@ -132,8 +134,11 @@ public class LoanSagaTransitionService {
      *       pair {@code DISB-REV-*}. The failed movement and its reversal both
      *       remain in the immutable history.</li>
      *   <li><b>Saga:</b> transition to COMPENSATED with a full audit trail.
-     *       The loan row itself is untouched — failed loans keep surfacing in
-     *       the existing back-office workflow exactly as before.</li>
+     *       The loan's status columns are untouched — failed loans keep
+     *       surfacing in the existing back-office workflow exactly as before.</li>
+     *   <li><b>Payroll deduction:</b> flag it for cancellation. It was lodged
+     *       with Ndasenda before credit and booking, and stays live on the
+     *       customer's salary for a loan that will now never be paid.</li>
      * </ol>
      */
     private void applyCompensation(LoanSaga saga, Loan loan) {
@@ -162,6 +167,12 @@ public class LoanSagaTransitionService {
                 loan.getId(), loan.getReference(), from, ledgerOutcome);
         auditService.recordTransition("LOAN_SAGA", String.valueOf(loan.getId()), SYSTEM_ACTOR, "system",
                 from.name(), LoanSagaState.COMPENSATED.name(), ledgerOutcome, correlationId(loan));
+
+        // Idempotent: a replayed compensation, or a loan already flagged, is left as it is.
+        if (deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_FAILED,
+                SYSTEM_ACTOR, "system")) {
+            loanRepository.save(loan);
+        }
     }
 
     private LoanSaga newSaga(Loan loan) {

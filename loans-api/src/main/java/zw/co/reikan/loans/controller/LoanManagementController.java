@@ -3,6 +3,9 @@ package zw.co.reikan.loans.controller;
 import jakarta.validation.Valid;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -14,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.loan.*;
+
+import java.util.List;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 
@@ -32,6 +37,9 @@ public class LoanManagementController {
 
     @Autowired
     private InternalApprovalService internalApprovalService;
+
+    @Autowired
+    private DeductionCancellationService deductionCancellationService;
 
     @Operation(operationId = "disburseLoan",
             summary = "DISBURSE LOANS",
@@ -75,6 +83,65 @@ public class LoanManagementController {
                                             @PathVariable Long id) {
         log.info("Loan internal approval request: {}", request);
         return internalApprovalService.approveLoan(request, id);
+    }
+
+    @Operation(summary = "DEDUCTION CANCELLATIONS REQUIRED",
+            description = "Loans whose Ndasenda payroll deduction was lodged but which will not be paid, oldest first."
+                    + " Each must be cancelled on Ndasenda's portal and then recorded with"
+                    + " PUT /api/loans/{id}/deduction-cancellation. Reasons: CREDIT_REJECTED, BOOKING_FAILED,"
+                    + " LODGEMENT_FAILED, ACCEPTED_AFTER_CLOSE.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Loans awaiting cancellation of their deduction",
+                    content = {@Content(mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = DeductionCancellationDto.class)))}),
+            @ApiResponse(responseCode = "401",
+                    description = "Not authenticated"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller is not BULKIT_ADMIN, CREDIT_MANAGER or FINANCE"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/deduction-cancellations")
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    public List<DeductionCancellationDto> findDeductionCancellations() {
+        log.info("Finding loans whose deduction must be cancelled");
+        return deductionCancellationService.findRequired();
+    }
+
+    @Operation(summary = "RECORD DEDUCTION CANCELLED",
+            description = "Records that the loan's Ndasenda deduction was cancelled on Ndasenda's own portal."
+                    + " Nothing is sent to Ndasenda.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Cancellation recorded",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = DeductionCancellationDto.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "No note given"),
+            @ApiResponse(responseCode = "401",
+                    description = "Not authenticated"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller is not BULKIT_ADMIN or FINANCE"),
+            @ApiResponse(responseCode = "404",
+                    description = "Resource not found"),
+            @ApiResponse(responseCode = "409",
+                    description = "The loan has no deduction cancellation pending, or it is already recorded"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PutMapping("/loans/{id}/deduction-cancellation")
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','FINANCE')")
+    public DeductionCancellationDto recordDeductionCancelled(@PathVariable Long id,
+                                                             @Valid @RequestBody DeductionCancellationRequest request) {
+        log.info("Recording deduction cancelled for loan: {}", id);
+        return deductionCancellationService.markCancelledExternally(id, request.getNote());
     }
 
 }
