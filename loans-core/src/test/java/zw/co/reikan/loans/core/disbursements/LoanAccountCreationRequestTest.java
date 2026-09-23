@@ -24,7 +24,7 @@ class LoanAccountCreationRequestTest {
                 .lastName("Mufambanaayo")
                 .amount(50000)
                 .currency("USD")
-                .product("SSBUSD")
+                .product("NANOUS")
                 .tenureInMonths(6)
                 .build();
 

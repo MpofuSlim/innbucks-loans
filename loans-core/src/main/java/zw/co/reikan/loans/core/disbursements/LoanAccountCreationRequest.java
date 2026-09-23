@@ -41,8 +41,6 @@ public class LoanAccountCreationRequest {
     private Integer grossSalary;
     @JsonProperty("numberOfDependents")
     private Integer numberOfDependents;
-    @JsonProperty("numberOfChildren")
-    private Integer numberOfChildren;
     @JsonProperty("msisdn")
     private String msisdn;
 

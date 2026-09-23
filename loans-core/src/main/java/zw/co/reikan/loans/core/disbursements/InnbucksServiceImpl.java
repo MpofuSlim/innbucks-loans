@@ -25,7 +25,6 @@ import static zw.co.reikan.loans.core.Utils.*;
 public class InnbucksServiceImpl extends DisbursementService {
 
     public static final String MONTHLY = "MONTHLY";
-    public static final String SSBUSD = "SSBUSD";
     public static final String COUNTRY_CODE = "263";
     private static final BigDecimal CENTS = new BigDecimal("100");
     private final InnbucksAuthService innbucksAuthService;
@@ -48,8 +47,8 @@ public class InnbucksServiceImpl extends DisbursementService {
 
         // Pass through the loan's real values; when a field is absent it is left
         // null (and omitted from the outbound JSON) rather than filled with a
-        // placeholder default. currency/product/repaymentFrequency remain fixed
-        // integration constants, not input defaults.
+        // placeholder default. currency/repaymentFrequency remain fixed
+        // integration constants; product is per-deployment config.
         String businessLine = loan.getLineOfBusiness() == null ? null : loan.getLineOfBusiness().getDescription();
         String loanPurpose = loan.getLoanPurpose() == null ? null : loan.getLoanPurpose().getDescription();
         BigDecimal grossSalary = (loan.getEmploymentDetail() == null || loan.getEmploymentDetail().getGrossSalary() == null)
@@ -71,10 +70,9 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .grossSalary(grossSalary == null ? null : toCents(grossSalary))
                 .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
                 .numberOfDependents(loan.getNumberOfDependencies())
-                .numberOfChildren(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
                 .placeOfBirth(loan.getPlaceOfBirth())
-                .product(SSBUSD)
+                .product(parameters.getLoanProduct())
                 .tenureInMonths(loan.getTenor())
                 .type(disbursementType.getLoanType().name())
                 .repaymentFrequency(MONTHLY);
@@ -86,7 +84,7 @@ public class InnbucksServiceImpl extends DisbursementService {
 
         NextOfKin nextOfKin = loan.getNextOfKin();
         if (nextOfKin != null) {
-            builder.nextOfKinIdNumber(trimSpecialCharacters(nextOfKin.getNationalId()))
+            builder.nextOfKinIdNumber(trimToNull(nextOfKin.getNationalId()))
                     .nextOfKinFullName(nextOfKin.getLastName() == null ? nextOfKin.getFirstName() : nextOfKin.getFirstName() + " " + nextOfKin.getLastName())
                     .nextOfKinAddress(nextOfKin.getAddress().toString())
                     .nextOfKinMsisdn(COUNTRY_CODE + right(nextOfKin.getMobileNumber(), 9))
@@ -99,9 +97,8 @@ public class InnbucksServiceImpl extends DisbursementService {
         // employer/employerNumber/employmentStartDate are left unset (omitted),
         // not defaulted to NOTSPECIFIED / the EC number / today's date.
         if (employmentDetail != null) {
-            builder.employerNumber(employmentDetail.getEmployeeNumber() == null
-                            ? null : trimSpecialCharacters(employmentDetail.getEmployeeNumber()))
-                    .employer(trimSpecialCharacters(employmentDetail.getEmployerName()))
+            builder.employerNumber(trimToNull(employmentDetail.getEmployeeNumber()))
+                    .employer(trimToNull(employmentDetail.getEmployerName()))
                     .employmentStartDate(employmentDetail.getEmploymentStartDate() == null
                             ? null
                             : employmentDetail.getEmploymentStartDate().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
@@ -208,6 +205,20 @@ public class InnbucksServiceImpl extends DisbursementService {
         headers.add(InnbucksContants.X_API_KEY, parameters.getApiKey());
         headers.add(InnbucksContants.X_TRACE_ID, traceId);
         return headers;
+    }
+
+    /**
+     * Surrounding whitespace only. The collection sends identifiers verbatim
+     * ({@code 63-7654321A63}, {@code EMP-001}); the old trimSpecialCharacters
+     * stripped every non-word character, which also glued multi-word employer
+     * names together ("Mutare City Council" -> "MutareCityCouncil").
+     */
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.strip();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private int toCents(BigDecimal amount) {
