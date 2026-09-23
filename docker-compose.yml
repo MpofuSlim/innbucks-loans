@@ -49,6 +49,9 @@ services:
       # talks to the postgres service instead of localhost. (The image's
       # default SPRING_CONFIG_LOCATION points at an empty /app/config mount.)
       SPRING_CONFIG_LOCATION: classpath:/application.yml
+      # "local" opts this dev stack into the placeholder JWT secret and the
+      # bootstrap admin's fallback password; both are refused without it.
+      SPRING_PROFILES_ACTIVE: api,dummy-loan-approval,local
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bulkit_loans}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
