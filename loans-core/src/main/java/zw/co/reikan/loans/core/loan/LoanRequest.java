@@ -25,6 +25,9 @@ import java.time.LocalDate;
  * amount less the admin fee instead of the amount. Same trap as
  * {@code LoanDisbursementStatusResponse}. Pinned by
  * {@code LoanApplicationWebContractTest.omittedTypeDefaultsToNetOfFees}.
+ *
+ * <p>{@code toString} leaves out the national IDs, bank details and base64 documents,
+ * so logging a request can never write them to the (long-retained) log files.
  */
 @Data
 @Builder
@@ -48,6 +51,7 @@ public class LoanRequest implements Serializable {
     @Positive(message = "Loan tenor must be greater than zero")
     private Integer tenor;
 
+    @ToString.Exclude
     @NotBlank(message = "National ID is required")
     private String nationalId;
 
@@ -85,6 +89,7 @@ public class LoanRequest implements Serializable {
     @Valid
     @NotNull(groups = LoanApplicationChecks.class, message = "Next of kin is required")
     private NextOfKin nextOfKin;
+    @ToString.Exclude
     private String nextOfKinIdNumber;
     private String nextOfKinName;
     private String nextOfKinPhone;
@@ -109,13 +114,17 @@ public class LoanRequest implements Serializable {
     @JsonAlias("loanFor")
     private String merchant;
     private Gender gender;
+    @ToString.Exclude
     private BankingDetail bankingDetail;
     private String productDescription;
     private String channelId;
 
     //Base64 images
+    @ToString.Exclude
     private String signatureData;
+    @ToString.Exclude
     private String nationalIdPicture;
+    @ToString.Exclude
     private String payslipPicture;
 
 }

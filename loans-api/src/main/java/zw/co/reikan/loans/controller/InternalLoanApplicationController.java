@@ -21,6 +21,7 @@ import zw.co.reikan.loans.core.loan.LoanRequest;
 import zw.co.reikan.loans.core.loan.LoanService;
 
 import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
+import static zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl.maskEcNumber;
 
 @RestController
 @Slf4j
@@ -52,7 +53,9 @@ public class InternalLoanApplicationController {
             // InnBucks step needs, reported in ONE 400. The calculator below stays
             // on Default alone so a quote needs only the loan terms.
             @Validated({Default.class, LoanApplicationChecks.class}) @RequestBody LoanRequest request) {
-        log.info("Create loan request: {}", request);
+        // Identifiers only: the body carries the applicant's KYC and base64 documents.
+        log.info("Create loan request: channel {}, ec {}, amount {}, tenor {}", request.getChannelId(),
+                maskEcNumber(request.getEcnumber()), request.getAmount(), request.getTenor());
         return loanService.requestLoan(request);
     }
 
@@ -71,7 +74,8 @@ public class InternalLoanApplicationController {
     })
     @PostMapping("/loans/calculate")
     public LoanDetails calculate(@Valid @RequestBody LoanRequest request) {
-        log.info("Calculate loan request: {}", request);
+        log.info("Calculate loan request: amount {}, tenor {}, type {}", request.getAmount(), request.getTenor(),
+                request.getType());
         //setting null logged in user to allow anonymous loan calculation
         return loanService.calculate(request, null);
     }

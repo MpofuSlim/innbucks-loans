@@ -43,6 +43,7 @@ import static org.springframework.data.jpa.domain.Specification.where;
 import static zw.co.reikan.loans.core.MsisdnUtil.formatMsisdnInternational;
 import static zw.co.reikan.loans.core.loan.Constants.*;
 import static zw.co.reikan.loans.core.loan.LoanSpecification.*;
+import static zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl.maskEcNumber;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -152,7 +153,9 @@ public class LoanServiceImpl implements LoanService {
     @Transactional
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
-        log.info("Requesting loan approval: {}", loanRequest);
+        // Identifiers only: the request carries the applicant's KYC and base64 documents.
+        log.info("Requesting loan approval: channel {}, ec {}, amount {}, tenor {}", loanRequest.getChannelId(),
+                maskEcNumber(loanRequest.getEcnumber()), loanRequest.getAmount(), loanRequest.getTenor());
 
         // The HTTP body is already checked by @Validated on the controller (one
         // 400 listing every field). This repeats it for callers that reach the
@@ -195,7 +198,10 @@ public class LoanServiceImpl implements LoanService {
 
         Optional<Channel> optionalChannel = resolveChannel(loanRequest);
 
-        log.info("optionalChannel: >> channeId: {}, {}", loanRequest.getChannelId(),  optionalChannel);
+        log.info("Channel {} resolved to {}", loanRequest.getChannelId(), optionalChannel
+                .map(channel -> channel.getName() + " (system user "
+                        + (channel.getSystemUser() == null ? null : channel.getSystemUser().getUsername()) + ")")
+                .orElse("no channel"));
 
         User loggedInUser = optionalChannel.map(Channel::getSystemUser)
                 .orElseGet(authService::getLoggedInUser);

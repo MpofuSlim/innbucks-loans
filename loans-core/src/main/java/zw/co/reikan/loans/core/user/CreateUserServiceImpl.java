@@ -108,7 +108,7 @@ public class CreateUserServiceImpl implements CreateUserService {
 
     @Transactional
     public CreateUserResponse create(CreateUserRequest createUserRequest) {
-        logger.info("Creating user {}", createUserRequest);
+        logger.info("Creating user {}", createUserRequest.getUsername());
 
         validateRequest(createUserRequest);
 
@@ -160,7 +160,7 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         CreateUserResponse createUserResponse = new CreateUserResponse(userDTO);
         notifyUser(userDTO, generatedPassword);
-        logger.info("Create user response for request {} is {}", createUserRequest, createUserResponse);
+        logger.info("Created user {} with id {}", createUserRequest.getUsername(), savedUser.getId());
         return createUserResponse;
     }
 

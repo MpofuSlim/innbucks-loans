@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.util.List;
 
@@ -21,6 +22,7 @@ public class NdasendaDeductionsBatchRequest {
     private Integer recordsCount;
     @JsonProperty("totalAmount")
     private Integer totalAmountInCents;
+    @ToString.Exclude
     @JsonProperty("securityToken")
     private String securityToken;
     @JsonProperty("deductionCode")
@@ -29,6 +31,8 @@ public class NdasendaDeductionsBatchRequest {
     private DeductionBatchStatus status;
     @JsonProperty("creationDate")
     private String creationDate;
+    // Each deduction prints its national ID and EC number in full; recordsCount says how many.
+    @ToString.Exclude
     @JsonProperty("records")
     private List<NdasendaDeduction> deductions;
 }

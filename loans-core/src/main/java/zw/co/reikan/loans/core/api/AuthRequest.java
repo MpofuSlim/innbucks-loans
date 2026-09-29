@@ -10,6 +10,7 @@ import lombok.*;
 public class AuthRequest {
     @NotBlank(message = "Username is required")
     private String username;
+    @ToString.Exclude
     @NotBlank(message = "Password is required")
     private String password;
 }

@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 
 import java.io.Serializable;
 
@@ -17,6 +18,7 @@ import java.io.Serializable;
 public class AuthResponse implements Serializable {
     @JsonProperty("temporary_password")
     protected Boolean temporaryPassword;
+    @ToString.Exclude
     @JsonProperty("access_token")
     private String accessToken;
     @JsonProperty("expires_in")

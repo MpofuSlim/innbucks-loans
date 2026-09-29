@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
+import lombok.ToString;
 import zw.co.reikan.loans.core.MsisdnUtil;
 
 import jakarta.persistence.*;
@@ -20,6 +21,7 @@ public class NextOfKin {
     @Column(name = "next_of_kin_last_name")
     private String lastName;
 
+    @ToString.Exclude
     @Column(name = "next_of_kin_id_number")
     private String nationalId;
 

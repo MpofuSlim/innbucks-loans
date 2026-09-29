@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.notifications;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -16,6 +17,7 @@ public class WhatsAppProperties {
     /** Gateway base URL, e.g. https://gateway.example.com (no trailing path). */
     private String baseUrl;
     /** Secret presented as the {@code x-api-key} header on every call. */
+    @ToString.Exclude
     private String apiKey;
     private int connectTimeoutMs = 2000;
     private int readTimeoutMs = 10000;

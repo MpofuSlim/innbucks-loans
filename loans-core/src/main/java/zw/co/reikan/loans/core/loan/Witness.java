@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.loan;
 
 import lombok.Data;
+import lombok.ToString;
 
 import jakarta.persistence.*;
 import java.time.LocalDate;
@@ -18,6 +19,7 @@ public class Witness {
     @Column(name = "witness_date_singed")
     private LocalDate dateSigned;
 
+    @ToString.Exclude
     @Lob
     @Column(name = "witness_signature", columnDefinition = "text")
     private String signature;

@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.disbursements;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import lombok.ToString;
 
 @Data
 public class InnbucksAuthResponse {
@@ -9,6 +10,7 @@ public class InnbucksAuthResponse {
     private String responseCode;
     @JsonProperty("responseDescription")
     private String responseDescription;
+    @ToString.Exclude
     @JsonProperty("accessToken")
     private String accessToken;
     @JsonProperty("accessExpiry")

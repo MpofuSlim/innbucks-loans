@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
@@ -22,10 +23,12 @@ public class CreateUserRequest {
     private String lastName;
     private String email;
     private String mobileNumber;
+    @ToString.Exclude
     private String idNumber;
     private String merchantCode;
     private String importKey;
     private List<UserGroup> groups;
+    @ToString.Exclude
     private User agent;
     private CommissionStructure commissionStructure;
     private Long commissionGroupId;
