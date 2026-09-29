@@ -359,6 +359,41 @@ class ManualDisbursementTest {
     }
 
     @Test
+    @DisplayName("a recovery payout pays the settlement account frozen at credit approval, not the merchant's current one")
+    void aRecoveryPayoutPaysTheAccountFrozenAtApproval() {
+        loan.setApprovedDisbursementType(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.setApprovedSettlementAccount("123456789");
+        // Edited after credit approved the loan.
+        loan.getMerchant().setDisbursementType(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.getMerchant().setAccountNumber("999999999");
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        service.disburse(42L);
+
+        assertThat(sent).singleElement().satisfies(request -> {
+            assertThat(request.getDisbursementType()).isEqualTo(DisbursementType.MERCHANT_MOBILE_WALLET);
+            assertThat(request.getAccountNumber()).isEqualTo("123456789");
+        });
+        assertThat(loan.getDisbursementMerchantAccountNumber()).isEqualTo("123456789");
+    }
+
+    @Test
+    @DisplayName("a loan frozen as a customer-wallet payout still pays the customer after its merchant is switched")
+    void aFrozenCustomerWalletLoanStillPaysTheCustomer() {
+        loan.setApprovedDisbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        loan.getMerchant().setDisbursementType(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.getMerchant().setAccountNumber("999999999");
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        service.disburse(42L);
+
+        assertThat(sent).singleElement().satisfies(request -> {
+            assertThat(request.getDisbursementType()).isEqualTo(DisbursementType.CUSTOMER_MOBILE_WALLET);
+            assertThat(request.getAccountNumber()).isNull();
+        });
+    }
+
+    @Test
     @DisplayName("an SMS failure after the payout does not undo the recorded SUCCESS")
     void anSmsFailureDoesNotUndoThePayout() {
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");

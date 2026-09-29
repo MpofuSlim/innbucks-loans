@@ -44,14 +44,14 @@ public abstract class DisbursementService {
     /**
      * The payout SMS for {@code loan}, for both the automatic and the manual payout. A
      * consumer-finance loan pays the merchant, so its customer is told which merchant to collect
-     * the goods from; any other loan names the customer's own wallet. Decided by the same rule the
-     * booking uses to route the money ({@code MERCHANT_MOBILE_WALLET} settles to the merchant).
+     * the goods from; any other loan names the customer's own wallet. Decided by the destination the
+     * money was actually routed to ({@link PayoutDestination}).
      */
     public static String disbursementSms(Loan loan) {
         Merchant merchant = loan.getMerchant();
-        if (merchant != null && merchant.getDisbursementType() == DisbursementType.MERCHANT_MOBILE_WALLET) {
+        if (PayoutDestination.of(loan).paysMerchant()) {
             return String.format(SMS_MSG_CONSUMER_FINANCE, loan.getDisbursedAmount(), loan.getReference(),
-                    merchant.getCompanyName());
+                    merchant == null ? "the merchant" : merchant.getCompanyName());
         }
         return walletDisbursementSms(loan);
     }
@@ -151,17 +151,16 @@ public abstract class DisbursementService {
         String reference = manualReference(loan);
         requireEligible(loan, reference);
 
-        // Same destination the pre-approved booking would have paid: a consumer-finance
-        // loan pays the merchant's settlement account, never the customer.
-        DisbursementType type = loan.getMerchant().getDisbursementType();
+        // Same destination the pre-approved booking would have paid, frozen at credit approval: a
+        // consumer-finance loan pays the merchant's settlement account, never the customer.
+        PayoutDestination payee = PayoutDestination.of(loan);
         DisbursementRequest request = DisbursementRequest.builder()
                 .amount(loan.getDisbursedAmount())
                 .mobileNumber(loan.getMobileNumber())
                 .reference(loan.getReference())
                 .transactionReference(reference)
-                .disbursementType(type)
-                .accountNumber(type == DisbursementType.MERCHANT_MOBILE_WALLET
-                        ? loan.getMerchant().getAccountNumber() : null)
+                .disbursementType(payee.type())
+                .accountNumber(payee.merchantAccount())
                 .build();
 
         loan.setDisbursementAttempts(loan.getDisbursementAttempts() == null ? 1 : loan.getDisbursementAttempts() + 1);
@@ -232,17 +231,21 @@ public abstract class DisbursementService {
         }
 
         Merchant merchant = loan.getMerchant();
-        DisbursementType type = merchant == null ? null : merchant.getDisbursementType();
-        if (type == null) {
+        PayoutDestination payee = PayoutDestination.of(loan);
+        if (payee.type() == null) {
             throw notAllowed("Loan %s has no merchant disbursement type, so there is no destination to pay"
                     .formatted(loanRef));
         }
-        if (type == DisbursementType.MERCHANT_MOBILE_WALLET && isBlank(merchant.getAccountNumber())) {
+        if (payee.paysMerchant() && isBlank(payee.merchantAccount())) {
             throw notAllowed("Merchant %s of loan %s has no settlement account to pay"
-                    .formatted(merchant.getCompanyName(), loanRef));
+                    .formatted(merchant == null ? null : merchant.getCompanyName(), loanRef));
         }
-        if (type == DisbursementType.CUSTOMER_MOBILE_WALLET && isBlank(loan.getMobileNumber())) {
+        if (!payee.paysMerchant() && isBlank(loan.getMobileNumber())) {
             throw notAllowed("Loan %s has no customer mobile number to pay".formatted(loanRef));
+        }
+        if (payee.frozen() && payee.differsFrom(merchant)) {
+            log.warn("Loan {}: merchant payout settings changed after credit approved it; paying the approved"
+                    + " {} destination, not the merchant's current one", loanRef, payee.type());
         }
         BigDecimal amount = loan.getDisbursedAmount();
         if (amount == null || amount.signum() <= 0) {
@@ -332,7 +335,7 @@ public abstract class DisbursementService {
 
     private void sendDisbursementNotification(Loan loan) {
         String message = disbursementSms(loan);
-        log.info("Sending disbursement notification: {} -> {}", loan.getMerchant().getDisbursementType(), message);
+        log.info("Sending disbursement notification: {} -> {}", PayoutDestination.of(loan).type(), message);
         notificationService.sendSms(loan.getMobileNumber(), message);
     }
 

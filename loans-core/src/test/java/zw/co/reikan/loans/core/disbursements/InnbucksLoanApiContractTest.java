@@ -269,6 +269,41 @@ class InnbucksLoanApiContractTest {
     }
 
     @Test
+    @DisplayName("apply: the settlement account frozen at credit approval is booked, not the merchant's current one")
+    void bookingPaysTheAccountFrozenAtApproval() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        Loan loan = collectionLoan(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.setApprovedDisbursementType(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.setApprovedSettlementAccount("123456789");
+        // Edited after credit approved the loan.
+        loan.getMerchant().setAccountNumber("999999999");
+
+        service.createLoanAccount(loan);
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.type", equalTo("CONSUMER_FINANCE")))
+                .withRequestBody(matchingJsonPath("$.settlementAccount", equalTo("123456789"))));
+        wireMock.verify(0, postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.settlementAccount", equalTo("999999999"))));
+    }
+
+    @Test
+    @DisplayName("apply: a customer-wallet loan stays one when its merchant is switched to settle to itself later")
+    void bookingKeepsTheCustomerWalletFrozenAtApproval() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        Loan loan = collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        loan.setApprovedDisbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        loan.getMerchant().setDisbursementType(DisbursementType.MERCHANT_MOBILE_WALLET);
+        loan.getMerchant().setAccountNumber("999999999");
+
+        service.createLoanAccount(loan);
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.type", equalTo("PERSONAL")))
+                .withRequestBody(notContaining("settlementAccount")));
+    }
+
+    @Test
     @DisplayName("apply: any 2xx is success — a 201 Created must not mark a booked loan FAILED")
     void apply201IsSuccess() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(aResponse().withStatus(201)));

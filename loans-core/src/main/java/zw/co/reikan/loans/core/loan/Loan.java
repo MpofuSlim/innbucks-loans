@@ -283,6 +283,19 @@ public class Loan extends BaseEntity {
     private String internalApprovalComment;
 
     /**
+     * Where credit approved the money to go, frozen at approval: see {@link PayoutDestination}. Null on
+     * a loan approved before the freeze existed, which still pays per the merchant's live settings.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approved_disbursement_type")
+    private DisbursementType approvedDisbursementType;
+
+    /** The merchant settlement account frozen at approval; null unless the loan pays a merchant. */
+    @ToString.Exclude
+    @Column(name = "approved_settlement_account")
+    private String approvedSettlementAccount;
+
+    /**
      * Set by {@link DeductionCancellationService} when a loan whose deduction was lodged with
      * Ndasenda will not be paid. New nullable columns rather than new values on an existing
      * status enum, whose CHECK constraint ddl-auto would never widen.

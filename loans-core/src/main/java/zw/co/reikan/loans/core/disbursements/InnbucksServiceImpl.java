@@ -64,7 +64,13 @@ public class InnbucksServiceImpl extends DisbursementService {
         BigDecimal grossSalary = (loan.getEmploymentDetail() == null || loan.getEmploymentDetail().getGrossSalary() == null)
                 ? null : loan.getEmploymentDetail().getGrossSalary();
 
-        DisbursementType disbursementType = loan.getMerchant().getDisbursementType();
+        // Where credit approved the money to go, not wherever the merchant row points today.
+        PayoutDestination payee = PayoutDestination.of(loan);
+        DisbursementType disbursementType = payee.type();
+        if (payee.frozen() && payee.differsFrom(loan.getMerchant())) {
+            log.warn("Loan {}: merchant payout settings changed after credit approved it; booking to the approved"
+                    + " {} destination, not the merchant's current one", loan.getReference(), payee.type());
+        }
 
         LoanAccountCreationRequest.LoanAccountCreationRequestBuilder builder = LoanAccountCreationRequest.builder()
                 .firstName(loan.getFirstName())
@@ -87,9 +93,9 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .type(disbursementType.getLoanType().name())
                 .repaymentFrequency(MONTHLY);
 
-        if (DisbursementType.MERCHANT_MOBILE_WALLET == disbursementType) {
-            log.info("Setting disbursement account: {}", maskAccountNumber(loan.getMerchant().getAccountNumber()));
-            builder.settlementAccount(loan.getMerchant().getAccountNumber());
+        if (payee.paysMerchant()) {
+            log.info("Setting disbursement account: {}", maskAccountNumber(payee.merchantAccount()));
+            builder.settlementAccount(payee.merchantAccount());
         }
 
         NextOfKin nextOfKin = loan.getNextOfKin();
