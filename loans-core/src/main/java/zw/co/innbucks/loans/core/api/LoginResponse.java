@@ -27,7 +27,7 @@ public class LoginResponse implements Serializable {
     @Schema(example = "Bearer")
     private String tokenType;
 
-    @Schema(description = "Seconds until the token expires", example = "3600")
+    @Schema(description = "Seconds until the token expires (24 hours by default)", example = "86400")
     private long expiresIn;
 
     @Schema(description = "True when the password is a temporary one the user must change before anything else",

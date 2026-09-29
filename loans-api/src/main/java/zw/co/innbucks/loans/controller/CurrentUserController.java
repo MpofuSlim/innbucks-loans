@@ -67,7 +67,7 @@ public class CurrentUserController {
                               "data": {
                                 "accessToken": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI3In0.bmV3c2lnbmF0dXJl",
                                 "tokenType": "Bearer",
-                                "expiresIn": 3600,
+                                "expiresIn": 86400,
                                 "temporaryPassword": false,
                                 "groups": ["AGENTS"],
                                 "merchantCode": "harare-motors",
