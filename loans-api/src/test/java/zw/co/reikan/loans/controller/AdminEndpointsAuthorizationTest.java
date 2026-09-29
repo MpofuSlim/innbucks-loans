@@ -101,7 +101,7 @@ class AdminEndpointsAuthorizationTest {
         mvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class))
                 .build();
-        givenToken("admin", UserGroup.BULKIT_ADMIN);
+        givenToken("admin", UserGroup.SUPER_ADMIN);
         givenToken("agent", UserGroup.AGENTS);
         givenToken("credit", UserGroup.CREDIT_MANAGER);
         givenToken("finance", UserGroup.FINANCE);
@@ -145,7 +145,7 @@ class AdminEndpointsAuthorizationTest {
     // ── Creating users: POST /api/merchants/{code}/agents and /users ─────────
 
     @Test
-    @DisplayName("only BULKIT_ADMIN creates users: AGENTS, CREDIT_MANAGER and FINANCE → 403 on both paths")
+    @DisplayName("only SUPER_ADMIN creates users: AGENTS, CREDIT_MANAGER and FINANCE → 403 on both paths")
     void onlyAdminCreatesUsers() throws Exception {
         for (String caller : List.of("agent", "credit", "finance")) {
             for (String path : List.of("/api/merchants/{code}/agents", "/api/merchants/{code}/users")) {
@@ -168,7 +168,7 @@ class AdminEndpointsAuthorizationTest {
     }
 
     @Test
-    @DisplayName("BULKIT_ADMIN creating a CREDIT_MANAGER in another merchant → reaches the service")
+    @DisplayName("SUPER_ADMIN creating a CREDIT_MANAGER in another merchant → reaches the service")
     void adminCreatesCreditManager() throws Exception {
         mvc.perform(as("admin", post("/api/merchants/{code}/agents", OTHER_MERCHANT))
                         .contentType(MediaType.APPLICATION_JSON).content(newUser(UserGroup.CREDIT_MANAGER)))
@@ -191,7 +191,7 @@ class AdminEndpointsAuthorizationTest {
     // ── Listing a merchant's users: GET /api/merchants/{code}/agents ─────────
 
     @Test
-    @DisplayName("listing a merchant's users is BULKIT_ADMIN and CREDIT_MANAGER only: AGENTS and FINANCE → 403")
+    @DisplayName("listing a merchant's users is SUPER_ADMIN and CREDIT_MANAGER only: AGENTS and FINANCE → 403")
     void listingUsersIsStaffOnly() throws Exception {
         when(authService.findUsersByMerchantCode(OWN_MERCHANT)).thenReturn(List.of(new UserDTO()));
 
@@ -232,7 +232,7 @@ class AdminEndpointsAuthorizationTest {
     }
 
     @Test
-    @DisplayName("BULKIT_ADMIN changing the payee → 200 and audited with who, merchant and masked old/new")
+    @DisplayName("SUPER_ADMIN changing the payee → 200 and audited with who, merchant and masked old/new")
     void adminUpdateIsAudited() throws Exception {
         Merchant merchant = Merchant.builder().merchantCode(Merchant.DEFAULT_MERCHANT_CODE).companyName("Innbucks")
                 .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET).accountNumber("263771112222").build();

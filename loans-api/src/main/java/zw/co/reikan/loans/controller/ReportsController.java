@@ -31,7 +31,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @RestController
 @RequestMapping(value = "/api/reports")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('BULKIT_ADMIN')")
+@PreAuthorize("hasRole('SUPER_ADMIN')")
 public class ReportsController {
 
     private final ReportService reportService;

@@ -50,7 +50,7 @@ public class JwtConfig {
         }
         // The application.yml default is published in this repo and roles come
         // straight from token claims, so anyone who has read it could mint a
-        // BULKIT_ADMIN token. Only a dev/test/local/it process may run on it.
+        // SUPER_ADMIN token. Only a dev/test/local/it process may run on it.
         if (isPlaceholder(secret) && DeploymentProfiles.isDeployment(environment)) {
             throw new IllegalStateException("jwt.secret is a development placeholder and no dev/test/local/it "
                     + "profile is active (active profiles: " + Arrays.toString(environment.getActiveProfiles())

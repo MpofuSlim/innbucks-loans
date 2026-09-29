@@ -11,7 +11,7 @@ spring:
   # --- PostgreSQL (local development) ---
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/bulkit_loans
+    url: jdbc:postgresql://localhost:5432/innbucks_loans
     username: postgres
     password: postgres
     hikari:
@@ -84,11 +84,11 @@ jwt:
 # --- Bootstrap super-admin ---------------------------------------------------
 # Created once, on the first boot where no user with this username exists. With
 # no password and no dev/test/local/it profile, NO admin is created (an ERROR is
-# logged); set BULKIT_PASSWORD, or bootstrap.admin.password in /app/config.
+# logged); set BOOTSTRAP_ADMIN_PASSWORD, or bootstrap.admin.password in /app/config.
 bootstrap:
   admin:
     username: "${BOOTSTRAP_ADMIN_USERNAME:admin}"
-    password: "${BULKIT_PASSWORD:}"
+    password: "${BOOTSTRAP_ADMIN_PASSWORD:}"
 
 # --- Outbound HTTP timeouts (milliseconds) ----------------------------------
 # One RestTemplate carries every Ndasenda call (login, lodgement, batch commit,

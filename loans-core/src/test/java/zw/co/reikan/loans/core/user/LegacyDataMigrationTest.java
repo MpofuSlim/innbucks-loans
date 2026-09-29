@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.user;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import zw.co.reikan.loans.core.StartupTask;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -14,7 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -28,7 +28,7 @@ class LegacyDataMigrationTest {
     private final DatabaseMetaData metaData = mock(DatabaseMetaData.class);
 
     @Test
-    @DisplayName("a fresh database (no user_groups yet) is left alone: nothing is queried or changed")
+    @DisplayName("a fresh database (no tables yet) is left alone: nothing is queried or changed")
     void freshDatabaseIsANoOp() throws Exception {
         givenTables(false);
 
@@ -70,6 +70,15 @@ class LegacyDataMigrationTest {
         assertThat(LegacyDataMigration.RENAMED_GROUPS.values()).allMatch(LegacyDataMigrationTest::isCurrentGroup);
     }
 
+    @Test
+    @DisplayName("the BulkIT commission groups are renamed to exactly the names the startup task seeds")
+    void commissionGroupsRenameToTheSeededNames() {
+        assertThat(LegacyDataMigration.RENAMED_COMMISSION_GROUPS).containsOnlyKeys(
+                "80-20-Favouring-BulkIT", "100-Favouring-BulkIT", "Default-BulkIT");
+        assertThat(LegacyDataMigration.RENAMED_COMMISSION_GROUPS.values()).containsExactlyInAnyOrder(
+                StartupTask.EIGHTY_TWENTY, StartupTask.FAVOURING_INNBUCKS, StartupTask.ZERO_BASED_DEFAULT);
+    }
+
     private static boolean isCurrentGroup(String name) {
         return Arrays.stream(UserGroup.values()).anyMatch(group -> group.name().equals(name));
     }
@@ -80,6 +89,6 @@ class LegacyDataMigrationTest {
         when(connection.getMetaData()).thenReturn(metaData);
         ResultSet tables = mock(ResultSet.class);
         when(tables.next()).thenReturn(exists);
-        when(metaData.getTables(any(), any(), eq("user_groups"), any())).thenReturn(tables);
+        when(metaData.getTables(any(), any(), anyString(), any())).thenReturn(tables);
     }
 }

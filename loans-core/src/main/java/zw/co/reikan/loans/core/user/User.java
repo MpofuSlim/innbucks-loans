@@ -26,9 +26,8 @@ public class User extends BaseEntity {
     private String username;
 
     /**
-     * BCrypt-hashed password. Authentication is now self-issued (see
-     * {@code zw.co.reikan.loans.core.auth}); this replaces the credential that
-     * previously lived in Keycloak. Nullable so pre-existing rows survive the
+     * BCrypt-hashed password; tokens are self-issued (see
+     * {@code zw.co.reikan.loans.core.auth}). Nullable so older rows survive the
      * {@code ddl-auto: update} migration — a user with no hash cannot log in.
      */
     @ToString.Exclude
@@ -36,8 +35,8 @@ public class User extends BaseEntity {
     private String password;
 
     /**
-     * Stable per-user identifier used in API paths and JWT {@code sub}. Formerly
-     * the Keycloak user id; now a locally generated UUID.
+     * Stable per-user identifier used in API paths and JWT {@code sub}: a locally
+     * generated UUID (older rows keep the identifier they were created with).
      */
     @Column(nullable = false, length = 100, unique = true)
     private String externalSystemId;

@@ -59,7 +59,7 @@ public class BatchesController {
     @Operation(operationId = "searchLoans",
             summary = "SEARCH LOANS",
             description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters. "
-                    + "BULKIT_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; everyone else only the loans "
+                    + "SUPER_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; everyone else only the loans "
                     + "they originated.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
@@ -99,7 +99,7 @@ public class BatchesController {
     })
     @GetMapping("/loans/find-approvals")
     // The credit queue: the same roles that may act on it via POST /api/loans/{id}/approve.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER')")
     public LoansWrapper findPendingApprovals() {
         log.info("Finding loans pending internal approval");
         FindLoansRequest request = FindLoansRequest.builder()
@@ -152,7 +152,7 @@ public class BatchesController {
     })
     @PostMapping("/batches/search")
     // SSB deduction batches list every borrower under the lender's code — lender-side staff only.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public FindNdasendaBatchResponse findNdasendaBatches(@RequestBody FindNdasendaBatchRequest request) {
         log.info("Searching batches: {}", request);
         return FindNdasendaBatchResponse.builder().batches(ndasendaLoanApprovalService.findBatches(request)).build();
@@ -177,7 +177,7 @@ public class BatchesController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/batches/{batchId}")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public NdasendaDeductionsBatchRequest getBatchDetails(@PathVariable String batchId) {
         // The same "ours" filter /batches/search applies. Ndasenda answers for any batch
         // under the lender's code, so without it this returned whatever id it was handed.

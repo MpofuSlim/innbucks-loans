@@ -17,7 +17,7 @@ import static zw.co.reikan.loans.core.user.UserGroup.*;
  * this any authenticated caller could mint a CREDIT_MANAGER and approve their own
  * loans, or plant a user in someone else's merchant.
  *
- * <p>Only {@code BULKIT_ADMIN}, the platform owner, grants groups: any group, in any
+ * <p>Only {@code SUPER_ADMIN}, the platform owner, grants groups: any group, in any
  * merchant. CREDIT_MANAGER approves loans and FINANCE reconciles them, and a field
  * agent ({@code AGENTS}) captures applications; none of them creates users.</p>
  */
@@ -28,7 +28,7 @@ public final class UserGrantPolicy {
     private static final Map<UserGroup, Set<UserGroup>> GRANTABLE = new EnumMap<>(UserGroup.class);
 
     static {
-        GRANTABLE.put(BULKIT_ADMIN, EnumSet.allOf(UserGroup.class));
+        GRANTABLE.put(SUPER_ADMIN, EnumSet.allOf(UserGroup.class));
     }
 
     private UserGrantPolicy() {
@@ -67,7 +67,7 @@ public final class UserGrantPolicy {
         }
         // Exact match: merchant lookups are case-sensitive, so a case-insensitive
         // compare would let "abc" reach a distinct merchant "ABC".
-        if (!callerGroups.contains(BULKIT_ADMIN) && !targetMerchantCode.equals(callerMerchantCode)) {
+        if (!callerGroups.contains(SUPER_ADMIN) && !targetMerchantCode.equals(callerMerchantCode)) {
             throw new AccessDeniedException("Not allowed to create users in merchant " + targetMerchantCode
                     + ": you may only create users in your own merchant");
         }

@@ -23,10 +23,10 @@ class UserGrantPolicyTest {
     private static final String OTHER = "merchant-b";
 
     @Test
-    @DisplayName("only BULKIT_ADMIN grants groups: every other group grants nothing")
+    @DisplayName("only SUPER_ADMIN grants groups: every other group grants nothing")
     void grantMatrix() {
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(BULKIT_ADMIN))).isEqualTo(EnumSet.allOf(UserGroup.class));
-        for (UserGroup caller : EnumSet.complementOf(EnumSet.of(BULKIT_ADMIN))) {
+        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(SUPER_ADMIN))).isEqualTo(EnumSet.allOf(UserGroup.class));
+        for (UserGroup caller : EnumSet.complementOf(EnumSet.of(SUPER_ADMIN))) {
             assertThat(UserGrantPolicy.grantableBy(EnumSet.of(caller))).as("grantable by %s", caller).isEmpty();
         }
     }
@@ -42,10 +42,10 @@ class UserGrantPolicyTest {
     }
 
     @Test
-    @DisplayName("BULKIT_ADMIN may create any group in any merchant")
+    @DisplayName("SUPER_ADMIN may create any group in any merchant")
     void adminIsUnrestricted() {
         for (UserGroup group : UserGroup.values()) {
-            assertThatCode(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(BULKIT_ADMIN), OWN, group, OTHER))
+            assertThatCode(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(SUPER_ADMIN), OWN, group, OTHER))
                     .doesNotThrowAnyException();
         }
     }

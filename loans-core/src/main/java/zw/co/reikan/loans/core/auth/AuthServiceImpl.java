@@ -33,9 +33,9 @@ import java.util.UUID;
 import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
 
 /**
- * Database-backed replacement for the former Keycloak service. Authenticates
- * against locally stored BCrypt credentials and issues self-signed JWTs; user
- * profiles and roles are read straight from the {@code users} table.
+ * Database-backed authentication. Authenticates against locally stored BCrypt
+ * credentials and issues self-signed JWTs; user profiles and roles are read
+ * straight from the {@code users} table.
  */
 @Service
 @Slf4j

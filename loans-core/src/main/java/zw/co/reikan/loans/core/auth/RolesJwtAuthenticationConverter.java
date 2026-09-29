@@ -16,8 +16,8 @@ import java.util.Map;
 
 /**
  * Maps the {@code realm_access.roles} claim of a self-issued token onto
- * {@code ROLE_*} authorities. The claim name is retained from the previous
- * Keycloak contract so token consumers did not have to change.
+ * {@code ROLE_*} authorities. The portal reads the same claim, so its name is
+ * part of the token contract.
  */
 public class RolesJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
     private final Converter<Jwt, Collection<GrantedAuthority>> delegate = new JwtGrantedAuthoritiesConverter();

@@ -49,7 +49,7 @@ public class LoanManagementController {
 
     @Operation(operationId = "disburseLoan",
             summary = "MANUAL RECOVERY PAYOUT",
-            description = "Recovery only, BULKIT_ADMIN only. Pays a loan through the InnBucks deposit rail when SSB and"
+            description = "Recovery only, SUPER_ADMIN only. Pays a loan through the InnBucks deposit rail when SSB and"
                     + " Credit approved it AND InnBucks definitively refused its pre-approved booking (the booking is"
                     + " what normally pays it). Every attempt for a loan carries one reference, MD-<loan reference>."
                     + " An attempt whose outcome is unknown (a timeout, a 5xx) is IN_DOUBT and blocks every further"
@@ -61,7 +61,7 @@ public class LoanManagementController {
                     description = "Attempt made: outcome DISBURSED, REFUSED (nothing paid; may be tried again) or"
                             + " IN_DOUBT (confirm with InnBucks using the reference)"),
             @ApiResponse(responseCode = "403",
-                    description = "Caller is not a BULKIT_ADMIN"),
+                    description = "Caller is not a SUPER_ADMIN"),
             @ApiResponse(responseCode = "404",
                     description = "No such loan"),
             @ApiResponse(responseCode = "409",
@@ -71,7 +71,7 @@ public class LoanManagementController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/{id}/disburse")
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ManualDisbursementResult disburseLoan(@PathVariable Long id) {
         log.info("Manual recovery payout requested for loan: {}", id);
         // The service refuses (409) anything the pre-approved booking may still pay, and never
@@ -92,13 +92,13 @@ public class LoanManagementController {
                     description = "Represents an Error Caused by the Violation of a Business Rule, including a loan"
                             + " with nowhere to pay it (no payout type, or a merchant with no settlement account)"),
             @ApiResponse(responseCode = "403",
-                    description = "Not a CREDIT_MANAGER or BULKIT_ADMIN, or the caller originated this loan"),
+                    description = "Not a CREDIT_MANAGER or SUPER_ADMIN, or the caller originated this loan"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/{id}/approve")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','BULKIT_ADMIN')")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
     public InternalApprovalResponse approve(@Valid @RequestBody InternalApprovalRequest request,
                                             @PathVariable Long id) {
         log.info("Loan internal approval request: {}", request);
@@ -123,13 +123,13 @@ public class LoanManagementController {
             @ApiResponse(responseCode = "401",
                     description = "Not authenticated"),
             @ApiResponse(responseCode = "403",
-                    description = "Caller is not BULKIT_ADMIN, CREDIT_MANAGER or FINANCE"),
+                    description = "Caller is not SUPER_ADMIN, CREDIT_MANAGER or FINANCE"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/loans/deduction-cancellations")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public List<DeductionCancellationDto> findDeductionCancellations() {
         log.info("Finding loans whose deduction must be cancelled");
         return deductionCancellationService.findRequired();
@@ -150,7 +150,7 @@ public class LoanManagementController {
             @ApiResponse(responseCode = "401",
                     description = "Not authenticated"),
             @ApiResponse(responseCode = "403",
-                    description = "Caller is not BULKIT_ADMIN or FINANCE"),
+                    description = "Caller is not SUPER_ADMIN or FINANCE"),
             @ApiResponse(responseCode = "404",
                     description = "Resource not found"),
             @ApiResponse(responseCode = "409",
@@ -160,7 +160,7 @@ public class LoanManagementController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PutMapping("/loans/{id}/deduction-cancellation")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','FINANCE')")
     public DeductionCancellationDto recordDeductionCancelled(@PathVariable Long id,
                                                              @Valid @RequestBody DeductionCancellationRequest request) {
         log.info("Recording deduction cancelled for loan: {}", id);
@@ -183,20 +183,20 @@ public class LoanManagementController {
             @ApiResponse(responseCode = "401",
                     description = "Not authenticated"),
             @ApiResponse(responseCode = "403",
-                    description = "Caller is not BULKIT_ADMIN, CREDIT_MANAGER or FINANCE"),
+                    description = "Caller is not SUPER_ADMIN, CREDIT_MANAGER or FINANCE"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/loans/held-bookings")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public List<HeldBookingDto> findHeldBookings() {
         log.info("Finding loans held as booked at InnBucks");
         return bookingResolutionService.findHeld();
     }
 
     @Operation(summary = "CONFIRM INNBUCKS BOOKING NOT BOOKED",
-            description = "BULKIT_ADMIN only. Records that InnBucks confirmed it booked no loan under this loan's"
+            description = "SUPER_ADMIN only. Records that InnBucks confirmed it booked no loan under this loan's"
                     + " reference. The loan becomes FAILED with a REFUSED booking - eligible for the manual recovery"
                     + " payout - and its Ndasenda deduction is flagged for cancellation (BOOKING_FAILED). Nothing is"
                     + " sent to InnBucks. Confirm with InnBucks first: if the booking did land, a recovery payout"
@@ -213,7 +213,7 @@ public class LoanManagementController {
             @ApiResponse(responseCode = "401",
                     description = "Not authenticated"),
             @ApiResponse(responseCode = "403",
-                    description = "Caller is not a BULKIT_ADMIN"),
+                    description = "Caller is not a SUPER_ADMIN"),
             @ApiResponse(responseCode = "404",
                     description = "No such loan"),
             @ApiResponse(responseCode = "409",
@@ -223,7 +223,7 @@ public class LoanManagementController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @PostMapping("/loans/{id}/booking/confirm-not-booked")
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public HeldBookingDto confirmBookingNotBooked(@PathVariable Long id,
                                                   @Valid @RequestBody BookingNotBookedRequest request) {
         log.info("Recording InnBucks booking of loan {} as never landed", id);

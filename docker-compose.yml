@@ -6,8 +6,7 @@ name: innbucks-loans
 #   docker compose --profile apps up -d  # PostgreSQL + the API
 #
 # The app service is opt-in (profile "apps") because it requires a jar to be
-# built first and the application context contacts an external Keycloak issuer
-# at startup. Build the jar before bringing it up:
+# built first. Build the jar before bringing it up:
 #
 #   mvn clean package -DskipTests
 #   docker compose --profile apps up -d --build
@@ -22,13 +21,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-bulkit_loans}
+      POSTGRES_DB: ${POSTGRES_DB:-innbucks_loans}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bulkit_loans}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-innbucks_loans}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -52,7 +51,7 @@ services:
       # "local" opts this dev stack into the placeholder JWT secret and the
       # bootstrap admin's fallback password; both are refused without it.
       SPRING_PROFILES_ACTIVE: api,local
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bulkit_loans}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-innbucks_loans}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:

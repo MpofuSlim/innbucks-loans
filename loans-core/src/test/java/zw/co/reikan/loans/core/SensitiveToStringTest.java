@@ -87,7 +87,7 @@ class SensitiveToStringTest {
     @DisplayName("User never prints its password hash or ID number — nor does a channel holding one")
     void userHidesPasswordHash() {
         User user = user("user-1");
-        Channel channel = Channel.builder().channelId("bulkit_mobile_app").name("Mobile").systemUser(user).build();
+        Channel channel = Channel.builder().channelId("superapp").name("Mobile").systemUser(user).build();
 
         assertNoPii(user);
         assertNoPii(channel);
@@ -110,11 +110,11 @@ class SensitiveToStringTest {
                 .signatureData(SIGNATURE)
                 .nationalIdPicture(IMAGE)
                 .payslipPicture(IMAGE)
-                .channelId("bulkit_mobile_app")
+                .channelId("superapp")
                 .build();
 
         assertNoPii(request);
-        assertThat(request.toString()).contains("amount=500", "tenor=12", "bulkit_mobile_app", "Rudo", "T. Moyo");
+        assertThat(request.toString()).contains("amount=500", "tenor=12", "superapp", "Rudo", "T. Moyo");
     }
 
     @Test

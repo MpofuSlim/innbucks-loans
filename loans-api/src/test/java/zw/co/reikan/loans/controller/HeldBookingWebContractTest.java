@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The held-bookings queue and its one way out. Confirming a booking never landed makes the loan
- * eligible for a recovery payout, so it is BULKIT_ADMIN only — the same authority as the payout
+ * eligible for a recovery payout, so it is SUPER_ADMIN only — the same authority as the payout
  * itself. The controller carries the real {@code @PreAuthorize} interceptor; no Spring context.
  */
 class HeldBookingWebContractTest {
@@ -113,9 +113,9 @@ class HeldBookingWebContractTest {
     }
 
     @Test
-    @DisplayName("POST confirm-not-booked: a BULKIT_ADMIN records it with a note")
+    @DisplayName("POST confirm-not-booked: a SUPER_ADMIN records it with a note")
     void adminConfirms() throws Exception {
-        signedInAs("BULKIT_ADMIN");
+        signedInAs("SUPER_ADMIN");
         HeldBookingDto failed = held();
         failed.setLoanAccountStatus(LoanAccountStatus.FAILED);
         failed.setDisbursementStatus(LoanDisbursementStatus.FAILED);
@@ -145,7 +145,7 @@ class HeldBookingWebContractTest {
     @Test
     @DisplayName("POST confirm-not-booked: a blank note is a 400 and nothing is recorded")
     void blankNoteIsRefused() throws Exception {
-        signedInAs("BULKIT_ADMIN");
+        signedInAs("SUPER_ADMIN");
 
         mvc.perform(post("/api/loans/42/booking/confirm-not-booked")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"note\":\"  \"}"))
@@ -156,7 +156,7 @@ class HeldBookingWebContractTest {
     @Test
     @DisplayName("POST confirm-not-booked: a loan with no held booking is a 409 naming why")
     void notHeldIsAConflict() throws Exception {
-        signedInAs("BULKIT_ADMIN");
+        signedInAs("SUPER_ADMIN");
         when(resolutionService.confirmNotBooked(anyLong(), anyString())).thenThrow(new ConflictException(
                 "Loan 42 has no booking awaiting InnBucks (account status FAILED, disbursement status FAILED)"));
 

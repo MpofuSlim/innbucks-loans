@@ -38,7 +38,7 @@ class LoanReadScopeResolverTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BULKIT_ADMIN", "CREDIT_MANAGER", "FINANCE"})
+    @ValueSource(strings = {"SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"})
     @DisplayName("lender-side staff read every merchant's loans, without a user lookup")
     void lenderStaffArePlatformWide(String role) {
         assertThat(resolver.resolve(token("staff", role))).isEqualTo(LoanReadScope.platform());

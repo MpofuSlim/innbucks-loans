@@ -81,7 +81,7 @@ public class UserController {
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping(value = "/admin-reset-password")
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Password reset and temporary password delivered"),
             @ApiResponse(responseCode = "400", description = "Unknown user, missing channel, or no email/mobile number on file for the chosen channel"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
