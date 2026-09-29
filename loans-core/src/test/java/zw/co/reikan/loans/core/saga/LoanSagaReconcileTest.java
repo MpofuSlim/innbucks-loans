@@ -7,6 +7,7 @@ import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
 import zw.co.reikan.loans.core.ledger.LedgerService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
@@ -46,8 +47,9 @@ class LoanSagaReconcileTest {
         loanRepository = mock(LoanRepository.class);
         sagaRepository = mock(LoanSagaRepository.class);
         auditService = mock(AuditService.class);
-        transitions = new LoanSagaTransitionService(loanRepository, sagaRepository, mock(LedgerService.class),
-                mock(LedgerEntryRepository.class), auditService, mock(LoanPublicReferenceService.class),
+        transitions = new LoanSagaTransitionService(loanRepository, sagaRepository,
+                new DisbursementLedger(mock(LedgerService.class), mock(LedgerEntryRepository.class)),
+                auditService, mock(LoanPublicReferenceService.class),
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
         loan = Loan.builder().loanApprovalStatus(LoanApprovalStatus.PROCESSING).build();
         loan.setId(42L);

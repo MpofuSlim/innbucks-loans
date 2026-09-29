@@ -15,6 +15,7 @@ import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.disbursements.LoanAccountCreationJob;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
 import zw.co.reikan.loans.core.ledger.LedgerService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
@@ -79,7 +80,7 @@ class RevivedLodgementBookingFailureTest {
         when(sagaRepository.findByLoanId(42L)).thenReturn(Optional.of(saga));
         LedgerEntryRepository ledgerEntryRepository = mock(LedgerEntryRepository.class);
         LoanSagaTransitionService sagaTransitions = new LoanSagaTransitionService(loanRepository, sagaRepository,
-                mock(LedgerService.class), ledgerEntryRepository, auditService,
+                new DisbursementLedger(mock(LedgerService.class), ledgerEntryRepository), auditService,
                 mock(LoanPublicReferenceService.class), cancellations);
 
         // 1. Ndasenda accepts the lodgement we had given up on: revived, provisional flag withdrawn.

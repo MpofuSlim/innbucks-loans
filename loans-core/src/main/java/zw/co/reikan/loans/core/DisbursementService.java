@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatusResponse;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
@@ -60,16 +61,19 @@ public abstract class DisbursementService {
     private final NotificationService notificationService;
     private final LoanDisbursementRepository loanDisbursementRepository;
     private final DeductionCancellationService deductionCancellationService;
+    private final DisbursementLedger disbursementLedger;
     private final TransactionTemplate transactionTemplate;
 
     protected DisbursementService(LoanRepository loanRepository, NotificationService notificationService,
                                   LoanDisbursementRepository loanDisbursementRepository,
                                   DeductionCancellationService deductionCancellationService,
+                                  DisbursementLedger disbursementLedger,
                                   PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.notificationService = notificationService;
         this.loanDisbursementRepository = loanDisbursementRepository;
         this.deductionCancellationService = deductionCancellationService;
+        this.disbursementLedger = disbursementLedger;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         // Always a fresh transaction: the claim must be COMMITTED before InnBucks is called,
         // even if a future caller wraps disburse() in a transaction of its own.
@@ -102,7 +106,8 @@ public abstract class DisbursementService {
      *       row is the write-ahead record: a crash or a timeout from here on leaves it PENDING,
      *       and a PENDING row blocks every further attempt. No lock is held across the call.</li>
      *   <li><b>Pay</b> — one deposit; this method never retries it.</li>
-     *   <li><b>Settle</b> — SUCCESS marks the row and the loan SUCCESS; a definite refusal marks
+     *   <li><b>Settle</b> — SUCCESS marks the row and the loan SUCCESS and posts the payout to the
+     *       ledger, all in one transaction; a definite refusal marks
      *       the row FAILED and leaves the loan payable later (under the same reference); anything
      *       else leaves the row PENDING — in doubt, for an operator to confirm with InnBucks.</li>
      * </ol>
@@ -275,6 +280,10 @@ public abstract class DisbursementService {
                 loan.setDateDisbursed(now);
                 loan.setDisbursementMerchantAccountNumber(claim.request().getAccountNumber());
                 loan.setDisbursementStatusMessage(truncate(paid));
+                // Posted here, with the payout: a recovery payout pays a loan whose saga has usually
+                // already compensated, and a terminal saga posts nothing, so this is the only place
+                // it can be. The loan's reference is MD-<ref> since the claim, so it posts as DISB-MD-<ref>.
+                disbursementLedger.recordPayout(loan, MANUAL_PAYOUT_ACTOR);
                 yield ManualDisbursementResult.builder().outcome(Outcome.DISBURSED).reference(reference)
                         .message(paid).build();
             }

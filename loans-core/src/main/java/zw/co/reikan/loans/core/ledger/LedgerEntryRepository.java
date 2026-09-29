@@ -13,6 +13,9 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
 
     boolean existsByTransactionRef(String transactionRef);
 
+    /** The legs of one posting, so a reversal can mirror exactly what was posted. */
+    List<LedgerEntry> findByTransactionRef(String transactionRef);
+
     List<LedgerEntry> findByLoanIdOrderByIdAsc(Long loanId);
 
     /**

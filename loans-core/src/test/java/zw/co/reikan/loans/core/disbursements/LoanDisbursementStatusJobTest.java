@@ -4,12 +4,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.DisbursementType;
 import zw.co.reikan.loans.core.loan.Loan;
@@ -46,6 +49,12 @@ class LoanDisbursementStatusJobTest {
 
     @Mock
     private AuditService auditService;
+
+    @Mock
+    private DisbursementLedger disbursementLedger;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private LoanDisbursementStatusJob loanDisbursementStatusJob;
@@ -225,6 +234,55 @@ class LoanDisbursementStatusJobTest {
         verify(notificationService).sendSms(anyString(), anyString());
         verify(loanRepository).save(testLoan);
         verifyNoInteractions(deductionCancellationService);
+    }
+
+    @Test
+    void aPaidLoanIsPostedToTheLedgerWithItsSuccess_andOnlyThenIsTheCustomerTold() {
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // One transaction: the posting and the SUCCESS commit together, and the SMS follows the commit.
+        InOrder inOrder = inOrder(transactionManager, disbursementLedger, loanRepository, notificationService);
+        inOrder.verify(transactionManager).getTransaction(any());
+        inOrder.verify(disbursementLedger).recordPayout(testLoan, LoanDisbursementStatusJob.SYSTEM_ACTOR);
+        inOrder.verify(loanRepository).save(testLoan);
+        inOrder.verify(transactionManager).commit(any());
+        inOrder.verify(notificationService).sendSms(anyString(), anyString());
+    }
+
+    @Test
+    void aPaidLoanThatCannotBePosted_isNeitherRecordedNorAnnounced_andTheNextRunRetries() {
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
+        doThrow(new IllegalStateException("database unavailable"))
+                .when(disbursementLedger).recordPayout(any(), anyString());
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        verify(transactionManager).rollback(any());
+        verify(transactionManager, never()).commit(any());
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void aLoanNotYetPaidPostsNothing() {
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(pendingResponse, failedResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        verifyNoInteractions(disbursementLedger, transactionManager);
+        verify(loanRepository, times(2)).save(testLoan);
     }
 
     @Test
