@@ -30,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * {@code POST /api/loans/{id}/disburse} moves money, so it is BULKIT_ADMIN-only. The
+ * {@code POST /api/loans/{id}/disburse} moves money, so it is SUPER_ADMIN-only. The
  * controller runs behind the same {@code @PreAuthorize} interceptor production's
  * {@code @EnableMethodSecurity} installs, and callers are authenticated exactly as
  * production does it: a token's {@code realm_access.roles} through
@@ -96,9 +96,9 @@ class ManualDisbursementWebContractTest {
     }
 
     @Test
-    @DisplayName("a BULKIT_ADMIN reaches the service → 200 naming the outcome and the reference")
+    @DisplayName("a SUPER_ADMIN reaches the service → 200 naming the outcome and the reference")
     void adminReachesTheService() throws Exception {
-        signInAs("BULKIT_ADMIN");
+        signInAs("SUPER_ADMIN");
         when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResult.builder()
                 .outcome(ManualDisbursementResult.Outcome.DISBURSED)
                 .reference("MD-000000042")
@@ -115,7 +115,7 @@ class ManualDisbursementWebContractTest {
     @Test
     @DisplayName("an in-doubt payout is still a 200 — the body, not the status, tells the operator to confirm")
     void inDoubtIsAnsweredWithItsOutcome() throws Exception {
-        signInAs("BULKIT_ADMIN");
+        signInAs("SUPER_ADMIN");
         when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResult.builder()
                 .outcome(ManualDisbursementResult.Outcome.IN_DOUBT)
                 .reference("MD-000000042")
@@ -130,7 +130,7 @@ class ManualDisbursementWebContractTest {
     @Test
     @DisplayName("an ineligible loan → 409 carrying the reason")
     void ineligibleLoanIsConflict() throws Exception {
-        signInAs("BULKIT_ADMIN");
+        signInAs("SUPER_ADMIN");
         when(disbursementService.disburse(anyLong()))
                 .thenThrow(new DisbursementNotAllowedException("Loan 000000042 is already disbursed (reference MD-000000042)"));
 
@@ -143,7 +143,7 @@ class ManualDisbursementWebContractTest {
     @Test
     @DisplayName("an unknown loan → 404")
     void unknownLoanIsNotFound() throws Exception {
-        signInAs("BULKIT_ADMIN");
+        signInAs("SUPER_ADMIN");
         when(disbursementService.disburse(7L)).thenThrow(new NotFoundException("Loan 7 not found"));
 
         mvc.perform(post("/api/loans/7/disburse"))

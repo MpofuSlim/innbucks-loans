@@ -51,7 +51,7 @@ public class MerchantController {
 
     @Operation(summary = "FIND MERCHANTS",
             description = "List all merchants. Account numbers are masked to their last 4 characters for "
-                    + "every caller except BULKIT_ADMIN.",
+                    + "every caller except SUPER_ADMIN.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @GetMapping
@@ -60,21 +60,21 @@ public class MerchantController {
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<FindMerchantsResponse> findAllMerchants(Principal principal) {
-        boolean isAdmin = callerGroups(principal).contains(UserGroup.BULKIT_ADMIN);
+        boolean isAdmin = callerGroups(principal).contains(UserGroup.SUPER_ADMIN);
         FindMerchantsResponse merchants = merchantService.findMerchants(!isAdmin);
         return ResponseEntity.ok(merchants);
     }
 
 
     @PostMapping
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Operation(summary = "CREATE MERCHANT",
-            description = "Create new merchant. BULKIT_ADMIN only; the disbursement type and account are audited.",
+            description = "Create new merchant. SUPER_ADMIN only; the disbursement type and account are audited.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Caller is not BULKIT_ADMIN"),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<MerchantDto> createMerchant(Principal principal,
@@ -84,18 +84,18 @@ public class MerchantController {
     }
 
     @PutMapping("/{code}")
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @Operation(operationId = "updateMerchant",
             summary = "UPDATE MERCHANT",
             description = "Update an existing merchant's editable details. The merchant code, commission "
                     + "structure and commission group are fixed at creation and cannot be changed. "
-                    + "BULKIT_ADMIN only; a change to the disbursement type or account is audited.",
+                    + "SUPER_ADMIN only; a change to the disbursement type or account is audited.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields or unknown merchant code"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Caller is not BULKIT_ADMIN"),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<MerchantDto> updateMerchant(Principal principal,
                                                       @PathVariable String code,
@@ -106,16 +106,15 @@ public class MerchantController {
 
     @Operation(operationId = "createMerchantAgent",
             summary = "CREATE AGENT",
-            description = "Create merchant Agent or User. BULKIT_ADMIN may create any group in any merchant; "
-                    + "ORGANISATION_SUPER_USER and RETAIL_SALES may create AGENTS and SUB_AGENTS, and AGENTS may "
-                    + "create SUB_AGENTS, in their own merchant only.",
+            description = "Create a merchant user: an agent, a credit manager or finance. SUPER_ADMIN only, "
+                    + "in any merchant.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping({"/{merchantCode}/agents"})
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES','AGENTS')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Group not grantable by the caller, or another merchant"),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
@@ -125,61 +124,29 @@ public class MerchantController {
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
 
-        // Group (body) and merchant (path) are both caller-chosen: the role gate above
-        // alone would let any agent mint a CREDIT_MANAGER, or a user in another merchant.
+        // Group (body) and merchant (path) are both caller-chosen, so the grant policy is
+        // checked as well as the role gate: widening the gate alone must never let a caller
+        // hand out a group, or reach a merchant, that it may not.
         UserGrantPolicy.checkMayCreate(callerGroups(principal), loggedInUser.getMerchant().getMerchantCode(),
                 createUserRequest.getGroup(), merchantCode);
 
-        User agent = UserGroup.SUB_AGENTS == createUserRequest.getGroup() ? loggedInUser : null;
-
-        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent, merchantCode);
-        SaveUserResponse saveUserResponse = new SaveUserResponse();
-        saveUserResponse.setUser(createUserResponse.user());
-        return ResponseEntity.ok(saveUserResponse);
-    }
-
-    @Operation(summary = "CREATE SALES CONSULTANT",
-            description = "Add a sales consultant.",
-            security = {@SecurityRequirement(name = BEARER_TOKEN)}
-    )
-    @PostMapping({"/agents/{externalSystemId}/sales-consultant"})
-    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-            @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<SaveUserResponse> createSalesConsultant(Principal principal,
-                                                                  @Valid @RequestBody CreateAgentRequest createUserRequest,
-                                                                  @PathVariable String externalSystemId) {
-
-        log.info("Creating sales consultant for user {}", externalSystemId);
-
-        Jwt token = ((JwtAuthenticationToken) principal).getToken();
-        boolean canAddSubAgent = findUserService.hasAnyRole(token, List.of(UserGroup.AGENTS.name(),
-                UserGroup.ORGANISATION_SUPER_USER.name(), UserGroup.RETAIL_SALES.name()));
-        if (!canAddSubAgent) {
-            throw new RuntimeException("Can't add sub agent");
-        }
-        User agent = findUserService.findUserExternalSystemId(externalSystemId)
-                .orElseThrow(() -> new RuntimeException(String.format("User not found for %s - ", externalSystemId)));
-        createUserRequest.setGroup(UserGroup.SUB_AGENTS);
-        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent,
-                agent.getMerchant().getMerchantCode());
+        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, merchantCode);
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
         return ResponseEntity.ok(saveUserResponse);
     }
 
     @Operation(summary = "CREATE USER",
-            description = "Create merchant User. Same group and merchant rules as CREATE AGENT.",
+            description = "Create a merchant user. Same as CREATE AGENT: SUPER_ADMIN only.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping({"/{merchantCode}/users"})
     // Needed here too: the call to createAgent below is a self-invocation, which
     // bypasses the method-security proxy and so createAgent's own @PreAuthorize.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES','AGENTS')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Group not grantable by the caller, or another merchant"),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createUser(Principal principal,
@@ -189,49 +156,19 @@ public class MerchantController {
     }
 
     @Operation(summary = "FIND AGENTS",
-            description = "List all agents for the given merchant",
+            description = "List every user of the given merchant. SUPER_ADMIN and CREDIT_MANAGER only.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @GetMapping("/{code}/agents")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN or CREDIT_MANAGER"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<UserListingResponse> findAgentsForMerchant(Principal principal, @PathVariable String code) {
-
-        Jwt token = ((JwtAuthenticationToken) principal).getToken();
-
-        boolean canViewAllUsers = findUserService.hasAnyRole(token, List.of(UserGroup.ORGANISATION_SUPER_USER.name(),
-                UserGroup.RETAIL_SALES.name(), UserGroup.BULKIT_ADMIN.name(), UserGroup.CREDIT_MANAGER.name()));
-
-        List<UserDTO> merchantUsers = authService.findUsersByMerchantCode(code);
-
-        if (canViewAllUsers) {
-            return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers).build());
-        }
-
-        User loggedInUser = findUserService.resolveUserFromAccessToken(token)
-                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-
-        return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers.stream()
-                .filter(u -> loggedInUser.getId().equals(u.getAgentId()))
-                .toList()).build());
+    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
+        return ResponseEntity.ok(UserListingResponse.builder().users(authService.findUsersByMerchantCode(code)).build());
     }
-
-//    @Operation(summary = "FIND LOANS",
-//            description = "List all loans for the given merchant",
-//            security = {@SecurityRequirement(name = BEARER_TOKEN)}
-//    )
-//    @GetMapping("/{code}/loans")
-//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-//            @ApiResponse(responseCode = "500", description = "Processing error")})
-//    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
-//        List<UserDTO> keycloakUsers = keycloakService.findUsersByMerchantCode(code);
-//        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
-//    }
-
 
     @Operation(operationId = "findMerchantLoans",
             summary = "FIND LOANS",
@@ -272,16 +209,7 @@ public class MerchantController {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         User user = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-        boolean isSuperAdmin = findUserService.hasAnyRole(token, List.of(UserGroup.BULKIT_ADMIN.name(),
-                UserGroup.RETAIL_SALES.name()));
-        if (isSuperAdmin) {
-            return null;
-        }
-        boolean isOrgSuperUser = findUserService.hasRole(token, UserGroup.ORGANISATION_SUPER_USER.name());
-        if (isOrgSuperUser) {
-            if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {
-                throw new AccessDeniedException("User not allowed to complete this operation");
-            }
+        if (findUserService.hasRole(token, UserGroup.SUPER_ADMIN.name())) {
             return null;
         }
         if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {

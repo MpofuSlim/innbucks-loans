@@ -218,20 +218,6 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
                                          @Param("merchantCode") String merchantCode);
 
     @Query("""
-            select m.merchantCode, m.companyName, count(l), coalesce(sum(l.principal), 0),
-                   count(case when l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS then 1 end),
-                   coalesce(sum(case when l.disbursementStatus = zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus.SUCCESS then l.disbursedAmount end), 0)
-            from Loan l join l.merchant m
-            where l.createdDate between :startDate and :endDate
-              and (cast(:merchantCode as string) is null or m.merchantCode = :merchantCode)
-            group by m.merchantCode, m.companyName
-            order by m.companyName
-            """)
-    List<Object[]> merchantPerformance(@Param("startDate") LocalDateTime startDate,
-                                       @Param("endDate") LocalDateTime endDate,
-                                       @Param("merchantCode") String merchantCode);
-
-    @Query("""
             select u.id, u.username, count(l),
                    coalesce(sum(l.disbursedAmount), 0), coalesce(sum(l.agentCommission), 0)
             from Loan l join l.createdByUser u left join l.merchant m

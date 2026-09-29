@@ -44,3 +44,6 @@ build/
 /loans-core/logs/
 /loans-api/logs/
 logs/
+
+# macOS Finder metadata
+.DS_Store

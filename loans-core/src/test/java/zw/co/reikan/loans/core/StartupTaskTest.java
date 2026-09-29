@@ -30,7 +30,7 @@ import static zw.co.reikan.loans.core.merchant.Merchant.DEFAULT_MERCHANT_CODE;
 
 /**
  * The bootstrap admin used to fall back to the source-published "#Pass123"
- * wherever BULKIT_PASSWORD was not in the process env — which the deploy
+ * wherever its password env var was not in the process env — which the deploy
  * workflows never set and a mounted /app/config cannot supply. A deployment
  * with no configured password must now create NO admin (and still boot).
  */
@@ -50,7 +50,7 @@ class StartupTaskTest {
         merchantRepository = mock(MerchantRepository.class);
         commissionGroupRepository = mock(CommissionGroupRepository.class);
         environment = new MockEnvironment();
-        // What the packaged application.yml resolves to when BULKIT_PASSWORD is unset.
+        // What the packaged application.yml resolves to when BOOTSTRAP_ADMIN_PASSWORD is unset.
         environment.setProperty("bootstrap.admin.password", "");
 
         // Seed data already present, so run() goes straight to the admin step.
@@ -71,7 +71,7 @@ class StartupTaskTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "api", "api,dummy-loan-approval"})
+    @ValueSource(strings = {"", "api", "api,scheduled-tasks"})
     @DisplayName("deployment profile set + blank password → NO admin created, and the boot carries on")
     void deploymentWithBlankPasswordCreatesNoAdmin(String profiles) throws Exception {
         environment.setActiveProfiles(StringUtils.commaDelimitedListToStringArray(profiles));
@@ -95,15 +95,15 @@ class StartupTaskTest {
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(saved.capture());
         assertThat(saved.getValue().getUsername()).isEqualTo("admin");
-        assertThat(saved.getValue().getGroups()).containsExactly(UserGroup.BULKIT_ADMIN);
+        assertThat(saved.getValue().getGroups()).containsExactly(UserGroup.SUPER_ADMIN);
         assertThat(saved.getValue().getTemporaryPassword()).isTrue();
     }
 
     @Test
-    @DisplayName("deployment + only the BULKIT_PASSWORD env var (packaged yml replaced by /app/config) → still used")
-    void deploymentReadsBulkitPasswordDirectly() throws Exception {
+    @DisplayName("deployment + only the BOOTSTRAP_ADMIN_PASSWORD env var (packaged yml replaced by /app/config) → still used")
+    void deploymentReadsThePasswordFromTheEnvironment() throws Exception {
         MockEnvironment withoutPackagedYml = new MockEnvironment();
-        withoutPackagedYml.getPropertySources().addLast(processEnv(Map.of("BULKIT_PASSWORD", "env-supplied-pw")));
+        withoutPackagedYml.getPropertySources().addLast(processEnv(Map.of("BOOTSTRAP_ADMIN_PASSWORD", "env-supplied-pw")));
         withoutPackagedYml.setActiveProfiles("api");
 
         taskWith(withoutPackagedYml).run();

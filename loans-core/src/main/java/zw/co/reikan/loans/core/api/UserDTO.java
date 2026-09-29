@@ -34,7 +34,6 @@ public class UserDTO {
 	private String externalSystemId;
 	private List<UserGroup> groups;
 	private MerchantDto merchant;
-	private Long agentId;
 	private CommissionGroupDto commissionGroup;
 	private String physicalAddress;
 

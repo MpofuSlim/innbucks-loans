@@ -23,8 +23,8 @@ import javax.sql.DataSource;
  * integration) is untouched. This public reference is a new, separate
  * identifier for statements, receipts and customer support.</p>
  *
- * <p>Both the saga's DISBURSED step and every bulk-upload row draw a reference inside their
- * own transaction, so a missing sequence rolls back the ledger posting and the bulk row with it.
+ * <p>The saga's DISBURSED step draws a reference inside its own transaction, so a missing
+ * sequence rolls back the ledger posting with it.
  * The sequence is therefore created at startup, and a boot that cannot create or find it says so
  * at ERROR.</p>
  */
@@ -68,8 +68,7 @@ public class LoanPublicReferenceService {
                 return;
             }
             log.error("LOAN REFERENCE SEQUENCE MISSING: {} does not exist and could not be created ({})."
-                            + " Until it exists every bulk-upload row fails and the saga cannot record a"
-                            + " disbursement or post it to the ledger. Create it with docs/db/enterprise_hardening.sql,"
+                            + " Until it exists the saga cannot record a disbursement or post it to the ledger. Create it with docs/db/enterprise_hardening.sql,"
                             + " or grant this user CREATE on the schema and restart",
                     SEQUENCE, ex.getMessage());
         }

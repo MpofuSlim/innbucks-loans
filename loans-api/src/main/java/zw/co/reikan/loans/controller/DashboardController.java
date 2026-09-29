@@ -34,7 +34,7 @@ public class DashboardController {
             @ApiResponse(responseCode = "403", description = "Forbidden. caller lacks an admin role"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     @GetMapping("/dashboard-stats")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public DashboardStatsResponse dashboardStats() {
         return dashboardService.getDashboardStats();
     }

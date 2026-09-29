@@ -16,11 +16,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Mints self-issued HS256 access tokens. The claim shape mirrors what the
- * platform previously received from Keycloak ({@code preferred_username} and
- * {@code realm_access.roles}) so every downstream consumer — the resource-server
- * authorities converter, {@code FindUserService} role checks and the controllers
- * reading {@code JwtAuthenticationToken} — keeps working unchanged.
+ * Mints self-issued HS256 access tokens. The user is {@code preferred_username}
+ * and the groups are {@code realm_access.roles}, which is what every consumer
+ * reads — the resource-server authorities converter, {@code FindUserService} role
+ * checks, the controllers reading {@code JwtAuthenticationToken}, and the portal.
  */
 @Service
 @RequiredArgsConstructor

@@ -39,7 +39,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DisbursementLedger {
 
-    /** Bulkit civil-servant loans are USD-denominated. */
+    /** SSB civil-servant loans are USD-denominated. */
     private static final String CURRENCY = "USD";
     private static final String PREFIX = "DISB-";
     private static final String REVERSAL_PREFIX = "DISB-REV-";

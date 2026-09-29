@@ -38,35 +38,28 @@ class LoanReadScopeResolverTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BULKIT_ADMIN", "CREDIT_MANAGER", "FINANCE"})
+    @ValueSource(strings = {"SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"})
     @DisplayName("lender-side staff read every merchant's loans, without a user lookup")
     void lenderStaffArePlatformWide(String role) {
         assertThat(resolver.resolve(token("staff", role))).isEqualTo(LoanReadScope.platform());
         verifyNoInteractions(userRepository);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"ORGANISATION_SUPER_USER", "RETAIL_SALES"})
-    @DisplayName("merchant management reads its own merchant's loans, every originator")
-    void merchantManagementIsMerchantWide(String role) {
-        givenUser("manager", 3L, "M-001");
-        assertThat(resolver.resolve(token("manager", role))).isEqualTo(LoanReadScope.merchant("M-001"));
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"AGENTS", "SUB_AGENTS"})
+    @Test
     @DisplayName("agents read only the loans they originated, within their merchant")
-    void agentsSeeOnlyWhatTheyOriginated(String role) {
+    void agentsSeeOnlyWhatTheyOriginated() {
         givenUser("agent.jane", 7L, "M-001");
-        assertThat(resolver.resolve(token("agent.jane", role)))
+        assertThat(resolver.resolve(token("agent.jane", "AGENTS")))
                 .isEqualTo(LoanReadScope.originator("M-001", 7L));
     }
 
-    @Test
-    @DisplayName("a role the table does not know falls to the NARROWEST scope, never the widest")
-    void unknownRoleIsOriginatorScoped() {
+    @ParameterizedTest
+    @ValueSource(strings = {"", "RETAIL_SALES", "ORGANISATION_SUPER_USER", "SUB_AGENTS"})
+    @DisplayName("no role, or a retired or unknown one, falls to the NARROWEST scope, never the widest")
+    void unknownRoleIsOriginatorScoped(String role) {
         givenUser("someone", 9L, "M-001");
-        assertThat(resolver.resolve(token("someone"))).isEqualTo(LoanReadScope.originator("M-001", 9L));
+        String[] roles = role.isEmpty() ? new String[0] : new String[]{role};
+        assertThat(resolver.resolve(token("someone", roles))).isEqualTo(LoanReadScope.originator("M-001", 9L));
     }
 
     @Test
@@ -87,7 +80,7 @@ class LoanReadScopeResolverTest {
     @DisplayName("a user with no merchant code is refused — a blank code would mean \"no merchant filter\"")
     void blankMerchantCodeIsRefused() {
         givenUser("orphan", 11L, " ");
-        assertThatThrownBy(() -> resolver.resolve(token("orphan", "ORGANISATION_SUPER_USER")))
+        assertThatThrownBy(() -> resolver.resolve(token("orphan", "AGENTS")))
                 .isInstanceOf(AccessDeniedException.class);
     }
 
@@ -95,7 +88,7 @@ class LoanReadScopeResolverTest {
     @DisplayName("a narrowed scope cannot even be built without a merchant code")
     void narrowedScopeRequiresMerchantCode() {
         assertThatThrownBy(() -> LoanReadScope.originator(null, 7L)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> LoanReadScope.merchant("")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> LoanReadScope.originator("", 7L)).isInstanceOf(IllegalArgumentException.class);
     }
 
     private void givenUser(String username, Long id, String merchantCode) {

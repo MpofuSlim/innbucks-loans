@@ -12,27 +12,7 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. IDEMPOTENCY ENGINE (Stripe standard)
---    PK on the client key = cross-node duplicate arbiter. 24–48 h TTL.
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS idempotency_records (
-    idempotency_key        VARCHAR(64)  PRIMARY KEY,
-    status                 VARCHAR(16)  NOT NULL CHECK (status IN ('IN_PROGRESS', 'COMPLETED')),
-    request_hash           VARCHAR(64)  NOT NULL,          -- SHA-256(method \n path \n body)
-    channel_id             VARCHAR(128),
-    http_method            VARCHAR(8),
-    request_path           VARCHAR(256),
-    response_status        INTEGER,
-    response_content_type  VARCHAR(128),
-    response_body          TEXT,                            -- replayed verbatim on retry
-    created_at             TIMESTAMP    NOT NULL,
-    expires_at             TIMESTAMP    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_idempotency_expires_at ON idempotency_records (expires_at);
-
--- ----------------------------------------------------------------------------
--- 2. APPEND-ONLY DOUBLE-ENTRY LEDGER
+-- 1. APPEND-ONLY DOUBLE-ENTRY LEDGER
 --    Balances are DERIVED (SUM over history). Never UPDATE a monetary row.
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ledger_entries (
@@ -72,7 +52,7 @@ CREATE TRIGGER trg_ledger_entries_immutable
 --   FROM ledger_entries WHERE account = :account;
 
 -- ----------------------------------------------------------------------------
--- 3. AUDIT LOGS (channel, actor, state delta, payload hash)
+-- 2. AUDIT LOGS (channel, actor, state delta, payload hash)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
     id                      BIGSERIAL    PRIMARY KEY,
@@ -93,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_correlation ON audit_logs (correlation_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created_at  ON audit_logs (created_at);
 
 -- ----------------------------------------------------------------------------
--- 4. LOAN SAGA STATE (SSB Verification -> Credit Assessment -> Disbursement)
+-- 3. LOAN SAGA STATE (SSB Verification -> Credit Assessment -> Disbursement)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS loan_saga (
     id                  BIGSERIAL    PRIMARY KEY,
@@ -109,24 +89,7 @@ CREATE TABLE IF NOT EXISTS loan_saga (
 CREATE INDEX IF NOT EXISTS idx_loan_saga_state ON loan_saga (current_state);
 
 -- ----------------------------------------------------------------------------
--- 5. BULK INGESTION RUNS (chunked pipeline bookkeeping)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS bulk_ingestion_runs (
-    id             BIGSERIAL    PRIMARY KEY,
-    reference      VARCHAR(64)  NOT NULL UNIQUE,            -- BULK-<uuid> correlation id
-    status         VARCHAR(16)  NOT NULL CHECK (status IN ('RUNNING', 'COMPLETED')),
-    total_items    INTEGER      NOT NULL,
-    succeeded      INTEGER      NOT NULL DEFAULT 0,
-    failed         INTEGER      NOT NULL DEFAULT 0,
-    submitted_by   VARCHAR(128),
-    channel_used   VARCHAR(128),
-    error_summary  TEXT,                                    -- per-item failures (index -> reason)
-    created_at     TIMESTAMP    NOT NULL,
-    completed_at   TIMESTAMP
-);
-
--- ----------------------------------------------------------------------------
--- 6. SEQUENTIAL PUBLIC LOAN REFERENCE  (LN-2026-00042)
+-- 4. SEQUENTIAL PUBLIC LOAN REFERENCE  (LN-2026-00042)
 --    Additive: the internal %09d reference used by Ndasenda is unchanged.
 -- ----------------------------------------------------------------------------
 CREATE SEQUENCE IF NOT EXISTS loan_public_ref_seq START WITH 1;
@@ -137,10 +100,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_loan_public_reference
     ON loan_request (public_reference) WHERE public_reference IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
--- 7. PENDING-APPLICATION CHECK
+-- 5. PENDING-APPLICATION CHECK
 --    Every application looks up the applicant's loans by upper(ec_number) and by
 --    upper(national_id_number); the plain ec_number index cannot serve upper().
 --    The application creates these at startup (LoanDuplicateCheckIndexes).
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_loan_request_upper_ec_number ON loan_request (upper(ec_number));
 CREATE INDEX IF NOT EXISTS idx_loan_request_upper_national_id ON loan_request (upper(national_id_number));
+
+-- ----------------------------------------------------------------------------
+-- 6. RETIRED TABLES
+--    idempotency_records (an idempotency engine nothing called) and
+--    bulk_ingestion_runs (bulk loan upload) are no longer used. ddl-auto never
+--    drops a table, so they stay, unread, until you drop them. Keep them while
+--    their rows are worth looking at; then:
+--
+--    DROP TABLE IF EXISTS idempotency_records;
+--    DROP TABLE IF EXISTS bulk_ingestion_runs;
+--
+--    Likewise "user".agent_id and loan_request.agent_id, which linked a sales
+--    consultant to their agent and are no longer mapped:
+--
+--    ALTER TABLE loan_request DROP COLUMN IF EXISTS agent_id;
+--    ALTER TABLE "user" DROP COLUMN IF EXISTS agent_id;
+-- ----------------------------------------------------------------------------

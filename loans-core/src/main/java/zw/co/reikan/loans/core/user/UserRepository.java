@@ -1,7 +1,5 @@
 package zw.co.reikan.loans.core.user;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -26,10 +24,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT u FROM User u WHERE (:merchantId IS NULL OR u.merchant.id= :merchantId)")
     List<User> listAllUsersByMerchant(@Param("merchantId") Long merchantId);
-
-    Page<User> findAllByAgent_Id(Long agentId, Pageable pageable);
-
-    Long countByAgent_Id(Long agentId);
 
     /**
      * One atomic increment per failed sign-in. Never read-modify-write through the entity: two wrong

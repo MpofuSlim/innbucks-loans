@@ -5,9 +5,8 @@ import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration for self-issued HS256 access tokens. Replaces the former
- * Keycloak {@code bulkit.*} properties — the platform now mints and validates
- * its own JWTs with a shared symmetric secret.
+ * Configuration for self-issued HS256 access tokens: the platform mints and
+ * validates its own JWTs with a shared symmetric secret.
  */
 @Data
 @ConfigurationProperties(prefix = "jwt")

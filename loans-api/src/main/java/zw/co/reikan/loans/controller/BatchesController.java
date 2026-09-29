@@ -40,14 +40,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
                 "2. Please contact  _support@innbucks.co.zw_ for support.\n")
 public class BatchesController {
 
-    /**
-     * Optional: {@link NdasendaLoanApprovalServiceImpl} is only registered under
-     * {@code @Profile("!dummy-loan-approval")}. When the dummy-loan-approval
-     * profile is active (local/dev), this stays null and the two endpoints
-     * below that depend on it fail fast with a clear message instead of
-     * preventing the whole application context from starting.
-     */
-    @Autowired(required = false)
+    @Autowired
     private NdasendaLoanApprovalServiceImpl ndasendaLoanApprovalService;
 
     @Autowired
@@ -66,8 +59,8 @@ public class BatchesController {
     @Operation(operationId = "searchLoans",
             summary = "SEARCH LOANS",
             description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters. "
-                    + "BULKIT_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; ORGANISATION_SUPER_USER and "
-                    + "RETAIL_SALES their own merchant's; everyone else only the loans they originated.",
+                    + "SUPER_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; everyone else only the loans "
+                    + "they originated.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses(value = {
@@ -106,7 +99,7 @@ public class BatchesController {
     })
     @GetMapping("/loans/find-approvals")
     // The credit queue: the same roles that may act on it via POST /api/loans/{id}/approve.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER')")
     public LoansWrapper findPendingApprovals() {
         log.info("Finding loans pending internal approval");
         FindLoansRequest request = FindLoansRequest.builder()
@@ -159,10 +152,10 @@ public class BatchesController {
     })
     @PostMapping("/batches/search")
     // SSB deduction batches list every borrower under the lender's code — lender-side staff only.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public FindNdasendaBatchResponse findNdasendaBatches(@RequestBody FindNdasendaBatchRequest request) {
         log.info("Searching batches: {}", request);
-        return FindNdasendaBatchResponse.builder().batches(requireNdasendaService().findBatches(request)).build();
+        return FindNdasendaBatchResponse.builder().batches(ndasendaLoanApprovalService.findBatches(request)).build();
     }
 
     @Operation(summary = "GET BATCH BY ID",
@@ -184,14 +177,14 @@ public class BatchesController {
                     description = "Represents an Error Caused by a System Malfunction")
     })
     @GetMapping("/batches/{batchId}")
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
     public NdasendaDeductionsBatchRequest getBatchDetails(@PathVariable String batchId) {
         // The same "ours" filter /batches/search applies. Ndasenda answers for any batch
         // under the lender's code, so without it this returned whatever id it was handed.
         if (!loanBatchService.existsByBatchNumber(batchId)) {
             throw new NotFoundException("Batch " + batchId + " not found");
         }
-        final List<NdasendaDeductionsBatchRequest> responses = requireNdasendaService().findDeductionResponsesByBatchId(batchId);
+        final List<NdasendaDeductionsBatchRequest> responses = ndasendaLoanApprovalService.findDeductionResponsesByBatchId(batchId);
         if (CollectionUtils.isEmpty(responses)) {
             return null;
         }
@@ -207,14 +200,6 @@ public class BatchesController {
 
     private LoanReadScope resolveReadScope(Principal principal) {
         return loanReadScopeResolver.resolve(((JwtAuthenticationToken) principal).getToken());
-    }
-
-    private NdasendaLoanApprovalServiceImpl requireNdasendaService() {
-        if (ndasendaLoanApprovalService == null) {
-            throw new IllegalStateException(
-                    "Ndasenda batch endpoints are unavailable: the dummy-loan-approval profile is active");
-        }
-        return ndasendaLoanApprovalService;
     }
 
 }

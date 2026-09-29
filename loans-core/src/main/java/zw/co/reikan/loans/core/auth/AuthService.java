@@ -9,9 +9,8 @@ import zw.co.reikan.loans.core.user.User;
 import java.util.List;
 
 /**
- * Local authentication and user-account operations. Replaces the former
- * Keycloak-backed service — credentials, profiles and roles now live in this
- * platform's own database and tokens are self-issued.
+ * Local authentication and user-account operations: credentials, profiles and
+ * roles live in this platform's own database and tokens are self-issued.
  */
 public interface AuthService {
 

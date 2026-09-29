@@ -251,13 +251,13 @@ class DeductionCancellationServiceTest {
     void markCancelledExternallyTwiceConflicts() {
         Loan loan = lodgedLoan(42L);
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
-        loan.setDeductionCancelledBy("bulkit.admin");
+        loan.setDeductionCancelledBy("loans.admin");
         loan.setDeductionCancelledAt(LocalDateTime.of(2026, 9, 21, 10, 0));
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
 
         assertThatThrownBy(() -> service.markCancelledExternally(42L, "done again"))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Loan 42's deduction was already recorded as cancelled by bulkit.admin at 2026-09-21T10:00");
+                .hasMessage("Loan 42's deduction was already recorded as cancelled by loans.admin at 2026-09-21T10:00");
         verify(loanRepository, never()).save(any());
         verifyNoInteractions(auditService);
     }

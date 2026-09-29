@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
 /**
  * The committed application.yml default secret is public, and roles are read
  * straight from token claims — so a deployment running on it hands anyone a
- * BULKIT_ADMIN token. It must refuse to boot unless a dev/test/local/it profile
+ * SUPER_ADMIN token. It must refuse to boot unless a dev/test/local/it profile
  * is active, and the decoder must only accept tokens carrying our own issuer.
  */
 class JwtConfigTest {
@@ -121,7 +121,7 @@ class JwtConfigTest {
         User admin = new User();
         admin.setUsername("admin");
         admin.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000001");
-        admin.setGroups(Set.of(UserGroup.BULKIT_ADMIN));
+        admin.setGroups(Set.of(UserGroup.SUPER_ADMIN));
 
         Jwt jwt = config.jwtDecoder(versions).decode(jwtService.generateToken(admin));
 
@@ -139,7 +139,7 @@ class JwtConfigTest {
         User admin = new User();
         admin.setUsername("admin");
         admin.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000001");
-        admin.setGroups(Set.of(UserGroup.BULKIT_ADMIN));
+        admin.setGroups(Set.of(UserGroup.SUPER_ADMIN));
         String before = jwtService.generateToken(admin);
 
         admin.bumpTokenVersion();
@@ -209,7 +209,7 @@ class JwtConfigTest {
                 .expiresAt(now.plusSeconds(300))
                 .subject("attacker")
                 .claim("preferred_username", "admin")
-                .claim("realm_access", Map.of("roles", List.of("BULKIT_ADMIN")));
+                .claim("realm_access", Map.of("roles", List.of("SUPER_ADMIN")));
         if (issuer != null) {
             claims.issuer(issuer);
         }

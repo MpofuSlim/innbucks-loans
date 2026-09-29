@@ -23,9 +23,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * The sequence behind every public loan reference must exist before the saga or a bulk upload
- * asks it for a value: both draw inside their own transaction, so a missing sequence rolls back
- * the ledger posting and the bulk row with it. It used to be created in a {@code @Transactional}
+ * The sequence behind every public loan reference must exist before the saga asks it for a
+ * value: it draws inside its own transaction, so a missing sequence rolls back the ledger
+ * posting with it. It used to be created in a {@code @Transactional}
  * {@code @PostConstruct} method, which Spring never wraps, so the DDL failed on every boot.
  * (The real DDL is exercised against PostgreSQL by {@code LoansApiApplicationTests}.)
  */
@@ -90,7 +90,7 @@ class LoanPublicReferenceServiceTest {
         assertThat(appender.list).filteredOn(e -> e.getLevel() == Level.ERROR).singleElement()
                 .extracting(ILoggingEvent::getFormattedMessage)
                 .asString()
-                .contains("LOAN REFERENCE SEQUENCE MISSING", "bulk-upload row fails", "ledger");
+                .contains("LOAN REFERENCE SEQUENCE MISSING", "cannot record a disbursement", "ledger");
     }
 
     @Test

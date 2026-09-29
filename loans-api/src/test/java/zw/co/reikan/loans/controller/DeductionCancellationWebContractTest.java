@@ -120,13 +120,13 @@ class DeductionCancellationWebContractTest {
     }
 
     @Test
-    @DisplayName("GET /api/loans/deduction-cancellations as CREDIT_MANAGER or BULKIT_ADMIN → 200")
+    @DisplayName("GET /api/loans/deduction-cancellations as CREDIT_MANAGER or SUPER_ADMIN → 200")
     void listAsCreditManagerAndAdmin() throws Exception {
         when(cancellationService.findRequired()).thenReturn(List.of());
 
         signedInAs("CREDIT_MANAGER");
         mvc.perform(get("/api/loans/deduction-cancellations")).andExpect(status().isOk());
-        signedInAs("BULKIT_ADMIN");
+        signedInAs("SUPER_ADMIN");
         mvc.perform(get("/api/loans/deduction-cancellations")).andExpect(status().isOk());
     }
 
@@ -168,9 +168,9 @@ class DeductionCancellationWebContractTest {
     }
 
     @Test
-    @DisplayName("PUT /api/loans/{id}/deduction-cancellation as BULKIT_ADMIN → 200")
+    @DisplayName("PUT /api/loans/{id}/deduction-cancellation as SUPER_ADMIN → 200")
     void recordAsAdmin() throws Exception {
-        signedInAs("BULKIT_ADMIN");
+        signedInAs("SUPER_ADMIN");
         when(cancellationService.markCancelledExternally(eq(42L), any())).thenReturn(required());
 
         mvc.perform(put("/api/loans/42/deduction-cancellation").contentType(MediaType.APPLICATION_JSON).content(NOTE))

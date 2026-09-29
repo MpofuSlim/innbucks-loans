@@ -4,8 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -54,8 +52,6 @@ import static zw.co.reikan.loans.core.loan.SmsMessages.*;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-@Primary
-@Profile("!dummy-loan-approval")
 public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
 
     private static final BigDecimal CENTS = new BigDecimal("100");

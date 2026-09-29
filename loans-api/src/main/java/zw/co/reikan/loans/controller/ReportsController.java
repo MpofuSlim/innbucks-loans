@@ -15,7 +15,6 @@ import zw.co.reikan.loans.core.api.AgentPerformanceReportResponse;
 import zw.co.reikan.loans.core.api.CommissionsReportResponse;
 import zw.co.reikan.loans.core.api.DisbursementsReportResponse;
 import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse;
-import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse;
 import zw.co.reikan.loans.core.report.ReportService;
 
 import java.time.LocalDate;
@@ -32,7 +31,7 @@ import static zw.co.reikan.loans.LoansApiApplication.BEARER_TOKEN;
 @RestController
 @RequestMapping(value = "/api/reports")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES')")
+@PreAuthorize("hasRole('SUPER_ADMIN')")
 public class ReportsController {
 
     private final ReportService reportService;
@@ -83,22 +82,6 @@ public class ReportsController {
                                                  @RequestParam(required = false) LocalDate toDate,
                                                  @RequestParam(required = false) String merchantCode) {
         return reportService.commissionsReport(fromDate, toDate, merchantCode);
-    }
-
-    @Operation(operationId = "merchantPerformanceReport",
-            summary = "MERCHANT PERFORMANCE REPORT",
-            description = "Applications, principal, disbursed count and disbursed amount per merchant for the period.",
-            security = {@SecurityRequirement(name = BEARER_TOKEN)})
-    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-            @ApiResponse(responseCode = "400", description = "Bad request, invalid date range"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Forbidden. caller lacks an admin role"),
-            @ApiResponse(responseCode = "500", description = "Processing error")})
-    @GetMapping("/merchant-performance")
-    public MerchantPerformanceReportResponse merchantPerformance(@RequestParam(required = false) LocalDate fromDate,
-                                                                 @RequestParam(required = false) LocalDate toDate,
-                                                                 @RequestParam(required = false) String merchantCode) {
-        return reportService.merchantPerformanceReport(fromDate, toDate, merchantCode);
     }
 
     @Operation(operationId = "agentPerformanceReport",

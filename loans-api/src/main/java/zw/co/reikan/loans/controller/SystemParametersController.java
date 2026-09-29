@@ -55,11 +55,11 @@ public class SystemParametersController {
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping(value = "/commission-groups")
-    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing or invalid fields"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Forbidden. caller lacks the BULKIT_ADMIN role"),
+            @ApiResponse(responseCode = "403", description = "Forbidden. caller lacks the SUPER_ADMIN role"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public CommissionGroupDto createCommissionGroup(@Valid @RequestBody CreateCommissionGroupRequest request) {
         return commissionGroupService.create(request);

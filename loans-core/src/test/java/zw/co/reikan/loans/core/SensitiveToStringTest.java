@@ -84,16 +84,14 @@ class SensitiveToStringTest {
     }
 
     @Test
-    @DisplayName("User never prints its password hash or ID number — nor does an agent or channel holding one")
+    @DisplayName("User never prints its password hash or ID number — nor does a channel holding one")
     void userHidesPasswordHash() {
-        User agent = user("agent-1");
         User user = user("user-1");
-        user.setAgent(agent);
-        Channel channel = Channel.builder().channelId("bulkit_mobile_app").name("Mobile").systemUser(user).build();
+        Channel channel = Channel.builder().channelId("superapp").name("Mobile").systemUser(user).build();
 
         assertNoPii(user);
         assertNoPii(channel);
-        assertThat(user.toString()).contains("user-1", "agent-1", "Tariro");
+        assertThat(user.toString()).contains("user-1", "Tariro");
         assertThat(channel.toString()).contains("Mobile", "user-1");
     }
 
@@ -112,11 +110,11 @@ class SensitiveToStringTest {
                 .signatureData(SIGNATURE)
                 .nationalIdPicture(IMAGE)
                 .payslipPicture(IMAGE)
-                .channelId("bulkit_mobile_app")
+                .channelId("superapp")
                 .build();
 
         assertNoPii(request);
-        assertThat(request.toString()).contains("amount=500", "tenor=12", "bulkit_mobile_app", "Rudo", "T. Moyo");
+        assertThat(request.toString()).contains("amount=500", "tenor=12", "superapp", "Rudo", "T. Moyo");
     }
 
     @Test
@@ -132,7 +130,6 @@ class SensitiveToStringTest {
         loan.setNextOfKin(nextOfKin());
         loan.setWitness(witness());
         loan.setCreatedByUser(user("creator-1"));
-        loan.setAgent(user("agent-2"));
 
         LoanDto dto = new LoanDto();
         dto.setNationalIdNumber(NATIONAL_ID);
@@ -151,16 +148,15 @@ class SensitiveToStringTest {
         assertNoPii(dto);
         assertNoPii(customer);
         assertNoPii(bankingDetail());
-        assertThat(loan.toString()).contains("1234567A", "creator-1", "agent-2");
+        assertThat(loan.toString()).contains("1234567A", "creator-1");
     }
 
     @Test
-    @DisplayName("user-management requests print neither the agent's password hash nor any ID number")
+    @DisplayName("user-management requests print neither a password hash nor any ID number")
     void userRequestsHideIdNumbersAndHashes() {
         CreateUserRequest createUserRequest = CreateUserRequest.builder()
                 .username("new-user")
                 .idNumber(NATIONAL_ID)
-                .agent(user("agent-3"))
                 .build();
         UserDTO userDTO = new UserDTO();
         userDTO.setUsername("new-user");

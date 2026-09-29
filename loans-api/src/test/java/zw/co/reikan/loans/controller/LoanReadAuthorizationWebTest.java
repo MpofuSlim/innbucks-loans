@@ -188,9 +188,9 @@ class LoanReadAuthorizationWebTest {
     }
 
     @Test
-    @DisplayName("a sub-agent reading a batch → 403, Ndasenda never called")
-    void subAgentCannotReadBatch() throws Exception {
-        mvc.perform(get("/api/batches/B-1").with(as("sub.tom", "SUB_AGENTS")))
+    @DisplayName("an agent reading a batch → 403, Ndasenda never called")
+    void agentCannotReadBatch() throws Exception {
+        mvc.perform(get("/api/batches/B-1").with(as("agent.tom", "AGENTS")))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(ndasenda, loanBatchService);
     }

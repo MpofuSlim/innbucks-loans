@@ -8,7 +8,7 @@
         <version>4.1.1</version>
         <relativePath /> <!-- lookup parent from repository -->
     </parent>
-    <groupId>zw.co.reikan.loans</groupId>
+    <groupId>zw.co.innbucks.loans</groupId>
     <artifactId>loans-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>loans-api</name>
@@ -32,7 +32,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>zw.co.reikan.loans</groupId>
+            <groupId>zw.co.innbucks.loans</groupId>
             <artifactId>loans-core</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
@@ -51,7 +51,7 @@
         </dependency>
     </dependencies>
     <build>
-        <finalName>bulkit-loans-api</finalName>
+        <finalName>loans-api</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

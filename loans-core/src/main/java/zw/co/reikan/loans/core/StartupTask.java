@@ -23,7 +23,6 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 import static zw.co.reikan.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
 import static zw.co.reikan.loans.core.loan.DisbursementType.CUSTOMER_MOBILE_WALLET;
@@ -35,8 +34,9 @@ import static zw.co.reikan.loans.core.merchant.Merchant.DEFAULT_MERCHANT_NAME;
 @Slf4j
 public class StartupTask implements CommandLineRunner {
 
-    public static final String FAVORING_BULK_IT = "100-Favouring-BulkIT";
-    public static final String ZERO_BASED_DEFAULT = "Default-BulkIT";
+    public static final String EIGHTY_TWENTY = "80-20-Favouring-InnBucks";
+    public static final String FAVOURING_INNBUCKS = "100-Favouring-InnBucks";
+    public static final String ZERO_BASED_DEFAULT = "Default-InnBucks";
 
     private static final String DEFAULT_ADMIN_USERNAME = "admin";
     /** Published in this repo, so only ever used when a dev/test/local/it profile is active. */
@@ -64,7 +64,7 @@ public class StartupTask implements CommandLineRunner {
                 .percentage(true)
                 .providerCommission(new BigDecimal("80.0"))
                 .agentCommission(new BigDecimal("20.0"))
-                .name("80-20-Favouring-BulkIT")
+                .name(EIGHTY_TWENTY)
                 .enabled(true)
                 .build());
 
@@ -72,7 +72,7 @@ public class StartupTask implements CommandLineRunner {
                 .percentage(true)
                 .providerCommission(new BigDecimal("100.0"))
                 .agentCommission(new BigDecimal("0.0"))
-                .name(FAVORING_BULK_IT)
+                .name(FAVOURING_INNBUCKS)
                 .enabled(true)
                 .build());
 
@@ -109,7 +109,7 @@ public class StartupTask implements CommandLineRunner {
      * Bootstraps a single super-admin so a fresh install is reachable. Idempotent:
      * the password is only ever set at creation and is never touched again once the
      * account exists. The password is the {@code bootstrap.admin.password} property
-     * (bound from the {@code BULKIT_PASSWORD} env var, or set in /app/config). When
+     * (the {@code BOOTSTRAP_ADMIN_PASSWORD} env var, or set in /app/config). When
      * it is blank, a deployment creates NO admin; only a dev/test/local/it profile
      * falls back to the development password so a local boot works out of the box.
      */
@@ -142,8 +142,8 @@ public class StartupTask implements CommandLineRunner {
         admin.setLastName("Administrator");
         admin.setMerchant(merchant.get());
         admin.setTemporaryPassword(true);
-        admin.setGroups(Set.of(UserGroup.BULKIT_ADMIN));
-        commissionGroupRepository.findByNameIgnoreCase(FAVORING_BULK_IT).ifPresent(admin::setCommissionGroup);
+        admin.setGroups(Set.of(UserGroup.SUPER_ADMIN));
+        commissionGroupRepository.findByNameIgnoreCase(FAVOURING_INNBUCKS).ifPresent(admin::setCommissionGroup);
 
         userRepository.save(admin);
         log.info("Created bootstrap admin user '{}'", username);
@@ -151,27 +151,24 @@ public class StartupTask implements CommandLineRunner {
 
     /**
      * Read through the Environment, not System.getenv, so a mounted /app/config can
-     * supply it. BULKIT_PASSWORD is also read directly because that config location
-     * replaces the packaged application.yml, and with it the property mapping.
-     * Returns null when no admin should be created.
+     * supply it. The BOOTSTRAP_ADMIN_PASSWORD env var reaches the same property by
+     * relaxed binding, so it works even where /app/config replaces the packaged
+     * application.yml. Returns null when no admin should be created.
      */
     private String resolveBootstrapPassword(String username) {
-        Optional<String> configured = Stream.of("bootstrap.admin.password", "BULKIT_PASSWORD")
-                .map(environment::getProperty)
-                .filter(StringUtils::hasText)
-                .findFirst();
-        if (configured.isPresent()) {
-            return configured.get();
+        String configured = environment.getProperty("bootstrap.admin.password");
+        if (StringUtils.hasText(configured)) {
+            return configured;
         }
         if (DeploymentProfiles.isDeployment(environment)) {
             // Not fatal: environments that already have an admin never reach here,
             // and refusing to boot would not provision one either.
             log.error("Bootstrap admin '{}' NOT created: no password is configured and no dev/test/local/it "
-                    + "profile is active. Set BULKIT_PASSWORD (env) or bootstrap.admin.password (/app/config) "
+                    + "profile is active. Set BOOTSTRAP_ADMIN_PASSWORD (env) or bootstrap.admin.password (/app/config) "
                     + "and restart; the account is created once, with a temporary password.", username);
             return null;
         }
-        log.warn("BULKIT_PASSWORD not set — bootstrapping admin '{}' with the development fallback password "
+        log.warn("BOOTSTRAP_ADMIN_PASSWORD not set — bootstrapping admin '{}' with the development fallback password "
                 + "(dev/test/local/it profile active).", username);
         return DEV_FALLBACK_ADMIN_PASSWORD;
     }
@@ -184,7 +181,7 @@ public class StartupTask implements CommandLineRunner {
                 return;
             }
 
-            CommissionGroup defaultGroup = commissionGroupRepository.findByNameIgnoreCase(FAVORING_BULK_IT)
+            CommissionGroup defaultGroup = commissionGroupRepository.findByNameIgnoreCase(FAVOURING_INNBUCKS)
                     .orElseThrow(() -> new ValidationException("Default commission group not found"));
 
             merchantService.createMerchant(CreateMerchantRequest.builder()
