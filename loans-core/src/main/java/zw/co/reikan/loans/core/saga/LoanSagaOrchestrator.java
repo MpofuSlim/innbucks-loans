@@ -5,12 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import zw.co.reikan.loans.core.loan.Loan;
-import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.loan.LoanStatusSnapshot;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Scheduled driver for the loan lifecycle saga:
@@ -30,22 +31,35 @@ import java.util.List;
 @Profile("scheduled-tasks")
 public class LoanSagaOrchestrator {
 
-    private final LoanRepository loanRepository;
+    /** How far back a loan with no saga yet is picked up. An open saga is followed at any age. */
+    static final int NEW_LOAN_WINDOW_DAYS = 30;
+
     private final LoanSagaRepository sagaRepository;
     private final LoanSagaTransitionService transitionService;
 
     @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
     public void reconcile() {
-        // 1. Advance (or open) sagas for recently active loans.
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        List<Loan> recentLoans = loanRepository.findByCreatedDateBetween(now.minusDays(30), now);
-        for (Loan loan : recentLoans) {
+        // 1. Advance (or open) sagas. A loan whose saga is still open is followed however old it is:
+        //    this used to look only at loans created in the last 30 days, so a loan that took longer
+        //    (Ndasenda answering late, credit deciding late) dropped out of its saga mid-flow. Only
+        //    status columns are read here, and only a loan that moved is loaded in full; this used
+        //    to load 30 days of complete rows, documents and images included, every minute.
+        LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusDays(NEW_LOAN_WINDOW_DAYS);
+        Set<LoanSagaState> terminal = LoanSagaState.terminalStates();
+        Map<Long, LoanSaga> sagas = new HashMap<>();
+        for (LoanSaga saga : sagaRepository.findReconcileSagas(since, terminal)) {
+            sagas.put(saga.getLoanId(), saga);
+        }
+        for (LoanStatusSnapshot loan : sagaRepository.findReconcileCandidates(since, terminal)) {
+            if (!moved(loan, sagas.get(loan.id()))) {
+                continue;
+            }
             try {
-                transitionService.reconcileLoan(loan.getId());
+                transitionService.reconcileLoan(loan.id());
             } catch (Exception ex) {
                 // One loan's saga trouble never stalls the fleet.
                 log.error("Saga reconciliation failed for loan {} — continuing with the rest",
-                        loan.getId(), ex);
+                        loan.id(), ex);
             }
         }
 
@@ -59,5 +73,21 @@ public class LoanSagaOrchestrator {
                         saga.getLoanId(), ex);
             }
         }
+    }
+
+    /**
+     * Whether the saga has anything to do for this loan: none opened yet, or its status columns now
+     * resolve to a state the saga is not in and has not already reported as an anomaly. A terminal
+     * saga never moves.
+     */
+    static boolean moved(LoanStatusSnapshot loan, LoanSaga saga) {
+        if (saga == null) {
+            return true;
+        }
+        if (saga.getCurrentState().isTerminal()) {
+            return false;
+        }
+        LoanSagaState observed = LoanSagaStateResolver.resolve(loan);
+        return observed != saga.getCurrentState() && !observed.name().equals(saga.getFlaggedAnomaly());
     }
 }

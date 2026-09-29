@@ -4,8 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -22,12 +24,12 @@ import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.merchant.Merchant;
-import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +48,7 @@ class LoanAccountCreationJobTest {
     private LoanRepository loanRepository;
     private AuditService auditService;
     private LoanDisbursementRepository loanDisbursementRepository;
+    private PlatformTransactionManager transactionManager;
     private LoanAccountCreationJob job;
     private Loan loan;
 
@@ -55,9 +58,10 @@ class LoanAccountCreationJobTest {
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
         loanDisbursementRepository = mock(LoanDisbursementRepository.class);
-        job = new LoanAccountCreationJob(disbursementService, loanRepository, mock(NotificationService.class),
+        transactionManager = mock(PlatformTransactionManager.class);
+        job = new LoanAccountCreationJob(disbursementService, loanRepository,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)),
-                loanDisbursementRepository);
+                loanDisbursementRepository, auditService, transactionManager, 30);
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)
@@ -68,8 +72,8 @@ class LoanAccountCreationJobTest {
                 .ecNumber("1234567A")
                 .build();
         loan.setId(42L);
-        when(loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
-                any(), any(), any())).thenReturn(List.of(loan));
+        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L));
+        when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
     }
 
     private static HttpClientErrorException clientError(HttpStatus status, String body) {
@@ -83,7 +87,8 @@ class LoanAccountCreationJobTest {
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
         assertThat(loan.getDisbursementReference()).isEqualTo("000000042");
-        verify(loanRepository).save(loan);
+        // Once for the claim, once for the outcome.
+        verify(loanRepository, times(2)).save(loan);
     }
 
     @Test
@@ -100,7 +105,7 @@ class LoanAccountCreationJobTest {
         assertThat(loan.getDisbursementStatusMessage()).isEqualTo(
                 "InnBucks loan application failed: HTTP 400 "
                         + "{\"responseCode\":\"05\",\"responseDescription\":\"Invalid idNumber\"}");
-        verify(loanRepository).save(loan);
+        verify(loanRepository, times(2)).save(loan);
     }
 
     @Test
@@ -233,7 +238,7 @@ class LoanAccountCreationJobTest {
 
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
-        verify(loanRepository).save(loan);
+        verify(loanRepository, times(2)).save(loan);
         AuditLog audit = requiredAuditedOnce();
         assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_REQUIRED");
         assertThat(audit.getActorId()).isEqualTo("loan-account-creation-job");
@@ -286,7 +291,7 @@ class LoanAccountCreationJobTest {
     }
 
     @Test
-    @DisplayName("a loan older than the saga's 30-day window is still flagged when its booking fails")
+    @DisplayName("an old loan is flagged when its booking fails, like any other")
     void oldLoanIsFlaggedToo() {
         loan.setCreatedDate(LocalDateTime.now().minusDays(90));
         when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST));
@@ -353,8 +358,8 @@ class LoanAccountCreationJobTest {
                 .merchant(Merchant.builder().accountNumber("123456789").build())
                 .build();
         second.setId(43L);
-        when(loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
-                any(), any(), any())).thenReturn(List.of(loan, second));
+        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findByIdForUpdate(43L)).thenReturn(Optional.of(second));
         when(disbursementService.createLoanAccount(loan)).thenThrow(new BookingNotSentException(
                 "Booking of loan 000000042 not sent: InnBucks login failed (HTTP 503)", new RuntimeException()));
 
@@ -365,8 +370,175 @@ class LoanAccountCreationJobTest {
         assertThat(loan.getBookingFailureKind()).isNull();
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         assertThat(loan.getDisbursementStatusMessage()).contains("InnBucks login failed").endsWith("will retry");
-        verify(loanRepository).save(loan);
+        // The claim is released, so a later run books it.
+        assertThat(loan.getBookingClaimedAt()).isNull();
+        verify(loanRepository, times(2)).save(loan);
         verify(disbursementService, never()).createLoanAccount(second);
+        verifyNoInteractions(auditService);
+    }
+
+    // ── The claim: committed before InnBucks is called, so a booking is never sent twice ──────────
+
+    private Loan secondLoan() {
+        Loan second = Loan.builder()
+                .loanApprovalStatus(LoanApprovalStatus.APPROVED)
+                .internalApprovalStatus(InternalApprovalStatus.APPROVED)
+                .loanAccountStatus(LoanAccountStatus.PENDING)
+                .merchant(Merchant.builder().accountNumber("123456789").build())
+                .build();
+        second.setId(43L);
+        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findByIdForUpdate(43L)).thenReturn(Optional.of(second));
+        return second;
+    }
+
+    private static LoanAccountCreationResponse booked() {
+        return LoanAccountCreationResponse.builder().reference("000000042").success(true).build();
+    }
+
+    @Test
+    @DisplayName("the claim commits before InnBucks is called; the outcome settles in a transaction of its own")
+    void claimCommitsBeforeTheCall() {
+        LocalDateTime[] claimAtCall = new LocalDateTime[1];
+        when(disbursementService.createLoanAccount(loan)).thenAnswer(call -> {
+            claimAtCall[0] = loan.getBookingClaimedAt();
+            return booked();
+        });
+
+        job.processLoanAccountCreation();
+
+        assertThat(claimAtCall[0]).isNotNull();
+        // Kept after a booking that landed, as the record of when it was sent.
+        assertThat(loan.getBookingClaimedAt()).isEqualTo(claimAtCall[0]);
+        InOrder order = inOrder(loanRepository, transactionManager, disbursementService);
+        order.verify(loanRepository).save(loan);
+        order.verify(transactionManager).commit(any());
+        order.verify(disbursementService).createLoanAccount(loan);
+        order.verify(loanRepository).save(loan);
+        order.verify(transactionManager).commit(any());
+    }
+
+    @Test
+    @DisplayName("a loan another run or instance has claimed is not booked again")
+    void claimedLoanIsNotBookedAgain() {
+        loan.setBookingClaimedAt(LocalDateTime.now().minusMinutes(1));
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("an outcome for a loan that moved on during the call is recorded, not applied")
+    void supersededOutcomeIsNotApplied() {
+        when(disbursementService.createLoanAccount(loan)).thenAnswer(call -> {
+            // Settled elsewhere while InnBucks was answering.
+            loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+            loan.setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
+            throw clientError(HttpStatus.BAD_REQUEST);
+        });
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
+        assertThat(loan.getBookingFailureKind()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        AuditLog audit = requiredAuditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("INNBUCKS_BOOKING_NOT_RECORDED");
+        assertThat(audit.getDetail()).contains("reason=claim_superseded", "outcome=REFUSED");
+    }
+
+    @Test
+    @DisplayName("an outcome that cannot be saved leaves the claim standing, so the loan is never booked again")
+    void unsavedOutcomeKeepsTheClaim() {
+        when(disbursementService.createLoanAccount(loan)).thenReturn(booked());
+        when(loanRepository.save(loan)).thenAnswer(call -> call.getArgument(0))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getBookingClaimedAt()).isNotNull();
+        AuditLog audit = requiredAuditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("INNBUCKS_BOOKING_NOT_RECORDED");
+        assertThat(audit.getDetail()).contains("reason=settle_failed", "outcome=BOOKED");
+    }
+
+    @Test
+    @DisplayName("a claim left unsettled past the window is held for the inquiry job, never booked again")
+    void staleClaimIsHeldForTheInquiryJob() {
+        LocalDateTime claimedAt = LocalDateTime.now().minusMinutes(45);
+        loan.setBookingClaimedAt(claimedAt);
+        when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getBookingFailureKind()).isEqualTo(BookingFailureKind.AMBIGUOUS);
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
+        assertThat(loan.getDisbursementStatusMessage()).contains("was never recorded");
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verify(disbursementService, never()).createLoanAccount(any());
+        AuditLog audit = requiredAuditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("INNBUCKS_BOOKING_CLAIM_ABANDONED");
+        assertThat(audit.getDetail()).contains("claimedAt=" + claimedAt);
+    }
+
+    @Test
+    @DisplayName("a claim still inside the window is left alone, whatever the query returned")
+    void recentClaimIsNotHeld() {
+        loan.setBookingClaimedAt(LocalDateTime.now().minusMinutes(5));
+        when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
+        assertThat(loan.getBookingFailureKind()).isNull();
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("an unknown outcome stops the run: the loans behind it are not sent into the same failure")
+    void unknownOutcomeStopsTheRun() {
+        Loan second = secondLoan();
+        when(disbursementService.createLoanAccount(loan))
+                .thenThrow(new ResourceAccessException("I/O error: Read timed out"));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+        verify(disbursementService, never()).createLoanAccount(second);
+        assertThat(second.getBookingClaimedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("a refusal is about that loan alone: the run carries on to the next")
+    void refusalCarriesOn() {
+        Loan second = secondLoan();
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST));
+        when(disbursementService.createLoanAccount(second)).thenReturn(booked());
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
+        assertThat(second.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+    }
+
+    @Test
+    @DisplayName("an answer arriving after the sweep held the loan still settles it: the answer is better evidence")
+    void lateAnswerSettlesAHeldLoan() {
+        when(disbursementService.createLoanAccount(loan)).thenAnswer(call -> {
+            // The stale-claim sweep holds it while the call is still running; the claim is unchanged.
+            loan.setBookingFailureKind(BookingFailureKind.AMBIGUOUS);
+            loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+            loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
+            return booked();
+        });
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getBookingFailureKind()).isNull();
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
         verifyNoInteractions(auditService);
     }
 }

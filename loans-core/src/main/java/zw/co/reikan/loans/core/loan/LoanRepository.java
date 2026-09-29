@@ -103,18 +103,32 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             """)
     List<Long> findIdsWithLodgementClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
 
+    /** Credit-approved loans due for booking with InnBucks: account PENDING and unclaimed. Oldest first. */
+    @Query("""
+            select l.id from Loan l
+            where l.loanApprovalStatus = zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED
+              and l.internalApprovalStatus = zw.co.reikan.loans.core.loan.InternalApprovalStatus.APPROVED
+              and l.loanAccountStatus = zw.co.reikan.loans.core.disbursements.LoanAccountStatus.PENDING
+              and l.bookingClaimedAt is null
+            order by l.id
+            """)
+    List<Long> findIdsDueForBooking();
+
+    /** Account-PENDING loans whose booking was claimed before {@code cutoff} and never settled. */
+    @Query("""
+            select l.id from Loan l
+            where l.loanAccountStatus = zw.co.reikan.loans.core.disbursements.LoanAccountStatus.PENDING
+              and l.bookingClaimedAt < :cutoff
+            order by l.id
+            """)
+    List<Long> findIdsWithBookingClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
+
     List<Loan> findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus loanAccountStatus,
                                                                                      LoanDisbursementStatus disbursementStatus,
                                                                                      InternalApprovalStatus internalApprovalStatus);
 
     List<Loan> findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus loanAccountStatus,
                                                            LoanDisbursementStatus disbursementStatus);
-
-    List<Loan> findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(LoanApprovalStatus loanApprovaStatus,
-                                                                                     InternalApprovalStatus internalApprovalStatus,
-                                                                                     LoanAccountStatus loanAccountStatus);
-
-    List<Loan> findByCreatedDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 
     /** Oldest first, id as the tie-break, so the operators' queue has a stable order. */
     List<Loan> findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(

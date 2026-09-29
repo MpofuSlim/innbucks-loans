@@ -51,6 +51,14 @@ public class LoanSaga implements Serializable {
     @Column(name = "compensated_at")
     private LocalDateTime compensatedAt;
 
+    /**
+     * The observed state last reported as an illegal transition from {@link #currentState}, so an
+     * anomaly is logged and audited once rather than on every reconciler tick. A plain string, not
+     * the enum: ddl-auto would pin the enum's values in a CHECK constraint it never widens.
+     */
+    @Column(name = "flagged_anomaly", length = 40)
+    private String flaggedAnomaly;
+
     @Column(name = "last_transition_at", nullable = false)
     private LocalDateTime lastTransitionAt;
 
