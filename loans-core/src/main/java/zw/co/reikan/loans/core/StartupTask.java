@@ -37,6 +37,8 @@ public class StartupTask implements CommandLineRunner {
 
     private static final String DEFAULT_ADMIN_USERNAME = "admin";
     private static final String DEV_FALLBACK_ADMIN_PASSWORD = "#Pass123";
+    /** Audit actor for the default merchant's payee, which no user sets. */
+    private static final String STARTUP_ACTOR = "startup-task";
 
     private final MerchantService merchantService;
     private final CommissionGroupRepository commissionGroupRepository;
@@ -162,7 +164,7 @@ public class StartupTask implements CommandLineRunner {
                     .commissionStructure(MERCHANT_DEFINED)
                     .commissionGroupId(defaultGroup.getId())
                     .accountNumber(null)
-                    .build());
+                    .build(), STARTUP_ACTOR);
             log.info("Created default merchant");
         } catch (Exception e) {
             log.warn("Could not create default merchant", e);
