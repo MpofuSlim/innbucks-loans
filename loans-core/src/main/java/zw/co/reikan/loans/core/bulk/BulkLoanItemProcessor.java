@@ -52,12 +52,10 @@ public class BulkLoanItemProcessor {
         }
 
         String publicReference = null;
-        if (response.getInternalReference() != null) {
-            Optional<Loan> created = loanService.findByReference(response.getInternalReference());
-            if (created.isPresent() && created.get().getPublicReference() == null) {
-                created.get().setPublicReference(publicReferenceService.next());
-                publicReference = created.get().getPublicReference();
-            }
+        Optional<Loan> created = loanService.findByReference(response.getInternalReference());
+        if (created.isPresent() && created.get().getPublicReference() == null) {
+            created.get().setPublicReference(publicReferenceService.next());
+            publicReference = created.get().getPublicReference();
         }
         return BulkLoanItemOutcome.ok(index, response.getInternalReference(), publicReference);
     }
