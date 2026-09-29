@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.MsisdnUtil;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.ledger.DisbursementLedger;
@@ -145,10 +146,10 @@ public class LoanDisbursementStatusJob {
             // not that the money reached their own wallet.
             final String message = DisbursementService.disbursementSms(loan);
             notificationService.sendSms(loan.getMobileNumber(), message);
-            log.info("Notification sent successfully to customer: {}", loan.getMobileNumber());
+            log.info("Notification sent successfully to customer: {}", MsisdnUtil.mask(loan.getMobileNumber()));
         } catch (Exception ex) {
             log.error("Failed to send notification to customer: {}, but loan disbursement was successful",
-                    loan.getMobileNumber(), ex);
+                    MsisdnUtil.mask(loan.getMobileNumber()), ex);
             // Notification failure shouldn't affect the loan disbursement status
         }
     }

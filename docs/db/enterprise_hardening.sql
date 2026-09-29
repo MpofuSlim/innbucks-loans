@@ -135,3 +135,12 @@ ALTER TABLE loan_request ADD COLUMN IF NOT EXISTS public_reference VARCHAR(20);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_loan_public_reference
     ON loan_request (public_reference) WHERE public_reference IS NOT NULL;
+
+-- ----------------------------------------------------------------------------
+-- 7. PENDING-APPLICATION CHECK
+--    Every application looks up the applicant's loans by upper(ec_number) and by
+--    upper(national_id_number); the plain ec_number index cannot serve upper().
+--    The application creates these at startup (LoanDuplicateCheckIndexes).
+-- ----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_loan_request_upper_ec_number ON loan_request (upper(ec_number));
+CREATE INDEX IF NOT EXISTS idx_loan_request_upper_national_id ON loan_request (upper(national_id_number));

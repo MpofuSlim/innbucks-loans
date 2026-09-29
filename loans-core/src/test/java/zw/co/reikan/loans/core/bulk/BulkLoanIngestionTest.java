@@ -11,7 +11,6 @@ import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.exception.ConflictException;
-import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
@@ -52,8 +51,7 @@ class BulkLoanIngestionTest {
 
         BulkIngestionProperties properties = new BulkIngestionProperties();
         properties.setChunkSize(2);
-        BulkLoanItemProcessor processor = new BulkLoanItemProcessor(loanService, publicReferenceService,
-                mock(FileSignatureValidator.class));
+        BulkLoanItemProcessor processor = new BulkLoanItemProcessor(loanService, publicReferenceService);
         ingestion = new BulkLoanIngestionService(properties, processor, runRepository, auditService);
     }
 
@@ -119,8 +117,7 @@ class BulkLoanIngestionTest {
     @Test
     @DisplayName("the processor refuses before drawing a public reference for a loan that was never created")
     void processorDrawsNoReferenceForARefusal() {
-        BulkLoanItemProcessor processor = new BulkLoanItemProcessor(loanService, publicReferenceService,
-                mock(FileSignatureValidator.class));
+        BulkLoanItemProcessor processor = new BulkLoanItemProcessor(loanService, publicReferenceService);
         when(loanService.requestLoan(any())).thenReturn(refusedAsInFlight());
 
         assertThatThrownBy(() -> processor.process(0, applications(1).getFirst()))

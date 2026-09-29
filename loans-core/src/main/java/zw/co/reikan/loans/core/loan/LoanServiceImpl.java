@@ -18,6 +18,7 @@ import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
+import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.auth.AuthService;
@@ -60,6 +61,7 @@ public class LoanServiceImpl implements LoanService {
     private final ChannelRepository channelRepository;
     private final Validator validator;
     private final MarketTimeZone marketTimeZone;
+    private final FileSignatureValidator fileSignatureValidator;
 
     @Override
     public LoanStatisticsResponse getStatistics(FindLoansInternalRequest request) {
@@ -159,6 +161,12 @@ public class LoanServiceImpl implements LoanService {
         // what InnBucks needs is refused HERE, not accepted and then failed at
         // the InnBucks step after the customer believed they had applied.
         requireCompleteApplication(loanRequest);
+
+        // Zero-trust content: the attached documents are checked by their byte signature before the
+        // application touches business state. This ran for bulk rows only, so a single application
+        // could attach an executable or any unrecognised file.
+        fileSignatureValidator.requireAcceptedBase64Document("nationalIdPicture", loanRequest.getNationalIdPicture());
+        fileSignatureValidator.requireAcceptedBase64Document("payslipPicture", loanRequest.getPayslipPicture());
 
         // Presence of the required fields is enforced declaratively by bean validation
         // (@Valid on the controller). What remains here are the business rules that need

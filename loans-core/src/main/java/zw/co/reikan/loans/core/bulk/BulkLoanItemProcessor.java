@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.exception.ConflictException;
-import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
@@ -32,17 +31,12 @@ public class BulkLoanItemProcessor {
 
     private final LoanService loanService;
     private final LoanPublicReferenceService publicReferenceService;
-    private final FileSignatureValidator fileSignatureValidator;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public BulkLoanItemOutcome process(int index, LoanRequest request) {
-        // Zero-trust content: magic-number checks on any attached documents
-        // BEFORE the application touches business state.
-        fileSignatureValidator.requireAcceptedBase64Document("nationalIdPicture", request.getNationalIdPicture());
-        fileSignatureValidator.requireAcceptedBase64Document("payslipPicture", request.getPayslipPicture());
-
         // Reuse the UNCHANGED single-application flow — bulk is an orchestration
-        // layer over existing behaviour, not a second code path for loans.
+        // layer over existing behaviour, not a second code path for loans. It checks the attached
+        // documents' byte signatures first, for bulk rows and single applications alike.
         LoanResponse response = loanService.requestLoan(request);
         // requestLoan answers a refusal (the applicant already has a loan in flight) rather than
         // throwing it, and creates nothing. Counted as a success, a duplicate row read as applied.

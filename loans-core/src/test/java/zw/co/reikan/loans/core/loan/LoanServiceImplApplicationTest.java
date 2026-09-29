@@ -13,6 +13,7 @@ import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.config.MarketTimeZone;
+import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -61,7 +62,7 @@ class LoanServiceImplApplicationTest {
         when(auth.getLoggedInUser()).thenReturn(agent);
 
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
-                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"));
+                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator());
     }
 
     @AfterEach
@@ -93,5 +94,36 @@ class LoanServiceImplApplicationTest {
         verify(loanRepository).save(saved.capture());
         assertThat(saved.getValue().getLineOfBusiness()).isEqualTo(LineOfBusiness.SERVICES);
         assertThat(saved.getValue().getLoanPurpose()).isEqualTo(LoanPurpose.HOME_IMPROVEMENT);
+    }
+
+    @Test
+    @DisplayName("a single application's documents are checked like a bulk row's: an executable is refused, nothing saved")
+    void singleApplicationDocumentsAreChecked() {
+        LoanRequest withExecutable = LoanRequestValidationTest.completeApplication();
+        withExecutable.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("MZ\u0090\u0000 payload".getBytes()));
+
+        assertThatThrownBy(() -> service.requestLoan(withExecutable))
+                .isInstanceOf(FileSignatureValidator.UnsafeFileException.class)
+                .hasMessageContaining("payslipPicture contains an executable");
+        verify(loanRepository, never()).save(any());
+
+        LoanRequest withUnknown = LoanRequestValidationTest.completeApplication();
+        withUnknown.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString("not an image".getBytes()));
+        assertThatThrownBy(() -> service.requestLoan(withUnknown))
+                .hasMessageContaining("nationalIdPicture is not a recognised document type");
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a real PDF and a PNG data-URL pass the check and the application is saved")
+    void recognisedDocumentsPass() {
+        LoanRequest withDocuments = LoanRequestValidationTest.completeApplication();
+        withDocuments.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes()));
+        withDocuments.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder()
+                .encodeToString(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}));
+
+        service.requestLoan(withDocuments);
+
+        verify(loanRepository).save(any());
     }
 }

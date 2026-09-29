@@ -418,24 +418,36 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         return request;
     }
 
+    /**
+     * Commits Ndasenda's open deduction batch. Each outcome is logged as what it is: this used to log a
+     * network failure as "No pending batch to commit", so a Ndasenda outage read as a quiet day, while
+     * the 404 that does mean nothing was open was logged as an error. Committing again is safe, since
+     * a batch already committed is no longer open, so every failure is left to the next scheduled run.
+     */
     public void commitDeductionRequestsUntilNow() {
-        log.info("Committing batch id");
+        log.info("Committing Ndasenda's open deduction batch");
         try {
-            executeWithTokenRefreshRetry(() -> {
+            NdasendaDeductionsBatchRequest committed = executeWithTokenRefreshRetry(() -> {
                 ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(
                         ndasendaProps.getCommitDeductionsEndpoint(),
-                        POST, 
+                        POST,
                         new HttpEntity<>(getHttpHeaders()),
                         NdasendaDeductionsBatchRequest.class,
                         ndasendaProps.getDeductionCode());
                 return response.getBody();
             });
-        } catch (ResourceAccessException rae) {
-            log.warn("No pending batch to commit");
+            log.info("Committed Ndasenda deduction batch {} ({} record(s), status {})",
+                    committed == null ? null : committed.getId(),
+                    committed == null ? null : committed.getRecordsCount(),
+                    committed == null ? null : committed.getStatus());
         } catch (HttpClientErrorException.NotFound ex) {
-            log.warn("Error committing deduction batch: {}", ex.getMessage());
+            log.info("No open deduction batch to commit (Ndasenda answered 404)");
+        } catch (ResourceAccessException ex) {
+            log.error("NDASENDA COMMIT FAILED: could not reach Ndasenda ({}); the open batch, if any, was not"
+                    + " confirmed committed and the next scheduled run commits it", ex.getMessage());
         } catch (Exception ex) {
-            log.error("Error committing deduction batch: ", ex);
+            log.error("NDASENDA COMMIT FAILED: the open batch, if any, was not confirmed committed; the next"
+                    + " scheduled run commits it", ex);
         }
     }
 

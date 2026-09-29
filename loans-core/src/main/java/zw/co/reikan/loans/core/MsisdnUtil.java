@@ -62,6 +62,14 @@ public class MsisdnUtil {
         return digits.length() <= 4 ? digits : digits.substring(digits.length() - 4);
     }
 
+    /**
+     * A mobile number fit for a log line: its last four digits, {@code ****3123}. The full number is
+     * personal data and adds nothing to a log the reference and the last four cannot already trace.
+     */
+    public static String mask(final String msisdn) {
+        return msisdn == null ? null : "****" + lastFourDigits(msisdn);
+    }
+
     public static String formatMsisdnInternational(String msisdn) {
         return INTERNATIONAL_CODE + formatMsisdnMinimum(msisdn);
     }

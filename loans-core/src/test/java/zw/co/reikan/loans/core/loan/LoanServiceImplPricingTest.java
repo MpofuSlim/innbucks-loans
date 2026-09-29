@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.channel.ChannelRepository;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.config.MarketTimeZone;
+import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -45,7 +46,7 @@ class LoanServiceImplPricingTest {
         parameters = mock(ParameterService.class);
         service = new LoanServiceImpl(mock(LoanRepository.class), parameters, mock(LoanMapper.class),
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
-                mock(Validator.class), new MarketTimeZone("ZW"));
+                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator());
     }
 
     private void rates(String monthlyInterest, String commission, String adminFee) {
