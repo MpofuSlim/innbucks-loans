@@ -97,6 +97,8 @@ public class CreateUserServiceImpl implements CreateUserService {
         String generatedPassword = generatePassword();
         user.setPassword(passwordEncoder.encode(generatedPassword));
         user.setTemporaryPassword(true);
+        // A new password ends the sessions minted under the old one.
+        user.bumpTokenVersion();
         userRepository.save(user);
 
         UserDTO userDTO = new UserDTO();

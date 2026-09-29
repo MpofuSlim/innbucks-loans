@@ -15,17 +15,22 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
+import zw.co.reikan.loans.core.user.UserRepository;
 
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * The committed application.yml default secret is public, and roles are read
@@ -34,6 +39,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * is active, and the decoder must only accept tokens carrying our own issuer.
  */
 class JwtConfigTest {
+
+    private final UserRepository users = mock(UserRepository.class);
+    private final TokenVersionValidator versions = new TokenVersionValidator(users);
+
+    {
+        when(users.findTokenVersionByUsername(anyString())).thenReturn(Optional.of(0L));
+    }
 
     /** Exactly the default in loans-api application.yml. */
     private static final String COMMITTED_DEFAULT = "innbucks-loans-local-dev-secret-change-me-please";
@@ -111,10 +123,60 @@ class JwtConfigTest {
         admin.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000001");
         admin.setGroups(Set.of(UserGroup.BULKIT_ADMIN));
 
-        Jwt jwt = config.jwtDecoder().decode(jwtService.generateToken(admin));
+        Jwt jwt = config.jwtDecoder(versions).decode(jwtService.generateToken(admin));
 
         assertThat(jwt.getClaimAsString("iss")).isEqualTo("innbucks-loans");
         assertThat(jwt.getSubject()).isEqualTo("7f1c2a9e-0000-4000-8000-000000000001");
+        assertThat(jwt.getClaims().get("token_version")).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("a password change ends every token minted before it; one minted after it is accepted")
+    void passwordChangeEndsEarlierTokens() {
+        JwtProperties properties = properties(randomSecret());
+        JwtConfig config = new JwtConfig(properties, environment("api"));
+        JwtService jwtService = new JwtService(config.jwtEncoder(), properties);
+        User admin = new User();
+        admin.setUsername("admin");
+        admin.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000001");
+        admin.setGroups(Set.of(UserGroup.BULKIT_ADMIN));
+        String before = jwtService.generateToken(admin);
+
+        admin.bumpTokenVersion();
+        when(users.findTokenVersionByUsername("admin")).thenReturn(Optional.of(1L));
+        String after = jwtService.generateToken(admin);
+
+        JwtDecoder decoder = config.jwtDecoder(versions);
+        assertThatThrownBy(() -> decoder.decode(before))
+                .isInstanceOf(JwtValidationException.class)
+                .hasMessageContaining("password was last changed");
+        assertThat(decoder.decode(after).getClaims().get("token_version")).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("a token from before token_version existed is good until its user's first password change")
+    void legacyTokenWithoutTheClaim() {
+        JwtConfig config = new JwtConfig(properties(randomSecret()), environment("api"));
+        String legacy = mint(config.jwtEncoder(), "innbucks-loans");
+        JwtDecoder decoder = config.jwtDecoder(versions);
+
+        when(users.findTokenVersionByUsername("admin")).thenReturn(Optional.of(0L));
+        assertThat(decoder.decode(legacy).getClaimAsString("preferred_username")).isEqualTo("admin");
+
+        when(users.findTokenVersionByUsername("admin")).thenReturn(Optional.of(1L));
+        assertThatThrownBy(() -> decoder.decode(legacy)).isInstanceOf(JwtValidationException.class);
+    }
+
+    @Test
+    @DisplayName("a token whose user no longer exists is refused")
+    void deletedUsersTokenRefused() {
+        JwtConfig config = new JwtConfig(properties(randomSecret()), environment("api"));
+        String token = mint(config.jwtEncoder(), "innbucks-loans");
+        when(users.findTokenVersionByUsername("admin")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> config.jwtDecoder(versions).decode(token))
+                .isInstanceOf(JwtValidationException.class)
+                .hasMessageContaining("no longer exists");
     }
 
     @Test
@@ -123,7 +185,7 @@ class JwtConfigTest {
         JwtConfig config = new JwtConfig(properties(randomSecret()), environment("api"));
         String token = mint(config.jwtEncoder(), "someone-else");
 
-        JwtDecoder decoder = config.jwtDecoder();
+        JwtDecoder decoder = config.jwtDecoder(versions);
         assertThatThrownBy(() -> decoder.decode(token))
                 .isInstanceOf(JwtValidationException.class)
                 .hasMessageContaining("iss");
@@ -135,7 +197,7 @@ class JwtConfigTest {
         JwtConfig config = new JwtConfig(properties(randomSecret()), environment("api"));
         String token = mint(config.jwtEncoder(), null);
 
-        JwtDecoder decoder = config.jwtDecoder();
+        JwtDecoder decoder = config.jwtDecoder(versions);
         assertThatThrownBy(() -> decoder.decode(token))
                 .isInstanceOf(JwtValidationException.class);
     }
@@ -146,6 +208,7 @@ class JwtConfigTest {
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(300))
                 .subject("attacker")
+                .claim("preferred_username", "admin")
                 .claim("realm_access", Map.of("roles", List.of("BULKIT_ADMIN")));
         if (issuer != null) {
             claims.issuer(issuer);

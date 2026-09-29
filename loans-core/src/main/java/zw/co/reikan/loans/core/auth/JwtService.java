@@ -41,6 +41,8 @@ public class JwtService {
                 .subject(user.getExternalSystemId())
                 .claim("preferred_username", user.getUsername())
                 .claim("realm_access", Map.of("roles", roles))
+                // Checked on every request by TokenVersionValidator: a password change bumps it.
+                .claim(TokenVersionValidator.CLAIM, user.currentTokenVersion())
                 .build();
 
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();

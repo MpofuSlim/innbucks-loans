@@ -165,6 +165,11 @@ innbucks:
   # timestamps are shown in and business dates are decided in (deduction month, report days).
   # Everything is stored in UTC regardless. An unknown value refuses to start.
   country: "${INNBUCKS_COUNTRY:ZW}"
+  # Sign-in lockout, the ticketing user-service's defaults: this many consecutive wrong passwords
+  # lock the account (423) for this long. A super-admin password reset lifts a lock early.
+  account-lockout:
+    max-attempts: "${ACCOUNT_LOCKOUT_MAX_ATTEMPTS:7}"
+    duration-minutes: "${ACCOUNT_LOCKOUT_DURATION_MINUTES:30}"
   api-key: "${INNBUCKS_API_KEY:}"
   username: "${INNBUCKS_USERNAME:}"
   password: "${INNBUCKS_PASSWORD:}"
