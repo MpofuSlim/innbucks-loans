@@ -66,43 +66,117 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             LoanApprovalStatus.PROCESSING, PROCESSING_LOAN
     );
 
+    /**
+     * Lodges ONE deduction with Ndasenda: a payroll stop order on a civil servant's salary, which
+     * cannot be taken back once it lands. Returns only when Ndasenda accepted it and named its batch;
+     * every other outcome is a {@link LodgementException} saying whether the deduction may have been
+     * lodged. The POST is sent once, and again only after a 401 (Ndasenda refused our token and
+     * processed nothing).
+     */
     public LoanApprovalResponse requestApproval(LoanApprovalRequest request) {
-        log.info("Processing Ndasenda loan deduction approval request {}", request);
+        // Identifiers only: the request carries the national ID and the full EC number.
+        log.info("Lodging Ndasenda deduction for reference {} ec {} tenor {}",
+                request.getReference(), maskEcNumber(request.getEcnumber()), request.getTenor());
 
-        LocalDate loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
-        LocalDate endDate = loanStartDate.plusMonths(request.getTenor() - 1); //subtract 1 because month is inclusive
-        LocalDate loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
-
-        final NdasendaDeduction deductionRequest = fromLoanRequest(request, loanStartDate, loanEndDate);
-        final List<NdasendaDeduction> deductions = List.of(deductionRequest);
-        final NdasendaDeductionsBatchRequest batch = NdasendaDeductionsBatchRequest.builder()
-                .totalAmountInCents(deductionRequest.getAmountInCents())
-                .recordsCount(deductions.size())
-                .deductionCode(ndasendaProps.getDeductionCode())
-                .securityToken(ndasendaProps.getSecurityCode())
-                .deductions(deductions)
-                .build();
-
+        final LocalDate loanStartDate;
+        final LocalDate loanEndDate;
+        final NdasendaDeductionsBatchRequest batch;
         try {
-            NdasendaDeductionsBatchRequest deductionsBatchResponse = executeWithTokenRefreshRetry(() -> {
-                HttpEntity<NdasendaDeductionsBatchRequest> requestEntity = new HttpEntity<>(batch, getHttpHeaders());
-                ResponseEntity<NdasendaDeductionsBatchRequest> response = restTemplate.exchange(
-                        ndasendaProps.getDeductionRequestsEndpoint(),
-                        POST, 
-                        requestEntity, 
-                        NdasendaDeductionsBatchRequest.class);
-                return response.getBody();
-            });
+            loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
+            LocalDate endDate = loanStartDate.plusMonths(request.getTenor() - 1); //subtract 1 because month is inclusive
+            loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
 
-            return LoanApprovalResponse.builder()
-                    .status(LoanApprovalStatus.PROCESSING)
-                    .batchNumber(deductionsBatchResponse.getId())
-                    .startDate(loanStartDate)
-                    .endDate(loanEndDate)
+            final NdasendaDeduction deductionRequest = fromLoanRequest(request, loanStartDate, loanEndDate);
+            final List<NdasendaDeduction> deductions = List.of(deductionRequest);
+            batch = NdasendaDeductionsBatchRequest.builder()
+                    .totalAmountInCents(deductionRequest.getAmountInCents())
+                    .recordsCount(deductions.size())
+                    .deductionCode(ndasendaProps.getDeductionCode())
+                    .securityToken(ndasendaProps.getSecurityCode())
+                    .deductions(deductions)
                     .build();
-        } catch (Exception ex) {
-            log.error("Error requesting loan approval", ex);
-            throw new RuntimeException("Failed to request loan approval", ex);
+        } catch (RuntimeException ex) {
+            // Our own code, before anything was sent (an instalment too large for the wire, say).
+            throw new LodgementException(LodgementException.Kind.NOT_SENT,
+                    "The deduction could not be built: " + ex.getClass().getSimpleName() + ": " + ex.getMessage(), ex);
+        }
+
+        ResponseEntity<NdasendaDeductionsBatchRequest> response = lodge(batch);
+        NdasendaDeductionsBatchRequest accepted = response == null ? null : response.getBody();
+        if (accepted == null || StringUtils.isBlank(accepted.getId())) {
+            // Not an error status, so it may well have been accepted: only Ndasenda's answer can tell.
+            throw new LodgementException(LodgementException.Kind.OUTCOME_UNKNOWN, "Ndasenda answered HTTP "
+                    + (response == null ? "(none)" : response.getStatusCode().value()) + " without a batch id", null);
+        }
+
+        return LoanApprovalResponse.builder()
+                .status(LoanApprovalStatus.PROCESSING)
+                .batchNumber(accepted.getId())
+                .startDate(loanStartDate)
+                .endDate(loanEndDate)
+                .build();
+    }
+
+    /**
+     * The lodgement POST. Unlike {@link #executeWithTokenRefreshRetry}, it is sent again ONLY after a
+     * 401: an unreadable 2xx/3xx body is no proof Ndasenda processed nothing, so it is an unknown
+     * outcome, not a reason to resend.
+     */
+    private ResponseEntity<NdasendaDeductionsBatchRequest> lodge(NdasendaDeductionsBatchRequest batch) {
+        try {
+            return postLodgement(batch);
+        } catch (HttpClientErrorException ex) {
+            if (ex.getStatusCode().value() != HttpStatus.UNAUTHORIZED.value()) {
+                throw LodgementException.classify(ex);
+            }
+            log.warn("Ndasenda refused our access token for a lodgement, so processed nothing;"
+                    + " refreshing the token and sending it once more");
+            try {
+                ndasendaAuthService.refreshToken();
+            } catch (RuntimeException refreshFailed) {
+                throw new LodgementException(LodgementException.Kind.NDASENDA_UNAVAILABLE,
+                        "Ndasenda answered HTTP 401 and a new access token could not be fetched: "
+                                + LodgementException.describe(refreshFailed), refreshFailed);
+            }
+            try {
+                return postLodgement(batch);
+            } catch (RuntimeException retryFailed) {
+                throw LodgementException.classify(retryFailed);
+            }
+        } catch (UnknownContentTypeException ex) {
+            // This used to refresh the token and POST again: a blind resend of a lodgement that may have
+            // been accepted. The token is still refreshed, in case a stale one is why the body is
+            // unreadable, so the next lodgement is not met the same way.
+            refreshTokenQuietly();
+            throw LodgementException.classify(ex);
+        } catch (RuntimeException ex) {
+            throw LodgementException.classify(ex);
+        }
+    }
+
+    /** The token is fetched before anything is sent, so failing to get one is provably not a lodgement. */
+    private ResponseEntity<NdasendaDeductionsBatchRequest> postLodgement(NdasendaDeductionsBatchRequest batch) {
+        if (StringUtils.isBlank(ndasendaProps.getDeductionRequestsEndpoint())) {
+            // Otherwise the client's own refusal of a missing URL would read as an unknown outcome.
+            throw new LodgementException(LodgementException.Kind.NDASENDA_UNAVAILABLE,
+                    "No Ndasenda lodgement endpoint is configured", null);
+        }
+        final HttpHeaders headers;
+        try {
+            headers = getHttpHeaders();
+        } catch (RuntimeException ex) {
+            throw new LodgementException(LodgementException.Kind.NDASENDA_UNAVAILABLE,
+                    "The Ndasenda access token could not be fetched: " + LodgementException.describe(ex), ex);
+        }
+        return restTemplate.exchange(ndasendaProps.getDeductionRequestsEndpoint(), POST,
+                new HttpEntity<>(batch, headers), NdasendaDeductionsBatchRequest.class);
+    }
+
+    private void refreshTokenQuietly() {
+        try {
+            ndasendaAuthService.refreshToken();
+        } catch (RuntimeException ex) {
+            log.warn("Could not refresh the Ndasenda access token: {}", LodgementException.describe(ex));
         }
     }
 

@@ -74,6 +74,14 @@ ndasenda:
   username: "${NDASENDA_USERNAME:}"
   security-code: "${NDASENDA_SECURITY_CODE:}"
   deduction-code: "${NDASENDA_DEDUCTION_CODE:}"
+  # Lodging a deduction is irreversible, so only a lodgement that provably never reached Ndasenda is
+  # tried again: up to max-attempts, backing off from retry-backoff-minutes (doubling), then FAILED.
+  # Anything that may have reached Ndasenda is held as PROCESSING for its answer, never re-sent. A
+  # claim left unsettled for stale-claim-minutes (a run that died mid-lodgement) is held the same way.
+  lodgement:
+    max-attempts: "${NDASENDA_LODGEMENT_MAX_ATTEMPTS:3}"
+    retry-backoff-minutes: "${NDASENDA_LODGEMENT_RETRY_BACKOFF_MINUTES:10}"
+    stale-claim-minutes: "${NDASENDA_LODGEMENT_STALE_CLAIM_MINUTES:30}"
   commit:
     deduction:
       batch:

@@ -63,6 +63,25 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
 
+    /** NEW loans due for lodgement with Ndasenda: unclaimed and past any retry backoff. Oldest first. */
+    @Query("""
+            select l.id from Loan l
+            where l.loanApprovalStatus = zw.co.reikan.loans.core.loan.LoanApprovalStatus.NEW
+              and l.lodgementClaimedAt is null
+              and (l.nextLodgementAttemptAt is null or l.nextLodgementAttemptAt <= :now)
+            order by l.id
+            """)
+    List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now);
+
+    /** NEW loans whose lodgement was claimed before {@code cutoff} and never settled. */
+    @Query("""
+            select l.id from Loan l
+            where l.loanApprovalStatus = zw.co.reikan.loans.core.loan.LoanApprovalStatus.NEW
+              and l.lodgementClaimedAt < :cutoff
+            order by l.id
+            """)
+    List<Long> findIdsWithLodgementClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
+
     List<Loan> findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus loanAccountStatus,
                                                                                      LoanDisbursementStatus disbursementStatus,
                                                                                      InternalApprovalStatus internalApprovalStatus);
