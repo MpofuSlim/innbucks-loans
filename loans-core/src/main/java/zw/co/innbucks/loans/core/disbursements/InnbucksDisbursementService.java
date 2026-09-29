@@ -86,7 +86,8 @@ public class InnbucksDisbursementService extends DisbursementService {
                 .businessLine(businessLine)
                 .loanPurpose(loanPurpose)
                 .grossSalary(grossSalary == null ? null : toCents(grossSalary))
-                .msisdn(formatMsisdnInternational(loan.getMobileNumber()))
+                // The InnBucks customer whose wallet the booked loan pays.
+                .msisdn(formatMsisdnInternational(loan.payoutWalletNumber()))
                 .numberOfDependents(loan.getNumberOfDependencies())
                 .participantReference(loan.getReference())
                 .placeOfBirth(loan.getPlaceOfBirth())

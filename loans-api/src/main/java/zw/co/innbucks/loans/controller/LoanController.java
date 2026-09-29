@@ -73,7 +73,11 @@ public class LoanController {
     @Operation(summary = "Apply for a loan",
             description = "Captures an application for the signed-in user's merchant, or for the channel named by"
                     + " channelId. It is lodged with SSB for the payroll deduction, then goes to Credit. Every"
-                    + " missing field is reported in one 400. Documents are base64 PDF, PNG, JPEG or GIF.")
+                    + " missing field is reported in one 400. Documents are base64 PDF, PNG, JPEG or GIF."
+                    + " employmentDetail carries where the applicant works (ministry, station, grade, contract"
+                    + " type) and the payslip's gross and net pay; payslipDeductions lists each deduction already"
+                    + " on the payslip. walletNumber is the InnBucks wallet the loan pays, the mobile number when"
+                    + " omitted.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Accepted and sent for SSB approval",
                     content = @Content(examples = @ExampleObject("""
@@ -102,6 +106,11 @@ public class LoanController {
                                     {
                                       "code": "INVALID_REQUEST",
                                       "message": "EC Number is not valid"
+                                    }"""),
+                            @ExampleObject(name = "Net above gross", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Net salary cannot exceed gross salary"
                                     }"""),
                             @ExampleObject(name = "Under 18", value = """
                                     {

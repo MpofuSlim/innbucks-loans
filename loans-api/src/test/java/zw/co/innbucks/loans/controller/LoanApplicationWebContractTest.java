@@ -13,6 +13,7 @@ import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
+import zw.co.innbucks.loans.core.loan.ContractType;
 import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
@@ -25,7 +26,10 @@ import zw.co.innbucks.loans.core.loan.LoanQuoteRequest;
 import zw.co.innbucks.loans.core.loan.LoanReadScopeResolver;
 import zw.co.innbucks.loans.core.loan.LoanResponse;
 import zw.co.innbucks.loans.core.loan.LoanService;
+import zw.co.innbucks.loans.core.loan.PayslipDeduction;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
+
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -55,8 +59,13 @@ class LoanApplicationWebContractTest {
              "loanPurpose":"HOME_IMPROVEMENT","lineOfBusiness":"SERVICES",
              "numberOfDependants":3,"numberOfChildren":2,
              "address":{"street":"123 Samora Machel Ave","city":"Harare"},
-             "employmentDetail":{"employerName":"Mutare City Council","employeeNumber":"EMP-001",
-                                 "employmentStartDate":"2022-01-01","grossSalary":1500.00},
+             "walletNumber":"0712345678",
+             "employmentDetail":{"employerName":"Government of Zimbabwe","employeeNumber":"EMP-001",
+                                 "ministry":"Ministry of Health and Child Care","station":"Mutare Provincial Hospital",
+                                 "grade":"D2","contractType":"PERMANENT",
+                                 "employmentStartDate":"2022-01-01","grossSalary":1500.00,"netSalary":1100.00},
+             "payslipDeductions":[{"beneficiary":"ZIMRA PAYE","amount":210.00},
+                                  {"beneficiary":"CBZ personal loan","amount":150.00}],
              "nextOfKin":{"firstName":"Jane","mobileNumber":"0772321321","relationship":"SPOUSE",
                           "address":{"street":"123 Samora Machel Ave","city":"Harare"}}}
             """;
@@ -144,6 +153,35 @@ class LoanApplicationWebContractTest {
         assertThat(request.getNumberOfDependants()).isEqualTo(3);
         assertThat(request.getNumberOfChildren()).isEqualTo(2);
         assertThat(request.getAmountType()).isEqualTo(LoanAmountType.NET_OF_FEES);
+        assertThat(request.getWalletNumber()).isEqualTo("0712345678");
+        assertThat(request.getEmploymentDetail().getMinistry()).isEqualTo("Ministry of Health and Child Care");
+        assertThat(request.getEmploymentDetail().getStation()).isEqualTo("Mutare Provincial Hospital");
+        assertThat(request.getEmploymentDetail().getGrade()).isEqualTo("D2");
+        assertThat(request.getEmploymentDetail().getContractType()).isEqualTo(ContractType.PERMANENT);
+        assertThat(request.getEmploymentDetail().getNetSalary()).isEqualByComparingTo("1100.00");
+        assertThat(request.getPayslipDeductions()).containsExactly(
+                new PayslipDeduction("ZIMRA PAYE", new BigDecimal("210.00")),
+                new PayslipDeduction("CBZ personal loan", new BigDecimal("150.00")));
+    }
+
+    @Test
+    @DisplayName("a payslip deduction with no beneficiary → 400 keyed by its index")
+    void badPayslipDeductionIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE.replace("\"beneficiary\":\"CBZ personal loan\"", "\"beneficiary\":\"\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data['payslipDeductions[1].beneficiary']").value("Deduction beneficiary is required"));
+        verifyNoInteractions(loanService);
+    }
+
+    @Test
+    @DisplayName("an unknown contract type → 400 MALFORMED_REQUEST")
+    void unknownContractTypeIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE.replace("\"PERMANENT\"", "\"Permanent\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
     }
 
     @Test

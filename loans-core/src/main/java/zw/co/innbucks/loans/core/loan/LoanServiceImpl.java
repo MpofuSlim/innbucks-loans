@@ -13,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import zw.co.innbucks.loans.core.TextUtils;
 import zw.co.innbucks.loans.core.channel.Channel;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
@@ -153,6 +154,8 @@ public class LoanServiceImpl implements LoanService {
             throw new IllegalArgumentException("EC Number is not valid");
         }
 
+        requireNetWithinGross(loanRequest.getEmploymentDetail());
+
         val dateOfBirth = loanRequest.getDateOfBirth();
         if (dateOfBirth.isAfter(marketTimeZone.today().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
@@ -190,6 +193,8 @@ public class LoanServiceImpl implements LoanService {
                 .ecNumber(formattedEcNumber)
                 .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
+                .walletNumber(formatMsisdnInternational(StringUtils.hasText(loanRequest.getWalletNumber())
+                        ? loanRequest.getWalletNumber() : loanRequest.getMobileNumber()))
                 .signature(loanRequest.getSignature())
                 .nationalIdPicture(loanRequest.getNationalIdPicture())
                 .payslipPicture(loanRequest.getPayslipPicture())
@@ -220,6 +225,7 @@ public class LoanServiceImpl implements LoanService {
                 .email(loanRequest.getEmail())
                 .address(loanRequest.getAddress())
                 .employmentDetail(loanRequest.getEmploymentDetail())
+                .payslipDeductions(payslipDeductions(loanRequest.getPayslipDeductions()))
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
                 .loanPurpose(loanRequest.getLoanPurpose())
@@ -237,6 +243,26 @@ public class LoanServiceImpl implements LoanService {
         loanRepository.save(loan);
 
         return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
+    }
+
+    /** A payslip cannot take home more than it earns: that would be a mistyped figure, not a payslip. */
+    private static void requireNetWithinGross(EmploymentDetail employment) {
+        if (employment != null && employment.getGrossSalary() != null && employment.getNetSalary() != null
+                && employment.getNetSalary().compareTo(employment.getGrossSalary()) > 0) {
+            throw new IllegalArgumentException("Net salary cannot exceed gross salary");
+        }
+    }
+
+    /** Copied, beneficiaries trimmed, in the order captured. */
+    private static List<PayslipDeduction> payslipDeductions(List<PayslipDeduction> captured) {
+        if (captured == null) {
+            return new ArrayList<>();
+        }
+        List<PayslipDeduction> deductions = new ArrayList<>();
+        for (PayslipDeduction deduction : captured) {
+            deductions.add(new PayslipDeduction(deduction.getBeneficiary().strip(), deduction.getAmount()));
+        }
+        return deductions;
     }
 
     /**

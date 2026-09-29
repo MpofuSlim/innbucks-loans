@@ -135,6 +135,7 @@ public final class ApiExamples {
                 "placeOfBirth": "Gweru",
                 "profession": "Teacher",
                 "mobileNumber": "263771234567",
+                "walletNumber": "263771234567",
                 "email": "rudo.chikwanha@example.co.zw",
                 "ecNumber": "1234567A",
                 "nationalIdNumber": "631234567A42",
@@ -145,7 +146,11 @@ public final class ApiExamples {
                   "country": "Zimbabwe"
                 },
                 "employmentDetail": {
-                  "employerName": "Ministry of Primary and Secondary Education",
+                  "employerName": "Government of Zimbabwe",
+                  "ministry": "Ministry of Primary and Secondary Education",
+                  "station": "Mabelreign Girls High School",
+                  "grade": "D2",
+                  "contractType": "PERMANENT",
                   "employerContactNumber": "+263242734051",
                   "employeeNumber": "1234567A",
                   "grossSalary": 850.00,
@@ -157,6 +162,20 @@ public final class ApiExamples {
                     "country": "Zimbabwe"
                   }
                 },
+                "payslipDeductions": [
+                  {
+                    "beneficiary": "ZIMRA PAYE",
+                    "amount": 142.50
+                  },
+                  {
+                    "beneficiary": "PSMAS medical aid",
+                    "amount": 45.00
+                  },
+                  {
+                    "beneficiary": "APEX pension",
+                    "amount": 42.50
+                  }
+                ],
                 "nextOfKin": {
                   "firstName": "Tatenda",
                   "lastName": "Chikwanha",

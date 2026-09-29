@@ -14,6 +14,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -61,10 +63,15 @@ class LoanApplicationRequestValidationTest {
 
     static LoanApplicationRequest completeApplication() {
         EmploymentDetail job = new EmploymentDetail();
-        job.setEmployerName("Mutare City Council");
+        job.setEmployerName("Government of Zimbabwe");
+        job.setMinistry("Ministry of Health and Child Care");
+        job.setStation("Mutare Provincial Hospital");
+        job.setGrade("D2");
+        job.setContractType(ContractType.PERMANENT);
         job.setEmployeeNumber("EMP-001");
         job.setEmploymentStartDate(LocalDate.of(2022, 1, 1));
         job.setGrossSalary(new BigDecimal("1500.00"));
+        job.setNetSalary(new BigDecimal("1100.00"));
 
         NextOfKin kin = new NextOfKin();
         kin.setFirstName("Jane");
@@ -177,19 +184,55 @@ class LoanApplicationRequestValidationTest {
     }
 
     @Test
-    @DisplayName("employment detail needs employer, employee number, start date and a positive gross salary")
+    @DisplayName("employment detail needs employer, ministry, station, grade, contract type, employee number, start date,"
+            + " a positive gross salary and a net salary")
     void employmentDetailIsComplete() {
         LoanApplicationRequest r = completeApplication();
         EmploymentDetail job = new EmploymentDetail();
         job.setGrossSalary(BigDecimal.ZERO);
+        job.setNetSalary(new BigDecimal("-1"));
         r.setEmploymentDetail(job);
 
         assertThat(violations(r, Default.class, LoanApplicationChecks.class))
                 .containsExactlyInAnyOrder(
                         "employmentDetail.employerName: Employer name is required",
+                        "employmentDetail.ministry: Ministry or department is required",
+                        "employmentDetail.station: Station is required",
+                        "employmentDetail.grade: Grade or notch is required",
+                        "employmentDetail.contractType: Contract type is required",
                         "employmentDetail.employeeNumber: Employee number is required",
                         "employmentDetail.employmentStartDate: Employment start date is required",
-                        "employmentDetail.grossSalary: Gross salary must be greater than zero");
+                        "employmentDetail.grossSalary: Gross salary must be greater than zero",
+                        "employmentDetail.netSalary: Net salary cannot be negative");
+    }
+
+    @Test
+    @DisplayName("payslip deductions are optional, but each one needs a beneficiary and a positive amount")
+    void payslipDeductionsAreValidated() {
+        LoanApplicationRequest r = completeApplication();
+        r.setPayslipDeductions(List.of(
+                new PayslipDeduction("ZIMRA PAYE", new BigDecimal("210.00")),
+                new PayslipDeduction(" ", new BigDecimal("40.00")),
+                new PayslipDeduction("CBZ loan", BigDecimal.ZERO)));
+
+        assertThat(violations(r, Default.class, LoanApplicationChecks.class))
+                .containsExactlyInAnyOrder(
+                        "payslipDeductions[1].beneficiary: Deduction beneficiary is required",
+                        "payslipDeductions[2].amount: Deduction amount must be greater than zero");
+
+        r.setPayslipDeductions(Collections.nCopies(31, new PayslipDeduction("Union", BigDecimal.ONE)));
+        assertThat(violations(r, Default.class)).containsExactly("payslipDeductions: At most 30 payslip deductions");
+    }
+
+    @Test
+    @DisplayName("the wallet number is optional, and held to the same mobile rule when given")
+    void walletNumberIsAMobileWhenGiven() {
+        LoanApplicationRequest r = completeApplication();
+        assertThat(violations(r, Default.class, LoanApplicationChecks.class)).isEmpty();
+
+        r.setWalletNumber("0242123456");
+        assertThat(violations(r, Default.class)).containsExactly(
+                "walletNumber: must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123");
     }
 
     @Test
