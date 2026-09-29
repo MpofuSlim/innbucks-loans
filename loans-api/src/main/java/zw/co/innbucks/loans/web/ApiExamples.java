@@ -258,7 +258,138 @@ public final class ApiExamples {
                 "creditDecisionAt": "2026-09-30T11:40:02+02:00",
                 "creditDecisionBy": "cmanager",
                 "creditDecisionComment": "Payslip and deduction capacity verified",
+                "creditDecisionReasonCode": "APPROVE_WITHIN_POLICY",
             """ + LOAN_DOCUMENTS + """
 
+            }""";
+
+    /** Loan 42 in full after {@code cmanager} returns it for more information. */
+    public static final String LOAN_CREDIT_RETURNED = """
+            {
+              "code": "OK",
+              "message": "Loan returned for more information",
+              "data": {
+                "id": 42,
+                "reference": "000000042",
+                "createdAt": "2026-09-29T10:15:30+02:00",
+                "createdBy": "tmoyo",
+                "merchantCode": "harare-motors",
+                "merchantName": "Harare Motor Spares",
+            """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
+
+                "creditApprovalStatus": "RETURNED",
+                "creditDecisionAt": "2026-09-30T09:12:45+02:00",
+                "creditDecisionBy": "cmanager",
+                "creditDecisionComment": "Payslip is for June; confirm the August figures with the employer",
+                "creditDecisionReasonCode": "RETURN_PAYSLIP",
+            """ + LOAN_DOCUMENTS + """
+
+            }""";
+
+    /** Loan 42 in full after {@code tmoyo} answers the return: back in the credit queue. */
+    public static final String LOAN_RESUBMITTED = """
+            {
+              "code": "OK",
+              "message": "Loan resubmitted to Credit",
+              "data": {
+                "id": 42,
+                "reference": "000000042",
+                "createdAt": "2026-09-29T10:15:30+02:00",
+                "createdBy": "tmoyo",
+                "merchantCode": "harare-motors",
+                "merchantName": "Harare Motor Spares",
+            """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
+
+                "creditApprovalStatus": "PENDING",
+            """ + LOAN_DOCUMENTS + """
+
+            }""";
+
+    /**
+     * What loan 42 looked like at each credit action: nothing on it changed between them. Compact, exactly as
+     * stored and returned, so {@link #LOAN_42_SNAPSHOT_SHA256} is its real SHA-256.
+     */
+    private static final String LOAN_42_SNAPSHOT =
+            "{\"reference\":\"000000042\",\"ecNumber\":\"1234567A\",\"firstName\":\"Rudo\",\"lastName\":\"Chikwanha\","
+            + "\"merchantCode\":\"harare-motors\",\"originator\":\"tmoyo\",\"ssbApprovalStatus\":\"APPROVED\",\"ssbDeductionId\":\"88213\","
+            + "\"batchNumber\":\"B-20260930-1\",\"principal\":531.91,\"disbursedAmount\":500.00,\"tenor\":3,\"interestRate\":7.00,"
+            + "\"feeRate\":6.00,\"monthlyInstallment\":202.69,\"grossedMonthlyDeduction\":208.96,"
+            + "\"employment\":{\"employerName\":\"Government of Zimbabwe\",\"ministry\":\"Ministry of Primary and Secondary Education\","
+            + "\"station\":\"Mabelreign Girls High School\",\"grade\":\"D2\",\"contractType\":\"PERMANENT\",\"dateOfEngagement\":\"2012-01-09\","
+            + "\"grossSalary\":850.00,\"netSalary\":620.00},"
+            + "\"payslipDeductions\":[{\"beneficiary\":\"ZIMRA PAYE\",\"amount\":142.50},{\"beneficiary\":\"PSMAS medical aid\",\"amount\":45.00},"
+            + "{\"beneficiary\":\"APEX pension\",\"amount\":42.50}],"
+            + "\"payoutType\":\"MERCHANT_MOBILE_WALLET\",\"payoutAccount\":\"****4521\","
+            + "\"documents\":{\"payslipPictureSha256\":\"c224eb50562422c9c196652076f60c4d49c1279e113529a8fda9453b6cd3cdda\","
+            + "\"nationalIdPictureSha256\":\"0321ebe1c478509c95b7c1344371a2e6d769d6ac8cc8201dc611acaa2e23474a\","
+            + "\"signatureSha256\":\"1d99c003252ae63793afb48d4d46475a0ed94ab758010deea63758d3fdf9642d\"}}";
+
+    private static final String LOAN_42_SNAPSHOT_SHA256 = "9f16ad5d7cd62a86a429e4dd9e8d2a5178c146e06ccdf7e6cd1e758a7ca7e387";
+
+    private static final String LOAN_42_SNAPSHOT_FIELDS = "\"loanSnapshot\": " + LOAN_42_SNAPSHOT
+            + ",\n      \"snapshotSha256\": \"" + LOAN_42_SNAPSHOT_SHA256 + "\"";
+
+    /** Loan 42's credit decision log: returned, answered, then approved by someone other than the answerer. */
+    public static final String CREDIT_DECISION_LOG = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "id": 17,
+                  "action": "RETURNED",
+                  "reasonCode": "RETURN_PAYSLIP",
+                  "reasonDescription": "Payslip missing, unclear or out of date",
+                  "comment": "Payslip is for June; confirm the August figures with the employer",
+                  "performedBy": "cmanager",
+                  "performedAt": "2026-09-30T09:12:45+02:00",
+                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+
+                },
+                {
+                  "id": 18,
+                  "action": "RESUBMITTED",
+                  "comment": "Confirmed with the school bursar: the August payslip figures match the application",
+                  "performedBy": "tmoyo",
+                  "performedAt": "2026-09-30T10:03:10+02:00",
+                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+
+                },
+                {
+                  "id": 19,
+                  "action": "APPROVED",
+                  "reasonCode": "APPROVE_WITHIN_POLICY",
+                  "reasonDescription": "Meets credit policy",
+                  "comment": "Payslip and deduction capacity verified",
+                  "performedBy": "cmanager",
+                  "performedAt": "2026-09-30T11:40:02+02:00",
+                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+
+                }
+              ]
+            }""";
+
+    /** Every active reason code, as seeded. */
+    public static final String CREDIT_REASON_CODES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                { "code": "APPROVE_WITHIN_POLICY", "decision": "APPROVED", "description": "Meets credit policy" },
+                { "code": "APPROVE_RISK_ACCEPTED", "decision": "APPROVED", "description": "Outside a guideline, risk accepted; see comment" },
+                { "code": "REJECT_AFFORDABILITY", "decision": "REJECTED", "description": "Deduction capacity insufficient" },
+                { "code": "REJECT_EMPLOYMENT", "decision": "REJECTED", "description": "Employment not verified or not eligible" },
+                { "code": "REJECT_IDENTITY", "decision": "REJECTED", "description": "Identity could not be verified" },
+                { "code": "REJECT_DOCUMENTS", "decision": "REJECTED", "description": "Documents invalid, unreadable or inconsistent" },
+                { "code": "REJECT_SUSPECTED_FRAUD", "decision": "REJECTED", "description": "Suspected fraud or misrepresentation" },
+                { "code": "REJECT_CREDIT_HISTORY", "decision": "REJECTED", "description": "Adverse credit history or existing exposure" },
+                { "code": "REJECT_CUSTOMER_REQUEST", "decision": "REJECTED", "description": "Withdrawn at the customer's request" },
+                { "code": "REJECT_OTHER", "decision": "REJECTED", "description": "Other; see comment" },
+                { "code": "RETURN_PAYSLIP", "decision": "RETURNED", "description": "Payslip missing, unclear or out of date" },
+                { "code": "RETURN_IDENTITY_DOCUMENT", "decision": "RETURNED", "description": "National ID missing or unclear" },
+                { "code": "RETURN_EMPLOYMENT_DETAIL", "decision": "RETURNED", "description": "Employment details incomplete or inconsistent" },
+                { "code": "RETURN_APPLICANT_DETAIL", "decision": "RETURNED", "description": "Applicant details incomplete or inconsistent" },
+                { "code": "RETURN_OTHER", "decision": "RETURNED", "description": "Other; see comment" }
+              ]
             }""";
 }

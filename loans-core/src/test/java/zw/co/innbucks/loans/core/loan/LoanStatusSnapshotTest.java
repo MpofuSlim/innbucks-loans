@@ -27,6 +27,8 @@ class LoanStatusSnapshotTest {
             // SSB approved; credit has not decided.
             "APPROVED,   PENDING,  PENDING, PENDING",
             "APPROVED,   null,     null,    null",
+            // Credit returned it for more information: still Credit's to decide.
+            "APPROVED,   RETURNED, PENDING, PENDING",
             // Credit approved; InnBucks account, then disbursement, under way.
             "APPROVED,   APPROVED, PENDING, PENDING",
             "APPROVED,   APPROVED, CREATED, PENDING",

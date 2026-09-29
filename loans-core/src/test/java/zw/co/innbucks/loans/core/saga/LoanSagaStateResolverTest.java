@@ -57,6 +57,13 @@ class LoanSagaStateResolverTest {
     }
 
     @Test
+    void returnedForMoreInformation_isStillCreditAssessment() {
+        // Waiting on the originator's answer, then back in the credit queue: not an outcome.
+        assertEquals(CREDIT_ASSESSMENT_PENDING, LoanSagaStateResolver.resolve(
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.RETURNED, null, null)));
+    }
+
+    @Test
     void theStatusColumnsAloneResolveAsTheLoanDoes() {
         for (LoanApprovalStatus approval : LoanApprovalStatus.values()) {
             Loan loan = loan(approval, InternalApprovalStatus.APPROVED, LoanAccountStatus.CREATED,

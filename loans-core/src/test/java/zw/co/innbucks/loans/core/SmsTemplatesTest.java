@@ -39,6 +39,7 @@ class SmsTemplatesTest {
         Map<String, String> sms = new LinkedHashMap<>();
         sms.put("APPROVED_LOAN", String.format(SmsMessages.APPROVED_LOAN, REF, AMOUNT));
         sms.put("REJECTED_LOAN", String.format(SmsMessages.REJECTED_LOAN, REF, AMOUNT));
+        sms.put("RETURNED_LOAN", String.format(SmsMessages.RETURNED_LOAN, REF, AMOUNT));
         sms.put("PROCESSING_LOAN", String.format(SmsMessages.PROCESSING_LOAN, REF, AMOUNT));
         // The SSB submission job formats with the reference alone.
         NdasendaLodgementJob.SMS_MESSAGES

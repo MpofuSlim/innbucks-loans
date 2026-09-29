@@ -95,6 +95,7 @@ public class LoanResponse implements Serializable {
     private LocalDateTime creditDecisionAt;
     private String creditDecisionBy;
     private String creditDecisionComment;
+    private String creditDecisionReasonCode;
 
     // --- InnBucks booking and payout ---
     private LoanAccountStatus bookingStatus;

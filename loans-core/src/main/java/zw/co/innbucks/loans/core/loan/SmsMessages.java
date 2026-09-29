@@ -16,6 +16,8 @@ package zw.co.innbucks.loans.core.loan;
 public final class SmsMessages {
     public static final String APPROVED_LOAN = "Congratulations. Your loan application with ref %1$s has been approved. Your loan amount of %2$s will be disbursed to your account soon";
     public static final String REJECTED_LOAN = "We regret to inform you that your loan application with ref # %1$s has been declined. Please contact Innbucks for more information.";
+    /** Credit returned the application for more information (FR-SSB-016); it has not been declined. */
+    public static final String RETURNED_LOAN = "Your loan application with ref # %1$s needs more information before a decision can be made. Innbucks or your agent will contact you.";
     public static final String PROCESSING_LOAN = "Your loan application with ref # %1$s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing Innbucks.";
 
     private SmsMessages() {

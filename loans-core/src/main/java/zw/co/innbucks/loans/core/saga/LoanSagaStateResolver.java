@@ -58,7 +58,9 @@ public final class LoanSagaStateResolver {
         if (internal == InternalApprovalStatus.REJECTED) {
             return LoanSagaState.CREDIT_REJECTED;
         }
-        if (internal == null || internal == InternalApprovalStatus.PENDING) {
+        // RETURNED is still Credit's: waiting on the originator's answer, then back in the queue.
+        if (internal == null || internal == InternalApprovalStatus.PENDING
+                || internal == InternalApprovalStatus.RETURNED) {
             return LoanSagaState.CREDIT_ASSESSMENT_PENDING;
         }
 

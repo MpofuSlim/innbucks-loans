@@ -29,7 +29,9 @@ import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.ManualDisbursementResponse;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
+import zw.co.innbucks.loans.core.loan.CreditDecisionResponse;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
+import zw.co.innbucks.loans.core.loan.CreditResubmissionRequest;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanApplicationChecks;
 import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
@@ -50,6 +52,7 @@ import zw.co.innbucks.loans.web.PageResponse;
 import zw.co.innbucks.loans.web.Paging;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 import static zw.co.innbucks.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl.maskEcNumber;
@@ -308,22 +311,44 @@ public class LoanController {
     }
 
     @Operation(summary = "Decide a loan (Credit)",
-            description = "CREDIT_MANAGER or SUPER_ADMIN approves or rejects a loan SSB has approved. Whoever"
-                    + " originated the loan cannot approve it. An approval freezes where the loan is paid (the"
-                    + " customer's wallet, or the merchant's account as it stands now); a rejection flags the SSB"
-                    + " deduction for cancellation. The customer is told by SMS; the comment is not sent to them.")
+            description = "CREDIT_MANAGER or SUPER_ADMIN approves, rejects or returns a loan SSB has approved."
+                    + " Every decision needs an active reason code for that decision (GET /credit-reason-codes) and a"
+                    + " comment, and is kept in the loan's credit decision log with the loan data it was based on."
+                    + " Nobody may approve a loan they originated, resubmitted, or are a party to (the applicant,"
+                    + " their next of kin, or the holder of the payout wallet). An approval freezes where the loan is"
+                    + " paid; a rejection flags the SSB deduction for cancellation; RETURNED sends the loan back to its"
+                    + " originator for more information, and while it waits it can only be rejected. The customer is"
+                    + " told by SMS; the comment is not sent to them.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Recorded; the loan as it now stands",
-                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_CREDIT_APPROVED))),
-            @ApiResponse(responseCode = "400", description = "Not decidable, or nowhere to pay it",
                     content = @Content(examples = {
-                            @ExampleObject(name = "Missing decision", value = """
+                            @ExampleObject(name = "Approved", value = ApiExamples.LOAN_CREDIT_APPROVED),
+                            @ExampleObject(name = "Returned", value = ApiExamples.LOAN_CREDIT_RETURNED)})),
+            @ApiResponse(responseCode = "400", description = "Not decidable, a reason code that does not fit, or nowhere to pay it",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Missing fields", value = """
                                     {
                                       "code": "VALIDATION_ERROR",
                                       "message": "Request validation failed",
                                       "data": {
-                                        "decision": "Decision is required (APPROVED or REJECTED)"
+                                        "comment": "Comment is required",
+                                        "reasonCode": "Reason code is required"
                                       }
+                                    }"""),
+                            @ExampleObject(name = "Reason code for another decision", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Reason code RETURN_PAYSLIP is for RETURNED decisions, not APPROVED"
+                                    }"""),
+                            @ExampleObject(name = "Unknown reason code", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Unknown reason code APPROVE_OK"
+                                    }"""),
+                            @ExampleObject(name = "Returned, not resubmitted", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Loan was returned for more information and has not been resubmitted; it can only be rejected"
                                     }"""),
                             @ExampleObject(name = "Already decided", value = """
                                     {
@@ -337,13 +362,23 @@ public class LoanController {
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller originated the loan",
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller may not approve this loan",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
                             @ExampleObject(name = "Originator", value = """
                                     {
                                       "code": "FORBIDDEN",
                                       "message": "Loan 000000042 was originated by tmoyo, who cannot also approve it; another credit officer must"
+                                    }"""),
+                            @ExampleObject(name = "Resubmitter", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Loan 000000042 was resubmitted by tmoyo, who cannot also approve it; another credit officer must"
+                                    }"""),
+                            @ExampleObject(name = "Party to the loan", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "cmanager is a party to loan 000000042 and cannot approve it; another credit officer must"
                                     }""")})),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
@@ -351,10 +386,70 @@ public class LoanController {
     @PostMapping("/loans/{loanId}/credit-decision")
     @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
     public ApiResult<LoanResponse> decide(@PathVariable Long loanId, @Valid @RequestBody CreditDecisionRequest request) {
-        log.info("Credit decision {} on loan {}", request.getDecision(), loanId);
+        log.info("Credit decision {} ({}) on loan {}", request.getDecision(), request.getReasonCode(), loanId);
         LoanResponse loan = creditDecisionService.decide(loanId, request);
-        return ApiResult.ok(request.getDecision() == InternalApprovalStatus.APPROVED ? "Loan approved" : "Loan rejected",
-                loan);
+        String message = switch (request.getDecision()) {
+            case APPROVED -> "Loan approved";
+            case REJECTED -> "Loan rejected";
+            default -> "Loan returned for more information";
+        };
+        return ApiResult.ok(message, loan);
+    }
+
+    @Operation(summary = "Resubmit a returned loan to Credit",
+            description = "Answers a loan Credit returned for more information: the comment carries the answer, and the"
+                    + " loan goes back to PENDING in the credit queue. Any user who can read the loan may resubmit it"
+                    + " (an agent, only their own loans). Whoever resubmits cannot then approve it.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Back in the credit queue; the loan as it now stands",
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_RESUBMITTED))),
+            @ApiResponse(responseCode = "400", description = "No comment, or the loan is not waiting for more information",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Missing comment", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "comment": "Comment is required"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Not returned", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Loan is not waiting for more information (credit status PENDING)"
+                                    }""")})),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "404", description = "No such loan, or not one the caller may read",
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
+    })
+    @PostMapping("/loans/{loanId}/credit-resubmission")
+    public ApiResult<LoanResponse> resubmit(JwtAuthenticationToken authentication, @PathVariable Long loanId,
+                                            @Valid @RequestBody CreditResubmissionRequest request) {
+        log.info("Credit resubmission of loan {}", loanId);
+        return ApiResult.ok("Loan resubmitted to Credit",
+                creditDecisionService.resubmit(loanId, request, readScope(authentication)));
+    }
+
+    @Operation(summary = "A loan's credit decision log",
+            description = "Every credit action on the loan, oldest first: each decision and each resubmission, with who"
+                    + " took it, when, the reason code and comment, and the loan data it was based on (loanSnapshot, with"
+                    + " its SHA-256). The log is append-only. Decisions taken before the log existed are carried over"
+                    + " with a LEGACY_ reason code and a snapshot that says the data was not captured.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Success; an empty list when Credit has not acted on the loan",
+                    content = @Content(examples = @ExampleObject(ApiExamples.CREDIT_DECISION_LOG))),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "404", description = "No such loan",
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
+    })
+    @GetMapping("/loans/{loanId}/credit-decisions")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    public ApiResult<List<CreditDecisionResponse>> creditDecisions(@PathVariable Long loanId) {
+        return ApiResult.ok(creditDecisionService.history(loanId));
     }
 
     @Operation(summary = "Pay a loan manually (recovery)",
