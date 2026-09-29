@@ -9,6 +9,7 @@ import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -75,14 +76,17 @@ public class JwtConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
+    public JwtDecoder jwtDecoder(TokenVersionValidator tokenVersionValidator) {
         SecretKeySpec key = new SecretKeySpec(secretBytes, HMAC_ALGORITHM);
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
         // Accept only tokens stamped with our own iss (JwtService sets jwt.issuer),
         // on top of the default expiry and typ checks.
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
+        // ...and, per request, only at the user's current token version: a password change ends every
+        // session minted before it.
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(issuer), tokenVersionValidator));
         return decoder;
     }
 }

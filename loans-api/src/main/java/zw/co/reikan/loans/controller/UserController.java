@@ -41,13 +41,19 @@ public class UserController {
     private final AdminPasswordResetService adminPasswordResetService;
 
     @Operation(summary = "RESET PASSWORD",
-            description = "Reset user password",
+            description = "The signed-in user changes their own password. The new one must be 8 to 72 characters,"
+                    + " must not begin or end with a space, and must differ from the current one. Every session"
+                    + " minted before the change stops working; the response is a fresh token for the new password,"
+                    + " which the caller must use from here on.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping(value = "/reset-password")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
+            @ApiResponse(responseCode = "400", description = "Bad request: a missing field, or a new password the rules"
+                    + " refuse (the error names which)"),
+            @ApiResponse(responseCode = "423", description = "Account locked after too many failed attempts; a wrong"
+                    + " current password counts as one"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public AuthResponse updatePassword(Principal principal,
                                        @Valid @RequestBody ChangePasswordRequest changePasswordRequest) {

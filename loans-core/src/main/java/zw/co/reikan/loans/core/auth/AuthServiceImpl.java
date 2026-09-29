@@ -1,7 +1,7 @@
 package zw.co.reikan.loans.core.auth;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -14,14 +14,21 @@ import zw.co.reikan.loans.core.api.AuthResponse;
 import zw.co.reikan.loans.core.api.CommissionGroupDto;
 import zw.co.reikan.loans.core.api.SearchUserRequest;
 import zw.co.reikan.loans.core.api.UserDTO;
+import zw.co.reikan.loans.core.audit.AuditLog;
+import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.exception.AccountLockedException;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.merchant.MerchantMapper;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserRepository;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
 
@@ -31,25 +38,67 @@ import static zw.co.reikan.loans.core.user.User.SYSTEM_USER_NAME;
  * profiles and roles are read straight from the {@code users} table.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AuthServiceImpl implements AuthService {
 
     private static final String INVALID_CREDENTIALS = "Invalid username or password";
+    static final String ACCOUNT_LOCKED = "ACCOUNT_LOCKED";
 
     private final UserRepository userRepository;
     private final MerchantMapper merchantMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuditService auditService;
+    private final int maxFailedAttempts;
+    private final Duration lockoutDuration;
+    /** Compared against for an unknown username, so it costs the same hash as a known one: no timing oracle. */
+    private final String unknownUserHash;
 
+    public AuthServiceImpl(UserRepository userRepository, MerchantMapper merchantMapper,
+                           PasswordEncoder passwordEncoder, JwtService jwtService, AuditService auditService,
+                           @Value("${innbucks.account-lockout.max-attempts:7}") int maxFailedAttempts,
+                           @Value("${innbucks.account-lockout.duration-minutes:30}") long lockoutMinutes) {
+        this.userRepository = userRepository;
+        this.merchantMapper = merchantMapper;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.auditService = auditService;
+        this.maxFailedAttempts = maxFailedAttempts;
+        this.lockoutDuration = Duration.ofMinutes(lockoutMinutes);
+        this.unknownUserHash = passwordEncoder.encode(UUID.randomUUID().toString());
+    }
+
+    /**
+     * Sign-in, with the ticketing user-service's lockout: {@code max-attempts} (7) consecutive wrong
+     * passwords lock the account for {@code duration-minutes} (30), answered 423 with the time it
+     * ends. It used to allow unlimited guesses. A locked account's password is not even checked, so
+     * the lock stops guessing rather than merely slowing it; a lock that has run out starts the count
+     * again; a successful sign-in clears it. Each failure is ONE atomic increment, so concurrent
+     * guesses cannot slip under the limit.
+     */
     @Override
     public AuthResponse login(AuthRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS));
+        Optional<User> found = userRepository.findByUsername(request.getUsername());
+        if (found.isEmpty()) {
+            passwordEncoder.matches(request.getPassword(), unknownUserHash);
+            throw new BadCredentialsException(INVALID_CREDENTIALS);
+        }
+        User user = found.get();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (user.getLockedUntil() != null) {
+            if (user.getLockedUntil().isAfter(now)) {
+                throw new AccountLockedException(user.getLockedUntil());
+            }
+            userRepository.clearFailedLogins(user.getId());
+        }
 
         if (user.getPassword() == null
                 || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            recordFailure(user, now);
             throw new BadCredentialsException(INVALID_CREDENTIALS);
+        }
+        if (user.getFailedLoginAttempts() != null && user.getFailedLoginAttempts() > 0) {
+            userRepository.clearFailedLogins(user.getId());
         }
 
         AuthResponse response = new AuthResponse();
@@ -68,6 +117,32 @@ public class AuthServiceImpl implements AuthService {
         return response;
     }
 
+    /** Counts the failure; the one that reaches the limit locks the account and says so (423). */
+    private void recordFailure(User user, LocalDateTime now) {
+        userRepository.recordFailedLogin(user.getId());
+        LocalDateTime until = now.plus(lockoutDuration);
+        if (userRepository.lockIfOverLimit(user.getId(), maxFailedAttempts, until, now) == 1) {
+            log.warn("ACCOUNT LOCKED: user {} after {} consecutive failed sign-ins, until {} UTC (audited)",
+                    user.getUsername(), maxFailedAttempts, until);
+            audit(user, until);
+            throw new AccountLockedException(until);
+        }
+    }
+
+    private void audit(User user, LocalDateTime until) {
+        try {
+            auditService.record(AuditLog.builder()
+                    .eventType(ACCOUNT_LOCKED)
+                    .entityType("USER").entityId(String.valueOf(user.getId()))
+                    .actorId(user.getUsername()).channelUsed("portal")
+                    .detail("failedAttempts>=" + maxFailedAttempts + " lockedUntil=" + until)
+                    .correlationId(user.getExternalSystemId()));
+        } catch (Exception ex) {
+            // The lock is already saved and must stand; the WARN above is the evidence.
+            log.error("Audit of the lock on user {} failed", user.getUsername(), ex);
+        }
+    }
+
     @Override
     public User getLoggedInUser() {
         String loggedInUsername = getLoggedInUsername();
@@ -84,12 +159,22 @@ public class AuthServiceImpl implements AuthService {
         return SYSTEM_USER_NAME;
     }
 
+    /**
+     * The user's own password change. Held to {@link PasswordPolicy}, must differ from the current
+     * password, and ends every session minted before it: the caller (change-password) signs in again
+     * with the new password and returns that token.
+     */
     @Override
     public void resetPassword(String newPassword, String userId, String username) {
+        PasswordPolicy.requireAcceptable(newPassword);
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ValidationException("User %s not found".formatted(username)));
-        user.setPassword(passwordEncoder.encode(newPassword.trim()));
+        if (user.getPassword() != null && passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new ValidationException("The new password must be different from the current one");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
         user.setTemporaryPassword(false);
+        user.bumpTokenVersion();
         userRepository.save(user);
     }
 

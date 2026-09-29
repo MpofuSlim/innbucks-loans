@@ -3,6 +3,7 @@ package zw.co.reikan.loans.advice;
 import jakarta.validation.ConstraintViolationException;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -14,12 +15,16 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import zw.co.reikan.loans.core.exception.AccountLockedException;
 import zw.co.reikan.loans.core.exception.BusinessException;
 import zw.co.reikan.loans.core.exception.ConflictException;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.stream.Collectors;
 
 @ControllerAdvice
@@ -135,6 +140,18 @@ public class RestExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
     }
 
+    /** 423 with when the lock ends, as the ticketing user-service answers it, plus Retry-After. */
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<AccountLockedResponse> handleAccountLocked(AccountLockedException ex) {
+        long retryAfterSeconds = Math.max(1,
+                Duration.between(LocalDateTime.now(ZoneOffset.UTC), ex.getLockedUntil()).toSeconds());
+        log.warn("Sign-in refused: account locked until {} UTC", ex.getLockedUntil());
+        return ResponseEntity.status(HttpStatus.LOCKED)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds))
+                .body(new AccountLockedResponse(HttpStatus.LOCKED.value(), ex.getMessage(), ex.getLockedUntil(),
+                        retryAfterSeconds));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException ex) {
         ErrorResponse errorResponse = new ErrorResponse(HttpStatus.FORBIDDEN, ex.getMessage());
@@ -147,6 +164,10 @@ public class RestExceptionHandler {
         ErrorResponse errorResponse = new ErrorResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
         log.warn("Notification delivery failed: {}", ex.getMessage());
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
+    }
+
+    /** The standard error body plus when the lock ends ({@code lockedUntil} goes out at the market offset). */
+    public record AccountLockedResponse(int status, String error, LocalDateTime lockedUntil, long retryAfterSeconds) {
     }
 
     @Data

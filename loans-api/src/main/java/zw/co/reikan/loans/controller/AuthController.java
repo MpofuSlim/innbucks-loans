@@ -19,6 +19,7 @@ import zw.co.reikan.loans.core.api.AuthRequest;
 import zw.co.reikan.loans.core.api.AuthResponse;
 import zw.co.reikan.loans.core.api.ForgotPasswordRequest;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.exception.AccountLockedException;
 import zw.co.reikan.loans.core.user.CreateUserService;
 
 @RestController
@@ -42,6 +43,11 @@ public class AuthController {
                     description = "Authenticated"),
             @ApiResponse(responseCode = "401",
                     description = "Invalid credentials"),
+            @ApiResponse(responseCode = "423",
+                    description = "Account locked after too many consecutive failed sign-ins (default 7). The body's"
+                            + " lockedUntil says when sign-in reopens and retryAfterSeconds counts down to it, also"
+                            + " sent as Retry-After. A successful sign-in resets the count; a super-admin password"
+                            + " reset lifts the lock early."),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")
@@ -51,6 +57,8 @@ public class AuthController {
         try {
             log.info("Authenticating user: {}", authRequest.getUsername());
             return authService.login(authRequest);
+        } catch (AccountLockedException ex) {
+            throw ex; // a 423 with the time the lock ends, not a 401 reading "wrong password"
         } catch (Exception ex) {
             log.error("Error getting access token.", ex);
             throw new BadCredentialsException(ex.getMessage());

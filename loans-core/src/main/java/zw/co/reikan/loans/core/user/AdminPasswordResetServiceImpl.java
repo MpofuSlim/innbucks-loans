@@ -70,6 +70,11 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
 
         user.setPassword(passwordEncoder.encode(temporaryPassword));
         user.setTemporaryPassword(true);
+        // Whoever held the account's old sessions (the usual reason for a reset) is signed out, and a
+        // lock from failed attempts is lifted: this is how a locked-out user gets back in early.
+        user.bumpTokenVersion();
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
         userRepository.save(user);
         log.info("Super-admin reset password for user {} delivered via {}",
                 user.getUsername(), request.getChannel());

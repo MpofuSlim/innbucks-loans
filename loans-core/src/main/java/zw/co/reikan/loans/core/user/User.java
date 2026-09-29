@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.loan.BaseEntity;
 import zw.co.reikan.loans.core.merchant.Merchant;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -77,6 +78,30 @@ public class User extends BaseEntity {
 
     @Column(name = "physical_addess")
     private String physicalAddress;
+
+    /** Consecutive failed sign-ins, reset by a successful one. Null on rows from before lockout existed: 0. */
+    @Column(name = "failed_login_attempts")
+    private Integer failedLoginAttempts;
+
+    /** Sign-in is refused until this UTC time after too many failed attempts; null when not locked. */
+    @Column(name = "locked_until")
+    private LocalDateTime lockedUntil;
+
+    /**
+     * Bumped whenever the password is set, and carried in every token as {@code token_version}: a token
+     * minted before the last password change no longer matches and is refused. Null reads as 0.
+     */
+    @Column(name = "token_version")
+    private Long tokenVersion;
+
+    /** Invalidates every token minted before now. Saved by the caller. */
+    public void bumpTokenVersion() {
+        this.tokenVersion = currentTokenVersion() + 1;
+    }
+
+    public long currentTokenVersion() {
+        return tokenVersion == null ? 0 : tokenVersion;
+    }
 
 
 }
