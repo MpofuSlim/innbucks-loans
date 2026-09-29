@@ -171,19 +171,18 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     /**
      * Daily disbursement totals (successful disbursements only). Native for the day
      * grouping; merchant joined LEFT so a null filter keeps loans without a merchant.
-     * The merchant table's code column is physically camelCase, hence the quoting.
      * The day is the market's ({@code zone}): the column holds UTC, and grouping on its
      * UTC date put every loan paid between midnight and 02:00 in Harare on the day before.
      */
     @Query(value = """
             select cast((l.date_disbursed at time zone 'UTC') at time zone cast(:zone as text) as date) as day,
                    count(*) as loan_count,
-                   coalesce(sum(l.disburse_amount), 0) as total_disbursed
-            from loan_request l
-            left join merchant m on m.id = l.merchant_id
+                   coalesce(sum(l.disbursed_amount), 0) as total_disbursed
+            from loans l
+            left join merchants m on m.id = l.merchant_id
             where l.disbursement_status = 'SUCCESS'
               and l.date_disbursed between :startDate and :endDate
-              and (cast(:merchantCode as text) is null or m."merchantCode" = cast(:merchantCode as text))
+              and (cast(:merchantCode as text) is null or m.merchant_code = cast(:merchantCode as text))
             group by day
             order by day
             """, nativeQuery = true)

@@ -15,10 +15,10 @@ import java.time.LocalDate;
 public class EmploymentDetail {
 
     @NotBlank(groups = LoanApplicationChecks.class, message = "Employer name is required")
-    @Column(name = "employee_name")
+    @Column(name = "employer_name")
     private String employerName;
 
-    @Column(name = "employee_contact_number")
+    @Column(name = "employer_contact_number")
     private String employerContactNumber;
 
     @NotBlank(groups = LoanApplicationChecks.class, message = "Employee number is required")
@@ -43,10 +43,10 @@ public class EmploymentDetail {
 
     @Embedded
     @AttributeOverrides({
-            @AttributeOverride(name = "street", column = @Column(name = "employee_street")),
-            @AttributeOverride(name = "suburb", column = @Column(name = "employee_suburb")),
-            @AttributeOverride(name = "city", column = @Column(name = "employee_city")),
-            @AttributeOverride(name = "country", column = @Column(name = "employee_country"))
+            @AttributeOverride(name = "street", column = @Column(name = "employer_street")),
+            @AttributeOverride(name = "suburb", column = @Column(name = "employer_suburb")),
+            @AttributeOverride(name = "city", column = @Column(name = "employer_city")),
+            @AttributeOverride(name = "country", column = @Column(name = "employer_country"))
     })
     private Address address;
 }

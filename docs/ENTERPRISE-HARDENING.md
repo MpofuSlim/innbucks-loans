@@ -9,7 +9,7 @@ before; these primitives observe, guard and formalise around them.
 `ledger_entries`: immutable double-entry legs; balances are **derived sums**,
 never stored/updated. Three immutability layers: no setters, Hibernate
 `@Immutable`, and a Postgres trigger rejecting UPDATE/DELETE
-(`docs/db/enterprise_hardening.sql`). Postings are idempotent per
+(created by the schema migrations). Postings are idempotent per
 `transaction_ref`. `audit_logs` records `channel_used`, `actor_id`,
 `state_transition_delta` and a `payload_hash` snapshot, written REQUIRES_NEW
 so evidence survives business rollbacks.
@@ -36,6 +36,11 @@ used by the Ndasenda integration is untouched.
 
 ## Operational notes
 
-- Tables auto-create via `ddl-auto=update`; apply
-  `docs/db/enterprise_hardening.sql` for the ledger trigger, the public-reference
-  sequence and the partial and expression indexes (the ORM cannot express those).
+- The schema is Flyway's: `loans-core/src/main/resources/db/migration`. V1 creates
+  it on an empty database; a database Hibernate built before Flyway is baselined
+  at V1 and upgraded in place by V2. Hibernate only validates it
+  (`JpaSchemaConfig`), so a schema change is a new migration, never an edit to an
+  applied one.
+- Tables are plural snake_case and columns snake_case. Constraints are
+  `<table>_pkey`, `fk_<table>_<column>`, `uq_<table>_<columns>` and
+  `ck_<table>_<column>`; indexes are `idx_<table>_<columns>`.

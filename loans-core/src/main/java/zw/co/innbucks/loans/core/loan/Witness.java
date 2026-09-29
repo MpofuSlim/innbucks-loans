@@ -16,7 +16,7 @@ public class Witness {
     @Column(name = "witness_place_of_signature")
     private String placeOfSignature;
 
-    @Column(name = "witness_date_singed")
+    @Column(name = "witness_date_signed")
     private LocalDate dateSigned;
 
     @ToString.Exclude

@@ -24,9 +24,9 @@ import java.time.LocalDateTime;
  * current position and compensation bookkeeping.
  */
 @Entity
-@Table(name = "loan_saga", indexes = {
-        @Index(name = "idx_loan_saga_loan_id", columnList = "loan_id", unique = true),
-        @Index(name = "idx_loan_saga_state", columnList = "current_state")
+@Table(name = "loan_sagas", indexes = {
+        @Index(name = "uq_loan_sagas_loan_id", columnList = "loan_id", unique = true),
+        @Index(name = "idx_loan_sagas_current_state", columnList = "current_state")
 })
 @Data
 @Builder

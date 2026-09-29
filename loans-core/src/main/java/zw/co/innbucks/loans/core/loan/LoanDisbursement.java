@@ -7,7 +7,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "loan_disbursement")
+@Table(name = "loan_disbursements")
 @Data
 public class LoanDisbursement extends BaseEntity {
 

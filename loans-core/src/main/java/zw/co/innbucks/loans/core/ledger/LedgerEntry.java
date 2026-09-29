@@ -29,7 +29,7 @@ import java.time.LocalDateTime;
  * <ol>
  *   <li>No setters — the class is {@code @Getter}-only with a builder.</li>
  *   <li>Hibernate {@link Immutable} — the ORM refuses UPDATE statements.</li>
- *   <li>A database trigger (see {@code docs/db/enterprise_hardening.sql})
+ *   <li>A database trigger (created by the schema migrations, V1 and V2)
  *       rejects UPDATE/DELETE at the engine level, covering raw SQL too.</li>
  * </ol>
  *
@@ -39,12 +39,12 @@ import java.time.LocalDateTime;
 @Entity
 @Immutable
 @Table(name = "ledger_entries",
-        uniqueConstraints = @UniqueConstraint(name = "uq_ledger_txref_account_type",
+        uniqueConstraints = @UniqueConstraint(name = "uq_ledger_entries_transaction_ref_account_entry_type",
                 columnNames = {"transaction_ref", "account", "entry_type"}),
         indexes = {
-                @Index(name = "idx_ledger_loan_id", columnList = "loan_id"),
-                @Index(name = "idx_ledger_account", columnList = "account"),
-                @Index(name = "idx_ledger_tx_ref", columnList = "transaction_ref")
+                @Index(name = "idx_ledger_entries_loan_id", columnList = "loan_id"),
+                @Index(name = "idx_ledger_entries_account", columnList = "account"),
+                @Index(name = "idx_ledger_entries_transaction_ref", columnList = "transaction_ref")
         })
 @Getter
 @ToString

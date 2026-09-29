@@ -29,9 +29,9 @@ import java.time.LocalDateTime;
 @Entity
 @Immutable
 @Table(name = "audit_logs", indexes = {
-        @Index(name = "idx_audit_entity", columnList = "entity_type, entity_id"),
-        @Index(name = "idx_audit_correlation", columnList = "correlation_id"),
-        @Index(name = "idx_audit_created_at", columnList = "created_at")
+        @Index(name = "idx_audit_logs_entity_type_entity_id", columnList = "entity_type, entity_id"),
+        @Index(name = "idx_audit_logs_correlation_id", columnList = "correlation_id"),
+        @Index(name = "idx_audit_logs_created_at", columnList = "created_at")
 })
 @Getter
 @ToString

@@ -2,7 +2,7 @@
 -- InnBucks Loans — loan pricing parameters (PostgreSQL)
 -- ============================================================================
 -- The loan calculator (LoanServiceImpl.calculate) cannot quote without every
--- one of these rows in "parameter", and the application never seeds them.
+-- one of these rows in parameters, and the application never seeds them.
 -- Apply with psql on a fresh database, then maintain the values there.
 --
 -- The NAMES are what the code requires. The VALUES are the ones the previous
@@ -16,7 +16,7 @@
 -- Idempotent: an existing row is left as it is.
 -- ============================================================================
 
-INSERT INTO "parameter" (created_date, last_modified_date, version, user_can_edit, name, val)
+INSERT INTO parameters (created_date, last_modified_date, version, user_can_edit, name, val)
 SELECT now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC', 0, true, p.name, p.val
 FROM (VALUES
     ('admin_fee_rate',        '6'),

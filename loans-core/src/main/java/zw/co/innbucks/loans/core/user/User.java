@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.ToString;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
-import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.loan.BaseEntity;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 
@@ -14,9 +13,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(indexes = {
-        @Index(name = "idx_external_system_id", columnList = "externalSystemId")
-})
+@Table(name = "users")
 @Data
 public class User extends BaseEntity {
 
@@ -72,7 +69,7 @@ public class User extends BaseEntity {
     @ManyToOne
     private CommissionGroup commissionGroup;
 
-    @Column(name = "physical_addess")
+    @Column(name = "physical_address")
     private String physicalAddress;
 
     /** Consecutive failed sign-ins, reset by a successful one. Null on rows from before lockout existed: 0. */

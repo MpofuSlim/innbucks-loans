@@ -8,7 +8,7 @@ import java.util.Objects;
 
 @Data
 @Entity
-@Table(name = "parameter", indexes = {@Index(name = "indx_parameter_name", columnList = "name", unique = true)})
+@Table(name = "parameters")
 public class Parameter extends BaseEntity {
 
     @Column(name = "name", unique = true, length = 50)

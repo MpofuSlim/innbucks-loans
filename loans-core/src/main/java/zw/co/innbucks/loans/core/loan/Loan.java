@@ -18,9 +18,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@Table(name = "loan_request", indexes = {
-        @Index(name = "idx_loan_request_batch_number", columnList = "batch_number"),
-        @Index(name = "idx_ec_number", columnList = "ec_number")
+@Table(name = "loans", indexes = {
+        @Index(name = "idx_loans_batch_number", columnList = "batch_number"),
+        @Index(name = "idx_loans_ec_number", columnList = "ec_number")
 })
 @Builder
 @AllArgsConstructor
@@ -31,7 +31,7 @@ public class Loan extends BaseEntity {
     @Column(name = "principal")
     private BigDecimal principal;
 
-    @Column(name = "disburse_amount")
+    @Column(name = "disbursed_amount")
     private BigDecimal disbursedAmount;
 
     @Column(name = "interest_rate")
@@ -181,7 +181,7 @@ public class Loan extends BaseEntity {
     @Column(name = "provider_commission")
     private BigDecimal providerCommission;
 
-    @Column(name = "number_of_dependencies")
+    @Column(name = "number_of_dependants")
     private Integer numberOfDependencies;
 
     @Column(name = "number_of_children")
