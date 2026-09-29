@@ -304,6 +304,10 @@ public class Loan extends BaseEntity {
     @Column(name = "internal_approval_comment")
     private String internalApprovalComment;
 
+    /** The reason code given with the latest credit decision: see {@link CreditReasonCode}. */
+    @Column(name = "internal_approval_reason_code")
+    private String internalApprovalReasonCode;
+
     /**
      * Where credit approved the money to go, frozen at approval: see {@link PayoutDestination}. Null on
      * a loan approved before the freeze existed, which still pays per the merchant's live settings.

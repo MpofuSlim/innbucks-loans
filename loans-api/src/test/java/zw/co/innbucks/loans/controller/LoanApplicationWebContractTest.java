@@ -267,6 +267,9 @@ class LoanApplicationWebContractTest {
 
     // --- POST /lending/v1/loans/{loanId}/credit-decision ----------------------------------------
 
+    private static final String APPROVAL =
+            "{\"decision\":\"APPROVED\",\"reasonCode\":\"APPROVE_WITHIN_POLICY\",\"comment\":\"Verified\"}";
+
     @Test
     @DisplayName("a decision answers with the loan and names the decision in the message")
     void decisionAnswersWithTheLoan() throws Exception {
@@ -276,7 +279,8 @@ class LoanApplicationWebContractTest {
         when(creditDecisionService.decide(eq(42L), any())).thenReturn(loan);
 
         mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":\"REJECTED\",\"comment\":\"Deduction capacity too low\"}"))
+                        .content("{\"decision\":\"REJECTED\",\"reasonCode\":\"REJECT_AFFORDABILITY\","
+                                + "\"comment\":\"Deduction capacity too low\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Loan rejected"))
                 .andExpect(jsonPath("$.data.id").value(42))
@@ -285,15 +289,18 @@ class LoanApplicationWebContractTest {
         ArgumentCaptor<CreditDecisionRequest> bound = ArgumentCaptor.forClass(CreditDecisionRequest.class);
         verify(creditDecisionService).decide(eq(42L), bound.capture());
         assertThat(bound.getValue().getDecision()).isEqualTo(InternalApprovalStatus.REJECTED);
+        assertThat(bound.getValue().getReasonCode()).isEqualTo("REJECT_AFFORDABILITY");
         assertThat(bound.getValue().getComment()).isEqualTo("Deduction capacity too low");
     }
 
     @Test
-    @DisplayName("a decision with no decision → 400 on the decision field")
+    @DisplayName("an empty decision → 400 on the decision, reason code and comment fields at once")
     void missingDecisionIs400() throws Exception {
         mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.data.decision").value("Decision is required (APPROVED or REJECTED)"));
+                .andExpect(jsonPath("$.data.decision").value("Decision is required (APPROVED, REJECTED or RETURNED)"))
+                .andExpect(jsonPath("$.data.reasonCode").value("Reason code is required"))
+                .andExpect(jsonPath("$.data.comment").value("Comment is required"));
         verifyNoInteractions(creditDecisionService);
     }
 
@@ -304,7 +311,7 @@ class LoanApplicationWebContractTest {
                 .thenThrow(new LoanApprovalException("Loan has already been rejected"));
 
         mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":\"APPROVED\"}"))
+                        .content(APPROVAL))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("Loan has already been rejected"));
@@ -316,7 +323,7 @@ class LoanApplicationWebContractTest {
         when(creditDecisionService.decide(eq(7L), any())).thenThrow(new NotFoundException("Loan 7 not found"));
 
         mvc.perform(post("/lending/v1/loans/7/credit-decision").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":\"APPROVED\"}"))
+                        .content(APPROVAL))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("Loan 7 not found"));
@@ -329,7 +336,7 @@ class LoanApplicationWebContractTest {
                 "Loan 000000042 was originated by credit.manager, who cannot also approve it; another credit officer must"));
 
         mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":\"APPROVED\"}"))
+                        .content(APPROVAL))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.message").value("Loan 000000042 was originated by credit.manager, who cannot"
