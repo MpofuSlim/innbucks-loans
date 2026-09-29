@@ -342,4 +342,31 @@ class LoanAccountCreationJobTest {
         verify(disbursementService, never()).createLoanAccount(any());
         verify(loanRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("NOT SENT (login down, connection refused): the loan stays PENDING untouched, and the run stops")
+    void notSentLeavesTheLoanPendingAndStopsTheRun() {
+        Loan second = Loan.builder()
+                .loanApprovalStatus(LoanApprovalStatus.APPROVED)
+                .internalApprovalStatus(InternalApprovalStatus.APPROVED)
+                .loanAccountStatus(LoanAccountStatus.PENDING)
+                .merchant(Merchant.builder().accountNumber("123456789").build())
+                .build();
+        second.setId(43L);
+        when(loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
+                any(), any(), any())).thenReturn(List.of(loan, second));
+        when(disbursementService.createLoanAccount(loan)).thenThrow(new BookingNotSentException(
+                "Booking of loan 000000042 not sent: InnBucks login failed (HTTP 503)", new RuntimeException()));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
+        assertThat(loan.getDisbursementStatus()).isNull();
+        assertThat(loan.getBookingFailureKind()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(loan.getDisbursementStatusMessage()).contains("InnBucks login failed").endsWith("will retry");
+        verify(loanRepository).save(loan);
+        verify(disbursementService, never()).createLoanAccount(second);
+        verifyNoInteractions(auditService);
+    }
 }

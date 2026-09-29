@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.disbursements;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -33,6 +34,13 @@ public class LoanDisbursementStatusResponse {
     private BigDecimal amount;
     private LocalDateTime disbursementDate;
     private boolean success;
+
+    /**
+     * InnBucks answered that it holds no loan under the reference: responseCode 004, or HTTP 404
+     * from the inquiry. Derived by the client, never read from the wire.
+     */
+    @JsonIgnore
+    private boolean notFound;
     
     // Helper method to determine if the loan was found
     public boolean isLoanFound() {

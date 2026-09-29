@@ -35,22 +35,27 @@ public class LoanAccountCreationJob {
 
     /**
      * Processes pending loan accounts that have been approved.
-     * Runs every 2 minutes.
+     * Runs every 2 minutes. Stops early when InnBucks cannot be reached at all: every loan behind
+     * the first would fail the same way, and each would only add load to an outage.
      */
     @Scheduled(fixedRate = 120_000)
     public void processLoanAccountCreation() {
         log.info("Starting LoanAccountCreationJob...");
 
-        loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
+        for (Loan loan : loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
                 APPROVED,
                 InternalApprovalStatus.APPROVED,
-                LoanAccountStatus.PENDING
-        ).forEach(this::createLoanAccount);
+                LoanAccountStatus.PENDING)) {
+            if (!createLoanAccount(loan)) {
+                break;
+            }
+        }
     }
 
-    private void createLoanAccount(Loan loan) {
+    /** @return false when InnBucks could not be reached, so the rest of this run is skipped */
+    private boolean createLoanAccount(Loan loan) {
         if (isLoanAccountAlreadyCreated(loan) || mustNotBook(loan)) {
-            return;
+            return true;
         }
         try {
             LoanAccountCreationResponse response = disbursementService.createLoanAccount(loan);
@@ -60,11 +65,22 @@ public class LoanAccountCreationJob {
             } else {
                 handleFailedAccountCreation(loan, response);
             }
+        } catch (BookingNotSentException ex) {
+            // Nothing reached InnBucks (its login failed, or the connection never opened), so the
+            // loan is exactly as it was: still PENDING, booked on a later run. Recording it as a
+            // refusal would have failed every queued loan on one login outage; recording it as an
+            // unknown outcome would have held each one for good.
+            log.error("{}; loan {} stays PENDING and this run stops until InnBucks is reachable",
+                    ex.getMessage(), loan.getId(), ex);
+            loan.setDisbursementStatusMessage(truncate(ex.getMessage() + " - will retry"));
+            loanRepository.save(loan);
+            return false;
         } catch (Exception ex) {
             handleAccountCreationException(loan, ex);
         }
 
         loanRepository.save(loan);
+        return true;
     }
 
     private boolean isLoanAccountAlreadyCreated(Loan loan) {
@@ -154,8 +170,9 @@ public class LoanAccountCreationJob {
         // read as "definitively not paid" and invite a recovery payout. Treat it as booked
         // instead: the inquiry job resolves a booking that landed, and one that did not
         // simply stays PENDING for an operator — never re-booked, never re-paid.
-        // Nothing is flagged for cancellation either: the customer may hold this loan, and the
-        // inquiry job flags BOOKING_FAILED if InnBucks later answers that it failed.
+        // Nothing is flagged for cancellation either: the customer may hold this loan. If the
+        // inquiry reports it missing, an operator confirms with InnBucks and resolves it through
+        // POST /api/loans/{id}/booking/confirm-not-booked, which fails it and flags the deduction.
         log.error("Loan account creation outcome unknown for loan: {}; holding it for the inquiry job",
                 loan.getId(), ex);
         loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
