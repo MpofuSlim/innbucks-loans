@@ -2,6 +2,8 @@ package zw.co.reikan.loans.core.bulk;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 import zw.co.reikan.loans.core.audit.AuditLog;
@@ -77,8 +79,11 @@ public class BulkLoanIngestionService {
         List<List<IndexedRequest>> chunks = chunk(applications);
         List<BulkLoanItemOutcome> outcomes;
 
-        // Virtual threads: cheap enough for one worker per chunk without pool tuning.
-        try (ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Virtual threads: cheap enough for one worker per chunk without pool tuning. Each worker
+        // runs as the uploader: the security context is per thread, and without it every row was
+        // booked as SYSTEM_USER (which no longer exists, so every row without a channelId failed).
+        try (ExecutorService workers = new DelegatingSecurityContextExecutorService(
+                Executors.newVirtualThreadPerTaskExecutor(), SecurityContextHolder.getContext())) {
             List<CompletableFuture<List<BulkLoanItemOutcome>>> futures = chunks.stream()
                     .map(chunkItems -> CompletableFuture.supplyAsync(
                             () -> processChunk(runReference, chunkItems, submittedBy, channelUsed), workers))
