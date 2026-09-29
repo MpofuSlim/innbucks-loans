@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import zw.co.reikan.loans.core.MsisdnUtil;
 
 import java.util.Map;
 
@@ -65,14 +66,14 @@ public class WhatsAppNotificationClient {
                     .body(Map.of("to", to, "notification", notification))
                     .retrieve()
                     .toBodilessEntity();
-            log.info("WhatsApp notification sent to={}", to);
+            log.info("WhatsApp notification sent to={}", MsisdnUtil.mask(to));
         } catch (RestClientResponseException ex) {
             log.warn("WhatsApp gateway rejected notification to={} status={} body={}",
-                    to, ex.getStatusCode(), ex.getResponseBodyAsString());
+                    MsisdnUtil.mask(to), ex.getStatusCode(), ex.getResponseBodyAsString());
             throw new NotificationDeliveryException(
                     "WhatsApp gateway rejected the message: HTTP " + ex.getStatusCode().value(), ex);
         } catch (RuntimeException ex) {
-            log.warn("WhatsApp gateway unreachable to={} error={}", to, ex.getMessage());
+            log.warn("WhatsApp gateway unreachable to={} error={}", MsisdnUtil.mask(to), ex.getMessage());
             throw new NotificationDeliveryException(
                     "WhatsApp gateway is unreachable: " + ex.getMessage(), ex);
         }

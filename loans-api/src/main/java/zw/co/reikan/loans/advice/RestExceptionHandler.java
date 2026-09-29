@@ -20,6 +20,7 @@ import zw.co.reikan.loans.core.exception.BusinessException;
 import zw.co.reikan.loans.core.exception.ConflictException;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
+import zw.co.reikan.loans.core.files.FileSignatureValidator;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
 import java.time.Duration;
@@ -75,6 +76,13 @@ public class RestExceptionHandler {
         }
         log.warn("Constraint violation: {}", message);
         return new ResponseEntity<>(new ErrorResponse(HttpStatus.BAD_REQUEST, message), HttpStatus.BAD_REQUEST);
+    }
+
+    /** An attached document that is an executable or not a PDF/PNG/JPEG/GIF: the caller's file, so a 400. */
+    @ExceptionHandler(FileSignatureValidator.UnsafeFileException.class)
+    public ResponseEntity<ErrorResponse> handleUnsafeFile(FileSignatureValidator.UnsafeFileException ex) {
+        log.warn("Document refused: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage()), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(BusinessException.class)

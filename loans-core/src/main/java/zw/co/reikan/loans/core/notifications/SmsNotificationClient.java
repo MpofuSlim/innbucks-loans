@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import zw.co.reikan.loans.core.MsisdnUtil;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -73,21 +74,21 @@ public class SmsNotificationClient {
                         .body(body)
                         .retrieve()
                         .toBodilessEntity();
-                log.info("SMS notification accepted by gateway destination={} ref={}", destination, ref);
+                log.info("SMS notification accepted by gateway destination={} ref={}", MsisdnUtil.mask(destination), ref);
                 return null;
             } catch (RestClientResponseException ex) {
                 if (ex.getStatusCode().value() == 401) {
                     throw new NotificationApiAuthenticator.UnauthorizedException();
                 }
                 log.warn("InnBucks gateway rejected SMS destination={} ref={} status={} body={}",
-                        destination, ref, ex.getStatusCode(), ex.getResponseBodyAsString());
+                        MsisdnUtil.mask(destination), ref, ex.getStatusCode(), ex.getResponseBodyAsString());
                 throw new NotificationDeliveryException(
                         "InnBucks gateway rejected SMS: HTTP " + ex.getStatusCode().value(), ex);
             } catch (NotificationDeliveryException ex) {
                 throw ex;
             } catch (RuntimeException ex) {
                 log.warn("InnBucks gateway unreachable destination={} ref={} error={}",
-                        destination, ref, ex.getMessage());
+                        MsisdnUtil.mask(destination), ref, ex.getMessage());
                 throw new NotificationDeliveryException(
                         "InnBucks gateway unreachable: " + ex.getMessage(), ex);
             }
