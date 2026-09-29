@@ -24,7 +24,8 @@ public abstract class DisbursementService {
 
     /** Render through {@link #walletDisbursementSms}, never directly — it masks the number. */
     public static final String SMS_MSG = "Your loan of $%s with ref # %s has been disbursed to your Innbucks wallet ending %s. Welcome to the Innbucks family";
-    public static final String SMS_MSG_CONSUMER_FINANCE = "Your loan of $%s with ref # %s been paid to %s, you can proceed to collect goods. Thank you for Banking with Innbucks";
+    /** Render through {@link #disbursementSms}. */
+    public static final String SMS_MSG_CONSUMER_FINANCE = "Your loan of $%s with ref # %s has been paid to %s, you can proceed to collect goods. Thank you for Banking with Innbucks";
 
     /** Prefix of the one deposit reference a loan's manual payout ever uses: {@code MD-<loan reference>}. */
     public static final String MANUAL_REFERENCE_PREFIX = "MD-";
@@ -38,6 +39,21 @@ public abstract class DisbursementService {
     public static String walletDisbursementSms(Loan loan) {
         return String.format(SMS_MSG, loan.getDisbursedAmount(), loan.getReference(),
                 MsisdnUtil.lastFourDigits(loan.getMobileNumber()));
+    }
+
+    /**
+     * The payout SMS for {@code loan}, for both the automatic and the manual payout. A
+     * consumer-finance loan pays the merchant, so its customer is told which merchant to collect
+     * the goods from; any other loan names the customer's own wallet. Decided by the same rule the
+     * booking uses to route the money ({@code MERCHANT_MOBILE_WALLET} settles to the merchant).
+     */
+    public static String disbursementSms(Loan loan) {
+        Merchant merchant = loan.getMerchant();
+        if (merchant != null && merchant.getDisbursementType() == DisbursementType.MERCHANT_MOBILE_WALLET) {
+            return String.format(SMS_MSG_CONSUMER_FINANCE, loan.getDisbursedAmount(), loan.getReference(),
+                    merchant.getCompanyName());
+        }
+        return walletDisbursementSms(loan);
     }
 
     private final LoanRepository loanRepository;
@@ -315,16 +331,7 @@ public abstract class DisbursementService {
     }
 
     private void sendDisbursementNotification(Loan loan) {
-        String message;
-
-        if (loan.getMerchant().getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
-            message = walletDisbursementSms(loan);
-        } else {
-            message = String.format(SMS_MSG_CONSUMER_FINANCE,
-                    loan.getDisbursedAmount(),
-                    loan.getReference(),
-                    loan.getMerchant().getCompanyName());
-        }
+        String message = disbursementSms(loan);
         log.info("Sending disbursement notification: {} -> {}", loan.getMerchant().getDisbursementType(), message);
         notificationService.sendSms(loan.getMobileNumber(), message);
     }
