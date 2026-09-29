@@ -1,7 +1,6 @@
 package zw.co.innbucks.loans.core.loan;
 
 import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -98,14 +97,6 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             order by l.id
             """)
     List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now);
-
-    /** The applications already on file with this payslip, newest first, as who applied with it. */
-    @Query("""
-            select new zw.co.innbucks.loans.core.loan.PayslipMatch(l.id, l.ecNumber, l.nationalIdNumber)
-            from Loan l where l.payslipSha256 = :payslipSha256
-            order by l.id desc
-            """)
-    List<PayslipMatch> findPayslipMatches(@Param("payslipSha256") String payslipSha256, Pageable page);
 
     /** The applications waiting in the payslip review queue, oldest first. */
     List<Loan> findByPayslipReviewStatusOrderByIdAsc(PayslipReviewStatus payslipReviewStatus);

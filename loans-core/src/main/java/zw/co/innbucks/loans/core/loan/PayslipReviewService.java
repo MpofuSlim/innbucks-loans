@@ -10,6 +10,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
@@ -47,11 +49,15 @@ public class PayslipReviewService {
     private final LoanMapper loanMapper;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final DeductionCancellationService deductionCancellationService;
+    private final LoanDocumentRepository loanDocumentRepository;
     private final TransactionTemplate transactionTemplate;
 
     public PayslipReviewService(LoanRepository loanRepository, PayslipFraudFlagRepository payslipFraudFlagRepository,
                                 CreditDecisionLog creditDecisionLog, AuthService authService, LoanMapper loanMapper,
                                 NotificationService notificationService, AuditService auditService,
+                                DeductionCancellationService deductionCancellationService,
+                                LoanDocumentRepository loanDocumentRepository,
                                 PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.payslipFraudFlagRepository = payslipFraudFlagRepository;
@@ -60,12 +66,14 @@ public class PayslipReviewService {
         this.loanMapper = loanMapper;
         this.notificationService = notificationService;
         this.auditService = auditService;
+        this.deductionCancellationService = deductionCancellationService;
+        this.loanDocumentRepository = loanDocumentRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
-     * Records why a new application is held, in the caller's transaction: the loan is already saved with
-     * its review PENDING, which is what keeps it from being lodged.
+     * Records why an application is held, in the caller's transaction: the loan is already saved with its
+     * review PENDING, which is what keeps it from being lodged, or from being approved if it already was.
      */
     public void hold(Loan loan, List<PayslipFraudDetector.Finding> findings) {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
@@ -117,7 +125,8 @@ public class PayslipReviewService {
      *
      * @throws NotFoundException     no such loan
      * @throws ConflictException     the loan is not waiting for review
-     * @throws AccessDeniedException the reviewer originated the loan or is a party to it, and is clearing it
+     * @throws AccessDeniedException the reviewer originated the loan, amended its documents or is a party to it,
+     *                               and is clearing it
      */
     public LoanResponse review(Long loanId, PayslipReviewRequest request) {
         PayslipReviewStatus outcome = request.getOutcome();
@@ -162,12 +171,17 @@ public class PayslipReviewService {
         loan.setPayslipReviewedAt(now);
         loan.setPayslipReviewComment(comment);
         if (outcome == PayslipReviewStatus.CONFIRMED) {
-            // Never lodged, so there is no deduction to cancel.
             loan.setInternalApprovalStatus(InternalApprovalStatus.REJECTED);
             loan.setInternalApprovalDate(now);
             loan.setInternalApprovalBy(username);
             loan.setInternalApprovalComment(comment);
             loan.setInternalApprovalReasonCode(CONFIRMED_REASON_CODE);
+            if (DeductionCancellationService.wasLodged(loan)) {
+                // Held by a payslip amended after lodgement (FR-SSB-009): the deduction is live at SSB for a
+                // loan that will never be paid, as with any credit rejection.
+                deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_CREDIT_REJECTED,
+                        username, DeductionCancellationService.PORTAL_CHANNEL);
+            }
         }
         Loan saved = loanRepository.save(loan);
         if (outcome == PayslipReviewStatus.CONFIRMED) {
@@ -180,6 +194,13 @@ public class PayslipReviewService {
         if (SegregationOfDuties.originated(loan, reviewer)) {
             throw new AccessDeniedException(String.format(
                     "Loan %s was originated by %s, who cannot also clear its payslip review;"
+                            + " another credit officer must",
+                    loan.getReference(), reviewer));
+        }
+        if (loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
+                loan.getId(), DocumentOrigin.AMENDMENT, reviewer)) {
+            throw new AccessDeniedException(String.format(
+                    "Loan %s has documents amended by %s, who cannot also clear its payslip review;"
                             + " another credit officer must",
                     loan.getReference(), reviewer));
         }

@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.core.loan;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import lombok.ToString;
 
@@ -19,8 +20,12 @@ public class Witness {
     @Column(name = "witness_date_signed")
     private LocalDate dateSigned;
 
+    /**
+     * The witness's signature as the application sends it (base64). Kept as the loan's WITNESS_SIGNATURE
+     * document, with version history, rather than on the loan; never persisted or returned here.
+     */
     @ToString.Exclude
-    @Lob
-    @Column(name = "witness_signature", columnDefinition = "text")
+    @Transient
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private String signature;
 }

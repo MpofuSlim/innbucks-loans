@@ -9,6 +9,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
@@ -30,13 +32,16 @@ import static org.mockito.Mockito.*;
 /**
  * The payslip review queue (FR-SSB-007): what holding an application records, what the queue shows a
  * reviewer, and what each outcome does. Clearing lets a loan go on to be paid, so it is held to the same
- * segregation of duties as a credit approval; confirming rejects it, in the credit decision log.
+ * segregation of duties as a credit approval; confirming rejects it, in the credit decision log, and a
+ * loan held again after lodgement (an amended payslip, FR-SSB-009) has its SSB deduction queued for
+ * cancellation.
  */
 class PayslipReviewServiceTest {
 
     private LoanRepository loanRepository;
     private PayslipFraudFlagRepository flagRepository;
     private CreditDecisionRepository creditDecisionRepository;
+    private LoanDocumentRepository loanDocumentRepository;
     private AuditService auditService;
     private NotificationService notificationService;
     private AuthService authService;
@@ -59,9 +64,11 @@ class PayslipReviewServiceTest {
         LoanMapper loanMapper = mock(LoanMapper.class);
         when(loanMapper.toResponse(any())).thenReturn(new LoanResponse());
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        loanDocumentRepository = mock(LoanDocumentRepository.class);
         service = new PayslipReviewService(loanRepository, flagRepository,
-                new CreditDecisionLog(creditDecisionRepository), authService, loanMapper, notificationService,
-                auditService, mock(PlatformTransactionManager.class));
+                new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), authService, loanMapper,
+                notificationService, auditService, new DeductionCancellationService(loanRepository, auditService,
+                authService), loanDocumentRepository, mock(PlatformTransactionManager.class));
     }
 
     private static Loan loan(long id, PayslipReviewStatus review) {
@@ -235,6 +242,38 @@ class PayslipReviewServiceTest {
                         + " another credit officer must");
         assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
         verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("whoever replaced one of the loan's documents cannot clear its review")
+    void amenderCannotClear() {
+        Loan loan = held(42);
+        when(loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
+                42L, DocumentOrigin.AMENDMENT, "credit.manager")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.review(42L, new PayslipReviewRequest(PayslipReviewStatus.CLEARED, "fine")))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Loan 000000042 has documents amended by credit.manager, who cannot also clear its"
+                        + " payslip review; another credit officer must");
+        assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("CONFIRMED on a loan already lodged at SSB queues its deduction for cancellation")
+    void confirmAfterLodgementQueuesTheCancellation() {
+        // Held again by a payslip amended after SSB accepted the deduction.
+        Loan loan = held(42);
+        loan.setLoanApprovalStatus(LoanApprovalStatus.APPROVED);
+        loan.setBatchNumber("BATCH-20260901-07");
+
+        service.review(42L, new PayslipReviewRequest(PayslipReviewStatus.CONFIRMED, "Amended payslip is forged"));
+
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo(DeductionCancellationService.REASON_CREDIT_REJECTED);
+        assertThat(audited()).extracting(AuditLog::getEventType)
+                .containsExactly("DEDUCTION_CANCELLATION_REQUIRED", "PAYSLIP_REVIEW_CONFIRMED");
     }
 
     @Test

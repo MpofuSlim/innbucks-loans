@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.files;
 
 import org.springframework.stereotype.Component;
+import zw.co.innbucks.loans.core.audit.AuditService;
 
 import java.util.Base64;
 
@@ -59,35 +60,47 @@ public class FileSignatureValidator {
     }
 
     /**
-     * Validates a base64 document payload (WhatsApp/Web uploads arrive as
-     * base64 data-URLs or raw base64). Tolerates a {@code data:*;base64,}
-     * prefix. Empty/absent payloads are the caller's policy decision — this
-     * only rejects payloads that are PRESENT and dangerous or unrecognisable.
+     * Decodes a whole base64 upload (WhatsApp/Web uploads arrive as base64 data-URLs or raw base64; a
+     * {@code data:*;base64,} prefix and line breaks are tolerated) and checks it: an executable is always
+     * refused, and a KYC document must also be a PDF, PNG, JPEG or GIF. Null for an absent upload: whether
+     * one is required is the caller's decision.
      */
-    public void requireAcceptedBase64Document(String fieldName, String base64Payload) {
+    public DecodedFile decodeBase64Document(String fieldName, String base64Payload, boolean requireDocumentType) {
         if (base64Payload == null || base64Payload.isBlank()) {
-            return;
+            return null;
         }
-        String cleaned = base64Payload;
-        int comma = cleaned.indexOf(',');
-        if (cleaned.startsWith("data:") && comma > 0) {
-            cleaned = cleaned.substring(comma + 1);
+        String payload = base64Payload;
+        int comma = payload.indexOf(',');
+        if (payload.startsWith("data:") && comma > 0) {
+            payload = payload.substring(comma + 1);
         }
         byte[] bytes;
         try {
-            // Decode just enough header bytes to classify — cheap on big files.
-            String head = cleaned.substring(0, Math.min(cleaned.length(), 64));
-            bytes = Base64.getMimeDecoder().decode(head);
+            bytes = Base64.getDecoder().decode(payload.replaceAll("\\s", ""));
         } catch (IllegalArgumentException e) {
             throw new UnsafeFileException(fieldName + " is not valid base64 content");
+        }
+        if (bytes.length == 0) {
+            throw new UnsafeFileException(fieldName + " is empty");
         }
         FileKind kind = classify(bytes);
         if (kind == FileKind.EXECUTABLE) {
             throw new UnsafeFileException(fieldName + " contains an executable byte signature — rejected");
         }
-        if (kind == FileKind.UNKNOWN || kind == FileKind.EMPTY) {
+        if (requireDocumentType && !isAcceptedDocument(bytes)) {
             throw new UnsafeFileException(fieldName + " is not a recognised document type (PDF/PNG/JPEG/GIF)");
         }
+        return new DecodedFile(bytes, contentType(kind), AuditService.sha256Hex(bytes));
+    }
+
+    private static String contentType(FileKind kind) {
+        return switch (kind) {
+            case PDF -> "application/pdf";
+            case PNG -> "image/png";
+            case JPEG -> "image/jpeg";
+            case GIF -> "image/gif";
+            default -> "application/octet-stream";
+        };
     }
 
     public static class UnsafeFileException extends RuntimeException {

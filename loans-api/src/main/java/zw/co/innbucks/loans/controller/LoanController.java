@@ -295,8 +295,9 @@ public class LoanController {
     }
 
     @Operation(summary = "Get a loan",
-            description = "The loan in full, documents included. A loan outside the caller's scope is answered"
-                    + " exactly like one that does not exist.")
+            description = "The loan in full, with the current version of each document listed (documents), without"
+                    + " content: the content, and every earlier version, come from the loan's documents endpoints, which"
+                    + " log each view. A loan outside the caller's scope is answered exactly like one that does not exist.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_AWAITING_CREDIT))),

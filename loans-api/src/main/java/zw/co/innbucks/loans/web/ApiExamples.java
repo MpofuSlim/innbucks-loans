@@ -213,15 +213,71 @@ public final class ApiExamples {
                 "ssbStatusChangedAt": "2026-09-30T08:05:12+02:00",
                 "ssbDeductionId": "88213",""";
 
-    private static final String LOAN_DOCUMENTS = """
+    private static final String LOAN_PAYOUT_STATUSES = """
                 "bookingStatus": "PENDING",
-                "disbursementStatus": "PENDING",
-                "signature": "iVBORw0KGgoAAAANSUhEUgAA...",
-                "nationalIdPicture": "JVBERi0xLjQKJcfsj6IK...",
-                "payslipPicture": "JVBERi0xLjQKJcfsj6IK..."
+                "disbursementStatus": "PENDING"
               }""";
 
-    /** Loan 42 in full, once SSB has approved the deduction and before Credit decides. */
+    /** Loan 42's payslip as captured with the application: the June one Credit returned. */
+    private static final String PAYSLIP_V1 = """
+                  "documentType": "PAYSLIP",
+                  "version": 1,
+                  "origin": "APPLICATION",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 248117,
+                  "sha256": "c224eb50562422c9c196652076f60c4d49c1279e113529a8fda9453b6cd3cdda",
+                  "uploadedBy": "tmoyo",
+                  "uploadedAt": "2026-09-29T10:15:30+02:00\"""";
+
+    /** Loan 42's replacement payslip, uploaded after Credit returned the loan. */
+    private static final String PAYSLIP_V2 = """
+                  "documentType": "PAYSLIP",
+                  "version": 2,
+                  "origin": "AMENDMENT",
+                  "contentType": "application/pdf",
+                  "sizeBytes": 231402,
+                  "sha256": "cd437272b86852458225d27f2d07d1863b71acd4c7a4e1592c066943b14d9a3a",
+                  "reason": "August payslip, as Credit asked; the June one was out of date",
+                  "uploadedBy": "tmoyo",
+                  "uploadedAt": "2026-09-30T09:58:20+02:00\"""";
+
+    /** Loan 42's other documents, each still at the version captured with the application. */
+    private static final String LOAN_42_OTHER_DOCUMENTS = """
+                {
+                  "documentType": "NATIONAL_ID",
+                  "version": 1,
+                  "origin": "APPLICATION",
+                  "contentType": "image/jpeg",
+                  "sizeBytes": 412903,
+                  "sha256": "0321ebe1c478509c95b7c1344371a2e6d769d6ac8cc8201dc611acaa2e23474a",
+                  "uploadedBy": "tmoyo",
+                  "uploadedAt": "2026-09-29T10:15:30+02:00"
+                },
+                {
+                  "documentType": "SIGNATURE",
+                  "version": 1,
+                  "origin": "APPLICATION",
+                  "contentType": "image/png",
+                  "sizeBytes": 6214,
+                  "sha256": "1d99c003252ae63793afb48d4d46475a0ed94ab758010deea63758d3fdf9642d",
+                  "uploadedBy": "tmoyo",
+                  "uploadedAt": "2026-09-29T10:15:30+02:00"
+                },
+                {
+                  "documentType": "WITNESS_SIGNATURE",
+                  "version": 1,
+                  "origin": "APPLICATION",
+                  "contentType": "image/png",
+                  "sizeBytes": 5890,
+                  "sha256": "ef5f6d8b512941be0a62f9681f41e3204108d5f2d232f9ad6ce505f25f97806d",
+                  "uploadedBy": "tmoyo",
+                  "uploadedAt": "2026-09-29T10:15:30+02:00"
+                }""";
+
+    /**
+     * Loan 42 in full, once SSB has approved the deduction and before Credit decides: each document listed at its
+     * current version, without content.
+     */
     public static final String LOAN_AWAITING_CREDIT = """
             {
               "code": "OK",
@@ -236,8 +292,17 @@ public final class ApiExamples {
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
                 "creditApprovalStatus": "PENDING",
-            """ + LOAN_DOCUMENTS + """
+                "bookingStatus": "PENDING",
+                "disbursementStatus": "PENDING",
+                "documents": [
+                {
+            """ + PAYSLIP_V1 + """
 
+                },
+            """ + LOAN_42_OTHER_DOCUMENTS + """
+
+                ]
+              }
             }""";
 
     /** Loan 42 in full after {@code cmanager} approves it. */
@@ -259,7 +324,7 @@ public final class ApiExamples {
                 "creditDecisionBy": "cmanager",
                 "creditDecisionComment": "Payslip and deduction capacity verified",
                 "creditDecisionReasonCode": "APPROVE_WITHIN_POLICY",
-            """ + LOAN_DOCUMENTS + """
+            """ + LOAN_PAYOUT_STATUSES + """
 
             }""";
 
@@ -282,7 +347,7 @@ public final class ApiExamples {
                 "creditDecisionBy": "cmanager",
                 "creditDecisionComment": "Payslip is for June; confirm the August figures with the employer",
                 "creditDecisionReasonCode": "RETURN_PAYSLIP",
-            """ + LOAN_DOCUMENTS + """
+            """ + LOAN_PAYOUT_STATUSES + """
 
             }""";
 
@@ -301,15 +366,16 @@ public final class ApiExamples {
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
                 "creditApprovalStatus": "PENDING",
-            """ + LOAN_DOCUMENTS + """
+            """ + LOAN_PAYOUT_STATUSES + """
 
             }""";
 
     /**
-     * What loan 42 looked like at each credit action: nothing on it changed between them. Compact, exactly as
-     * stored and returned, so {@link #LOAN_42_SNAPSHOT_SHA256} is its real SHA-256.
+     * What loan 42 looked like at each credit action, exactly as stored and returned (compact), so each
+     * {@code _SHA256} below is its real SHA-256. Only the payslip changed between them: Credit returned the loan
+     * on the June payslip, and it was resubmitted and approved on the August one, version 2.
      */
-    private static final String LOAN_42_SNAPSHOT =
+    private static final String LOAN_42_SNAPSHOT_TERMS =
             "{\"reference\":\"000000042\",\"ecNumber\":\"1234567A\",\"firstName\":\"Rudo\",\"lastName\":\"Chikwanha\","
             + "\"merchantCode\":\"harare-motors\",\"originator\":\"tmoyo\",\"ssbApprovalStatus\":\"APPROVED\",\"ssbDeductionId\":\"88213\","
             + "\"batchNumber\":\"B-20260930-1\",\"principal\":531.91,\"disbursedAmount\":500.00,\"tenor\":3,\"interestRate\":7.00,"
@@ -319,17 +385,30 @@ public final class ApiExamples {
             + "\"grossSalary\":850.00,\"netSalary\":620.00},"
             + "\"payslipDeductions\":[{\"beneficiary\":\"ZIMRA PAYE\",\"amount\":142.50},{\"beneficiary\":\"PSMAS medical aid\",\"amount\":45.00},"
             + "{\"beneficiary\":\"APEX pension\",\"amount\":42.50}],"
-            + "\"payoutType\":\"MERCHANT_MOBILE_WALLET\",\"payoutAccount\":\"****4521\","
+            + "\"payoutType\":\"MERCHANT_MOBILE_WALLET\",\"payoutAccount\":\"****4521\",";
+
+    private static final String LOAN_42_SNAPSHOT_JUNE_PAYSLIP = LOAN_42_SNAPSHOT_TERMS
             + "\"documents\":{\"payslipPictureSha256\":\"c224eb50562422c9c196652076f60c4d49c1279e113529a8fda9453b6cd3cdda\","
             + "\"nationalIdPictureSha256\":\"0321ebe1c478509c95b7c1344371a2e6d769d6ac8cc8201dc611acaa2e23474a\","
-            + "\"signatureSha256\":\"1d99c003252ae63793afb48d4d46475a0ed94ab758010deea63758d3fdf9642d\"}}";
+            + "\"signatureSha256\":\"1d99c003252ae63793afb48d4d46475a0ed94ab758010deea63758d3fdf9642d\","
+            + "\"witnessSignatureSha256\":\"ef5f6d8b512941be0a62f9681f41e3204108d5f2d232f9ad6ce505f25f97806d\"}}";
 
-    private static final String LOAN_42_SNAPSHOT_SHA256 = "9f16ad5d7cd62a86a429e4dd9e8d2a5178c146e06ccdf7e6cd1e758a7ca7e387";
+    private static final String LOAN_42_SNAPSHOT_AUGUST_PAYSLIP = LOAN_42_SNAPSHOT_TERMS
+            + "\"documents\":{\"payslipPictureSha256\":\"cd437272b86852458225d27f2d07d1863b71acd4c7a4e1592c066943b14d9a3a\","
+            + "\"nationalIdPictureSha256\":\"0321ebe1c478509c95b7c1344371a2e6d769d6ac8cc8201dc611acaa2e23474a\","
+            + "\"signatureSha256\":\"1d99c003252ae63793afb48d4d46475a0ed94ab758010deea63758d3fdf9642d\","
+            + "\"witnessSignatureSha256\":\"ef5f6d8b512941be0a62f9681f41e3204108d5f2d232f9ad6ce505f25f97806d\"}}";
 
-    private static final String LOAN_42_SNAPSHOT_FIELDS = "\"loanSnapshot\": " + LOAN_42_SNAPSHOT
-            + ",\n      \"snapshotSha256\": \"" + LOAN_42_SNAPSHOT_SHA256 + "\"";
+    private static final String LOAN_42_SNAPSHOT_JUNE_PAYSLIP_FIELDS = "\"loanSnapshot\": " + LOAN_42_SNAPSHOT_JUNE_PAYSLIP
+            + ",\n      \"snapshotSha256\": \"1e195f6cc5a683ab81402e2b376b6a48c2278ddd474d0e4dfb8c1afa4a165160\"";
 
-    /** Loan 42's credit decision log: returned, answered, then approved by someone other than the answerer. */
+    private static final String LOAN_42_SNAPSHOT_AUGUST_PAYSLIP_FIELDS = "\"loanSnapshot\": " + LOAN_42_SNAPSHOT_AUGUST_PAYSLIP
+            + ",\n      \"snapshotSha256\": \"ecd24a74a3694e201e6774f92e46887d98adc875f9f3b6a6f3253a04702ddf8e\"";
+
+    /**
+     * Loan 42's credit decision log: returned on the June payslip, answered with the August one, then approved by
+     * someone other than the answerer. Each entry pins the payslip it was taken on by its fingerprint.
+     */
     public static final String CREDIT_DECISION_LOG = """
             {
               "code": "OK",
@@ -343,7 +422,7 @@ public final class ApiExamples {
                   "comment": "Payslip is for June; confirm the August figures with the employer",
                   "performedBy": "cmanager",
                   "performedAt": "2026-09-30T09:12:45+02:00",
-                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+                  """ + LOAN_42_SNAPSHOT_JUNE_PAYSLIP_FIELDS + """
 
                 },
                 {
@@ -352,7 +431,7 @@ public final class ApiExamples {
                   "comment": "Confirmed with the school bursar: the August payslip figures match the application",
                   "performedBy": "tmoyo",
                   "performedAt": "2026-09-30T10:03:10+02:00",
-                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+                  """ + LOAN_42_SNAPSHOT_AUGUST_PAYSLIP_FIELDS + """
 
                 },
                 {
@@ -363,7 +442,7 @@ public final class ApiExamples {
                   "comment": "Payslip and deduction capacity verified",
                   "performedBy": "cmanager",
                   "performedAt": "2026-09-30T11:40:02+02:00",
-                  """ + LOAN_42_SNAPSHOT_FIELDS + """
+                  """ + LOAN_42_SNAPSHOT_AUGUST_PAYSLIP_FIELDS + """
 
                 }
               ]
@@ -491,5 +570,76 @@ public final class ApiExamples {
                 "bookingStatus": "PENDING",
                 "disbursementStatus": "PENDING"
               }
+            }""";
+
+    /** Every version of loan 42's documents, without content: the June payslip is kept beside the August one. */
+    public static final String LOAN_42_DOCUMENT_HISTORY = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+            """ + PAYSLIP_V1 + """
+
+                },
+                {
+            """ + PAYSLIP_V2 + """
+
+                },
+            """ + LOAN_42_OTHER_DOCUMENTS + """
+
+              ]
+            }""";
+
+    /** Loan 42's current payslip, version 2, with its content (base64, shortened here). */
+    public static final String LOAN_42_PAYSLIP_CURRENT = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+            """ + PAYSLIP_V2 + """
+            ,
+                "content": "JVBERi0xLjcKJcfsj6IKNSAwIG9iago8PC9MZW5ndGggNiAwIFI..."
+              }
+            }""";
+
+    /** Loan 42's first payslip, still on file after it was replaced. */
+    public static final String LOAN_42_PAYSLIP_VERSION_1 = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+            """ + PAYSLIP_V1 + """
+            ,
+                "content": "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC9UeXBlIC9DYXRhbG9n..."
+              }
+            }""";
+
+    /** The August payslip replacing the June one on loan 42. */
+    public static final String LOAN_42_PAYSLIP_REPLACED = """
+            {
+              "code": "OK",
+              "message": "PAYSLIP replaced; version 2 is now current",
+              "data": {
+            """ + PAYSLIP_V2 + """
+
+              }
+            }""";
+
+    /** Every view and upload of loan 42's documents, newest first. */
+    public static final String LOAN_42_DOCUMENT_ACCESS_LOG = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {"id": 9, "documentType": "PAYSLIP", "version": 2, "action": "VIEW", "performedBy": "cmanager", "performedAt": "2026-09-30T11:31:07+02:00"},
+                {"id": 8, "documentType": "PAYSLIP", "version": 2, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-30T09:58:20+02:00"},
+                {"id": 7, "documentType": "PAYSLIP", "version": 1, "action": "VIEW", "performedBy": "cmanager", "performedAt": "2026-09-30T09:04:51+02:00"},
+                {"id": 6, "documentType": "NATIONAL_ID", "version": 1, "action": "VIEW", "performedBy": "cmanager", "performedAt": "2026-09-30T09:03:12+02:00"},
+                {"id": 5, "documentType": "WITNESS_SIGNATURE", "version": 1, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-29T10:15:30+02:00"},
+                {"id": 4, "documentType": "SIGNATURE", "version": 1, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-29T10:15:30+02:00"},
+                {"id": 3, "documentType": "NATIONAL_ID", "version": 1, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-29T10:15:30+02:00"},
+                {"id": 2, "documentType": "PAYSLIP", "version": 1, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-29T10:15:30+02:00"}
+              ]
             }""";
 }

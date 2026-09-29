@@ -13,8 +13,11 @@ import tools.jackson.databind.json.JsonMapper;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.DocumentType;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
+import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
 import zw.co.innbucks.loans.core.exception.BusinessException;
-import zw.co.innbucks.loans.core.files.DocumentFingerprint;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -22,6 +25,7 @@ import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +44,8 @@ import static org.mockito.Mockito.*;
 
 /**
  * Credit's decision (FR-SSB-015): a reason code and a comment on every decision (FR-PBL-027), nobody
- * approving a loan they originated, resubmitted or are a party to (FR-PBL-029), and every action kept in
+ * approving a loan they originated, resubmitted, amended a document of or are a party to (FR-PBL-029,
+ * FR-SSB-009), no approval while a payslip review is pending (FR-SSB-007), and every action kept in
  * an append-only log with the loan data it was based on (FR-PBL-032). The refusals are TYPED so they reach
  * the client as a 400/403/404 with their message.
  */
@@ -63,6 +68,7 @@ class CreditDecisionServiceImplTest {
     private AuthService authService;
     private CreditDecisionRepository creditDecisionRepository;
     private CreditReasonCodeRepository creditReasonCodeRepository;
+    private LoanDocumentRepository loanDocumentRepository;
     private User approver;
     private CreditDecisionServiceImpl service;
 
@@ -89,9 +95,11 @@ class CreditDecisionServiceImplTest {
         when(creditReasonCodeRepository.findById(anyString()))
                 .thenAnswer(i -> Optional.ofNullable(REASON_CODES.get(i.<String>getArgument(0))));
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        loanDocumentRepository = mock(LoanDocumentRepository.class);
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, notificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService), auditService,
-                creditDecisionRepository, creditReasonCodeRepository, new CreditDecisionLog(creditDecisionRepository),
+                creditDecisionRepository, creditReasonCodeRepository,
+                new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
                 mock(PlatformTransactionManager.class));
     }
 
@@ -273,7 +281,14 @@ class CreditDecisionServiceImplTest {
         loan.getEmploymentDetail().setGrossSalary(new BigDecimal("850.00"));
         loan.getEmploymentDetail().setNetSalary(new BigDecimal("620.00"));
         loan.setPayslipDeductions(new ArrayList<>(List.of(new PayslipDeduction("ZIMRA PAYE", new BigDecimal("142.50")))));
-        loan.setPayslipPicture("JVBERi0xLjQK");
+        LocalDateTime uploaded = LocalDateTime.of(2026, 9, 1, 8, 0);
+        when(loanDocumentRepository.findSummaries(42L)).thenReturn(List.of(
+                new LoanDocumentSummary(DocumentType.PAYSLIP, 1, DocumentOrigin.APPLICATION, "application/pdf", 9,
+                        "a".repeat(64), null, "agent.moyo", uploaded),
+                new LoanDocumentSummary(DocumentType.PAYSLIP, 2, DocumentOrigin.AMENDMENT, "application/pdf", 9,
+                        "b".repeat(64), "Payslip for August", "agent.moyo", uploaded.plusDays(1)),
+                new LoanDocumentSummary(DocumentType.SIGNATURE, 1, DocumentOrigin.APPLICATION, "image/png", 9,
+                        "c".repeat(64), null, "agent.moyo", uploaded)));
 
         service.decide(42L, decide(InternalApprovalStatus.APPROVED));
 
@@ -297,10 +312,12 @@ class CreditDecisionServiceImplTest {
         // The payee as frozen by this approval, masked.
         assertThat(snapshot.path("payoutType").asString()).isEqualTo("MERCHANT_MOBILE_WALLET");
         assertThat(snapshot.path("payoutAccount").asString()).isEqualTo("****0001");
-        // The document by its hash, never its content.
-        assertThat(snapshot.path("documents").path("payslipPictureSha256").asString())
-                .isEqualTo(DocumentFingerprint.of("JVBERi0xLjQK"));
-        assertThat(entry.getLoanSnapshot()).doesNotContain("JVBERi0xLjQK", "631234567A42", "782606983", "0771000001");
+        // Each document by the hash of its CURRENT version, never its content.
+        assertThat(snapshot.path("documents").path("payslipPictureSha256").asString()).isEqualTo("b".repeat(64));
+        assertThat(snapshot.path("documents").path("signatureSha256").asString()).isEqualTo("c".repeat(64));
+        assertThat(snapshot.path("documents").path("nationalIdPictureSha256").isNull()).isTrue();
+        assertThat(snapshot.path("documents").path("witnessSignatureSha256").isNull()).isTrue();
+        assertThat(entry.getLoanSnapshot()).doesNotContain("631234567A42", "782606983", "0771000001");
     }
 
     @Test
@@ -308,7 +325,9 @@ class CreditDecisionServiceImplTest {
     void snapshotIsDeterministic() {
         Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
 
-        assertThat(CreditDecisionSnapshot.of(loan).toJson()).isEqualTo(CreditDecisionSnapshot.of(loan).toJson());
+        Map<DocumentType, String> fingerprints = Map.of(DocumentType.PAYSLIP, "a".repeat(64));
+        assertThat(CreditDecisionSnapshot.of(loan, fingerprints).toJson())
+                .isEqualTo(CreditDecisionSnapshot.of(loan, Map.copyOf(fingerprints)).toJson());
     }
 
     @Test
@@ -557,6 +576,45 @@ class CreditDecisionServiceImplTest {
                 .hasMessage("Loan 000000042 was resubmitted by credit.manager, who cannot also approve it;"
                         + " another credit officer must");
         verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("whoever replaced one of a loan's documents cannot approve it")
+    void amenderCannotApprove() {
+        given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
+                42L, DocumentOrigin.AMENDMENT, "credit.manager")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Loan 000000042 has documents amended by credit.manager, who cannot also approve it;"
+                        + " another credit officer must");
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("whoever replaced a document may still reject the loan: a refusal pays nothing")
+    void amenderMayReject() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
+                42L, DocumentOrigin.AMENDMENT, "credit.manager")).thenReturn(true);
+
+        service.decide(42L, decide(InternalApprovalStatus.REJECTED));
+
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+    }
+
+    @Test
+    @DisplayName("a loan held for payslip review cannot be approved until the review clears it")
+    void heldForPayslipReviewCannotBeApproved() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setPayslipReviewStatus(PayslipReviewStatus.PENDING);
+
+        assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                .isInstanceOf(LoanApprovalException.class)
+                .hasMessage("Loan 000000042 is held for payslip review and cannot be approved until it is cleared");
+        verify(loanRepository, never()).save(any());
+        verify(creditDecisionRepository, never()).save(any());
     }
 
     @Test
