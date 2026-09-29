@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import zw.co.reikan.loans.core.user.User;
 import zw.co.reikan.loans.core.user.UserGroup;
 
@@ -22,9 +23,11 @@ public class UserDTO {
 	private String username;
 	private String firstName;
 	private String lastName;
+	@ToString.Exclude
 	private String password;
 	private String email;
 	private String mobileNumber;
+	@ToString.Exclude
 	private String idNumber;
 	private Boolean temporaryPassword;
 	private String importKey;

@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.bulk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.json.JsonMapper;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.loan.LoanRequest;
@@ -36,6 +37,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class BulkLoanIngestionService {
+
+    private static final JsonMapper PAYLOAD_JSON = JsonMapper.builder().build();
 
     private final BulkIngestionProperties properties;
     private final BulkLoanItemProcessor itemProcessor;
@@ -127,7 +130,7 @@ public class BulkLoanIngestionService {
                         .entityType("LOAN_APPLICATION").entityId("bulk-item-" + item.index())
                         .actorId(submittedBy).channelUsed(channelUsed)
                         .detail(reason)
-                        .payloadHash(AuditService.sha256Hex(String.valueOf(item.request())))
+                        .payloadHash(payloadHash(item.request()))
                         .correlationId(runReference));
                 results.add(BulkLoanItemOutcome.failed(item.index(), reason));
             }
@@ -150,6 +153,21 @@ public class BulkLoanIngestionService {
             chunks.add(current);
         }
         return chunks;
+    }
+
+    /**
+     * SHA-256 over the item as submitted — its JSON, every field included. This used to hash
+     * {@code String.valueOf(request)}, but {@link LoanRequest#toString()} now deliberately leaves
+     * out the national ID, bank details and documents so it can never leak them into a log; a
+     * hash of it would stop telling apart two applications that differ only there.
+     */
+    static String payloadHash(LoanRequest request) {
+        try {
+            return AuditService.sha256Hex(PAYLOAD_JSON.writeValueAsString(request));
+        } catch (RuntimeException unserialisable) {
+            // Recording the rejection matters more than the fingerprint's coverage.
+            return AuditService.sha256Hex(String.valueOf(request));
+        }
     }
 
     private record IndexedRequest(int index, LoanRequest request) {}

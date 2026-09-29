@@ -21,7 +21,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 import static zw.co.reikan.loans.core.MsisdnUtil.formatMsisdnInternational;
+import static zw.co.reikan.loans.core.MsisdnUtil.lastFourDigits;
 import static zw.co.reikan.loans.core.Utils.*;
+import static zw.co.reikan.loans.core.merchant.MerchantService.maskAccountNumber;
 
 @Slf4j
 @Service
@@ -84,7 +86,7 @@ public class InnbucksServiceImpl extends DisbursementService {
                 .repaymentFrequency(MONTHLY);
 
         if (DisbursementType.MERCHANT_MOBILE_WALLET == disbursementType) {
-            log.info("Setting disbursement account: {}", loan.getMerchant().getAccountNumber());
+            log.info("Setting disbursement account: {}", maskAccountNumber(loan.getMerchant().getAccountNumber()));
             builder.settlementAccount(loan.getMerchant().getAccountNumber());
         }
 
@@ -134,7 +136,10 @@ public class InnbucksServiceImpl extends DisbursementService {
                 requestEntity,
                 String.class);
 
-        log.info("Account creation response: {}", responseEntity.getBody());
+        // Status only: the body is the upstream's answer about the applicant, so it stays at DEBUG
+        // (redacted, in LoggingInterceptor).
+        log.info("Account creation for loan {} answered HTTP {}", loan.getReference(),
+                responseEntity.getStatusCode().value());
 
         // Any 2xx is a created application. This used to compare against 200
         // only, so a 201 Created — a normal answer to a POST that creates —
@@ -175,7 +180,8 @@ public class InnbucksServiceImpl extends DisbursementService {
         }
 
         try {
-            log.info("Processing loan disbursement {}: {}", reference, request);
+            log.info("Processing loan disbursement {}: {} of {} for loan {}", reference,
+                    request.getDisbursementType(), request.getAmount(), request.getReference());
             try {
                 return executeDisburseFunds(depositRequest, headers, reference);
             } catch (HttpClientErrorException e) {
@@ -206,11 +212,11 @@ public class InnbucksServiceImpl extends DisbursementService {
         // A missing destination is never guessed as the customer: a merchant (consumer-finance)
         // loan paid to the customer is money sent to the wrong party.
         if (request.getDisbursementType() == DisbursementType.CUSTOMER_MOBILE_WALLET) {
-            log.info("Disbursing to customer:{}", request);
+            log.info("Disbursing {} to customer wallet ending {}", reference, lastFourDigits(request.getMobileNumber()));
             builder.destinationMsisdn(formatMsisdnInternational(request.getMobileNumber()));
         } else if (request.getDisbursementType() == DisbursementType.MERCHANT_MOBILE_WALLET
                 && request.getAccountNumber() != null && !request.getAccountNumber().isBlank()) {
-            log.info("Disbursing to merchant: {}", request);
+            log.info("Disbursing {} to merchant account {}", reference, maskAccountNumber(request.getAccountNumber()));
             builder.destinationAccount(request.getAccountNumber());
         } else {
             throw new IllegalArgumentException("no disbursement destination (type "

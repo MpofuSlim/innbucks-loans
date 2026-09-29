@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Data;
+import lombok.ToString;
 
 @Data
 @Builder
@@ -16,6 +17,7 @@ public class LoanAccountCreationRequest {
     @JsonProperty("lastName")
     private String lastName;
 
+    @ToString.Exclude
     @JsonProperty("idNumber")
     private String idNumber;
 
@@ -59,6 +61,7 @@ public class LoanAccountCreationRequest {
     @JsonProperty("repaymentFrequency")
     private String repaymentFrequency;
 
+    @ToString.Exclude
     @JsonProperty("nextOfKinIdNumber")
     private String nextOfKinIdNumber;
 

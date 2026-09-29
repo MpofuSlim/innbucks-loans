@@ -23,7 +23,8 @@ public class DummyLoanApprovalServiceImpl implements LoanApprovalService {
     @Override
     public LoanApprovalResponse requestApproval(LoanApprovalRequest loanRequest) {
 
-        log.info("Processing DUMMY SSB loan request: {}", loanRequest);
+        log.info("Processing DUMMY SSB loan request: reference {}, ec {}", loanRequest.getReference(),
+                NdasendaLoanApprovalServiceImpl.maskEcNumber(loanRequest.getEcnumber()));
 
         final String rightMostString = right(loanRequest.getEcnumber(), 2);
 

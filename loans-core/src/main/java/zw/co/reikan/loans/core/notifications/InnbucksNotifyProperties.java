@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.notifications;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -16,10 +17,12 @@ public class InnbucksNotifyProperties {
     /** Gateway root, e.g. https://staging.innbucks.co.zw (no trailing path). */
     private String baseUrl;
     /** Sent as the X-Api-Key header on login + every call. */
+    @ToString.Exclude
     private String apiKey;
     /** Third-party client login username. */
     private String username;
     /** Third-party client login password. */
+    @ToString.Exclude
     private String password;
     private int connectTimeoutMs = 3000;
     private int readTimeoutMs = 20000;

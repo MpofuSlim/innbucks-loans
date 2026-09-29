@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.auth;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -16,6 +17,7 @@ public class JwtProperties {
      * HMAC signing secret. MUST be at least 32 bytes for HS256. Supply via the
      * {@code JWT_SECRET} environment variable in every deployed environment.
      */
+    @ToString.Exclude
     private String secret;
 
     /** Access-token lifetime in milliseconds. */

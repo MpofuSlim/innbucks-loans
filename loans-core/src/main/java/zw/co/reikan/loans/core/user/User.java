@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.user;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.ToString;
 import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.loan.BaseEntity;
@@ -29,6 +30,7 @@ public class User extends BaseEntity {
      * previously lived in Keycloak. Nullable so pre-existing rows survive the
      * {@code ddl-auto: update} migration — a user with no hash cannot log in.
      */
+    @ToString.Exclude
     @Column
     private String password;
 
@@ -51,6 +53,7 @@ public class User extends BaseEntity {
     @Column
     private String mobileNumber;
 
+    @ToString.Exclude
     @Column
     private String idNumber;
 

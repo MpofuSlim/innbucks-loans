@@ -1,6 +1,7 @@
 package zw.co.reikan.loans.core.loan;
 
 import lombok.Data;
+import lombok.ToString;
 
 import jakarta.persistence.*;
 
@@ -20,6 +21,7 @@ public class BankingDetail {
     @Column(name = "bank_branch_code")
     private String branchCode;
 
+    @ToString.Exclude
     @Column(name = "bank_account_number")
     private String accountNumber;
 

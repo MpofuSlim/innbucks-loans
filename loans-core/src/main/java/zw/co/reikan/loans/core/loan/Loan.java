@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import zw.co.reikan.loans.core.channel.Channel;
 import zw.co.reikan.loans.core.disbursements.BookingFailureKind;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
@@ -69,12 +70,14 @@ public class Loan extends BaseEntity {
     @Column(name = "last_name")
     private String lastName;
 
+    @ToString.Exclude
     @Column(name = "national_id_number")
     private String nationalIdNumber;
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
+    @ToString.Exclude
     @Lob
     @Column(name = "signature", columnDefinition = "text")
     private String signature;
@@ -221,6 +224,7 @@ public class Loan extends BaseEntity {
     @Column(name = "gender")
     private Gender gender;
 
+    @ToString.Exclude
     @Embedded
     private BankingDetail bankingDetail;
 
@@ -283,10 +287,12 @@ public class Loan extends BaseEntity {
     @JoinColumn(name = "channel_id")
     private Channel channel;
 
+    @ToString.Exclude
     @Lob
     @Column(name = "national_id_picture", columnDefinition = "text")
     private String nationalIdPicture;
 
+    @ToString.Exclude
     @Lob
     @Column(name = "payslip_picture", columnDefinition = "text")
     private String payslipPicture;

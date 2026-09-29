@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 
 import jakarta.persistence.Column;
 import lombok.Data;
+import lombok.ToString;
 import zw.co.reikan.loans.core.user.UserGroup;
 
 @Data
@@ -17,6 +18,7 @@ public class CreateAgentRequest {
     private String email;
     @NotBlank(message = "Mobile number is required")
     private String mobileNumber;
+    @ToString.Exclude
     @NotBlank(message = "ID number is required")
     private String idNumber;
     @NotNull(message = "User group is required")

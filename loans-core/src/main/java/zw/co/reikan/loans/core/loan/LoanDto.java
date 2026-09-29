@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.loan;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
+import lombok.ToString;
 import zw.co.reikan.loans.core.api.MerchantDto;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
@@ -29,9 +30,13 @@ public class LoanDto implements Serializable {
     private String ecNumber;
     private String firstName;
     private String lastName;
+    @ToString.Exclude
     private String nationalIdNumber;
+    @ToString.Exclude
     private String signature;
+    @ToString.Exclude
     private String nationalIdPicture;
+    @ToString.Exclude
     private String payslipPicture;
     private LoanApprovalStatus loanApprovalStatus;
     private String loanStatusMessage;
@@ -69,6 +74,7 @@ public class LoanDto implements Serializable {
     private String profession;
     private MerchantDto merchant;
     private Gender gender;
+    @ToString.Exclude
     private BankingDetail bankingDetail;
     private String productDescription;
     private LocalDate dateOfBirth;
