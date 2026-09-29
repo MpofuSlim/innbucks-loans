@@ -11,6 +11,7 @@ import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.loan.SmsMessages;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalRequest;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalResponse;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalService;
@@ -32,8 +33,10 @@ public class LoanApprovalServiceJob {
     private final NotificationService notificationService;
     private final LoanBatchService loanBatchService;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, "We regret to inform you that your loan application with ref # %s has been declined. Contact Innbucks for more Info.",
-            LoanApprovalStatus.PROCESSING, "Your loan application with ref # %s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing Innbucks!"
+    // The same texts the Ndasenda path sends. This job used to keep its own
+    // copies, which is how a gateway-refused '!' survived here.
+    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, SmsMessages.REJECTED_LOAN,
+            LoanApprovalStatus.PROCESSING, SmsMessages.PROCESSING_LOAN
     );
 
     @Scheduled(fixedRate = 60000) // Run every 1 minute (60,000 milliseconds)

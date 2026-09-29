@@ -49,14 +49,19 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
         loan.setInternalApprovalBy(username);
         Loan savedLoan = loanRepository.save(loan);
 
+        // Reference and amount only. The comment is the reviewer's internal note,
+        // stored above for staff; it used to be pasted into the customer's decline.
         String loanReference = String.format("%09d", loan.getId());
         String text = String.format(request.getStatus() == InternalApprovalStatus.APPROVED ?
                         SmsMessages.APPROVED_LOAN : SmsMessages.REJECTED_LOAN,
-                loanReference, loan.getDisbursedAmount(), request.getComment());
+                loanReference, loan.getDisbursedAmount());
 
         notificationService.sendSms(loan.getMobileNumber(), text);
 
-        InternalApprovalResponse response = new InternalApprovalResponse("Approved successfully");
+        // Names the decision recorded — a rejection used to answer "Approved successfully".
+        InternalApprovalResponse response = new InternalApprovalResponse(
+                request.getStatus() == InternalApprovalStatus.APPROVED
+                        ? "Approved successfully" : "Rejected successfully");
         response.setLoan(loanMapper.fromLoan(savedLoan));
         return response;
     }

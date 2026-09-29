@@ -29,8 +29,9 @@ import java.security.SecureRandom;
 public class AdminPasswordResetServiceImpl implements AdminPasswordResetService {
 
     private static final String EMAIL_SUBJECT = "Innbucks Loans Password Reset";
-    private static final String MESSAGE_TEMPLATE =
-            "%s, your Innbucks Loans password has been reset. Username: %s, Temporary password: %s. "
+    // No colons: the SMS gateway refuses ! : / ? " * ; in a body.
+    public static final String MESSAGE_TEMPLATE =
+            "%s, your Innbucks Loans password has been reset. Username %s, Temporary password %s. "
                     + "Please change it after you log in.";
 
     private static final char[] SPECIAL = {'#', '@', '$', '%', '&', '*', '!'};
