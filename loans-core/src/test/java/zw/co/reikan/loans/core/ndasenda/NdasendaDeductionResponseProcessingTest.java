@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -58,6 +59,7 @@ class NdasendaDeductionResponseProcessingTest {
     void setUp() {
         restTemplate = mock(RestTemplate.class);
         props = mock(NdasendaParameters.class);
+        when(props.getResponses()).thenReturn(new NdasendaParameters.Responses());
         loanRepository = mock(LoanRepository.class);
         notificationService = mock(NotificationService.class);
         auditService = mock(AuditService.class);
@@ -401,7 +403,7 @@ class NdasendaDeductionResponseProcessingTest {
         when(loanRepository.findById(99L)).thenReturn(Optional.empty());
         Loan loan = loan(LoanApprovalStatus.PROCESSING);
 
-        service.processDeductionResponses(LocalDate.of(2026, 9, 23));
+        service.sweepDeductionResponses(LocalDate.of(2026, 9, 23).atTime(10, 0));
 
         ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
         verify(auditService, times(2)).record(captor.capture());
@@ -411,6 +413,159 @@ class NdasendaDeductionResponseProcessingTest {
                 .containsOnly(BATCH);
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
         verify(loanRepository).save(loan);
+    }
+
+    // --- which records may decide a loan ----------------------------------------------------
+
+    private static NdasendaDeduction typed(String id, NdasendaDeductionType type, NdasendaDeductionStatus status) {
+        NdasendaDeduction deduction = deduction(id, "000000042", status);
+        deduction.setType(type);
+        return deduction;
+    }
+
+    @Test
+    @DisplayName("a CHANGE record's FAILED cannot decline a PROCESSING loan: no SMS, no save, audited IGNORED")
+    void changeRecordNeverDeclines() {
+        Loan loan = loan(LoanApprovalStatus.PROCESSING);
+        loan.setBatchNumber(BATCH);
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8001", NdasendaDeductionType.CHANGE,
+                NdasendaDeductionStatus.FAILED));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getApprovalReference()).isNull();
+        assertThat(loan.getLoanStatusMessage()).isNull();
+        verify(loanRepository, never()).findById(anyLong());
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+
+        AuditLog audit = auditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_IGNORED");
+        assertThat(audit.getEntityType()).isEqualTo("NDASENDA_DEDUCTION");
+        assertThat(audit.getEntityId()).isEqualTo("ND-8001");
+        assertThat(audit.getCorrelationId()).isEqualTo(BATCH);
+        assertThat(audit.getDetail())
+                .contains("reason=not_a_lodgement", "type=CHANGE", "reference=000000042", "status=FAILED",
+                        "ecNumber=*****67A")
+                .doesNotContain(EC_NUMBER, NATIONAL_ID);
+    }
+
+    @Test
+    @DisplayName("a DELETE record's SUCCESS cannot revive a FAILED-but-lodged loan to APPROVED")
+    void deleteRecordNeverRevives() {
+        Loan loan = loan(LoanApprovalStatus.FAILED);
+        loan.setBatchNumber("BATCH-20260901-07");
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8002", NdasendaDeductionType.DELETE,
+                NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(loan.getLoanAccountStatus()).isNull();
+        assertThat(loan.getNextDisbursementAttemptDate()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+        assertThat(auditedOnce().getDetail()).contains("reason=not_a_lodgement", "type=DELETE");
+    }
+
+    @Test
+    @DisplayName("an ignored record already on the audit trail is not audited again on the next read")
+    void ignoredRecordIsReportedOnce() {
+        when(auditService.hasRecorded("NDASENDA_RESPONSE_IGNORED", "NDASENDA_DEDUCTION", "ND-8003")).thenReturn(true);
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8003", NdasendaDeductionType.DELETE,
+                NdasendaDeductionStatus.SUCCESS));
+
+        verify(auditService, never()).record(any());
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("an EC number that is not the loan's: nothing applied, no SMS, audited MISMATCH with both masked")
+    void ecMismatchIsNotApplied() {
+        Loan loan = loan(LoanApprovalStatus.PROCESSING);
+        loan.setEcNumber("7654321B");
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8004", NdasendaDeductionType.NEW,
+                NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getApprovalReference()).isNull();
+        assertThat(loan.getLoanAccountStatus()).isNull();
+        assertThat(loan.getNextDisbursementAttemptDate()).isNull();
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+
+        AuditLog audit = auditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_MISMATCH");
+        assertThat(audit.getEntityId()).isEqualTo("ND-8004");
+        assertThat(audit.getCorrelationId()).isEqualTo(BATCH);
+        assertThat(audit.getDetail())
+                .contains("reason=ec_number_mismatch", "loanId=42", "loanStatus=PROCESSING",
+                        "loanEcNumber=*****21B", "ecNumber=*****67A", "status=SUCCESS")
+                .doesNotContain(EC_NUMBER, "7654321B", NATIONAL_ID);
+    }
+
+    @Test
+    @DisplayName("a foreign SUCCESS on a declined loan is a MISMATCH, not a conflict: its deduction is not flagged")
+    void ecMismatchCannotFlagAClosedLoan() {
+        Loan loan = loan(LoanApprovalStatus.REJECTED);
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setEcNumber("7654321B");
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8005", NdasendaDeductionType.NEW,
+                NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verify(loanRepository, never()).save(any());
+        assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_MISMATCH");
+    }
+
+    @Test
+    @DisplayName("a mismatch already on the audit trail is not audited again while the loan keeps waiting")
+    void mismatchIsReportedOnce() {
+        Loan loan = loan(LoanApprovalStatus.PROCESSING);
+        loan.setEcNumber("7654321B");
+        when(auditService.hasRecorded("NDASENDA_RESPONSE_MISMATCH", "NDASENDA_DEDUCTION", "ND-8006")).thenReturn(true);
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8006", NdasendaDeductionType.NEW,
+                NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        verify(auditService, never()).record(any());
+    }
+
+    @Test
+    @DisplayName("a NEW record whose EC number matches up to case and spacing is applied as before")
+    void matchingLodgementIsApplied() {
+        Loan loan = loan(LoanApprovalStatus.PROCESSING);
+        loan.setEcNumber(" 1234567a ");
+
+        service.processDeductionRequestResponse(BATCH, typed("ND-8007", NdasendaDeductionType.NEW,
+                NdasendaDeductionStatus.FAILED));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-8007");
+        assertThat(loan.getLoanStatusMessage()).isEqualTo("Insufficient net salary");
+        verify(notificationService).sendSms(eq("0772123123"), anyString());
+        verify(loanRepository).save(loan);
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    @DisplayName("only NEW or untyped records answer a lodgement; EC numbers are compared only when both are known")
+    void matchingRules() {
+        assertThat(NdasendaLoanApprovalServiceImpl.isLodgementAnswer(typed("a", NdasendaDeductionType.NEW, null))).isTrue();
+        assertThat(NdasendaLoanApprovalServiceImpl.isLodgementAnswer(typed("b", null, null))).isTrue();
+        assertThat(NdasendaLoanApprovalServiceImpl.isLodgementAnswer(typed("c", NdasendaDeductionType.CHANGE, null))).isFalse();
+        assertThat(NdasendaLoanApprovalServiceImpl.isLodgementAnswer(typed("d", NdasendaDeductionType.DELETE, null))).isFalse();
+
+        assertThat(NdasendaLoanApprovalServiceImpl.ecNumbersAgree("1234567A", " 1234567a")).isTrue();
+        assertThat(NdasendaLoanApprovalServiceImpl.ecNumbersAgree("1234567-A", "1234567A")).isTrue();
+        assertThat(NdasendaLoanApprovalServiceImpl.ecNumbersAgree("1234567A", "1234568A")).isFalse();
+        assertThat(NdasendaLoanApprovalServiceImpl.ecNumbersAgree(null, "1234567A")).isTrue();
+        assertThat(NdasendaLoanApprovalServiceImpl.ecNumbersAgree("1234567A", "  ")).isTrue();
     }
 
     @Test

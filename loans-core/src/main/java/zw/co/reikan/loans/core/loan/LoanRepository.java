@@ -59,6 +59,27 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     @Query(value = "select 1 from pg_advisory_xact_lock(hashtext(:key))", nativeQuery = true)
     Integer lockApplicant(@Param("key") String key);
 
+    /**
+     * Loans still waiting on Ndasenda's answer to their lodgement, as the columns the response job
+     * dates them by. Mirrors {@code NdasendaLoanApprovalServiceImpl.awaitingNdasendaOutcome}:
+     * PROCESSING, or FAILED with a lodgement reference and no cancellation recorded at Ndasenda. The
+     * blank check here only trims spaces, so it can admit a loan that predicate would not — which
+     * only widens the window read; anything acted on is re-checked against the predicate itself.
+     */
+    @Query("""
+            select new zw.co.reikan.loans.core.loan.NdasendaAwaitingLoan(l.id, l.loanApprovalStatus,
+                   l.batchNumber, l.ecNumber, l.dateApproved, l.createdDate, l.ndasendaResponseOverdueAt)
+            from Loan l
+            where l.loanApprovalStatus = zw.co.reikan.loans.core.loan.LoanApprovalStatus.PROCESSING
+               or (l.loanApprovalStatus = zw.co.reikan.loans.core.loan.LoanApprovalStatus.FAILED
+                   and ((l.batchNumber is not null and trim(l.batchNumber) <> '')
+                        or (l.approvalReference is not null and trim(l.approvalReference) <> ''))
+                   and (l.deductionCancellationStatus is null
+                        or l.deductionCancellationStatus
+                           <> zw.co.reikan.loans.core.loan.DeductionCancellationStatus.CANCELLED_EXTERNALLY))
+            """)
+    List<NdasendaAwaitingLoan> findAwaitingNdasendaOutcome();
+
     Optional<Loan> findTopByNationalIdNumberAndLoanApprovalStatusIn(String idNumber, List<LoanApprovalStatus> statuses);
 
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
