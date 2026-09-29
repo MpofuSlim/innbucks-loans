@@ -21,6 +21,7 @@ import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,7 +70,7 @@ class LoanSagaCompensationDeductionTest {
 
     private LoanSaga saga(LoanSagaState state) {
         LoanSaga saga = LoanSaga.builder().id(1L).loanId(42L).currentState(state)
-                .createdAt(LocalDateTime.now()).lastTransitionAt(LocalDateTime.now()).build();
+                .createdAt(LocalDateTime.now(ZoneOffset.UTC)).lastTransitionAt(LocalDateTime.now(ZoneOffset.UTC)).build();
         when(sagaRepository.findByLoanId(42L)).thenReturn(Optional.of(saga));
         return saga;
     }

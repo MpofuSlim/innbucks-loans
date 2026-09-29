@@ -12,13 +12,17 @@ import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -65,6 +69,11 @@ class NdasendaLodgementContractTest {
 
     /** The production client shape (RestConfig), with timeouts short enough for a test. */
     private static NdasendaLoanApprovalServiceImpl serviceAt(String authBase, String lodgementBase) {
+        return serviceAt(authBase, lodgementBase, new MarketTimeZone("ZW"));
+    }
+
+    private static NdasendaLoanApprovalServiceImpl serviceAt(String authBase, String lodgementBase,
+                                                             MarketTimeZone market) {
         NdasendaParameters params = new NdasendaParameters();
         params.setAuthEndpoint(authBase + AUTH);
         params.setDeductionRequestsEndpoint(lodgementBase + DEDUCTIONS);
@@ -80,7 +89,7 @@ class NdasendaLodgementContractTest {
         RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(simple));
         return new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthServiceImpl(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(NotificationService.class),
-                mock(AuditService.class), mock(DeductionCancellationService.class));
+                mock(AuditService.class), mock(DeductionCancellationService.class), market);
     }
 
     private NdasendaLoanApprovalServiceImpl service() {
@@ -120,6 +129,35 @@ class NdasendaLodgementContractTest {
         wireMock.verify(postRequestedFor(urlEqualTo(DEDUCTIONS))
                 .withHeader("Authorization", equalTo("Bearer tok-abc"))
                 .withRequestBody(matchingJsonPath("$.records[0].reference", equalTo("000000042"))));
+    }
+
+    @Test
+    @DisplayName("the first deduction month is the market's: 00:30 on 1 October in Harare starts in November")
+    void deductionMonthIsTheMarkets() {
+        wireMock.stubFor(post(urlEqualTo(DEDUCTIONS)).willReturn(okJson("{\"id\":\"BATCH-1\"}")));
+
+        // 22:30 UTC on 30 September: already 1 October in Harare (+2) and Nairobi (+3). Read in UTC, the
+        // deduction started in October, the month the loan was taken out in.
+        Instant justAfterMidnightInHarare = Instant.parse("2026-09-30T22:30:00Z");
+        serviceAt(base, base, new MarketTimeZone("ZW", Clock.fixed(justAfterMidnightInHarare, ZoneOffset.UTC)))
+                .requestApproval(deduction());
+        wireMock.verify(postRequestedFor(urlEqualTo(DEDUCTIONS))
+                .withRequestBody(matchingJsonPath("$.records[0].startDate", equalTo("20261101")))
+                .withRequestBody(matchingJsonPath("$.records[0].endDate", equalTo("20270430"))));
+
+        // An hour earlier it is still 30 September in Harare: October, as before.
+        wireMock.resetRequests();
+        serviceAt(base, base, new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-09-30T21:30:00Z"), ZoneOffset.UTC)))
+                .requestApproval(deduction());
+        wireMock.verify(postRequestedFor(urlEqualTo(DEDUCTIONS))
+                .withRequestBody(matchingJsonPath("$.records[0].startDate", equalTo("20261001"))));
+
+        // A Kenyan cell at that same instant is already past midnight (+3).
+        wireMock.resetRequests();
+        serviceAt(base, base, new MarketTimeZone("KE", Clock.fixed(Instant.parse("2026-09-30T21:30:00Z"), ZoneOffset.UTC)))
+                .requestApproval(deduction());
+        wireMock.verify(postRequestedFor(urlEqualTo(DEDUCTIONS))
+                .withRequestBody(matchingJsonPath("$.records[0].startDate", equalTo("20261101"))));
     }
 
     @Test

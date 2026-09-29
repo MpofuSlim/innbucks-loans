@@ -13,5 +13,7 @@ ENV SPRING_CONFIG_LOCATION=file:/app/config/
 # Expose the port the app runs on
 EXPOSE 8080
 
-# Run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Run the application. Pinned to UTC, like the ticketing services: every timestamp is stored in UTC
+# whatever the host's clock says, and the market's time (innbucks.country) is applied only where a
+# person reads it.
+ENTRYPOINT ["java", "-Duser.timezone=UTC", "-jar", "app.jar"]

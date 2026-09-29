@@ -160,6 +160,11 @@ ndasenda:
     overdue-after-days: "${NDASENDA_RESPONSES_OVERDUE_AFTER_DAYS:7}"
 
 innbucks:
+  # The market this deployment serves (ZW, KE, ZM, MW, ZA, BW, MZ, LS, SZ, NG), from the cell's
+  # INNBUCKS_COUNTRY like the ticketing services. It sets the market clock: the timezone API
+  # timestamps are shown in and business dates are decided in (deduction month, report days).
+  # Everything is stored in UTC regardless. An unknown value refuses to start.
+  country: "${INNBUCKS_COUNTRY:ZW}"
   api-key: "${INNBUCKS_API_KEY:}"
   username: "${INNBUCKS_USERNAME:}"
   password: "${INNBUCKS_PASSWORD:}"

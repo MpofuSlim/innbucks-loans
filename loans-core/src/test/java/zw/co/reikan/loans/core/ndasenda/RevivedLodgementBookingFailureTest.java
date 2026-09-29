@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.disbursements.LoanAccountCreationJob;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
@@ -36,6 +37,7 @@ import zw.co.reikan.loans.core.saga.LoanSagaTransitionService;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -69,14 +71,14 @@ class RevivedLodgementBookingFailureTest {
                 .grossedMonthlyDeduction(new BigDecimal("98.50"))
                 .deductionCancellationStatus(DeductionCancellationStatus.REQUIRED)
                 .deductionCancellationReason(DeductionCancellationService.REASON_LODGEMENT_FAILED)
-                .deductionCancellationRequestedAt(LocalDateTime.now().minusHours(1))
+                .deductionCancellationRequestedAt(LocalDateTime.now(ZoneOffset.UTC).minusHours(1))
                 .build();
         loan.setId(42L);
         when(loanRepository.findById(42L)).thenReturn(Optional.of(loan));
 
         LoanSagaRepository sagaRepository = mock(LoanSagaRepository.class);
         LoanSaga saga = LoanSaga.builder().id(1L).loanId(42L).currentState(LoanSagaState.SSB_VERIFICATION_FAILED)
-                .createdAt(LocalDateTime.now()).lastTransitionAt(LocalDateTime.now()).build();
+                .createdAt(LocalDateTime.now(ZoneOffset.UTC)).lastTransitionAt(LocalDateTime.now(ZoneOffset.UTC)).build();
         when(sagaRepository.findByLoanId(42L)).thenReturn(Optional.of(saga));
         LedgerEntryRepository ledgerEntryRepository = mock(LedgerEntryRepository.class);
         LoanSagaTransitionService sagaTransitions = new LoanSagaTransitionService(loanRepository, sagaRepository,
@@ -86,7 +88,7 @@ class RevivedLodgementBookingFailureTest {
         // 1. Ndasenda accepts the lodgement we had given up on: revived, provisional flag withdrawn.
         NdasendaLoanApprovalServiceImpl ndasenda = new NdasendaLoanApprovalServiceImpl(mock(RestTemplate.class),
                 mock(NdasendaAuthServiceImpl.class), mock(NdasendaParameters.class), loanRepository,
-                mock(LoanBatchService.class), mock(NotificationService.class), auditService, cancellations);
+                mock(LoanBatchService.class), mock(NotificationService.class), auditService, cancellations, new MarketTimeZone("ZW"));
         ndasenda.processDeductionRequestResponse("BATCH-20260901-07", NdasendaDeduction.builder()
                 .id("ND-7002").reference("000000042").status(NdasendaDeductionStatus.SUCCESS)
                 .ecNumber("1234567A").build());

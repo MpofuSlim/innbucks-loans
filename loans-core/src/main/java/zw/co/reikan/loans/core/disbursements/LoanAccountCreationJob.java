@@ -22,6 +22,7 @@ import zw.co.reikan.loans.core.loan.PayoutDestination;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -88,7 +89,7 @@ public class LoanAccountCreationJob {
     @Scheduled(fixedRate = 120_000)
     public void processLoanAccountCreation() {
         log.info("Starting LoanAccountCreationJob...");
-        holdAbandonedClaims(LocalDateTime.now());
+        holdAbandonedClaims(LocalDateTime.now(ZoneOffset.UTC));
 
         List<Long> due = loanRepository.findIdsDueForBooking();
         for (int i = 0; i < due.size(); i++) {
@@ -151,7 +152,7 @@ public class LoanAccountCreationJob {
         }
         // Millisecond precision survives the round trip to the column exactly, so the settle can
         // recognise its own claim.
-        LocalDateTime claimedAt = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        LocalDateTime claimedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
         loan.setBookingClaimedAt(claimedAt);
         loanRepository.save(loan);
         log.info("Loan {} claimed for booking with InnBucks at {}", loanId, claimedAt);

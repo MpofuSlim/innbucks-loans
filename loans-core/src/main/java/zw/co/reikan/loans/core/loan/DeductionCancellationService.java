@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.exception.ConflictException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl.maskEcNumber;
@@ -91,7 +92,7 @@ public class DeductionCancellationService {
         }
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.REQUIRED);
         loan.setDeductionCancellationReason(reason);
-        loan.setDeductionCancellationRequestedAt(LocalDateTime.now());
+        loan.setDeductionCancellationRequestedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         log.error("DEDUCTION CANCELLATION REQUIRED ({}): loan {} reference {} batch {} ec {} instalment {}"
                         + " - {}, then record it (audited)",
@@ -185,7 +186,7 @@ public class DeductionCancellationService {
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         loan.setDeductionCancellationNote(cleanNote);
         loan.setDeductionCancelledBy(username);
-        loan.setDeductionCancelledAt(LocalDateTime.now());
+        loan.setDeductionCancelledAt(LocalDateTime.now(ZoneOffset.UTC));
         Loan saved = loanRepository.save(loan);
 
         log.info("Deduction for loan {} reference {} recorded as cancelled on Ndasenda's portal by {}",

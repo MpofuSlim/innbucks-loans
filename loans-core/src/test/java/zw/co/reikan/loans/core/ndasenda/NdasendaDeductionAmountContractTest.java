@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -70,7 +71,7 @@ class NdasendaDeductionAmountContractTest {
         RestTemplate restTemplate = new RestTemplate();
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthServiceImpl(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(NotificationService.class),
-                mock(AuditService.class), mock(DeductionCancellationService.class));
+                mock(AuditService.class), mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));
     }
 
     private static LoanApprovalRequest deduction(String monthlyInstallment) {

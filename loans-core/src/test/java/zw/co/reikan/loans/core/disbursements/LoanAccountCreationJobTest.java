@@ -28,6 +28,7 @@ import zw.co.reikan.loans.core.merchant.Merchant;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -293,7 +294,7 @@ class LoanAccountCreationJobTest {
     @Test
     @DisplayName("an old loan is flagged when its booking fails, like any other")
     void oldLoanIsFlaggedToo() {
-        loan.setCreatedDate(LocalDateTime.now().minusDays(90));
+        loan.setCreatedDate(LocalDateTime.now(ZoneOffset.UTC).minusDays(90));
         when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST));
 
         job.processLoanAccountCreation();
@@ -421,7 +422,7 @@ class LoanAccountCreationJobTest {
     @Test
     @DisplayName("a loan another run or instance has claimed is not booked again")
     void claimedLoanIsNotBookedAgain() {
-        loan.setBookingClaimedAt(LocalDateTime.now().minusMinutes(1));
+        loan.setBookingClaimedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
 
         job.processLoanAccountCreation();
 
@@ -467,7 +468,7 @@ class LoanAccountCreationJobTest {
     @Test
     @DisplayName("a claim left unsettled past the window is held for the inquiry job, never booked again")
     void staleClaimIsHeldForTheInquiryJob() {
-        LocalDateTime claimedAt = LocalDateTime.now().minusMinutes(45);
+        LocalDateTime claimedAt = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(45);
         loan.setBookingClaimedAt(claimedAt);
         when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
 
@@ -487,7 +488,7 @@ class LoanAccountCreationJobTest {
     @Test
     @DisplayName("a claim still inside the window is left alone, whatever the query returned")
     void recentClaimIsNotHeld() {
-        loan.setBookingClaimedAt(LocalDateTime.now().minusMinutes(5));
+        loan.setBookingClaimedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5));
         when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
 
         job.processLoanAccountCreation();

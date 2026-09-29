@@ -25,6 +25,7 @@ import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -118,7 +119,7 @@ public class LoanApprovalServiceJob {
 
     @Scheduled(fixedRate = 60000) // Run every 1 minute (60,000 milliseconds)
     public void processSsbApprovals() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         holdAbandonedClaims(now);
 
         LocalDateTime paused = pausedUntil;
@@ -131,7 +132,7 @@ public class LoanApprovalServiceJob {
         log.info("SSB lodgement run: {} loan(s) due", due.size());
         for (int i = 0; i < due.size(); i++) {
             if (!lodge(due.get(i))) {
-                pausedUntil = LocalDateTime.now().plus(retryBackoff);
+                pausedUntil = LocalDateTime.now(ZoneOffset.UTC).plus(retryBackoff);
                 log.warn("SSB lodgement run stopped at loan {}; {} loan(s) left untouched, lodging paused until {}",
                         due.get(i), due.size() - i - 1, pausedUntil);
                 return;
@@ -183,7 +184,7 @@ public class LoanApprovalServiceJob {
 
     private Claim claim(Long loanId) {
         Loan loan = loanRepository.findByIdForUpdate(loanId).orElse(null);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         // Re-checked under the row lock: another run or instance may have claimed or settled it since
         // the due list was read.
         if (loan == null || loan.getLoanApprovalStatus() != LoanApprovalStatus.NEW
@@ -249,7 +250,7 @@ public class LoanApprovalServiceJob {
         loan.setLoanApprovalStatus(response.getStatus());
         loan.setApprovalReference(response.getReference());
         loan.setBatchNumber(response.getBatchNumber());
-        loan.setDateApproved(LocalDateTime.now());
+        loan.setDateApproved(LocalDateTime.now(ZoneOffset.UTC));
         loan.setRepaymentStartDate(response.getStartDate());
         loan.setRepaymentEndDate(response.getEndDate());
         loan.setNextLodgementAttemptAt(null);
@@ -281,7 +282,7 @@ public class LoanApprovalServiceJob {
             audit(LODGEMENT_ATTEMPTS_EXHAUSTED, loan, from, LoanApprovalStatus.FAILED,
                     "reason=" + failure.getKind() + " " + failure.getMessage());
         } else {
-            LocalDateTime next = LocalDateTime.now().plus(backoff(attempts));
+            LocalDateTime next = LocalDateTime.now(ZoneOffset.UTC).plus(backoff(attempts));
             loan.setLoanApprovalStatus(LoanApprovalStatus.NEW);
             loan.setNextLodgementAttemptAt(next);
             loan.setLoanStatusMessage(StringUtils.left("Lodgement attempt " + attempts + " of " + maxAttempts

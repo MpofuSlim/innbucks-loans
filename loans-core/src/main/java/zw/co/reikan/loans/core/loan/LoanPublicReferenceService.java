@@ -9,10 +9,9 @@ import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 
 import javax.sql.DataSource;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 
 /**
  * Generates gap-tolerant, human-facing sequential loan references of the form
@@ -39,14 +38,16 @@ public class LoanPublicReferenceService {
     private EntityManager entityManager;
 
     private final JdbcOperations jdbc;
+    private final MarketTimeZone marketTimeZone;
 
     @Autowired
-    public LoanPublicReferenceService(DataSource dataSource) {
-        this(new JdbcTemplate(dataSource));
+    public LoanPublicReferenceService(DataSource dataSource, MarketTimeZone marketTimeZone) {
+        this(new JdbcTemplate(dataSource), marketTimeZone);
     }
 
-    LoanPublicReferenceService(JdbcOperations jdbc) {
+    LoanPublicReferenceService(JdbcOperations jdbc, MarketTimeZone marketTimeZone) {
         this.jdbc = jdbc;
+        this.marketTimeZone = marketTimeZone;
     }
 
     /**
@@ -87,7 +88,8 @@ public class LoanPublicReferenceService {
         Number value = (Number) entityManager
                 .createNativeQuery("SELECT nextval('" + SEQUENCE + "')")
                 .getSingleResult();
-        return format(LocalDate.now(ZoneOffset.UTC).getYear(), value.longValue());
+        // The market's year: a loan referenced at 01:00 on 1 January in Harare belongs to the new year.
+        return format(marketTimeZone.today().getYear(), value.longValue());
     }
 
     static String format(int year, long sequenceValue) {

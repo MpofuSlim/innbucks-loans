@@ -14,6 +14,7 @@ import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import static zw.co.reikan.loans.core.merchant.MerchantService.maskAccountNumber;
 
@@ -66,7 +67,7 @@ public class InternalApprovalServiceImpl implements InternalApprovalService {
         }
 
         loan.setInternalApprovalStatus(request.getStatus());
-        loan.setInternalApprovalDate(LocalDateTime.now());
+        loan.setInternalApprovalDate(LocalDateTime.now(ZoneOffset.UTC));
         loan.setInternalApprovalComment(request.getComment());
         loan.setInternalApprovalBy(username);
         if (request.getStatus() == InternalApprovalStatus.REJECTED) {
