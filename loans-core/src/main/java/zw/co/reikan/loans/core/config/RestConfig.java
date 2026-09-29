@@ -22,6 +22,15 @@ public class RestConfig {
         // setOutputStreaming(false) was removed in Spring Framework 7; the
         // BufferingClientHttpRequestFactory wrapper below provides the same
         // request/response buffering (needed by the logging interceptor).
+        //
+        // A POST is never sent twice by this stack, and it must stay that way: an InnBucks booking or
+        // deposit and a Ndasenda lodgement are irreversible writes. HttpURLConnection silently
+        // re-sends a POST whose connection dies before a response (sun.net.http.retryPost), but
+        // never a request in streaming mode, and Spring 7's SimpleClientHttpRequest streams every
+        // request that may carry a body (fixed-length, since the buffering wrapper sets
+        // Content-Length). RestConfigTest pins it on the wire. One side effect of streaming: a 401
+        // answering a POST arrives without its body. The status still raises
+        // HttpClientErrorException.Unauthorized, which is all the token-refresh replays read.
         final SimpleClientHttpRequestFactory simpleClientHttpRequestFactory = new SimpleClientHttpRequestFactory();
         // Without these, HttpURLConnection waits forever: one hung Ndasenda or InnBucks call froze
         // the job making it and, since every @Scheduled job shares one scheduler thread, all of them.
