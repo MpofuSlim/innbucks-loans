@@ -97,6 +97,12 @@ public class LoanResponse implements Serializable {
     private String creditDecisionComment;
     private String creditDecisionReasonCode;
 
+    // --- Payslip review (FR-SSB-007): shown to lender-side staff only, see withoutPayslipReview ---
+    private PayslipReviewStatus payslipReviewStatus;
+    private String payslipReviewedBy;
+    private LocalDateTime payslipReviewedAt;
+    private String payslipReviewComment;
+
     // --- InnBucks booking and payout ---
     private LoanAccountStatus bookingStatus;
     private LoanDisbursementStatus disbursementStatus;
@@ -111,4 +117,16 @@ public class LoanResponse implements Serializable {
     private String nationalIdPicture;
     @ToString.Exclude
     private String payslipPicture;
+
+    /**
+     * This view without the payslip review, for a caller outside lender-side staff: telling an originator
+     * their application is held for a fraud check would warn exactly the person the check may be about.
+     */
+    public LoanResponse withoutPayslipReview() {
+        payslipReviewStatus = null;
+        payslipReviewedBy = null;
+        payslipReviewedAt = null;
+        payslipReviewComment = null;
+        return this;
+    }
 }

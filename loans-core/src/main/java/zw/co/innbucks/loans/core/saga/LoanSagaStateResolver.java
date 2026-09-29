@@ -40,6 +40,12 @@ public final class LoanSagaStateResolver {
             return LoanSagaState.DISBURSEMENT_FAILED;
         }
 
+        // Rejected at payslip review (FR-SSB-007) before it was ever lodged: never goes to SSB.
+        if (internal == InternalApprovalStatus.REJECTED
+                && (approval == null || approval == LoanApprovalStatus.NEW)) {
+            return LoanSagaState.CREDIT_REJECTED;
+        }
+
         // SSB verification outcomes.
         if (approval == LoanApprovalStatus.REJECTED) {
             return LoanSagaState.SSB_REJECTED;

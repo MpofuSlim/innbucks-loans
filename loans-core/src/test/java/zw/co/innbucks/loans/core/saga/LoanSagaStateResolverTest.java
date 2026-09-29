@@ -57,6 +57,14 @@ class LoanSagaStateResolverTest {
     }
 
     @Test
+    void rejectedAtPayslipReviewBeforeLodgement_isCreditRejected() {
+        // Confirmed as fraud while NEW: it never goes to SSB, and the saga may move there directly.
+        assertEquals(CREDIT_REJECTED, LoanSagaStateResolver.resolve(
+                loan(LoanApprovalStatus.NEW, InternalApprovalStatus.REJECTED, null, null)));
+        assertTrue(SSB_VERIFICATION_PENDING.canTransitionTo(CREDIT_REJECTED));
+    }
+
+    @Test
     void returnedForMoreInformation_isStillCreditAssessment() {
         // Waiting on the originator's answer, then back in the credit queue: not an outcome.
         assertEquals(CREDIT_ASSESSMENT_PENDING, LoanSagaStateResolver.resolve(

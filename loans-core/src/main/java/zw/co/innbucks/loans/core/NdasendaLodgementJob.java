@@ -16,6 +16,7 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.loan.PayslipReviewStatus;
 import zw.co.innbucks.loans.core.loan.SmsMessages;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalRequest;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalResponse;
@@ -188,6 +189,7 @@ public class NdasendaLodgementJob {
         // Re-checked under the row lock: another run or instance may have claimed or settled it since
         // the due list was read.
         if (loan == null || loan.getLoanApprovalStatus() != LoanApprovalStatus.NEW
+                || heldForPayslipReview(loan)
                 || loan.getLodgementClaimedAt() != null
                 || (loan.getNextLodgementAttemptAt() != null && loan.getNextLodgementAttemptAt().isAfter(now))) {
             log.info("Loan {} is no longer due for lodgement (claimed, settled or deferred since the run began); skipped",
@@ -209,6 +211,15 @@ public class NdasendaLodgementJob {
                 .build();
         log.info("Loan {} claimed for lodgement with Ndasenda at {}", loanId, claimedAt);
         return new Claim(loan.getId(), claimedAt, loan.getReference(), request);
+    }
+
+    /**
+     * Waiting for a payslip review, or rejected by one (FR-SSB-007): never lodged. The due query already
+     * leaves these out; this re-checks under the lock, since a review can land between the two.
+     */
+    private static boolean heldForPayslipReview(Loan loan) {
+        return loan.getPayslipReviewStatus() == PayslipReviewStatus.PENDING
+                || loan.getPayslipReviewStatus() == PayslipReviewStatus.CONFIRMED;
     }
 
     private Settled settle(Claim claim, LoanApprovalResponse accepted, LodgementException failure) {

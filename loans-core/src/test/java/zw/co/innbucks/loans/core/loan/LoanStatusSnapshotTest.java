@@ -47,6 +47,8 @@ class LoanStatusSnapshotTest {
             "FAILED,     PENDING,  PENDING, PENDING",
             // Refused by credit.
             "APPROVED,   REJECTED, PENDING, PENDING",
+            // Rejected at payslip review before it was ever lodged.
+            "NEW,        REJECTED, PENDING, PENDING",
             // InnBucks loan account could not be created.
             "APPROVED,   APPROVED, FAILED,  FAILED",
             // Disbursement failed for good.

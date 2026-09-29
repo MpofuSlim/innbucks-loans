@@ -57,7 +57,8 @@ class LoanServiceImplReadScopeTest {
         loanMapper = mock(LoanMapper.class);
         service = new LoanServiceImpl(loanRepository, mock(ParameterService.class), loanMapper,
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
-                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator());
+                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator(),
+                mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
 
         root = mock(Root.class, RETURNS_DEEP_STUBS);
         cb = mock(CriteriaBuilder.class);
@@ -122,6 +123,26 @@ class LoanServiceImplReadScopeTest {
         assertThat(pageable.getValue().getPageSize()).isEqualTo(50);
         assertThat(pageable.getValue().getSort())
                 .isEqualTo(Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id")));
+    }
+
+    @Test
+    @DisplayName("an originator's view of a loan says nothing of a payslip review; lender-side staff see it")
+    void payslipReviewIsForStaffOnly() {
+        Loan loan = new Loan();
+        when(loanRepository.findOne(any(Specification.class))).thenReturn(Optional.of(loan));
+        when(loanMapper.toResponse(loan)).thenAnswer(i -> {
+            LoanResponse view = new LoanResponse();
+            view.setPayslipReviewStatus(PayslipReviewStatus.PENDING);
+            view.setPayslipReviewComment("Same payslip as loan 17");
+            return view;
+        });
+
+        LoanResponse agentView = service.getLoan(42L, LoanReadScope.originator("M-001", 7L));
+        LoanResponse staffView = service.getLoan(42L, LoanReadScope.platform());
+
+        assertThat(agentView.getPayslipReviewStatus()).isNull();
+        assertThat(agentView.getPayslipReviewComment()).isNull();
+        assertThat(staffView.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
     }
 
     @Test

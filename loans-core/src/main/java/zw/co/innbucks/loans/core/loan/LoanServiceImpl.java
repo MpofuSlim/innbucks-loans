@@ -20,6 +20,7 @@ import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
+import zw.co.innbucks.loans.core.files.DocumentFingerprint;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
@@ -65,6 +66,8 @@ public class LoanServiceImpl implements LoanService {
     private final Validator validator;
     private final MarketTimeZone marketTimeZone;
     private final FileSignatureValidator fileSignatureValidator;
+    private final PayslipFraudDetector payslipFraudDetector;
+    private final PayslipReviewService payslipReviewService;
 
     /** Newest first, id as the tie-break: a sort on a non-unique column alone would let pages repeat or skip rows. */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id"));
@@ -99,6 +102,7 @@ public class LoanServiceImpl implements LoanService {
         }
         return loanRepository.findOne(spec)
                 .map(loanMapper::toResponse)
+                .map(view -> scope.platformWide() ? view : view.withoutPayslipReview())
                 .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
     }
 
@@ -198,6 +202,7 @@ public class LoanServiceImpl implements LoanService {
                 .signature(loanRequest.getSignature())
                 .nationalIdPicture(loanRequest.getNationalIdPicture())
                 .payslipPicture(loanRequest.getPayslipPicture())
+                .payslipSha256(DocumentFingerprint.of(loanRequest.getPayslipPicture()))
                 .feeAmount(quote.getFeeAmount())
                 .feeRate(quote.getFeeRate())
                 .interestRate(quote.getInterestRate())
@@ -240,7 +245,21 @@ public class LoanServiceImpl implements LoanService {
                 .loanStartDate(quote.getStartDate())
                 .build();
 
+        // Payslip fraud controls (FR-SSB-007). Two applications with one payslip must not pass each other
+        // unseen, so the second waits for the first to commit before looking for it.
+        if (loan.getPayslipSha256() != null) {
+            loanRepository.lockApplicant("loan-application:payslip:" + loan.getPayslipSha256());
+        }
+        List<PayslipFraudDetector.Finding> findings = payslipFraudDetector.findingsFor(loan);
+        if (!findings.isEmpty()) {
+            // Held back from SSB lodgement until a credit officer decides; the caller is not told.
+            loan.setPayslipReviewStatus(PayslipReviewStatus.PENDING);
+        }
+
         loanRepository.save(loan);
+        if (!findings.isEmpty()) {
+            payslipReviewService.hold(loan, findings);
+        }
 
         return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
     }
