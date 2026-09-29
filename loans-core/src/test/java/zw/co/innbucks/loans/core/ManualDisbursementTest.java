@@ -145,6 +145,18 @@ class ManualDisbursementTest {
     }
 
     @Test
+    @DisplayName("a customer payout goes to the loan's wallet number when it differs from the mobile number")
+    void payoutGoesToTheWalletNumber() {
+        loan.setWalletNumber("263712345678");
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        service.disburse(42L);
+
+        assertThat(sent).singleElement()
+                .satisfies(request -> assertThat(request.getMobileNumber()).isEqualTo("263712345678"));
+    }
+
+    @Test
     @DisplayName("REFUSED booking + admin call: pays once, under the stable MD-<loan reference>")
     void refusedBookingIsPaidWithTheStableReference() {
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");

@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,6 +20,7 @@ import zw.co.innbucks.loans.core.MsisdnUtils;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * A loan application: the loan terms, the applicant and the documents.
@@ -72,6 +74,11 @@ public class LoanApplicationRequest implements Serializable {
     @Schema(example = "+263771234567")
     private String mobileNumber;
 
+    /** The InnBucks wallet to pay; the mobile number when omitted. */
+    @Pattern(regexp = MsisdnUtils.ZIMBABWE_MOBILE_REGEX, message = MsisdnUtils.ZIMBABWE_MOBILE_MESSAGE)
+    @Schema(description = "InnBucks wallet the loan pays; the mobile number when omitted", example = "+263771234567")
+    private String walletNumber;
+
     @NotNull(message = "Date of birth is required")
     @Past(message = "Date of birth must be in the past")
     @Schema(example = "1988-04-12")
@@ -101,6 +108,11 @@ public class LoanApplicationRequest implements Serializable {
     @Valid
     @NotNull(groups = LoanApplicationChecks.class, message = "Employment detail is required")
     private EmploymentDetail employmentDetail;
+
+    /** The deductions already on the payslip, each with who it is paid to (FR-SSB-006). May be empty. */
+    @Valid
+    @Size(max = 30, message = "At most 30 payslip deductions")
+    private List<PayslipDeduction> payslipDeductions;
 
     @Valid
     @NotNull(groups = LoanApplicationChecks.class, message = "Next of kin is required")

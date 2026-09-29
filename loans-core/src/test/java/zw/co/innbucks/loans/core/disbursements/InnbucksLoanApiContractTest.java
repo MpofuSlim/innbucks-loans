@@ -174,6 +174,19 @@ class InnbucksLoanApiContractTest {
     }
 
     @Test
+    @DisplayName("apply: the msisdn is the loan's wallet number when it differs from the mobile number")
+    void applySendsTheWalletNumber() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        Loan loan = collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        loan.setWalletNumber("263712345678");
+
+        service.createLoanAccount(loan);
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.msisdn", equalTo("263712345678"))));
+    }
+
+    @Test
     @DisplayName("apply: every field the collection sends, in its names, date format and cents")
     void applyBodyMatchesTheCollection() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));

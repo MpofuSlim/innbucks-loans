@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import org.hibernate.annotations.BatchSize;
 import zw.co.innbucks.loans.core.channel.Channel;
 import zw.co.innbucks.loans.core.disbursements.BookingFailureKind;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
@@ -16,6 +17,8 @@ import zw.co.innbucks.loans.core.user.User;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Table(name = "loans", indexes = {
@@ -60,6 +63,13 @@ public class Loan extends BaseEntity {
 
     @Column(name = "mobile_number")
     private String mobileNumber;
+
+    /**
+     * The InnBucks wallet the loan pays (FR-SSB-003): the applicant's mobile number unless they gave
+     * another. SMS still goes to {@link #mobileNumber}. Use {@link #payoutWalletNumber()} to pay.
+     */
+    @Column(name = "wallet_number")
+    private String walletNumber;
 
     @Column(name = "ec_number")
     private String ecNumber;
@@ -214,6 +224,18 @@ public class Loan extends BaseEntity {
     @Embedded
     private EmploymentDetail employmentDetail;
 
+    /**
+     * The deductions already on the applicant's payslip, in the order captured (FR-SSB-006). Loaded
+     * with the loan, and for a page or batch of loans in one query rather than one per loan.
+     */
+    @Builder.Default
+    @BatchSize(size = 100)
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "loan_payslip_deductions", joinColumns = @JoinColumn(name = "loan_id",
+            foreignKey = @ForeignKey(name = "fk_loan_payslip_deductions_loan_id")))
+    @OrderColumn(name = "line_number")
+    private List<PayslipDeduction> payslipDeductions = new ArrayList<>();
+
     @Embedded
     private NextOfKin nextOfKin;
 
@@ -347,6 +369,15 @@ public class Loan extends BaseEntity {
     @Lob
     @Column(name = "payslip_picture", columnDefinition = "text")
     private String payslipPicture;
+
+    /**
+     * Where the customer's wallet payout goes. A loan captured before the wallet number existed was
+     * given its mobile number by the V3 migration; the fallback keeps a row written by an older build
+     * paying the number it has always paid.
+     */
+    public String payoutWalletNumber() {
+        return walletNumber != null && !walletNumber.isBlank() ? walletNumber : mobileNumber;
+    }
 
     public String getReference() {
         return String.format("%09d", getId());

@@ -19,6 +19,7 @@ import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,6 +97,69 @@ class LoanServiceImplApplicationTest {
         verify(loanRepository).save(saved.capture());
         assertThat(saved.getValue().getNumberOfDependencies()).isEqualTo(3);
         assertThat(saved.getValue().getNumberOfChildren()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("with no wallet number the loan pays the mobile number; a given one is stored normalised")
+    void walletNumberDefaultsToTheMobile() {
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        LoanApplicationRequest withWallet = LoanApplicationRequestValidationTest.completeApplication();
+        withWallet.setEcNumber("7654321B");
+        withWallet.setNationalIdNumber("63-7654321B63");
+        withWallet.setWalletNumber("0712345678");
+        service.requestLoan(withWallet);
+
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getWalletNumber()).isEqualTo("263772123123");
+        assertThat(saved.getAllValues().get(1).getWalletNumber()).isEqualTo("263712345678");
+        assertThat(saved.getAllValues().get(1).getMobileNumber()).isEqualTo("263772123123");
+        assertThat(saved.getAllValues().get(1).payoutWalletNumber()).isEqualTo("263712345678");
+    }
+
+    @Test
+    @DisplayName("the employment details and payslip deductions are stored as captured, deductions in order")
+    void employmentAndPayslipAreStored() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setPayslipDeductions(List.of(
+                new PayslipDeduction("  ZIMRA PAYE ", new BigDecimal("210.00")),
+                new PayslipDeduction("CBZ personal loan", new BigDecimal("150.00"))));
+
+        service.requestLoan(request);
+
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository).save(saved.capture());
+        Loan loan = saved.getValue();
+        assertThat(loan.getEmploymentDetail().getMinistry()).isEqualTo("Ministry of Health and Child Care");
+        assertThat(loan.getEmploymentDetail().getStation()).isEqualTo("Mutare Provincial Hospital");
+        assertThat(loan.getEmploymentDetail().getGrade()).isEqualTo("D2");
+        assertThat(loan.getEmploymentDetail().getContractType()).isEqualTo(ContractType.PERMANENT);
+        assertThat(loan.getEmploymentDetail().getNetSalary()).isEqualByComparingTo("1100.00");
+        assertThat(loan.getPayslipDeductions()).containsExactly(
+                new PayslipDeduction("ZIMRA PAYE", new BigDecimal("210.00")),
+                new PayslipDeduction("CBZ personal loan", new BigDecimal("150.00")));
+    }
+
+    @Test
+    @DisplayName("an application with no payslip deductions stores an empty list, not null")
+    void noDeductionsIsAnEmptyList() {
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository).save(saved.capture());
+        assertThat(saved.getValue().getPayslipDeductions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a net salary above the gross is refused before anything is saved")
+    void netAboveGrossIsRefused() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.getEmploymentDetail().setNetSalary(new BigDecimal("1500.01"));
+
+        assertThatThrownBy(() -> service.requestLoan(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Net salary cannot exceed gross salary");
+        verify(loanRepository, never()).save(any());
     }
 
     @Test

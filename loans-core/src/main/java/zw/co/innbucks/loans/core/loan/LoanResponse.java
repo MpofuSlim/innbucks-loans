@@ -10,6 +10,7 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * One loan in full: the applicant, the terms, where each stage stands, and the documents. The
@@ -46,6 +47,8 @@ public class LoanResponse implements Serializable {
     private String placeOfBirth;
     private String profession;
     private String mobileNumber;
+    /** The InnBucks wallet the loan pays. */
+    private String walletNumber;
     private String alternateContactNumber;
     private String email;
     private String ecNumber;
@@ -53,6 +56,7 @@ public class LoanResponse implements Serializable {
     private String nationalIdNumber;
     private Address address;
     private EmploymentDetail employmentDetail;
+    private List<PayslipDeduction> payslipDeductions;
     private NextOfKin nextOfKin;
     private Witness witness;
     @ToString.Exclude

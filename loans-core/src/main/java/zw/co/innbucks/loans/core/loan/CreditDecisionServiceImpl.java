@@ -123,9 +123,9 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             throw new LoanApprovalException(String.format(
                     "Merchant %s has no settlement account, so loan %s cannot be paid", merchant.getCompanyName(), reference));
         }
-        if (!payee.paysMerchant() && StringUtils.isBlank(loan.getMobileNumber())) {
+        if (!payee.paysMerchant() && StringUtils.isBlank(loan.payoutWalletNumber())) {
             throw new LoanApprovalException(String.format(
-                    "Loan %s has no customer mobile number to pay", reference));
+                    "Loan %s has no customer wallet number to pay", reference));
         }
         return payee;
     }

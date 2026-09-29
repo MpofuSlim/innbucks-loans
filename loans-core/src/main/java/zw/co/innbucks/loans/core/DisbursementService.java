@@ -34,13 +34,13 @@ public abstract class DisbursementService {
     static final String MANUAL_PAYOUT_ACTOR = "manual-payout";
 
     /**
-     * The wallet-disbursement SMS for {@code loan}, naming the wallet by its last
+     * The wallet-disbursement SMS for {@code loan}, naming the wallet paid by its last
      * four digits. It used to print the full mobile number, which adds nothing
      * for its owner and is exposed wherever the text is shown or logged.
      */
     public static String walletDisbursementSms(Loan loan) {
         return String.format(SMS_MSG, loan.getDisbursedAmount(), loan.getReference(),
-                MsisdnUtils.lastFourDigits(loan.getMobileNumber()));
+                MsisdnUtils.lastFourDigits(loan.payoutWalletNumber()));
     }
 
     /**
@@ -162,7 +162,7 @@ public abstract class DisbursementService {
         PayoutDestination payee = PayoutDestination.of(loan);
         DisbursementRequest request = DisbursementRequest.builder()
                 .amount(loan.getDisbursedAmount())
-                .mobileNumber(loan.getMobileNumber())
+                .mobileNumber(loan.payoutWalletNumber())
                 .reference(loan.getReference())
                 .transactionReference(reference)
                 .disbursementType(payee.type())
@@ -246,8 +246,8 @@ public abstract class DisbursementService {
             throw notAllowed("Merchant %s of loan %s has no settlement account to pay"
                     .formatted(merchant == null ? null : merchant.getCompanyName(), loanRef));
         }
-        if (!payee.paysMerchant() && isBlank(loan.getMobileNumber())) {
-            throw notAllowed("Loan %s has no customer mobile number to pay".formatted(loanRef));
+        if (!payee.paysMerchant() && isBlank(loan.payoutWalletNumber())) {
+            throw notAllowed("Loan %s has no customer wallet number to pay".formatted(loanRef));
         }
         if (payee.frozen() && payee.differsFrom(merchant)) {
             log.warn("Loan {}: merchant payout settings changed after credit approved it; paying the approved"
