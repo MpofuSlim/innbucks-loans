@@ -45,7 +45,10 @@ public class DeductionCancellationService {
      * customer may hold the loan: cancelling its repayment before checking would be the worse error.
      */
     public static final String REASON_BOOKING_IN_DOUBT = "BOOKING_IN_DOUBT";
-    /** The lodgement reached Ndasenda, but a later step threw and the loan was marked FAILED. */
+    /**
+     * The lodgement reached Ndasenda, but a later step threw and the loan was marked FAILED. No longer
+     * set: the lodgement job now keeps such a loan PROCESSING; kept for loans flagged before that.
+     */
     public static final String REASON_LODGEMENT_FAILED = "LODGEMENT_FAILED";
     /** Ndasenda reported the deduction accepted for a loan we had already closed (declined or FAILED). */
     public static final String REASON_ACCEPTED_AFTER_CLOSE = "ACCEPTED_AFTER_CLOSE";
