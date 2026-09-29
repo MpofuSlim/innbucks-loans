@@ -1,0 +1,205 @@
+package zw.co.innbucks.loans.controller;
+import zw.co.innbucks.loans.dto.LoansWrapper;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.util.CollectionUtils;
+import org.springframework.web.bind.annotation.*;
+import zw.co.innbucks.loans.core.api.FindLoansRequest;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.loan.*;
+import zw.co.innbucks.loans.core.ndasenda.FindNdasendaBatchRequest;
+import zw.co.innbucks.loans.core.ndasenda.FindNdasendaBatchResponse;
+import zw.co.innbucks.loans.core.ndasenda.NdasendaDeductionBatch;
+import zw.co.innbucks.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
+import zw.co.innbucks.loans.core.user.FindUserService;
+
+import java.security.Principal;
+import java.util.List;
+
+import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
+
+@RestController
+@Slf4j
+@RequestMapping("/api")
+
+@Tag(name = "INNBUCKS LOANS",
+        description = "### Please Note:\n" +
+                "1. Auth credentials and endpoint will be provided\n" +
+                "2. Please contact  _support@innbucks.co.zw_ for support.\n")
+public class BatchesController {
+
+    @Autowired
+    private NdasendaLoanApprovalServiceImpl ndasendaLoanApprovalService;
+
+    @Autowired
+    private LoanService loanService;
+
+    @Autowired
+    private FindUserService findUserService;
+
+    @Autowired
+    private LoanReadScopeResolver loanReadScopeResolver;
+
+    @Autowired
+    private LoanBatchService loanBatchService;
+
+
+    @Operation(operationId = "searchLoans",
+            summary = "SEARCH LOANS",
+            description = "Provided with a valid request, this endpoint returns a list of loans matching the search parameters. "
+                    + "SUPER_ADMIN, CREDIT_MANAGER and FINANCE see every merchant's loans; everyone else only the loans "
+                    + "they originated.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoansWrapper.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/loans/search")
+    public LoansWrapper findLoans(Principal principal, @RequestBody FindLoansRequest request) {
+        log.info("Find loan request: {}", request);
+        return new LoansWrapper(loanService.findLoans(request, resolveReadScope(principal)));
+    }
+
+    @Operation(summary = "GET LOANS PENDING APPROVAL",
+            description = "Get all loans pending internal approval",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoansWrapper.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not credit staff"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/find-approvals")
+    // The credit queue: the same roles that may act on it via POST /api/loans/{id}/approve.
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER')")
+    public LoansWrapper findPendingApprovals() {
+        log.info("Finding loans pending internal approval");
+        FindLoansRequest request = FindLoansRequest.builder()
+                .approvalStatus(LoanApprovalStatus.APPROVED)
+                .internalApprovalStatus(InternalApprovalStatus.PENDING)
+                .build();
+        return new LoansWrapper(loanService.findLoans(request));
+    }
+
+    @Operation(operationId = "getLoanById",
+            summary = "GET LOAN BY ID",
+            description = "Provided with a loan id, this endpoint returns a loans details",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = LoanDto.class))}),
+            @ApiResponse(responseCode = "404",
+                    description = "No such loan, or the loan is outside the caller's scope (deliberately the same answer)"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/{id}")
+    public ResponseEntity<LoanDto> findLoans(Principal principal, @PathVariable Long id) {
+        log.info("Find loan by id: {}", id);
+        // Only NotFoundException becomes a 404 (via RestExceptionHandler); a database or
+        // mapping failure is a real fault and must surface as one, not as "no such loan".
+        return ResponseEntity.ok(loanService.getLoan(id, resolveReadScope(principal)));
+    }
+
+    @Operation(summary = "SEARCH BATCHES",
+            description = "Provided with a valid request, this endpoint returns a list of batches that matches the search parameters",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = FindNdasendaBatchResponse.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not lender-side staff"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/batches/search")
+    // SSB deduction batches list every borrower under the lender's code — lender-side staff only.
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
+    public FindNdasendaBatchResponse findNdasendaBatches(@RequestBody FindNdasendaBatchRequest request) {
+        log.info("Searching batches: {}", request);
+        return FindNdasendaBatchResponse.builder().batches(ndasendaLoanApprovalService.findBatches(request)).build();
+    }
+
+    @Operation(summary = "GET BATCH BY ID",
+            description = "Return the batch and the SSB approval status for the given batch id.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Request received for processing", content = {@Content(mediaType = "application/json",
+                    schema = @Schema(implementation = NdasendaDeductionBatch.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+            @ApiResponse(responseCode = "403",
+                    description = "Forbidden. caller is not lender-side staff"),
+            @ApiResponse(responseCode = "404",
+                    description = "Not a batch this system submitted"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/batches/{batchId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
+    public NdasendaDeductionBatch getBatchDetails(@PathVariable String batchId) {
+        // The same "ours" filter /batches/search applies. Ndasenda answers for any batch
+        // under the lender's code, so without it this returned whatever id it was handed.
+        if (!loanBatchService.existsByBatchNumber(batchId)) {
+            throw new NotFoundException("Batch " + batchId + " not found");
+        }
+        final List<NdasendaDeductionBatch> responses = ndasendaLoanApprovalService.findDeductionResponsesByBatchId(batchId);
+        if (CollectionUtils.isEmpty(responses)) {
+            return null;
+        }
+        return responses.get(0);
+    }
+
+    private String getMerchantCode(Principal principal) {
+        Jwt token = ((JwtAuthenticationToken) principal).getToken();
+        return findUserService.resolveUserFromAccessToken(token)
+                .map(u -> u.getMerchant().getMerchantCode())
+                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
+    }
+
+    private LoanReadScope resolveReadScope(Principal principal) {
+        return loanReadScopeResolver.resolve(((JwtAuthenticationToken) principal).getToken());
+    }
+
+}

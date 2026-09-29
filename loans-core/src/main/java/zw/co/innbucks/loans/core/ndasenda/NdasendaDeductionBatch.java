@@ -1,0 +1,38 @@
+package zw.co.innbucks.loans.core.ndasenda;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+
+import java.util.List;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class NdasendaDeductionBatch {
+    @JsonProperty("id")
+    private String id;
+    @JsonProperty("recordsCount")
+    private Integer recordsCount;
+    @JsonProperty("totalAmount")
+    private Integer totalAmountInCents;
+    @ToString.Exclude
+    @JsonProperty("securityToken")
+    private String securityToken;
+    @JsonProperty("deductionCode")
+    private String deductionCode;
+    @JsonProperty("status")
+    private DeductionBatchStatus status;
+    @JsonProperty("creationDate")
+    private String creationDate;
+    // Each deduction prints its national ID and EC number in full; recordsCount says how many.
+    @ToString.Exclude
+    @JsonProperty("records")
+    private List<NdasendaDeduction> deductions;
+}

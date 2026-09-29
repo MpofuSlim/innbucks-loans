@@ -43,7 +43,7 @@ spring:
   # Boot's default, pinned so it is not raised without redoing this audit. A
   # pool > 1 never overlaps a job with itself, but it does run DIFFERENT jobs
   # at once, and the jobs are only safe today because they are serial:
-  #  - LoanAccountCreationJob books with InnBucks (which pays on booking) and
+  #  - LoanBookingJob books with InnBucks (which pays on booking) and
   #    saves the loan OUTSIDE its per-loan try. A version conflict on that save
   #    (Loan is @Version-locked) loses the booking's outcome, aborts the run
   #    and leaves the loan account-PENDING, so the next run books it again.
@@ -55,11 +55,11 @@ spring:
   #    saves outside its try, after it has SMSed the customer; the Ndasenda
   #    response job (PROCESSING, or FAILED but lodged) can hold the same
   #    rewound rows.
-  #  - LoanApprovalServiceJob lodges into the open Ndasenda batch that
-  #    NdasendaDeductionBatchCommitDailyJob commits, and neither token cache
+  #  - NdasendaLodgementJob lodges into the open Ndasenda batch that
+  #    NdasendaDeductionBatchCommitJob commits, and neither token cache
   #    is synchronised; how Ndasenda and InnBucks treat those races is
   #    unverified.
-  #  - LoanApprovalServiceJob (NEW loans) shares no rows with another job.
+  #  - NdasendaLodgementJob (NEW loans) shares no rows with another job.
   # Optimistic locking turns an overlap into a failure rather than a lost
   # update, but on the booking path that failure means booking twice. What
   # bounds how long one call can hold the other jobs back is http.client
