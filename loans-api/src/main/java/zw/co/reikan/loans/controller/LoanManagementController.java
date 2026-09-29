@@ -80,14 +80,19 @@ public class LoanManagementController {
     }
 
     @Operation(summary = "LOAN INTERNAL APPROVAL",
-            description = "Loan internal approval",
+            description = "Loan internal approval. An approval freezes where the loan is paid (the customer's"
+                    + " wallet, or the merchant's settlement account as it stands now); later edits to the merchant"
+                    + " do not move it. Whoever originated the loan cannot approve it.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Loan approved"),
             @ApiResponse(responseCode = "400",
-                    description = "Represents an Error Caused by the Violation of a Business Rule"),
+                    description = "Represents an Error Caused by the Violation of a Business Rule, including a loan"
+                            + " with nowhere to pay it (no payout type, or a merchant with no settlement account)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Not a CREDIT_MANAGER or BULKIT_ADMIN, or the caller originated this loan"),
 
             @ApiResponse(responseCode = "500",
                     description = "Represents an Error Caused by a System Malfunction")

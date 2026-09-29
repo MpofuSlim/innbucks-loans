@@ -4,14 +4,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.access.AccessDeniedException;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.exception.BusinessException;
 import zw.co.reikan.loans.core.exception.LoanApprovalException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
+import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
+import zw.co.reikan.loans.core.user.User;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,7 +45,7 @@ class InternalApprovalServiceImplTest {
         when(authService.getLoggedInUsername()).thenReturn("credit.manager");
         service = new InternalApprovalServiceImpl(loanRepository, authService,
                 mock(LoanMapper.class), notificationService,
-                new DeductionCancellationService(loanRepository, auditService, authService));
+                new DeductionCancellationService(loanRepository, auditService, authService), auditService);
     }
 
     private static InternalApprovalRequest decide(InternalApprovalStatus status) {
@@ -53,10 +57,21 @@ class InternalApprovalServiceImplTest {
     private Loan given(LoanApprovalStatus payroll, InternalApprovalStatus internal) {
         Loan loan = Loan.builder().loanApprovalStatus(payroll).internalApprovalStatus(internal)
                 .batchNumber("BATCH-20260901-07").ecNumber("1234567A")
-                .mobileNumber("+263782606983").build();
+                .mobileNumber("+263782606983")
+                .createdBy("agent.moyo")
+                .merchant(Merchant.builder().merchantCode("INNBUCKS").companyName("Innbucks")
+                        .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET).build())
+                .build();
         loan.setId(42L);
         when(loanRepository.findById(42L)).thenReturn(Optional.of(loan));
         return loan;
+    }
+
+    private List<AuditLog> audited() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, atLeast(0)).record(captor.capture());
+        return captor.getAllValues().stream().map(AuditLog.AuditLogBuilder::build).toList();
     }
 
     private String sentSms() {
@@ -143,7 +158,7 @@ class InternalApprovalServiceImplTest {
         service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L);
 
         assertThat(loan.getDeductionCancellationStatus()).isNull();
-        verifyNoInteractions(auditService);
+        assertThat(audited()).extracting(AuditLog::getEventType).containsExactly("CREDIT_APPROVED");
     }
 
     @Test
@@ -184,5 +199,131 @@ class InternalApprovalServiceImplTest {
                 .isEqualTo("We regret to inform you that your loan application with ref # 000000042 "
                         + "has been declined. Please contact Innbucks for more information.")
                 .doesNotContain("Payslip");
+    }
+
+    // ── Maker-checker ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("whoever originated a loan cannot approve it: refused (403) before anything is recorded")
+    void originatorCannotApprove() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setCreatedBy("Credit.Manager");
+
+        assertThatThrownBy(() -> service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Loan 000000042 was originated by credit.manager, who cannot also approve it;"
+                        + " another credit officer must");
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+        assertThat(loan.getApprovedDisbursementType()).isNull();
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService, auditService);
+    }
+
+    @Test
+    @DisplayName("the originating user account counts too, whatever the createdBy text says")
+    void originatingUserCannotApprove() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        User originator = new User();
+        originator.setUsername("credit.manager");
+        loan.setCreatedByUser(originator);
+
+        assertThatThrownBy(() -> service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("the originator may still reject: a refusal pays nothing")
+    void originatorMayReject() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setCreatedBy("credit.manager");
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.approveLoan(decide(InternalApprovalStatus.REJECTED), 42L);
+
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+    }
+
+    // ── The payee frozen at approval ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("approval freezes the merchant's settlement account, and the audit names it masked")
+    void approvalFreezesTheMerchantPayee() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setMerchant(Merchant.builder().merchantCode("MEGA").companyName("Mega Furnishers")
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber("0771000001").build());
+        when(loanRepository.save(any())).thenAnswer(i -> {
+            // Frozen in the same write as the decision.
+            assertThat(i.<Loan>getArgument(0).getApprovedSettlementAccount()).isEqualTo("0771000001");
+            return i.getArgument(0);
+        });
+
+        service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L);
+
+        assertThat(loan.getApprovedDisbursementType()).isEqualTo(DisbursementType.MERCHANT_MOBILE_WALLET);
+        assertThat(loan.getApprovedSettlementAccount()).isEqualTo("0771000001");
+        AuditLog audit = audited().getFirst();
+        assertThat(audit.getEventType()).isEqualTo("CREDIT_APPROVED");
+        assertThat(audit.getActorId()).isEqualTo("credit.manager");
+        assertThat(audit.getDetail()).contains("originator=agent.moyo", "payoutType=MERCHANT_MOBILE_WALLET",
+                "settlementAccount=****0001", "merchant=MEGA").doesNotContain("0771000001");
+
+        // A later edit to the merchant row does not move the loan's money.
+        loan.getMerchant().setAccountNumber("0779999999");
+        PayoutDestination payee = PayoutDestination.of(loan);
+        assertThat(payee.merchantAccount()).isEqualTo("0771000001");
+        assertThat(payee.frozen()).isTrue();
+        assertThat(payee.differsFrom(loan.getMerchant())).isTrue();
+    }
+
+    @Test
+    @DisplayName("a customer-wallet loan freezes the type and no merchant account")
+    void approvalFreezesTheCustomerWallet() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L);
+
+        assertThat(loan.getApprovedDisbursementType()).isEqualTo(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        assertThat(loan.getApprovedSettlementAccount()).isNull();
+        assertThat(audited().getFirst().getDetail()).doesNotContain("settlementAccount");
+    }
+
+    @Test
+    @DisplayName("a merchant loan with no settlement account cannot be approved: there is nowhere to pay it")
+    void noSettlementAccountIsRefused() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setMerchant(Merchant.builder().companyName("Mega Furnishers")
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber(" ").build());
+
+        assertThatThrownBy(() -> service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L))
+                .isInstanceOf(LoanApprovalException.class)
+                .hasMessage("Merchant Mega Furnishers has no settlement account, so loan 000000042 cannot be paid");
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a loan whose merchant has no payout type cannot be approved")
+    void noPayoutTypeIsRefused() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        loan.setMerchant(null);
+
+        assertThatThrownBy(() -> service.approveLoan(decide(InternalApprovalStatus.APPROVED), 42L))
+                .isInstanceOf(LoanApprovalException.class)
+                .hasMessage("Loan 000000042 has no merchant payout type, so there is nowhere to pay it");
+    }
+
+    @Test
+    @DisplayName("a loan approved before the freeze existed still pays per the merchant's live settings")
+    void legacyLoanFallsBackToTheLiveMerchant() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED);
+        loan.setMerchant(Merchant.builder().disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET)
+                .accountNumber("0771000001").build());
+
+        PayoutDestination payee = PayoutDestination.of(loan);
+
+        assertThat(payee.frozen()).isFalse();
+        assertThat(payee.merchantAccount()).isEqualTo("0771000001");
+        assertThat(payee.differsFrom(loan.getMerchant())).isFalse();
     }
 }

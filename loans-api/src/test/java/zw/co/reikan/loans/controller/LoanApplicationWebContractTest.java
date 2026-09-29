@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -186,5 +187,19 @@ class LoanApplicationWebContractTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Loan 7 not found"));
+    }
+
+    @Test
+    @DisplayName("POST /api/loans/{id}/approve by the loan's originator → 403 naming why (maker-checker)")
+    void originatorApprovalIs403() throws Exception {
+        when(approvalService.approveLoan(any(), eq(42L))).thenThrow(new AccessDeniedException(
+                "Loan 000000042 was originated by credit.manager, who cannot also approve it; another credit officer must"));
+
+        mvc.perform(post("/api/loans/42/approve").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"APPROVED\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("Loan 000000042 was originated by credit.manager, who cannot"
+                        + " also approve it; another credit officer must"));
     }
 }

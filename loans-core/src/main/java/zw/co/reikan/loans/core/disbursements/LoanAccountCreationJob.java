@@ -18,6 +18,7 @@ import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.loan.PayoutDestination;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -231,7 +232,9 @@ public class LoanAccountCreationJob {
         // Any note from an earlier attempt that never reached InnBucks no longer applies.
         loan.setDisbursementStatusMessage(null);
         // Don't set date disbursed yet as the disbursement is pending
-        loan.setDisbursementMerchantAccountNumber(loan.getMerchant().getAccountNumber());
+        // The merchant account the booking actually paid (none for a customer-wallet loan), as the
+        // manual payout records it.
+        loan.setDisbursementMerchantAccountNumber(PayoutDestination.of(loan).merchantAccount());
 
         // Don't notify customer yet as the disbursement is pending
     }
