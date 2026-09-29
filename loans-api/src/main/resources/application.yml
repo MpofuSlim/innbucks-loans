@@ -39,6 +39,37 @@ spring:
           envers:
             default_schema: audit
 
+  # --- @Scheduled jobs: ONE thread, deliberately --------------------------
+  # Boot's default, pinned so it is not raised without redoing this audit. A
+  # pool > 1 never overlaps a job with itself, but it does run DIFFERENT jobs
+  # at once, and the jobs are only safe today because they are serial:
+  #  - LoanAccountCreationJob books with InnBucks (which pays on booking) and
+  #    saves the loan OUTSIDE its per-loan try. A version conflict on that save
+  #    (Loan is @Version-locked) loses the booking's outcome, aborts the run
+  #    and leaves the loan account-PENDING, so the next run books it again.
+  #    LoanSagaOrchestrator (every 60s, every loan of the last 30 days) writes
+  #    Loan rows when it compensates a FAILED disbursement, and a loan that a
+  #    Ndasenda response rewound to account PENDING before #82 is in both row
+  #    sets. Serial, the saga cannot write a loan the booking job is holding.
+  #  - LoanDisbursementStatusJob (account CREATED, disbursement PENDING) also
+  #    saves outside its try, after it has SMSed the customer; the Ndasenda
+  #    response job (PROCESSING, or FAILED but lodged) can hold the same
+  #    rewound rows.
+  #  - LoanApprovalServiceJob lodges into the open Ndasenda batch that
+  #    NdasendaDeductionBatchCommitDailyJob commits, and neither token cache
+  #    is synchronised; how Ndasenda and InnBucks treat those races is
+  #    unverified.
+  #  - LoanApprovalServiceJob (NEW loans) and IdempotencyPurgeJob (idempotency
+  #    rows) share no rows with another job.
+  # Optimistic locking turns an overlap into a failure rather than a lost
+  # update, but on the booking path that failure means booking twice. What
+  # bounds how long one call can hold the other jobs back is http.client
+  # below, not this pool.
+  task:
+    scheduling:
+      pool:
+        size: 1
+
 # --- Self-issued JWT authentication ----------------------------------------
 # Tokens are signed and validated with a shared HS256 secret; the platform is
 # its own issuer (no external identity provider), and a token whose iss is not
@@ -59,6 +90,32 @@ bootstrap:
   admin:
     username: "${BOOTSTRAP_ADMIN_USERNAME:admin}"
     password: "${BULKIT_PASSWORD:}"
+
+# --- Outbound HTTP timeouts (milliseconds) ----------------------------------
+# One RestTemplate carries every Ndasenda call (login, lodgement, batch commit,
+# responses) and every InnBucks call (login, loan booking, inquiry, deposit).
+# It used to have no timeouts at all, so one hung upstream froze the scheduler
+# thread and with it every job. Both values must be > 0: 0 would mean "wait
+# forever", and the app refuses to boot on it. A job still makes its calls one
+# after another (login, call, one replay after a 401, per loan), so a slow
+# upstream delays the other jobs by up to that many times these values.
+#
+# connect-timeout, 10s: nothing has been sent until the connection is up, so
+#   this only has to outlast a slow handshake. 10s rides out up to three lost
+#   SYNs (the kernel resends at 1s, 3s and 7s) and replaces the OS default of
+#   about two minutes. Shorter would fail more often, not more safely: the
+#   booking job holds a loan whose call cannot connect as AMBIGUOUS too.
+# read-timeout, 60s: generous on purpose. A read timeout on a WRITE means the
+#   request left and its answer did not come back, so its outcome is unknown.
+#   An InnBucks booking is then held AMBIGUOUS (and InnBucks pays on booking),
+#   a manual deposit is held IN_DOUBT and blocks every further payout of that
+#   loan, and a Ndasenda lodgement is marked FAILED while its deduction may be
+#   live. Each of those waits on an operator, so a tight read timeout turns
+#   calls that were merely slow into held loans.
+http:
+  client:
+    connect-timeout: "${HTTP_CLIENT_CONNECT_TIMEOUT_MS:10000}"
+    read-timeout: "${HTTP_CLIENT_READ_TIMEOUT_MS:60000}"
 
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
