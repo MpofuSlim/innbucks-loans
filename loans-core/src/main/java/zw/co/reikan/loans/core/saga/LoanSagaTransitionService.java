@@ -6,15 +6,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.audit.AuditService;
-import zw.co.reikan.loans.core.ledger.LedgerAccount;
-import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
-import zw.co.reikan.loans.core.ledger.LedgerService;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
@@ -30,14 +27,11 @@ import java.time.ZoneOffset;
 @RequiredArgsConstructor
 public class LoanSagaTransitionService {
 
-    /** Bulkit civil-servant loans are USD-denominated. */
-    static final String CURRENCY = "USD";
     static final String SYSTEM_ACTOR = "saga-orchestrator";
 
     private final LoanRepository loanRepository;
     private final LoanSagaRepository sagaRepository;
-    private final LedgerService ledgerService;
-    private final LedgerEntryRepository ledgerEntryRepository;
+    private final DisbursementLedger disbursementLedger;
     private final AuditService auditService;
     private final LoanPublicReferenceService publicReferenceService;
     private final DeductionCancellationService deductionCancellationService;
@@ -114,18 +108,15 @@ public class LoanSagaTransitionService {
         applyCompensation(saga, loan);
     }
 
-    /** Entry action for DISBURSED: post the immutable double entry, assign the public reference. */
+    /**
+     * Entry action for DISBURSED: assign the public reference, and post the payout if its writer
+     * did not. The jobs that record a loan as paid post it in the same transaction, so this is a
+     * backstop for a loan paid before they did; idempotent per reference, so a loan its writer
+     * already posted is a no-op here. A payout that reaches the saga only after it is terminal (a
+     * recovery payout of a compensated loan) is posted by its writer alone.
+     */
     private void onDisbursed(Loan loan) {
-        BigDecimal amount = loan.getDisbursedAmount();
-        if (amount == null || amount.signum() <= 0) {
-            log.warn("Loan {} DISBURSED with no positive disbursedAmount — skipping ledger posting", loan.getId());
-            return;
-        }
-        // Idempotent via unique transaction_ref — a replayed tick cannot double-post.
-        ledgerService.postDoubleEntry("DISB-" + loan.getReference(), loan.getId(), CURRENCY,
-                "Loan disbursement via InnBucks rail (approval ref " + loan.getDisbursementReference() + ")",
-                SYSTEM_ACTOR, LedgerAccount.LOAN_PRINCIPAL_RECEIVABLE, LedgerAccount.DISBURSEMENT_CLEARING,
-                amount);
+        disbursementLedger.recordPayout(loan, SYSTEM_ACTOR);
 
         if (loan.getPublicReference() == null) {
             loan.setPublicReference(publicReferenceService.next());
@@ -137,10 +128,10 @@ public class LoanSagaTransitionService {
      * COMPENSATION ROUTING for {@code DISBURSEMENT_FAILED} — keeps the books
      * consistent without ever mutating history:
      * <ol>
-     *   <li><b>Ledger:</b> if a disbursement posting exists (a success later
-     *       contradicted by the rail — the dangerous case), post the reversing
-     *       pair {@code DISB-REV-*}. The failed movement and its reversal both
-     *       remain in the immutable history.</li>
+     *   <li><b>Ledger:</b> if the booking's payout was posted (a success later
+     *       contradicted by the rail — the dangerous case), post its mirror image
+     *       {@code DISB-REV-*}, leg for leg. The failed movement and its reversal
+     *       both remain in the immutable history.</li>
      *   <li><b>Saga:</b> transition to COMPENSATED with a full audit trail.
      *       The loan's status columns are untouched — failed loans keep
      *       surfacing in the existing back-office workflow exactly as before.</li>
@@ -152,20 +143,10 @@ public class LoanSagaTransitionService {
      * </ol>
      */
     private void applyCompensation(LoanSaga saga, Loan loan) {
-        String disbursementTxRef = "DISB-" + loan.getReference();
-        String reversalTxRef = "DISB-REV-" + loan.getReference();
-        String ledgerOutcome;
-
-        if (ledgerEntryRepository.existsByTransactionRef(disbursementTxRef)) {
-            boolean reversed = ledgerService.postDoubleEntry(reversalTxRef, loan.getId(), CURRENCY,
-                    "Compensation: reversal of failed disbursement " + disbursementTxRef,
-                    SYSTEM_ACTOR, LedgerAccount.DISBURSEMENT_CLEARING, LedgerAccount.LOAN_PRINCIPAL_RECEIVABLE,
-                    loan.getDisbursedAmount());
-            ledgerOutcome = reversed ? "ledger reversed via " + reversalTxRef
-                    : "ledger reversal already posted (" + reversalTxRef + ")";
-        } else {
-            ledgerOutcome = "no ledger movement to reverse (funds never left clearing)";
-        }
+        // FAILED is the booking's outcome (a recovery payout never writes it), so it is the
+        // booking's posting that is reversed.
+        String ledgerOutcome = disbursementLedger.reverseBookingPayout(loan, SYSTEM_ACTOR,
+                "Compensation: reversal of failed disbursement");
 
         LoanSagaState from = saga.getCurrentState();
         saga.setCurrentState(LoanSagaState.COMPENSATED);

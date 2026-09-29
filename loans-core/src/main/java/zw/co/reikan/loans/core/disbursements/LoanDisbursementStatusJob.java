@@ -1,13 +1,15 @@
 package zw.co.reikan.loans.core.disbursements;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -17,7 +19,6 @@ import java.time.LocalDateTime;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 @Profile("scheduled-tasks")
 public class LoanDisbursementStatusJob {
 
@@ -30,6 +31,22 @@ public class LoanDisbursementStatusJob {
     private final NotificationService notificationService;
     private final DeductionCancellationService deductionCancellationService;
     private final AuditService auditService;
+    private final DisbursementLedger disbursementLedger;
+    private final TransactionTemplate transactionTemplate;
+
+    public LoanDisbursementStatusJob(DisbursementService disbursementService, LoanRepository loanRepository,
+                                     NotificationService notificationService,
+                                     DeductionCancellationService deductionCancellationService,
+                                     AuditService auditService, DisbursementLedger disbursementLedger,
+                                     PlatformTransactionManager transactionManager) {
+        this.disbursementService = disbursementService;
+        this.loanRepository = loanRepository;
+        this.notificationService = notificationService;
+        this.deductionCancellationService = deductionCancellationService;
+        this.auditService = auditService;
+        this.disbursementLedger = disbursementLedger;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
 
     /**
      * Processes loans with PENDING disbursement status.
@@ -52,6 +69,7 @@ public class LoanDisbursementStatusJob {
     }
 
     private void checkLoanDisbursementStatus(Loan loan) {
+        boolean paid = false;
         try {
             log.debug("Checking disbursement status for loan: {}", loan.getId());
             LoanDisbursementStatusResponse response = disbursementService.checkLoanDisbursementStatus(loan);
@@ -63,7 +81,7 @@ public class LoanDisbursementStatusJob {
                 handleNotFound(loan);
             } else if (response.isSuccess()) {
                 noteFoundAgain(loan, response);
-                handleSuccessfulStatusCheck(loan, response);
+                paid = handleSuccessfulStatusCheck(loan, response);
             } else {
                 handleFailedStatusCheck(loan, response);
             }
@@ -71,10 +89,34 @@ public class LoanDisbursementStatusJob {
             handleStatusCheckException(loan, ex);
         }
 
-        loanRepository.save(loan);
+        if (paid) {
+            recordPaid(loan);
+        } else {
+            loanRepository.save(loan);
+        }
     }
 
-    private void handleSuccessfulStatusCheck(Loan loan, LoanDisbursementStatusResponse response) {
+    /**
+     * The payout and its ledger posting commit together, so no loan is ever recorded as paid with
+     * nothing in the ledger, and the customer is told only once both have. If they cannot be saved
+     * nothing is: the loan is still waiting on InnBucks, and the next run asks again.
+     */
+    private void recordPaid(Loan loan) {
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                disbursementLedger.recordPayout(loan, SYSTEM_ACTOR);
+                loanRepository.save(loan);
+            });
+        } catch (RuntimeException ex) {
+            log.error("Loan {} [{}] was reported paid by InnBucks but could not be recorded; the next run retries",
+                    loan.getId(), loan.getReference(), ex);
+            return;
+        }
+        notifyCustomer(loan);
+    }
+
+    /** @return whether InnBucks reports the loan paid, to be recorded with its ledger posting */
+    private boolean handleSuccessfulStatusCheck(Loan loan, LoanDisbursementStatusResponse response) {
         log.info("Loan disbursement status check successful for loan: {}", loan.getId());
 
         LoanDisbursementStatus newStatus = response.getStatus();
@@ -83,7 +125,7 @@ public class LoanDisbursementStatusJob {
         if (newStatus == LoanDisbursementStatus.SUCCESS) {
             // Loan has been successfully disbursed
             loan.setDateDisbursed(LocalDateTime.now());
-            notifyCustomer(loan);
+            return true;
         } else if (newStatus == LoanDisbursementStatus.FAILED) {
             // Loan disbursement has failed
             loan.setDisbursementStatusMessage(response.getResponseDescription());
@@ -93,6 +135,7 @@ public class LoanDisbursementStatusJob {
                     SYSTEM_ACTOR, "system");
         }
         // If still PENDING, do nothing special
+        return false;
     }
 
     private void notifyCustomer(Loan loan) {

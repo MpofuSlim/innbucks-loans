@@ -12,6 +12,7 @@ import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.Utils;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
 import zw.co.reikan.loans.core.loan.*;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
@@ -43,10 +44,11 @@ public class InnbucksServiceImpl extends DisbursementService {
                                DeductionCancellationService deductionCancellationService,
                                RestTemplate restTemplate, InnbucksParameters parameters,
                                InnbucksAuthService innbucksAuthService,
+                               DisbursementLedger disbursementLedger,
                                PlatformTransactionManager transactionManager
     ) {
         super(loanRepository, notificationService, loanDisbursementRepository, deductionCancellationService,
-                transactionManager);
+                disbursementLedger, transactionManager);
         this.innbucksAuthService = innbucksAuthService;
         this.restTemplate = restTemplate;
         this.parameters = parameters;

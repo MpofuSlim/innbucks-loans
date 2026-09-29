@@ -16,6 +16,12 @@ import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatusResponse;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
+import zw.co.reikan.loans.core.ledger.DisbursementLedger;
+import zw.co.reikan.loans.core.ledger.LedgerAccount;
+import zw.co.reikan.loans.core.ledger.LedgerEntryRepository;
+import zw.co.reikan.loans.core.ledger.LedgerEntryType;
+import zw.co.reikan.loans.core.ledger.LedgerService;
+import zw.co.reikan.loans.core.ledger.LedgerService.Leg;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
 import zw.co.reikan.loans.core.loan.DisbursementStatus;
@@ -58,6 +64,7 @@ class ManualDisbursementTest {
     private NotificationService notificationService;
     private PlatformTransactionManager transactionManager;
     private AuditService auditService;
+    private LedgerService ledgerService;
     private final List<LoanDisbursement> attempts = new ArrayList<>();
     private final List<DisbursementRequest> sent = new ArrayList<>();
     private Function<DisbursementRequest, DisbursementResponse> rail;
@@ -71,6 +78,7 @@ class ManualDisbursementTest {
         notificationService = mock(NotificationService.class);
         transactionManager = mock(PlatformTransactionManager.class);
         auditService = mock(AuditService.class);
+        ledgerService = mock(LedgerService.class);
         AuthService authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("ops.admin");
 
@@ -87,7 +95,8 @@ class ManualDisbursementTest {
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
         service = new DisbursementService(loanRepository, notificationService, attemptRepository,
-                new DeductionCancellationService(loanRepository, auditService, authService), transactionManager) {
+                new DeductionCancellationService(loanRepository, auditService, authService),
+                new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), transactionManager) {
             @Override
             public DisbursementResponse disburseFunds(DisbursementRequest request) {
                 sent.add(request);
@@ -489,5 +498,42 @@ class ManualDisbursementTest {
 
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         verifyNoInteractions(auditService);
+    }
+
+    // ── Ledger ────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a paid recovery payout is posted with its SUCCESS, under DISB-MD-<ref>, with the fee as income")
+    void aPaidRecoveryPayoutIsPostedWithItsSuccess() {
+        loan.setPrincipal(new BigDecimal("500.00"));
+        loan.setFeeAmount(new BigDecimal("50.00"));
+        rail = request -> {
+            verifyNoInteractions(ledgerService); // nothing is posted before the money moves
+            return answer(DisbursementStatus.SUCCESS, "Approved");
+        };
+
+        service.disburse(42L);
+
+        // Between the settle transaction's start and its commit: the payout and its posting commit together.
+        var inOrder = inOrder(transactionManager, ledgerService);
+        inOrder.verify(transactionManager).commit(any()); // the claim
+        inOrder.verify(ledgerService).post(eq("DISB-MD-000000042"), eq(42L), eq("USD"), anyString(),
+                eq("manual-payout"), eq(List.of(
+                        new Leg(LedgerAccount.LOAN_PRINCIPAL_RECEIVABLE, LedgerEntryType.DEBIT, new BigDecimal("500.00")),
+                        new Leg(LedgerAccount.DISBURSEMENT_CLEARING, LedgerEntryType.CREDIT, new BigDecimal("450.00")),
+                        new Leg(LedgerAccount.FEE_INCOME, LedgerEntryType.CREDIT, new BigDecimal("50.00")))));
+        inOrder.verify(transactionManager).commit(any()); // the settle
+    }
+
+    @Test
+    @DisplayName("a refused or in-doubt recovery payout posts nothing: no money is known to have moved")
+    void anUnpaidRecoveryPayoutPostsNothing() {
+        rail = request -> answer(DisbursementStatus.FAILED, "Insufficient float");
+        service.disburse(42L);
+
+        rail = request -> answer(DisbursementStatus.UNKNOWN, "Read timed out");
+        service.disburse(42L);
+
+        verifyNoInteractions(ledgerService);
     }
 }
