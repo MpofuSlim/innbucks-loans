@@ -133,6 +133,16 @@ public class Loan extends BaseEntity {
     @Column(name = "next_lodgement_attempt_at")
     private LocalDateTime nextLodgementAttemptAt;
 
+    /**
+     * When the booking job claimed this loan to book it with InnBucks, committed BEFORE the call so no
+     * other run or instance books it too; InnBucks books AND pays on that call. Cleared only when the
+     * booking provably never reached InnBucks. An account-PENDING loan still carrying one after the
+     * stale-claim window belongs to a run that died mid-booking, so it is held for the inquiry job
+     * rather than booked again.
+     */
+    @Column(name = "booking_claimed_at")
+    private LocalDateTime bookingClaimedAt;
+
     @Column(name = "batch_number")
     private String batchNumber;
 

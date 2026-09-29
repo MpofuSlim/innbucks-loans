@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.DisbursementService;
@@ -98,11 +99,11 @@ class RevivedLodgementBookingFailureTest {
         DisbursementService disbursementService = mock(DisbursementService.class);
         when(disbursementService.createLoanAccount(loan)).thenThrow(HttpClientErrorException.create(
                 HttpStatus.BAD_REQUEST, "Bad Request", HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8));
-        when(loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
-                LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED, LoanAccountStatus.PENDING))
-                .thenReturn(List.of(loan));
-        new LoanAccountCreationJob(disbursementService, loanRepository, mock(NotificationService.class),
-                cancellations, mock(LoanDisbursementRepository.class)).processLoanAccountCreation();
+        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L));
+        when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
+        new LoanAccountCreationJob(disbursementService, loanRepository, cancellations,
+                mock(LoanDisbursementRepository.class), auditService, mock(PlatformTransactionManager.class), 30)
+                .processLoanAccountCreation();
 
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
