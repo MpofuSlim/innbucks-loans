@@ -159,7 +159,7 @@ public class LoanDisbursementStatusJob {
      * returns for a missing loan is unconfirmed by InnBucks, and a booking can still land after a
      * timeout, so failing the loan here could open a paid loan to a second payout. It is reported
      * once (ERROR + audit) and the loan waits for an operator, who confirms with InnBucks and
-     * resolves it through POST /api/loans/{id}/booking/confirm-not-booked.
+     * resolves it through POST /lending/v1/loans/{loanId}/booking/not-booked.
      */
     private void handleNotFound(Loan loan) {
         loan.setDisbursementStatusMessage("InnBucks reports no loan under reference " + loan.getReference()
@@ -169,7 +169,7 @@ public class LoanDisbursementStatusJob {
         }
         loan.setBookingNotFoundAt(LocalDateTime.now(ZoneOffset.UTC));
         log.error("INNBUCKS BOOKING NOT FOUND: loan {} reference {} is held as booked but InnBucks reports no loan"
-                        + " under it - confirm with InnBucks, then resolve with POST /api/loans/{}/booking/confirm-not-booked"
+                        + " under it - confirm with InnBucks, then resolve with POST /lending/v1/loans/{}/booking/not-booked"
                         + " if it never landed (audited)",
                 loan.getId(), loan.getReference(), loan.getId());
         audit(BOOKING_NOT_FOUND, loan, "bookingFailureKind=" + loan.getBookingFailureKind());

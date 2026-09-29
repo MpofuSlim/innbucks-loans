@@ -12,10 +12,9 @@ import zw.co.innbucks.loans.core.user.UserGroup;
 import java.util.List;
 
 /**
- * Maps a caller's roles onto the {@link LoanReadScope} of the generic loan reads
- * ({@code /api/loans/search}, {@code /api/loans/{id}}). Same shape as
- * {@code MerchantController.resolveUserId}, applied to the caller's OWN merchant
- * because these endpoints take no merchant code:
+ * Maps a caller's roles onto the {@link LoanReadScope} of the loan reads
+ * ({@code GET /lending/v1/loans}, {@code GET /lending/v1/loans/{loanId}}). The scope comes
+ * from the token alone; a {@code merchantCode} filter can narrow it but never widen it:
  * <ul>
  *   <li>SUPER_ADMIN, CREDIT_MANAGER, FINANCE — lender-side staff who approve,
  *       disburse and reconcile across merchants: every loan.</li>

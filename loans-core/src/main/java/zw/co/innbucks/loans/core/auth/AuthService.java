@@ -1,9 +1,9 @@
 package zw.co.innbucks.loans.core.auth;
 
-import zw.co.innbucks.loans.core.api.AuthRequest;
-import zw.co.innbucks.loans.core.api.AuthResponse;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
 import zw.co.innbucks.loans.core.api.SearchUserRequest;
-import zw.co.innbucks.loans.core.api.UserDto;
+import zw.co.innbucks.loans.core.api.UserResponse;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.util.List;
@@ -14,7 +14,7 @@ import java.util.List;
  */
 public interface AuthService {
 
-    AuthResponse login(AuthRequest request);
+    LoginResponse login(LoginRequest request);
 
     User getLoggedInUser();
 
@@ -22,11 +22,11 @@ public interface AuthService {
 
     void resetPassword(String newPassword, String userId, String username);
 
-    List<UserDto> findUsersByMerchantCode(String merchantCode);
+    List<UserResponse> findUsersByMerchantCode(String merchantCode);
 
-    List<UserDto> search(SearchUserRequest searchUserRequest);
+    List<UserResponse> search(SearchUserRequest searchUserRequest);
 
-    UserDto getUser(String userId);
+    UserResponse getUser(String userId);
 
     void deleteUser(String userId);
 }

@@ -3,7 +3,6 @@ package zw.co.innbucks.loans.core.user;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import zw.co.innbucks.loans.core.api.AdminResetPasswordRequest;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notifications.EmailNotificationClient;
 import zw.co.innbucks.loans.core.notifications.NotificationChannel;
@@ -38,12 +37,11 @@ class AdminPasswordResetSessionsTest {
         user.setTokenVersion(2L);
         user.setFailedLoginAttempts(7);
         user.setLockedUntil(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(20));
-        when(users.findByUsername("teller1")).thenReturn(Optional.of(user));
+        when(users.findById(5L)).thenReturn(Optional.of(user));
         AdminPasswordResetServiceImpl service = new AdminPasswordResetServiceImpl(users, new BCryptPasswordEncoder(4),
                 sms, mock(EmailNotificationClient.class), mock(WhatsAppNotificationClient.class));
 
-        service.resetPassword(AdminResetPasswordRequest.builder().username("teller1")
-                .channel(NotificationChannel.SMS).build());
+        service.resetPassword(5L, NotificationChannel.SMS);
 
         assertThat(user.getTokenVersion()).isEqualTo(3L);
         assertThat(user.getFailedLoginAttempts()).isZero();

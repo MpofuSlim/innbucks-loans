@@ -1,36 +1,37 @@
 package zw.co.innbucks.loans.core.loan;
 
-import zw.co.innbucks.loans.core.LoanResponse;
-import zw.co.innbucks.loans.core.api.FindLoansInternalRequest;
-import zw.co.innbucks.loans.core.api.FindLoansRequest;
-import zw.co.innbucks.loans.core.api.LoanStatisticsResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import zw.co.innbucks.loans.core.user.User;
 
-import java.util.List;
+import java.time.LocalDate;
 import java.util.Optional;
 
 public interface LoanService {
+
     Optional<Loan> findByReference(String reference);
 
-    LoanResponse requestLoan(LoanRequest loanRequest);
+    /**
+     * @throws zw.co.innbucks.loans.core.exception.PendingApplicationException when the applicant
+     *         already has a loan in flight; nothing is created
+     */
+    LoanApplicationResponse requestLoan(LoanApplicationRequest request);
 
-    LoanDetails calculate(LoanRequest request, User loggedInUser);
+    /** Prices the terms; {@code originator} decides the commission split and may be null for a plain quote. */
+    LoanQuote calculate(LoanQuoteRequest request, User originator);
 
-    LoanStatisticsResponse getStatistics(FindLoansInternalRequest request);
+    /** The originator's disbursed loans between the two market days, both inclusive. */
+    SalesSummaryResponse getSalesSummary(Long userId, LocalDate fromDate, LocalDate toDate);
 
-    List<LoanDto> findLoans(FindLoansRequest findLoansRequest);
-
-    List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request);
-
-    /** {@link #findLoans} narrowed to what the caller may read. */
-    List<LoanDto> findLoans(FindLoansRequest findLoansRequest, LoanReadScope scope);
-
-    /** @throws zw.co.innbucks.loans.core.exception.NotFoundException when no loan has this id */
-    LoanDto getLoan(Long id);
+    /**
+     * One page of the loans matching the criteria that the caller may read, newest first.
+     * A merchant filter outside the caller's scope matches nothing rather than widening it.
+     */
+    Page<LoanSummaryResponse> findLoans(LoanSearchCriteria criteria, LoanReadScope scope, Pageable pageable);
 
     /**
      * @throws zw.co.innbucks.loans.core.exception.NotFoundException when no loan has this id
      *         OR it lies outside the scope — deliberately indistinguishable
      */
-    LoanDto getLoan(Long id, LoanReadScope scope);
+    LoanResponse getLoan(Long id, LoanReadScope scope);
 }

@@ -1,14 +1,15 @@
 package zw.co.innbucks.loans.core.user;
 
-import zw.co.innbucks.loans.core.api.CreateAgentRequest;
 import zw.co.innbucks.loans.core.api.CreateUserRequest;
-import zw.co.innbucks.loans.core.api.CreateUserResponse;
 import zw.co.innbucks.loans.core.api.ForgotPasswordRequest;
+import zw.co.innbucks.loans.core.api.UserResponse;
+
 
 public interface CreateUserService {
+
+    /** Sends a fresh temporary password to the account's mobile number; an unknown username does nothing. */
     void resetPassword(ForgotPasswordRequest request);
 
-    CreateUserResponse create(CreateUserRequest createUserRequest);
-
-    CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode);
+    /** Creates the user in the merchant and sends them a temporary password by SMS. */
+    UserResponse create(CreateUserRequest request, String merchantCode);
 }

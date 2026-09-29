@@ -6,8 +6,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import zw.co.innbucks.loans.core.api.AdminResetPasswordRequest;
-import zw.co.innbucks.loans.core.api.UserDto;
+import zw.co.innbucks.loans.core.api.UserResponse;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.notifications.EmailNotificationClient;
 import zw.co.innbucks.loans.core.notifications.NotificationChannel;
@@ -47,17 +47,13 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
 
     @Override
     @Transactional
-    public UserDto resetPassword(AdminResetPasswordRequest request) {
-        if (request == null || !StringUtils.hasText(request.getUsername())) {
-            throw new ValidationException("Username is required");
-        }
-        if (request.getChannel() == null) {
+    public UserResponse resetPassword(Long userId, NotificationChannel channel) {
+        if (channel == null) {
             throw new ValidationException("Delivery channel is required (EMAIL, SMS or WHATSAPP)");
         }
 
-        User user = userRepository.findByUsername(request.getUsername().trim())
-                .orElseThrow(() -> new ValidationException(
-                        "User %s not found".formatted(request.getUsername().trim())));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
 
         String temporaryPassword = generatePassword();
         String message = MESSAGE_TEMPLATE.formatted(
@@ -66,7 +62,7 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
 
         // Deliver first — a failure here throws NotificationDeliveryException and
         // aborts before the password is changed.
-        deliver(user, request.getChannel(), message);
+        deliver(user, channel, message);
 
         user.setPassword(passwordEncoder.encode(temporaryPassword));
         user.setTemporaryPassword(true);
@@ -77,9 +73,9 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
         user.setLockedUntil(null);
         userRepository.save(user);
         log.info("Super-admin reset password for user {} delivered via {}",
-                user.getUsername(), request.getChannel());
+                user.getUsername(), channel);
 
-        return UserDto.fromUser(user);
+        return UserResponse.from(user);
     }
 
     private void deliver(User user, NotificationChannel channel, String message) {

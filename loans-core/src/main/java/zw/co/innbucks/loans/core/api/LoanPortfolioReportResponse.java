@@ -6,14 +6,14 @@ import java.util.List;
 
 /**
  * Loan portfolio over a period (by application {@code createdDate}): loan count
- * and principal grouped by approval status, plus range totals.
+ * and principal grouped by SSB approval status, plus range totals.
  */
 public record LoanPortfolioReportResponse(
         LocalDate fromDate,
         LocalDate toDate,
         long totalLoans,
         BigDecimal totalPrincipal,
-        List<StatusBreakdown> byApprovalStatus) {
+        List<StatusBreakdown> bySsbApprovalStatus) {
 
     public record StatusBreakdown(String status, long count, BigDecimal totalPrincipal) {
     }

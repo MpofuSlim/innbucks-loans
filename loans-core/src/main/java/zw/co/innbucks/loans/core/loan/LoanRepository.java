@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import zw.co.innbucks.loans.core.api.LoanStatisticsResponse;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 
@@ -135,13 +134,14 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             DeductionCancellationStatus deductionCancellationStatus);
 
     @Query("""
-            select new zw.co.innbucks.loans.core.api.LoanStatisticsResponse(sum(l.principal), sum(l.agentCommission), count(l)) from Loan l 
-            where l.createdByUser.id = :agentId and l.dateDisbursed between :startDate and :endDate
+            select new zw.co.innbucks.loans.core.loan.SalesSummaryResponse(sum(l.principal), sum(l.agentCommission), count(l))
+            from Loan l
+            where l.createdByUser.id = :userId and l.dateDisbursed between :startDate and :endDate
             and l.disbursementStatus = zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
             """)
-    LoanStatisticsResponse getLoanStatistics(@Param("agentId") Long agentId,
-                                             @Param("startDate") LocalDateTime startDate,
-                                             @Param("endDate") LocalDateTime endDate);
+    SalesSummaryResponse salesSummary(@Param("userId") Long userId,
+                                      @Param("startDate") LocalDateTime startDate,
+                                      @Param("endDate") LocalDateTime endDate);
 
     // --- Admin dashboard aggregates -----------------------------------------
 

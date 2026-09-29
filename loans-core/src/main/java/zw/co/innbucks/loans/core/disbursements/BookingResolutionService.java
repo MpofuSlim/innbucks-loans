@@ -40,13 +40,13 @@ public class BookingResolutionService {
 
     /** Loans held as booked without a confirmed payout: the ones InnBucks reports missing first, then oldest. */
     @Transactional(readOnly = true)
-    public List<HeldBookingDto> findHeld() {
+    public List<HeldBookingResponse> findHeld() {
         return loanRepository.findByLoanAccountStatusAndDisbursementStatus(
                         LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)
                 .stream()
                 .sorted(Comparator.comparing((Loan loan) -> loan.getBookingNotFoundAt() == null)
                         .thenComparing(Loan::getId))
-                .map(HeldBookingDto::from)
+                .map(HeldBookingResponse::from)
                 .toList();
     }
 
@@ -57,7 +57,7 @@ public class BookingResolutionService {
      * Ndasenda deduction flagged for cancellation.
      */
     @Transactional
-    public HeldBookingDto confirmNotBooked(Long loanId, String note) {
+    public HeldBookingResponse confirmNotBooked(Long loanId, String note) {
         Loan loan = loanRepository.findByIdForUpdate(loanId)
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
 
@@ -86,7 +86,7 @@ public class BookingResolutionService {
                         + " missing since {}) - now eligible for a recovery payout (audited)",
                 loan.getId(), loan.getReference(), username, kindBefore, loan.getBookingNotFoundAt());
         audit(loan, username, kindBefore, cleanNote);
-        return HeldBookingDto.from(saved);
+        return HeldBookingResponse.from(saved);
     }
 
     private void audit(Loan loan, String username, BookingFailureKind kindBefore, String note) {

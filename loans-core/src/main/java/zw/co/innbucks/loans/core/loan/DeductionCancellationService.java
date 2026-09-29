@@ -155,12 +155,12 @@ public class DeductionCancellationService {
 
     /** Loans whose deduction still has to be cancelled, oldest first. */
     @Transactional(readOnly = true)
-    public List<DeductionCancellationDto> findRequired() {
+    public List<DeductionCancellationResponse> findRequired() {
         return loanRepository
                 .findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(
                         DeductionCancellationStatus.REQUIRED)
                 .stream()
-                .map(DeductionCancellationDto::from)
+                .map(DeductionCancellationResponse::from)
                 .toList();
     }
 
@@ -169,7 +169,7 @@ public class DeductionCancellationService {
      * so two operators recording the same loan get one success and one 409, not a double record.
      */
     @Transactional
-    public DeductionCancellationDto markCancelledExternally(Long loanId, String note) {
+    public DeductionCancellationResponse markCancelledExternally(Long loanId, String note) {
         Loan loan = loanRepository.findByIdForUpdate(loanId)
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
 
@@ -195,7 +195,7 @@ public class DeductionCancellationService {
         audit(CANCELLED_EXTERNALLY, loan, username, PORTAL_CHANNEL, DeductionCancellationStatus.REQUIRED,
                 DeductionCancellationStatus.CANCELLED_EXTERNALLY,
                 "reason=" + loan.getDeductionCancellationReason(), AuditService.sha256Hex(cleanNote));
-        return DeductionCancellationDto.from(saved);
+        return DeductionCancellationResponse.from(saved);
     }
 
     private void audit(String eventType, Loan loan, String actor, String channel,

@@ -56,8 +56,8 @@ class LoanServiceImplPricingTest {
                 MINIMUM_LOAN_TENOR, "1", MAXIMUM_LOAN_TENOR, "24"));
     }
 
-    private static LoanRequest request(String amount, LoanAmountType type) {
-        return LoanRequest.builder().amount(new BigDecimal(amount)).tenor(12).type(type).build();
+    private static LoanQuoteRequest request(String amount, LoanAmountType type) {
+        return new LoanQuoteRequest(new BigDecimal(amount), type, 12);
     }
 
     @Test
@@ -67,13 +67,13 @@ class LoanServiceImplPricingTest {
 
         // (1.025)^12 = 1.3448888242...; 1000 * 0.025 * 1.34488... / 0.34488... = 97.4871...
         // At the old 3% it was 100.46 — 2.97 a month, 35.64 over the loan, overcharged.
-        LoanDetails details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
+        LoanQuote details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
 
-        assertThat(details.getRegularMonthlyInstallment()).isEqualTo(new BigDecimal("97.49"));
-        assertThat(details.getAdminFeeAmount()).isEqualTo(new BigDecimal("50.00"));
+        assertThat(details.getMonthlyInstallment()).isEqualTo(new BigDecimal("97.49"));
+        assertThat(details.getFeeAmount()).isEqualTo(new BigDecimal("50.00"));
         assertThat(details.getDisbursedAmount()).isEqualTo(new BigDecimal("950.00"));
 
-        List<AmortizationEntry> schedule = details.getAmortization();
+        List<AmortizationEntry> schedule = details.getAmortizationSchedule();
         assertThat(schedule).hasSize(12);
         // Row 1: 1000.00 * 0.025 = 25.00 interest (30.00 at the old 3%);
         // 97.49 - 25.00 = 72.49 principal; 1000.00 - 72.49 = 927.51 left.
@@ -97,11 +97,11 @@ class LoanServiceImplPricingTest {
         rates("3", "0", "5");
 
         // (1.03)^12 = 1.4257608868...; 1000 * 0.03 * 1.42576... / 0.42576... = 100.4620...
-        LoanDetails details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
+        LoanQuote details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
 
-        assertThat(details.getRegularMonthlyInstallment()).isEqualTo(new BigDecimal("100.46"));
+        assertThat(details.getMonthlyInstallment()).isEqualTo(new BigDecimal("100.46"));
         // Row 1: 1000.00 * 0.03 = 30.00; 100.46 - 30.00 = 70.46; 929.54 left.
-        AmortizationEntry first = details.getAmortization().get(0);
+        AmortizationEntry first = details.getAmortizationSchedule().get(0);
         assertThat(first.getInterestPayment()).isEqualTo(new BigDecimal("30.00"));
         assertThat(first.getPrincipalPayment()).isEqualTo(new BigDecimal("70.46"));
         assertThat(first.getRemainingPrincipal()).isEqualTo(new BigDecimal("929.54"));
@@ -115,10 +115,10 @@ class LoanServiceImplPricingTest {
 
         // (1.004)^12 - 1 = 0.0490...; 1000 * 0.004 * 1.0490... / 0.0490... = 85.5215...
         // The old code rounded 0.004 to 0.00 and threw on (1 + 0)^12 - 1 = 0.
-        LoanDetails details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
+        LoanQuote details = service.calculate(request("1000.00", LoanAmountType.GROSS_OF_FEES), null);
 
-        assertThat(details.getRegularMonthlyInstallment()).isEqualTo(new BigDecimal("85.52"));
-        assertThat(details.getAmortization().get(0).getInterestPayment()).isEqualTo(new BigDecimal("4.00"));
+        assertThat(details.getMonthlyInstallment()).isEqualTo(new BigDecimal("85.52"));
+        assertThat(details.getAmortizationSchedule().get(0).getInterestPayment()).isEqualTo(new BigDecimal("4.00"));
     }
 
     @Test
@@ -133,12 +133,12 @@ class LoanServiceImplPricingTest {
         agent.setMerchant(merchant);
 
         // 3% on 1200.00 over 12 months: 1200 * 0.03 * 1.42576... / 0.42576... = 120.5545... -> 120.55.
-        LoanDetails details = service.calculate(request("1200.00", LoanAmountType.GROSS_OF_FEES), agent);
+        LoanQuote details = service.calculate(request("1200.00", LoanAmountType.GROSS_OF_FEES), agent);
 
-        assertThat(details.getRegularMonthlyInstallment()).isEqualTo(new BigDecimal("120.55"));
+        assertThat(details.getMonthlyInstallment()).isEqualTo(new BigDecimal("120.55"));
         // Grossed deduction = 120.55 / (1 - 0.025) = 123.6410... -> 123.64
         // (at the old 3% it was 120.55 / 0.97 = 124.28).
-        assertThat(details.getGrossedMonthlyInstallment()).isEqualTo(new BigDecimal("123.64"));
+        assertThat(details.getGrossedMonthlyDeduction()).isEqualTo(new BigDecimal("123.64"));
         // Commission = 1200.00 * 0.025 = 30.00, split 37.5% / 62.5% = 11.25 / 18.75 — exactly
         // the whole. The old code took 3% (36.00) and split it 38% / 63% (13.68 / 22.68),
         // paying out 101% of a commission that was itself overstated.
@@ -152,10 +152,10 @@ class LoanServiceImplPricingTest {
         rates("3", "0", "2.5");
 
         // 975.00 / (1 - 0.025) = 1000.00 principal; fee 1000.00 * 2.5 / 100 = 25.00.
-        LoanDetails details = service.calculate(request("975.00", LoanAmountType.NET_OF_FEES), null);
+        LoanQuote details = service.calculate(request("975.00", LoanAmountType.NET_OF_FEES), null);
 
         assertThat(details.getPrincipal()).isEqualTo(new BigDecimal("1000.00"));
-        assertThat(details.getAdminFeeAmount()).isEqualTo(new BigDecimal("25.00"));
+        assertThat(details.getFeeAmount()).isEqualTo(new BigDecimal("25.00"));
         assertThat(details.getDisbursedAmount()).isEqualTo(new BigDecimal("975.00"));
     }
 }

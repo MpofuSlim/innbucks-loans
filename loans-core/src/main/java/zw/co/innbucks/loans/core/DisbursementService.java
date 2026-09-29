@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-import zw.co.innbucks.loans.core.ManualDisbursementResult.Outcome;
+import zw.co.innbucks.loans.core.ManualDisbursementResponse.Outcome;
 import zw.co.innbucks.loans.core.disbursements.BookingFailureKind;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationResponse;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
@@ -116,7 +116,7 @@ public abstract class DisbursementService {
      * @throws NotFoundException               unknown loan
      * @throws DisbursementNotAllowedException the loan is not eligible; nothing was sent
      */
-    public ManualDisbursementResult disburse(Long loanId) {
+    public ManualDisbursementResponse disburse(Long loanId) {
         Claim claim = transactionTemplate.execute(status -> claim(loanId));
 
         DisbursementResponse response;
@@ -268,7 +268,7 @@ public abstract class DisbursementService {
         String detail = response.getMessage() == null ? "no detail" : response.getMessage();
         DisbursementStatus status = response.getStatus() == null ? DisbursementStatus.UNKNOWN : response.getStatus();
 
-        ManualDisbursementResult result = switch (status) {
+        ManualDisbursementResponse result = switch (status) {
             case SUCCESS -> {
                 LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
                 String paid = response.getApprovalCode() == null
@@ -285,7 +285,7 @@ public abstract class DisbursementService {
                 // already compensated, and a terminal saga posts nothing, so this is the only place
                 // it can be. The loan's reference is MD-<ref> since the claim, so it posts as DISB-MD-<ref>.
                 disbursementLedger.recordPayout(loan, MANUAL_PAYOUT_ACTOR);
-                yield ManualDisbursementResult.builder().outcome(Outcome.DISBURSED).reference(reference)
+                yield ManualDisbursementResponse.builder().outcome(Outcome.DISBURSED).reference(reference)
                         .message(paid).build();
             }
             case FAILED -> {
@@ -295,7 +295,7 @@ public abstract class DisbursementService {
                 attempt.setDisbursementStatusMessage(truncate(refused));
                 loan.setDisbursementStatusMessage(truncate(refused));
                 reflag(loan, claim, claim.unflaggedReason());
-                yield ManualDisbursementResult.builder().outcome(Outcome.REFUSED).reference(reference)
+                yield ManualDisbursementResponse.builder().outcome(Outcome.REFUSED).reference(reference)
                         .message(refused + ". Nothing was paid; the loan may be tried again.").build();
             }
             case UNKNOWN -> {
@@ -320,8 +320,8 @@ public abstract class DisbursementService {
         }
     }
 
-    private static ManualDisbursementResult inDoubt(String reference, String detail) {
-        return ManualDisbursementResult.builder()
+    private static ManualDisbursementResponse inDoubt(String reference, String detail) {
+        return ManualDisbursementResponse.builder()
                 .outcome(Outcome.IN_DOUBT)
                 .reference(reference)
                 .message(detail + " Confirm with InnBucks whether " + reference + " was paid;"
@@ -363,6 +363,6 @@ public abstract class DisbursementService {
                          String unflaggedReason) {
     }
 
-    private record Settled(Loan loan, ManualDisbursementResult result) {
+    private record Settled(Loan loan, ManualDisbursementResponse result) {
     }
 }

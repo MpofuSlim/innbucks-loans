@@ -180,18 +180,18 @@ class DeductionCancellationServiceTest {
         when(loanRepository.findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(
                 DeductionCancellationStatus.REQUIRED)).thenReturn(List.of(loan));
 
-        List<DeductionCancellationDto> required = service.findRequired();
+        List<DeductionCancellationResponse> required = service.findRequired();
 
         verify(loanRepository).findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(
                 DeductionCancellationStatus.REQUIRED);
         verifyNoMoreInteractions(loanRepository);
         assertThat(required).singleElement().satisfies(dto -> {
-            assertThat(dto.getId()).isEqualTo(42L);
+            assertThat(dto.getLoanId()).isEqualTo(42L);
             assertThat(dto.getReference()).isEqualTo("000000042");
             assertThat(dto.getEcNumber()).isEqualTo("*****67A");
-            assertThat(dto.getInstalmentLodged()).isEqualByComparingTo("98.50");
+            assertThat(dto.getGrossedMonthlyDeduction()).isEqualByComparingTo("98.50");
             assertThat(dto.getBatchNumber()).isEqualTo("BATCH-20260901-07");
-            assertThat(dto.getNdasendaDeductionId()).isEqualTo("ND-7002");
+            assertThat(dto.getSsbDeductionId()).isEqualTo("ND-7002");
             assertThat(dto.getReason()).isEqualTo("CREDIT_REJECTED");
             assertThat(dto.getAction()).contains("cancel the deduction on Ndasenda's portal");
             assertThat(dto.getDisbursementStatusMessage())
@@ -209,7 +209,7 @@ class DeductionCancellationServiceTest {
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        DeductionCancellationDto dto = service.markCancelledExternally(42L, "  Cancelled on portal, ref NDC-551  ");
+        DeductionCancellationResponse dto = service.markCancelledExternally(42L, "  Cancelled on portal, ref NDC-551  ");
 
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         assertThat(loan.getDeductionCancellationNote()).isEqualTo("Cancelled on portal, ref NDC-551");

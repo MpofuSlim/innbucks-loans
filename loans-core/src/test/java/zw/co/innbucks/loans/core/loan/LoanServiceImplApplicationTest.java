@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import zw.co.innbucks.loans.core.LoanResponse;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
@@ -71,25 +70,50 @@ class LoanServiceImplApplicationTest {
     }
 
     @Test
-    @DisplayName("an incomplete application (e.g. a bulk row) is refused before anything is saved")
+    @DisplayName("an incomplete application is refused before anything is saved")
     void incompleteApplicationIsRefusedUpFront() {
-        LoanRequest incomplete = LoanRequestValidationTest.completeApplication();
+        LoanApplicationRequest incomplete = LoanApplicationRequestValidationTest.completeApplication();
         incomplete.setAddress(null);
         incomplete.setNextOfKin(null);
 
         assertThatThrownBy(() -> service.requestLoan(incomplete))
                 .isInstanceOf(IllegalArgumentException.class)
-                // Same shape as the web layer's 400: full path, sorted, "; "-joined.
+                // Every missing field in one message: full path, sorted, "; "-joined.
                 .hasMessage("address: Address is required; nextOfKin: Next of kin is required");
         verify(loanRepository, never()).save(any());
     }
 
     @Test
+    @DisplayName("dependants and children are stored as given (children used to be stored as the dependants count)")
+    void dependantsAndChildrenAreStoredSeparately() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setNumberOfDependants(3);
+        request.setNumberOfChildren(2);
+
+        service.requestLoan(request);
+
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository).save(saved.capture());
+        assertThat(saved.getValue().getNumberOfDependencies()).isEqualTo(3);
+        assertThat(saved.getValue().getNumberOfChildren()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("the quoted interest is stored with the loan (the loan view shows it; it used to be left empty)")
+    void interestAmountIsStored() {
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository).save(saved.capture());
+        assertThat(saved.getValue().getInterestAmount()).isPositive();
+    }
+
+    @Test
     @DisplayName("a complete application is saved with its line of business")
     void lineOfBusinessReachesTheLoan() {
-        LoanResponse response = service.requestLoan(LoanRequestValidationTest.completeApplication());
+        LoanApplicationResponse response = service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
 
-        assertThat(response.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(response.ssbApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
         assertThat(saved.getValue().getLineOfBusiness()).isEqualTo(LineOfBusiness.SERVICES);
@@ -99,7 +123,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("a single application's documents are checked like a bulk row's: an executable is refused, nothing saved")
     void singleApplicationDocumentsAreChecked() {
-        LoanRequest withExecutable = LoanRequestValidationTest.completeApplication();
+        LoanApplicationRequest withExecutable = LoanApplicationRequestValidationTest.completeApplication();
         withExecutable.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("MZ\u0090\u0000 payload".getBytes()));
 
         assertThatThrownBy(() -> service.requestLoan(withExecutable))
@@ -107,7 +131,7 @@ class LoanServiceImplApplicationTest {
                 .hasMessageContaining("payslipPicture contains an executable");
         verify(loanRepository, never()).save(any());
 
-        LoanRequest withUnknown = LoanRequestValidationTest.completeApplication();
+        LoanApplicationRequest withUnknown = LoanApplicationRequestValidationTest.completeApplication();
         withUnknown.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString("not an image".getBytes()));
         assertThatThrownBy(() -> service.requestLoan(withUnknown))
                 .hasMessageContaining("nationalIdPicture is not a recognised document type");
@@ -117,7 +141,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("a real PDF and a PNG data-URL pass the check and the application is saved")
     void recognisedDocumentsPass() {
-        LoanRequest withDocuments = LoanRequestValidationTest.completeApplication();
+        LoanApplicationRequest withDocuments = LoanApplicationRequestValidationTest.completeApplication();
         withDocuments.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes()));
         withDocuments.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder()
                 .encodeToString(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}));

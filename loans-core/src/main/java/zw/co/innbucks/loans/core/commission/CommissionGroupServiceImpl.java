@@ -5,11 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import zw.co.innbucks.loans.core.api.CommissionGroupDto;
+import zw.co.innbucks.loans.core.api.CommissionGroupResponse;
 import zw.co.innbucks.loans.core.api.CreateCommissionGroupRequest;
+import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -21,8 +24,16 @@ public class CommissionGroupServiceImpl implements CommissionGroupService {
     private final CommissionGroupRepository commissionGroupRepository;
 
     @Override
+    public List<CommissionGroupResponse> findEnabled() {
+        return commissionGroupRepository.findCommissionGroupByEnabled(true).stream()
+                .sorted(Comparator.comparing(CommissionGroup::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(CommissionGroupResponse::from)
+                .toList();
+    }
+
+    @Override
     @Transactional
-    public CommissionGroupDto create(CreateCommissionGroupRequest request) {
+    public CommissionGroupResponse create(CreateCommissionGroupRequest request) {
         validate(request);
 
         CommissionGroup saved = commissionGroupRepository.save(CommissionGroup.builder()
@@ -34,7 +45,7 @@ public class CommissionGroupServiceImpl implements CommissionGroupService {
                 .build());
 
         log.info("Created commission group {}", saved.getName());
-        return CommissionGroupDto.fromCommissionGroup(saved);
+        return CommissionGroupResponse.from(saved);
     }
 
     private void validate(CreateCommissionGroupRequest request) {
@@ -51,7 +62,7 @@ public class CommissionGroupServiceImpl implements CommissionGroupService {
             throw new ValidationException("Commission values cannot be negative");
         }
         if (commissionGroupRepository.findByNameIgnoreCase(request.getName().trim()).isPresent()) {
-            throw new ValidationException("Commission group %s already exists".formatted(request.getName().trim()));
+            throw new ConflictException("Commission group %s already exists".formatted(request.getName().trim()));
         }
         if (Boolean.TRUE.equals(request.getPercentage())
                 && request.getAgentCommission().add(request.getProviderCommission()).compareTo(ONE_HUNDRED) != 0) {

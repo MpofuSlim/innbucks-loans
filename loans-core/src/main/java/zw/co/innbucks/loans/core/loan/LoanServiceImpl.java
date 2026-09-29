@@ -6,13 +6,14 @@ import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import zw.co.innbucks.loans.core.LoanResponse;
 import zw.co.innbucks.loans.core.TextUtils;
-import zw.co.innbucks.loans.core.api.FindLoansInternalRequest;
-import zw.co.innbucks.loans.core.api.FindLoansRequest;
-import zw.co.innbucks.loans.core.api.LoanStatisticsResponse;
 import zw.co.innbucks.loans.core.channel.Channel;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
@@ -21,6 +22,7 @@ import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -63,68 +65,39 @@ public class LoanServiceImpl implements LoanService {
     private final MarketTimeZone marketTimeZone;
     private final FileSignatureValidator fileSignatureValidator;
 
-    @Override
-    public LoanStatisticsResponse getStatistics(FindLoansInternalRequest request) {
-        return loanRepository.getLoanStatistics(request.getUserId(), atStartOfDay(request.getFromDate()),
-                atEndOfDay(request.getToDate()));
-    }
+    /** Newest first, id as the tie-break: a sort on a non-unique column alone would let pages repeat or skip rows. */
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id"));
 
-    public List<LoanDto> findLoans(FindLoansRequest request) {
-        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
-                .and(withDisbursementStatus(request.getDisbursementStatus()))
-                .and(withInternalApprovalStatus(request.getInternalApprovalStatus()))
-                .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
-        return loanMapper.fromLoans(all);
+    @Override
+    public SalesSummaryResponse getSalesSummary(Long userId, LocalDate fromDate, LocalDate toDate) {
+        return loanRepository.salesSummary(userId, atStartOfDay(fromDate), atEndOfDay(toDate));
     }
 
     @Override
-    public List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request) {
-        log.info("Agent or User Id: {}", request.getUserId());
-
-        final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
-                .and(withMerchantCode(request.getMerchantCode()))
-                .and(createdByUserId(request.getUserId()))
-                .and(withDisbursementStatus(request.getDisbursementStatus()))
-                .and(withInternalApprovalStatus(request.getInternalApprovalStatus()))
-                .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
-        return loanMapper.fromLoans(all);
-    }
-
-    @Override
-    public List<LoanDto> findLoans(FindLoansRequest request, LoanReadScope scope) {
-        if (scope.platformWide()) {
-            return findLoans(request);
+    public Page<LoanSummaryResponse> findLoans(LoanSearchCriteria criteria, LoanReadScope scope, Pageable pageable) {
+        Specification<Loan> spec = where(withApprovalStatus(criteria.ssbApprovalStatus()))
+                .and(withInternalApprovalStatus(criteria.creditApprovalStatus()))
+                .and(withDisbursementStatus(criteria.disbursementStatus()))
+                .and(withMerchantCode(criteria.merchantCode()))
+                .and(withCreatedDateBetween(atStartOfDay(criteria.fromDate()), atEndOfDay(criteria.toDate())));
+        if (!scope.platformWide()) {
+            // ANDed with any merchant filter above, so a filter naming another merchant finds nothing.
+            spec = spec.and(withMerchantCode(scope.merchantCode())).and(createdByUserId(scope.userId()));
         }
-        // The same merchant + originator predicates MerchantController's search uses.
-        return findLoansForMerchant(FindLoansInternalRequest.builder()
-                .merchantCode(scope.merchantCode())
-                .userId(scope.userId())
-                .approvalStatus(request.getApprovalStatus())
-                .internalApprovalStatus(request.getInternalApprovalStatus())
-                .disbursementStatus(request.getDisbursementStatus())
-                .fromDate(request.getFromDate())
-                .toDate(request.getToDate())
-                .build());
+        Pageable newestFirst = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), NEWEST_FIRST);
+        return loanRepository.findAll(spec, newestFirst).map(loanMapper::toSummary);
     }
 
     @Override
-    public LoanDto getLoan(Long id) {
-        return loanRepository.findById(id)
-                .map(loanMapper::fromLoan)
-                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
-    }
-
-    @Override
-    public LoanDto getLoan(Long id, LoanReadScope scope) {
-        if (scope.platformWide()) {
-            return getLoan(id);
+    public LoanResponse getLoan(Long id, LoanReadScope scope) {
+        Specification<Loan> spec = where(withId(id));
+        if (!scope.platformWide()) {
+            // Scope applied IN the query, so an out-of-scope loan is simply not found: the same 404
+            // as a missing id, which keeps this from being an existence oracle.
+            spec = spec.and(withMerchantCode(scope.merchantCode())).and(createdByUserId(scope.userId()));
         }
-        // Scope applied IN the query, so an out-of-scope loan is simply not found —
-        // the same 404 as a missing id, which keeps this from being an existence oracle.
-        return loanRepository.findOne(where(withId(id))
-                        .and(withMerchantCode(scope.merchantCode()))
-                        .and(createdByUserId(scope.userId())))
-                .map(loanMapper::fromLoan)
+        return loanRepository.findOne(spec)
+                .map(loanMapper::toResponse)
                 .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
     }
 
@@ -149,11 +122,11 @@ public class LoanServiceImpl implements LoanService {
      */
     @Override
     @Transactional
-    public LoanResponse requestLoan(LoanRequest loanRequest) {
+    public LoanApplicationResponse requestLoan(LoanApplicationRequest loanRequest) {
 
         // Identifiers only: the request carries the applicant's KYC and base64 documents.
         log.info("Requesting loan approval: channel {}, ec {}, amount {}, tenor {}", loanRequest.getChannelId(),
-                maskEcNumber(loanRequest.getEcnumber()), loanRequest.getAmount(), loanRequest.getTenor());
+                maskEcNumber(loanRequest.getEcNumber()), loanRequest.getAmount(), loanRequest.getTenor());
 
         // The HTTP body is already checked by @Validated on the controller (one
         // 400 listing every field). This repeats it for any caller that reaches the
@@ -174,7 +147,7 @@ public class LoanServiceImpl implements LoanService {
 
         // Stored upper-cased, as the national ID already is, so the pending check
         // compares like with like ("1234567a" and "1234567A" are one person).
-        final String formattedEcNumber = TextUtils.trimSpecialCharacters(loanRequest.getEcnumber()).toUpperCase();
+        final String formattedEcNumber = TextUtils.trimSpecialCharacters(loanRequest.getEcNumber()).toUpperCase();
 
         if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
             throw new IllegalArgumentException("EC Number is not valid");
@@ -185,17 +158,14 @@ public class LoanServiceImpl implements LoanService {
             throw new IllegalArgumentException("Must be 18+ years");
         }
 
-        final String formattedIdNumber = TextUtils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
+        final String formattedIdNumber = TextUtils.trimSpecialCharacters(loanRequest.getNationalIdNumber()).toUpperCase();
 
         lockApplicant(formattedEcNumber, formattedIdNumber);
         Optional<Long> pendingLoanId = findPendingLoan(formattedEcNumber, formattedIdNumber);
 
         if (pendingLoanId.isPresent()) {
             log.info("Refusing loan application: loan {} for this applicant is still in flight", pendingLoanId.get());
-            return LoanResponse.builder()
-                    .loanApprovalStatus(LoanApprovalStatus.REJECTED)
-                    .message("You have a pending loan application.")
-                    .build();
+            throw new PendingApplicationException(pendingLoanId.get());
         }
 
 
@@ -209,16 +179,10 @@ public class LoanServiceImpl implements LoanService {
         User loggedInUser = optionalChannel.map(Channel::getSystemUser)
                 .orElseGet(authService::getLoggedInUser);
 
-        LoanDetails loanDetails = calculate(loanRequest, loggedInUser);
-
-//        String merchantCode = loanRequest.getMerchant() == null ? Merchant.DEFAULT_MERCHANT_CODE
-//                : loanRequest.getMerchant();
-//
-//        Merchant merchant = merchantRepository.findByMerchantCode(merchantCode)
-//                .orElseThrow(() -> new IllegalArgumentException("Merchant code " + merchantCode + " not found"));
+        LoanQuote quote = calculate(loanRequest.quoteRequest(), loggedInUser);
 
         final Loan loan = Loan.builder()
-                .principal(loanDetails.getPrincipal())
+                .principal(quote.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
                 .internalApprovalStatus(InternalApprovalStatus.PENDING)
@@ -226,39 +190,39 @@ public class LoanServiceImpl implements LoanService {
                 .ecNumber(formattedEcNumber)
                 .nationalIdNumber(formattedIdNumber)
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
-                .signature(loanRequest.getSignatureData())
+                .signature(loanRequest.getSignature())
                 .nationalIdPicture(loanRequest.getNationalIdPicture())
                 .payslipPicture(loanRequest.getPayslipPicture())
-                .feeAmount(loanDetails.getAdminFeeAmount())
-                .feeRate(loanDetails.getAdminFeeRate())
-                .interestRate(loanDetails.getInterestRate())
-                .monthlyInstallment(loanDetails.getRegularMonthlyInstallment())
-                .grossedMonthlyDeduction(loanDetails.getGrossedMonthlyInstallment())
-                .commissionRate(loanDetails.getCommissionRate())
-                .disbursedAmount(loanDetails.getDisbursedAmount())
-                .tenor(loanDetails.getTenor())
-                .firstName(loanRequest.getFname())
-                .lastName(loanRequest.getLname())
+                .feeAmount(quote.getFeeAmount())
+                .feeRate(quote.getFeeRate())
+                .interestRate(quote.getInterestRate())
+                .interestAmount(quote.getInterestAmount())
+                .monthlyInstallment(quote.getMonthlyInstallment())
+                .grossedMonthlyDeduction(quote.getGrossedMonthlyDeduction())
+                .commissionRate(quote.getCommissionRate())
+                .disbursedAmount(quote.getDisbursedAmount())
+                .tenor(quote.getTenor())
+                .firstName(loanRequest.getFirstName())
+                .lastName(loanRequest.getLastName())
                 .dateOfBirth(dateOfBirth)
-                .agentCommission(loanDetails.getAgentCommission())
-                .agentCommissionRate(loanDetails.getAgentCommissionRate())
-                .providerCommissionRate(loanDetails.getProviderCommissionRate())
-                .providerCommission(loanDetails.getProviderCommission())
-                .commissionRatePercentage(loanDetails.isCommissionPercentage())
-                .numberOfDependencies(loanRequest.getNumberOfDependencies())
-                .numberOfChildren(loanRequest.getNumberOfDependencies())
+                .agentCommission(quote.getAgentCommission())
+                .agentCommissionRate(quote.getAgentCommissionRate())
+                .providerCommissionRate(quote.getProviderCommissionRate())
+                .providerCommission(quote.getProviderCommission())
+                .commissionRatePercentage(quote.isCommissionPercentage())
+                .numberOfDependencies(loanRequest.getNumberOfDependants())
+                .numberOfChildren(loanRequest.getNumberOfChildren())
                 .educationLevel(loanRequest.getEducationLevel())
                 .maritalStatus(loanRequest.getMaritalStatus())
                 .alternateContactNumber(loanRequest.getAlternateContactNumber())
                 .placeOfBirth(loanRequest.getPlaceOfBirth())
                 .title(loanRequest.getTitle())
                 .email(loanRequest.getEmail())
-                .educationLevel(loanRequest.getEducationLevel())
                 .address(loanRequest.getAddress())
                 .employmentDetail(loanRequest.getEmploymentDetail())
                 .nextOfKin(loanRequest.getNextOfKin())
                 .witness(loanRequest.getWitness())
-                .loanPurpose(loanRequest.getPurposeOfLoan())
+                .loanPurpose(loanRequest.getLoanPurpose())
                 .lineOfBusiness(loanRequest.getLineOfBusiness())
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
@@ -267,26 +231,22 @@ public class LoanServiceImpl implements LoanService {
                 .createdByUser(loggedInUser)
                 .merchant(loggedInUser.getMerchant())
                 .channel(optionalChannel.orElse(null))
-                .loanStartDate(loanDetails.getStartDate())
+                .loanStartDate(quote.getStartDate())
                 .build();
 
         loanRepository.save(loan);
 
-        return LoanResponse.builder()
-                .loanApprovalStatus(LoanApprovalStatus.NEW)
-                .internalReference(loan.getReference())
-                .message("Loan Sent For Approval")
-                .build();
+        return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
     }
 
     /**
      * Refuses an application that fails the Default or {@link LoanApplicationChecks}
-     * constraints, in the same {@code field: message; ...} shape (full property
-     * path, sorted) the web layer's validation 400 uses, so a direct call and an
-     * HTTP call report a missing field identically.
+     * constraints, naming every failing field in one message ({@code field: message; ...},
+     * full property path, sorted). The web layer checks the same constraints first and
+     * answers them as a field map; this covers any caller that reaches the service directly.
      */
-    private void requireCompleteApplication(LoanRequest loanRequest) {
-        Set<ConstraintViolation<LoanRequest>> violations =
+    private void requireCompleteApplication(LoanApplicationRequest loanRequest) {
+        Set<ConstraintViolation<LoanApplicationRequest>> violations =
                 validator.validate(loanRequest, Default.class, LoanApplicationChecks.class);
         if (!violations.isEmpty()) {
             throw new IllegalArgumentException(violations.stream()
@@ -350,7 +310,7 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
-    public LoanDetails calculate(LoanRequest request, User loggedInUser) {
+    public LoanQuote calculate(LoanQuoteRequest request, User loggedInUser) {
 
         List<AmortizationEntry> schedule = new ArrayList<>();
 
@@ -359,14 +319,14 @@ public class LoanServiceImpl implements LoanService {
                 MINIMUM_LOAN_AMOUNT, MAXIMUM_LOAN_AMOUNT, MINIMUM_LOAN_TENOR, MAXIMUM_LOAN_TENOR);
 
 
-        if (request.getTenor() == null || request.getTenor() <= 0) {
+        if (request.tenor() == null || request.tenor() <= 0) {
             throw new IllegalArgumentException("Loan tenor is required");
         }
 
         int minLoanTenor = Integer.parseInt(String.valueOf(params.get(MINIMUM_LOAN_TENOR)));
         int maxLoanTenor = Integer.parseInt(String.valueOf(params.get(MAXIMUM_LOAN_TENOR)));
 
-        if (request.getTenor() < minLoanTenor || request.getTenor() > maxLoanTenor) {
+        if (request.tenor() < minLoanTenor || request.tenor() > maxLoanTenor) {
             throw new IllegalArgumentException(String.format("Loan tenor should be between %s and %s", minLoanTenor, maxLoanTenor));
         }
 
@@ -384,7 +344,7 @@ public class LoanServiceImpl implements LoanService {
         BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
         BigDecimal interestRate = percentToFraction(monthlyInterestRate);
 
-        BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
+        BigDecimal powerValue = interestRate.add(ONE).pow(request.tenor());
 
         BigDecimal installment = principalLoanAmount.multiply(interestRate).multiply(powerValue)
                 .divide(powerValue.subtract(ONE), 2, RoundingMode.HALF_UP);
@@ -411,17 +371,17 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal providerCommissionAmount = getCommissionAmount(totalCommissionAmount, commissionGroup.isPercentage(), commissionGroup.getProviderCommission());
 
-        final LoanDetails loanDetails = LoanDetails.builder()
+        final LoanQuote quote = LoanQuote.builder()
                 .principal(principalLoanAmount)
-                .tenor(request.getTenor())
-                .adminFeeAmount(adminFeeAmount)
-                .adminFeeRate(adminFeeRate)
+                .tenor(request.tenor())
+                .feeAmount(adminFeeAmount)
+                .feeRate(adminFeeRate)
                 .interestRate(monthlyInterestRate)
                 .disbursedAmount(disbursementAmount)
-                .amortization(schedule)
+                .amortizationSchedule(schedule)
                 .commissionRate(commissionRate)
-                .regularMonthlyInstallment(installment)
-                .grossedMonthlyInstallment(grossedMonthlyPayment)
+                .monthlyInstallment(installment)
+                .grossedMonthlyDeduction(grossedMonthlyPayment)
                 .agentCommission(agentCommissionAmount)
                 .providerCommission(providerCommissionAmount)
                 .agentCommissionRate(commissionGroup.getAgentCommission())
@@ -429,13 +389,13 @@ public class LoanServiceImpl implements LoanService {
                 .commissionPercentage(commissionGroup.isPercentage())
                 .build();
 
-        amortizeLoan(loanDetails);
+        amortizeLoan(quote);
 
-        return loanDetails;
+        return quote;
 
     }
 
-    private Optional<Channel> resolveChannel(LoanRequest loanRequest) {
+    private Optional<Channel> resolveChannel(LoanApplicationRequest loanRequest) {
         return loanRequest.getChannelId() != null ?
                 channelRepository.findChannelByChannelId(loanRequest.getChannelId()) : Optional.empty();
     }
@@ -457,13 +417,13 @@ public class LoanServiceImpl implements LoanService {
         return percent.divide(ONE_HUNDRED);
     }
 
-    private void amortizeLoan(LoanDetails loanDetails) {
-        BigDecimal interestRate = percentToFraction(loanDetails.getInterestRate());
-        BigDecimal remainingPrincipal = loanDetails.getPrincipal();
+    private void amortizeLoan(LoanQuote quote) {
+        BigDecimal interestRate = percentToFraction(quote.getInterestRate());
+        BigDecimal remainingPrincipal = quote.getPrincipal();
 
-        for (int paymentNumber = 1; paymentNumber <= loanDetails.getTenor(); paymentNumber++) {
+        for (int paymentNumber = 1; paymentNumber <= quote.getTenor(); paymentNumber++) {
             BigDecimal interestPayment = remainingPrincipal.multiply(interestRate).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal principalPayment = loanDetails.getRegularMonthlyInstallment().subtract(interestPayment).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal principalPayment = quote.getMonthlyInstallment().subtract(interestPayment).setScale(2, RoundingMode.HALF_UP);
             remainingPrincipal = remainingPrincipal.subtract(principalPayment).setScale(2, RoundingMode.HALF_UP);
 
             if (remainingPrincipal.compareTo(ONE) < 0) {
@@ -473,26 +433,26 @@ public class LoanServiceImpl implements LoanService {
             AmortizationEntry entry = AmortizationEntry.builder()
                     .interestPayment(interestPayment)
                     .paymentNumber(paymentNumber)
-                    .regularMonthlyPayment(loanDetails.getRegularMonthlyInstallment())
-                    .grossedMonthlyPayment(loanDetails.getGrossedMonthlyInstallment())
+                    .regularMonthlyPayment(quote.getMonthlyInstallment())
+                    .grossedMonthlyPayment(quote.getGrossedMonthlyDeduction())
                     .remainingPrincipal(remainingPrincipal)
                     .principalPayment(principalPayment)
                     .build();
 
-            loanDetails.add(entry);
+            quote.add(entry);
         }
     }
 
-    private BigDecimal getPrincipalLoanAmount(LoanRequest request, BigDecimal adminFeeRate) {
+    private BigDecimal getPrincipalLoanAmount(LoanQuoteRequest request, BigDecimal adminFeeRate) {
 
-        if (request.getAmount() == null) {
+        if (request.amount() == null) {
             throw new IllegalArgumentException("Loan amount is required");
         }
 
-        if (LoanAmountType.NET_OF_FEES == request.getType()) {
-            return request.getAmount().divide(ONE.subtract(percentToFraction(adminFeeRate)), 2, RoundingMode.HALF_UP);
+        if (LoanAmountType.NET_OF_FEES == request.amountType()) {
+            return request.amount().divide(ONE.subtract(percentToFraction(adminFeeRate)), 2, RoundingMode.HALF_UP);
         }
-        return request.getAmount();
+        return request.amount();
     }
 
     public Optional<Loan> findLatestActiveLoanByNationalId(final String nationalIdNumber) {

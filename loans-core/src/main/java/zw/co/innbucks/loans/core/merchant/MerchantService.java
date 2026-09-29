@@ -2,16 +2,19 @@ package zw.co.innbucks.loans.core.merchant;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 import zw.co.innbucks.loans.core.api.CreateMerchantRequest;
-import zw.co.innbucks.loans.core.api.MerchantDto;
+import zw.co.innbucks.loans.core.api.MerchantResponse;
 import zw.co.innbucks.loans.core.api.UpdateMerchantRequest;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionGroupRepository;
+import zw.co.innbucks.loans.core.exception.ConflictException;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 
@@ -20,7 +23,6 @@ import java.util.Objects;
 import java.util.UUID;
 
 import static zw.co.innbucks.loans.core.commission.CommissionStructure.AGENT_DEFINED;
-import static zw.co.innbucks.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
 
 @Service
 @RequiredArgsConstructor
@@ -37,12 +39,13 @@ public class MerchantService {
      * @param maskAccountNumbers {@code true} for anyone but the admin who sets the
      *        account: it is where every approved loan of that merchant is paid.
      */
-    public FindMerchantsResponse findMerchants(boolean maskAccountNumbers) {
-        List<MerchantDto> merchantDtos = merchantMapper.fromMerchants(merchantRepository.findAll());
+    public List<MerchantResponse> findMerchants(boolean maskAccountNumbers) {
+        List<MerchantResponse> merchants = merchantMapper.toResponses(
+                merchantRepository.findAll(Sort.by("companyName", "merchantCode")));
         if (maskAccountNumbers) {
-            merchantDtos.forEach(m -> m.setAccountNumber(maskAccountNumber(m.getAccountNumber())));
+            merchants.forEach(m -> m.setAccountNumber(maskAccountNumber(m.getAccountNumber())));
         }
-        return new FindMerchantsResponse(merchantDtos);
+        return merchants;
     }
 
     /** Last four characters only; a value that short is hidden entirely. */
@@ -54,11 +57,11 @@ public class MerchantService {
     }
 
     @Transactional
-    public MerchantDto createMerchant(CreateMerchantRequest request, String actorId) {
+    public MerchantResponse createMerchant(CreateMerchantRequest request, String actorId) {
         validateRequest(request);
         CommissionGroup commissionGroup = resolveCommissionGroup(request);
         Merchant merchant = Merchant.builder()
-                .merchantCode(StringUtils.hasText(request.getCode()) ? request.getCode() : UUID.randomUUID().toString())
+                .merchantCode(StringUtils.hasText(request.getMerchantCode()) ? request.getMerchantCode() : UUID.randomUUID().toString())
                 .accountNumber(request.getAccountNumber())
                 .disbursementType(request.getDisbursementType())
                 .companyName(request.getCompanyName())
@@ -71,7 +74,7 @@ public class MerchantService {
                 .build();
         Merchant savedMerchant = merchantRepository.save(merchant);
         auditPayeeChange(savedMerchant, actorId, null, null);
-        return merchantMapper.fromMerchant(savedMerchant);
+        return merchantMapper.toResponse(savedMerchant);
     }
 
     /**
@@ -80,9 +83,9 @@ public class MerchantService {
      * touched — they are fixed at creation.
      */
     @Transactional
-    public MerchantDto updateMerchant(String code, UpdateMerchantRequest request, String actorId) {
+    public MerchantResponse updateMerchant(String code, UpdateMerchantRequest request, String actorId) {
         Merchant merchant = merchantRepository.findByMerchantCode(code)
-                .orElseThrow(() -> new ValidationException("Merchant with merchant code " + code + " not found"));
+                .orElseThrow(() -> new NotFoundException("Merchant " + code + " not found"));
         validateUpdateRequest(request);
         DisbursementType oldDisbursementType = merchant.getDisbursementType();
         String oldAccountNumber = merchant.getAccountNumber();
@@ -100,7 +103,7 @@ public class MerchantService {
                 || !Objects.equals(oldAccountNumber, savedMerchant.getAccountNumber())) {
             auditPayeeChange(savedMerchant, actorId, oldDisbursementType, oldAccountNumber);
         }
-        return merchantMapper.fromMerchant(savedMerchant);
+        return merchantMapper.toResponse(savedMerchant);
     }
 
     /**
@@ -163,17 +166,17 @@ public class MerchantService {
         if (AGENT_DEFINED == request.getCommissionStructure()) {
             return null;
         }
-        if (MERCHANT_DEFINED == request.getCommissionStructure()
-                && ObjectUtils.isEmpty(request.getCommissionGroupId())) {
+        if (ObjectUtils.isEmpty(request.getCommissionGroupId())) {
             throw new ValidationException("Commission group id is required");
         }
-        return commissionGroupRepository.findById(request.getCommissionGroupId()).orElseThrow();
+        return commissionGroupRepository.findById(request.getCommissionGroupId())
+                .orElseThrow(() -> new ValidationException(
+                        "Commission group " + request.getCommissionGroupId() + " not found"));
     }
 
     private void validateRequest(CreateMerchantRequest request) {
-        Boolean exists = merchantRepository.existsByMerchantCode(request.getCode());
-        if (exists) {
-            throw new ValidationException("Merchant with merchant code " + Merchant.DEFAULT_MERCHANT_CODE + " already exists");
+        if (merchantRepository.existsByMerchantCode(request.getMerchantCode())) {
+            throw new ConflictException("Merchant " + request.getMerchantCode() + " already exists");
         }
         if (!StringUtils.hasText(request.getCompanyName())) {
             throw new ValidationException("Name is required");
