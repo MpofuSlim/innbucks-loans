@@ -4,8 +4,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Sort;
 import zw.co.innbucks.loans.core.api.CreateMerchantRequest;
-import zw.co.innbucks.loans.core.api.MerchantDto;
+import zw.co.innbucks.loans.core.api.MerchantResponse;
 import zw.co.innbucks.loans.core.api.UpdateMerchantRequest;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
@@ -103,7 +104,7 @@ class MerchantServiceTest {
     @Test
     @DisplayName("a new merchant's payee is audited from nothing")
     void createIsAudited() {
-        service.createMerchant(CreateMerchantRequest.builder().code("new-co").companyName("New Co")
+        service.createMerchant(CreateMerchantRequest.builder().merchantCode("new-co").companyName("New Co")
                 .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber("263775554321")
                 .commissionStructure(CommissionStructure.AGENT_DEFINED).build(), "admin-sub");
 
@@ -128,13 +129,13 @@ class MerchantServiceTest {
     @Test
     @DisplayName("findMerchants masks account numbers only when asked")
     void findMerchantsMasksOnRequest() {
-        when(merchantRepository.findAll()).thenReturn(List.of(
+        when(merchantRepository.findAll(any(Sort.class))).thenReturn(List.of(
                 Merchant.builder().merchantCode("acme").accountNumber("263771234567").build(),
                 Merchant.builder().merchantCode("dflt").accountNumber(null).build()));
 
-        assertThat(service.findMerchants(true).getMerchants()).extracting(MerchantDto::getAccountNumber)
+        assertThat(service.findMerchants(true)).extracting(MerchantResponse::getAccountNumber)
                 .containsExactly("****4567", null);
-        assertThat(service.findMerchants(false).getMerchants()).extracting(MerchantDto::getAccountNumber)
+        assertThat(service.findMerchants(false)).extracting(MerchantResponse::getAccountNumber)
                 .containsExactly("263771234567", null);
     }
 

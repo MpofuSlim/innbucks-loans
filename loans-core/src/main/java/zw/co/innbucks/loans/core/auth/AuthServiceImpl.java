@@ -9,23 +9,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import zw.co.innbucks.loans.core.api.AuthRequest;
-import zw.co.innbucks.loans.core.api.AuthResponse;
-import zw.co.innbucks.loans.core.api.CommissionGroupDto;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
 import zw.co.innbucks.loans.core.api.SearchUserRequest;
-import zw.co.innbucks.loans.core.api.UserDto;
+import zw.co.innbucks.loans.core.api.UserResponse;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
-import zw.co.innbucks.loans.core.merchant.MerchantMapper;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserRepository;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,7 +42,6 @@ public class AuthServiceImpl implements AuthService {
     static final String ACCOUNT_LOCKED = "ACCOUNT_LOCKED";
 
     private final UserRepository userRepository;
-    private final MerchantMapper merchantMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuditService auditService;
@@ -54,12 +50,10 @@ public class AuthServiceImpl implements AuthService {
     /** Compared against for an unknown username, so it costs the same hash as a known one: no timing oracle. */
     private final String unknownUserHash;
 
-    public AuthServiceImpl(UserRepository userRepository, MerchantMapper merchantMapper,
-                           PasswordEncoder passwordEncoder, JwtService jwtService, AuditService auditService,
+    public AuthServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuditService auditService,
                            @Value("${innbucks.account-lockout.max-attempts:7}") int maxFailedAttempts,
                            @Value("${innbucks.account-lockout.duration-minutes:30}") long lockoutMinutes) {
         this.userRepository = userRepository;
-        this.merchantMapper = merchantMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.auditService = auditService;
@@ -77,7 +71,7 @@ public class AuthServiceImpl implements AuthService {
      * guesses cannot slip under the limit.
      */
     @Override
-    public AuthResponse login(AuthRequest request) {
+    public LoginResponse login(LoginRequest request) {
         Optional<User> found = userRepository.findByUsername(request.getUsername());
         if (found.isEmpty()) {
             passwordEncoder.matches(request.getPassword(), unknownUserHash);
@@ -101,11 +95,12 @@ public class AuthServiceImpl implements AuthService {
             userRepository.clearFailedLogins(user.getId());
         }
 
-        AuthResponse response = new AuthResponse();
+        LoginResponse response = new LoginResponse();
         response.setAccessToken(jwtService.generateToken(user));
         response.setTokenType("Bearer");
         response.setExpiresIn(jwtService.getExpiresInSeconds());
         response.setTemporaryPassword(user.getTemporaryPassword());
+        response.setGroups(user.getGroups() == null ? List.of() : user.getGroups().stream().sorted().toList());
         if (user.getMerchant() != null) {
             response.setMerchantName(user.getMerchant().getCompanyName());
             response.setMerchantCode(user.getMerchant().getMerchantCode());
@@ -175,26 +170,26 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public List<UserDto> findUsersByMerchantCode(String merchantCode) {
+    public List<UserResponse> findUsersByMerchantCode(String merchantCode) {
         return userRepository.findByMerchant_MerchantCode(merchantCode).stream()
-                .map(this::toDto)
+                .map(UserResponse::from)
                 .toList();
     }
 
     @Override
-    public List<UserDto> search(SearchUserRequest searchUserRequest) {
+    public List<UserResponse> search(SearchUserRequest searchUserRequest) {
         validateSearchRequest(searchUserRequest);
         return userRepository.findByUsernameContainingIgnoreCase(searchUserRequest.getSearchText()).stream()
                 .skip((long) (searchUserRequest.getPageNumber() - 1) * searchUserRequest.getPageSize())
                 .limit(searchUserRequest.getPageSize())
-                .map(this::toDto)
+                .map(UserResponse::from)
                 .toList();
     }
 
     @Override
-    public UserDto getUser(String userId) {
+    public UserResponse getUser(String userId) {
         return userRepository.findByExternalSystemId(userId)
-                .map(this::toDto)
+                .map(UserResponse::from)
                 .orElseThrow(() -> new ValidationException("User not found for %s".formatted(userId)));
     }
 
@@ -203,28 +198,6 @@ public class AuthServiceImpl implements AuthService {
         // User rows are owned and deleted locally by the calling service; there is
         // no longer an external identity store to clean up.
         log.info("deleteUser({}) is a no-op — user accounts are managed locally", userId);
-    }
-
-    private UserDto toDto(User user) {
-        UserDto dto = new UserDto();
-        dto.setId(user.getId());
-        dto.setUsername(user.getUsername());
-        dto.setFirstName(user.getFirstName());
-        dto.setLastName(user.getLastName());
-        dto.setEmail(user.getEmail());
-        dto.setMobileNumber(user.getMobileNumber());
-        dto.setIdNumber(user.getIdNumber());
-        dto.setTemporaryPassword(user.getTemporaryPassword());
-        dto.setExternalSystemId(user.getExternalSystemId());
-        dto.setGroups(new ArrayList<>(user.getGroups()));
-        dto.setPhysicalAddress(user.getPhysicalAddress());
-        if (user.getMerchant() != null) {
-            dto.setMerchant(merchantMapper.fromMerchant(user.getMerchant()));
-        }
-        if (user.getCommissionGroup() != null) {
-            dto.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(user.getCommissionGroup()));
-        }
-        return dto;
     }
 
     private void validateSearchRequest(SearchUserRequest searchUserRequest) {

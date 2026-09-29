@@ -8,16 +8,17 @@ import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import zw.co.innbucks.loans.advice.RestExceptionHandler;
 import zw.co.innbucks.loans.core.DisbursementService;
-import zw.co.innbucks.loans.core.ManualDisbursementResult;
+import zw.co.innbucks.loans.core.ManualDisbursementResponse;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
-import zw.co.innbucks.loans.core.loan.InternalApprovalService;
+import zw.co.innbucks.loans.core.loan.CreditDecisionService;
+import zw.co.innbucks.loans.core.loan.LoanReadScopeResolver;
+import zw.co.innbucks.loans.core.loan.LoanService;
+import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 
 import java.time.Instant;
 import java.util.List;
@@ -30,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * {@code POST /api/loans/{id}/disburse} moves money, so it is SUPER_ADMIN-only. The
+ * {@code POST /lending/v1/loans/{loanId}/disbursements} moves money, so it is SUPER_ADMIN-only. The
  * controller runs behind the same {@code @PreAuthorize} interceptor production's
  * {@code @EnableMethodSecurity} installs, and callers are authenticated exactly as
  * production does it: a token's {@code realm_access.roles} through
@@ -45,16 +46,15 @@ class ManualDisbursementWebContractTest {
     void setUp() {
         disbursementService = mock(DisbursementService.class);
 
-        LoanManagementController controller = new LoanManagementController();
-        ReflectionTestUtils.setField(controller, "disbursementService", disbursementService);
-        ReflectionTestUtils.setField(controller, "internalApprovalService", mock(InternalApprovalService.class));
+        LoanController controller = new LoanController(mock(LoanService.class), mock(LoanReadScopeResolver.class),
+                mock(CreditDecisionService.class), disbursementService);
 
         ProxyFactory secured = new ProxyFactory(controller);
         secured.setProxyTargetClass(true);
         secured.addAdvisor(AuthorizationManagerBeforeMethodInterceptor.preAuthorize());
 
         mvc = MockMvcBuilders.standaloneSetup(secured.getProxy())
-                .setControllerAdvice(new RestExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
 
@@ -79,9 +79,9 @@ class ManualDisbursementWebContractTest {
     void agentIsForbidden() throws Exception {
         signInAs("AGENTS");
 
-        mvc.perform(post("/api/loans/42/disburse"))
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status").value(403));
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
         verifyNoInteractions(disbursementService);
     }
 
@@ -90,7 +90,7 @@ class ManualDisbursementWebContractTest {
     void creditManagerIsForbidden() throws Exception {
         signInAs("CREDIT_MANAGER");
 
-        mvc.perform(post("/api/loans/42/disburse"))
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(disbursementService);
     }
@@ -99,16 +99,17 @@ class ManualDisbursementWebContractTest {
     @DisplayName("a SUPER_ADMIN reaches the service → 200 naming the outcome and the reference")
     void adminReachesTheService() throws Exception {
         signInAs("SUPER_ADMIN");
-        when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResult.builder()
-                .outcome(ManualDisbursementResult.Outcome.DISBURSED)
+        when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResponse.builder()
+                .outcome(ManualDisbursementResponse.Outcome.DISBURSED)
                 .reference("MD-000000042")
                 .message("Paid by manual recovery payout MD-000000042 (InnBucks auth A123)")
                 .build());
 
-        mvc.perform(post("/api/loans/42/disburse"))
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.outcome").value("DISBURSED"))
-                .andExpect(jsonPath("$.reference").value("MD-000000042"));
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.outcome").value("DISBURSED"))
+                .andExpect(jsonPath("$.data.reference").value("MD-000000042"));
         verify(disbursementService).disburse(42L);
     }
 
@@ -116,15 +117,15 @@ class ManualDisbursementWebContractTest {
     @DisplayName("an in-doubt payout is still a 200 — the body, not the status, tells the operator to confirm")
     void inDoubtIsAnsweredWithItsOutcome() throws Exception {
         signInAs("SUPER_ADMIN");
-        when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResult.builder()
-                .outcome(ManualDisbursementResult.Outcome.IN_DOUBT)
+        when(disbursementService.disburse(42L)).thenReturn(ManualDisbursementResponse.builder()
+                .outcome(ManualDisbursementResponse.Outcome.IN_DOUBT)
                 .reference("MD-000000042")
                 .message("Confirm with InnBucks whether MD-000000042 was paid")
                 .build());
 
-        mvc.perform(post("/api/loans/42/disburse"))
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.outcome").value("IN_DOUBT"));
+                .andExpect(jsonPath("$.data.outcome").value("IN_DOUBT"));
     }
 
     @Test
@@ -134,10 +135,10 @@ class ManualDisbursementWebContractTest {
         when(disbursementService.disburse(anyLong()))
                 .thenThrow(new DisbursementNotAllowedException("Loan 000000042 is already disbursed (reference MD-000000042)"));
 
-        mvc.perform(post("/api/loans/42/disburse"))
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.status").value(409))
-                .andExpect(jsonPath("$.error").value("Loan 000000042 is already disbursed (reference MD-000000042)"));
+                .andExpect(jsonPath("$.code").value("DISBURSEMENT_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message").value("Loan 000000042 is already disbursed (reference MD-000000042)"));
     }
 
     @Test
@@ -146,8 +147,9 @@ class ManualDisbursementWebContractTest {
         signInAs("SUPER_ADMIN");
         when(disbursementService.disburse(7L)).thenThrow(new NotFoundException("Loan 7 not found"));
 
-        mvc.perform(post("/api/loans/7/disburse"))
+        mvc.perform(post("/lending/v1/loans/7/disbursements"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error").value("Loan 7 not found"));
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Loan 7 not found"));
     }
 }

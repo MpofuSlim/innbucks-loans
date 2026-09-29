@@ -10,8 +10,10 @@ import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@OpenAPIDefinition(info = @Info(title = "LOANS.innbucks.co.zw", version = "1.0.0",
-        description = "RESTful endpoints provided for Innbucks Loans."),
+@OpenAPIDefinition(info = @Info(title = "InnBucks Lending API", version = "v1",
+        description = "Every endpoint lives under /lending/v1 and answers in the envelope"
+                + " {\"code\", \"message\", \"data\"}: code is OK or CREATED on success and an UPPER_SNAKE error"
+                + " code otherwise. Amounts are dollars; dates are yyyy-MM-dd; timestamps carry the market's offset."),
         servers = {
                 @Server(
                         description = "Sandbox",

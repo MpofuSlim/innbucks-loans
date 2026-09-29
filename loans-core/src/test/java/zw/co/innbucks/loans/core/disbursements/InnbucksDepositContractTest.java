@@ -12,7 +12,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.DisbursementRequest;
 import zw.co.innbucks.loans.core.DisbursementResponse;
-import zw.co.innbucks.loans.core.ManualDisbursementResult;
+import zw.co.innbucks.loans.core.ManualDisbursementResponse;
 import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
@@ -152,9 +152,9 @@ class InnbucksDepositContractTest {
     void readTimeoutIsSentOnceAndHeldInDoubt() {
         wireMock.stubFor(post(urlEqualTo(DEPOSIT)).willReturn(okJson("{\"responseCode\":0}").withFixedDelay(1500)));
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
-        assertThat(result.getOutcome()).isEqualTo(ManualDisbursementResult.Outcome.IN_DOUBT);
+        assertThat(result.getOutcome()).isEqualTo(ManualDisbursementResponse.Outcome.IN_DOUBT);
         assertThat(result.getReference()).isEqualTo(STABLE_REF);
         wireMock.verify(1, postRequestedFor(urlEqualTo(DEPOSIT)));
         wireMock.verify(postRequestedFor(urlEqualTo(DEPOSIT))
@@ -173,9 +173,9 @@ class InnbucksDepositContractTest {
         wireMock.stubFor(post(urlEqualTo(DEPOSIT)).willReturn(okJson(
                 "{\"responseCode\":0,\"responseMsg\":\"Approved\",\"authNumber\":\"A123\",\"stan\":\"S9\"}")));
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
-        assertThat(result.getOutcome()).isEqualTo(ManualDisbursementResult.Outcome.DISBURSED);
+        assertThat(result.getOutcome()).isEqualTo(ManualDisbursementResponse.Outcome.DISBURSED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
         wireMock.verify(1, postRequestedFor(urlEqualTo(DEPOSIT))
                 .withHeader("Authorization", equalTo("Bearer " + TOKEN))

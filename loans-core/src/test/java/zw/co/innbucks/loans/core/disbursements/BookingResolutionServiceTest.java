@@ -70,7 +70,7 @@ class BookingResolutionServiceTest {
     @Test
     @DisplayName("confirmed not booked: FAILED/REFUSED like an outright refusal, and its live deduction flagged")
     void confirmedNotBookedEndsLikeARefusal() {
-        HeldBookingDto result = service.confirmNotBooked(42L, "  " + NOTE + "  ");
+        HeldBookingResponse result = service.confirmNotBooked(42L, "  " + NOTE + "  ");
 
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);
@@ -79,7 +79,7 @@ class BookingResolutionServiceTest {
                 .startsWith("InnBucks confirmed no loan was booked (recorded by ops.admin): InnBucks ops");
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
-        assertThat(result.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
+        assertThat(result.getBookingStatus()).isEqualTo(LoanAccountStatus.FAILED);
         verify(loanRepository).save(loan);
     }
 
@@ -131,6 +131,6 @@ class BookingResolutionServiceTest {
         when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
                 LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(newer, loan, older));
 
-        assertThat(service.findHeld()).extracting(HeldBookingDto::getId).containsExactly(42L, 10L, 11L);
+        assertThat(service.findHeld()).extracting(HeldBookingResponse::getLoanId).containsExactly(42L, 10L, 11L);
     }
 }

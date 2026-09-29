@@ -6,21 +6,26 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
-import zw.co.innbucks.loans.advice.RestExceptionHandler;
 import zw.co.innbucks.loans.core.DisbursementService;
-import zw.co.innbucks.loans.core.LoanResponse;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
-import zw.co.innbucks.loans.core.loan.InternalApprovalService;
+import zw.co.innbucks.loans.core.exception.PendingApplicationException;
+import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
+import zw.co.innbucks.loans.core.loan.CreditDecisionService;
+import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanAmountType;
+import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
+import zw.co.innbucks.loans.core.loan.LoanApplicationResponse;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
-import zw.co.innbucks.loans.core.loan.LoanDetails;
-import zw.co.innbucks.loans.core.loan.LoanRequest;
+import zw.co.innbucks.loans.core.loan.LoanQuote;
+import zw.co.innbucks.loans.core.loan.LoanQuoteRequest;
+import zw.co.innbucks.loans.core.loan.LoanReadScopeResolver;
+import zw.co.innbucks.loans.core.loan.LoanResponse;
 import zw.co.innbucks.loans.core.loan.LoanService;
+import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,23 +36,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The wire contract the portal codes against: exact status + {@code {status, error}}
- * bodies for the loan application, the calculator and credit-manager approval.
- * Real controllers + the real {@link RestExceptionHandler} + a real validator,
- * services mocked — no database, no Spring context, no security filter chain.
+ * The wire contract the portal codes against: exact status + {@code {code, message, data}}
+ * bodies for the loan application, the quote and the Credit decision. The real controller + the
+ * real {@link GlobalExceptionHandler} + a real validator, services mocked: no database, no Spring
+ * context, no security filter chain.
  */
 class LoanApplicationWebContractTest {
 
-    private static final String QUOTE = """
-            {"amount":500.00,"tenor":6,"ecnumber":"1234567A","mobileNumber":"0772123123",
-             "nationalId":"63-1234567A63","dateOfBirth":"1990-05-14"}
+    private static final String IDENTITY = """
+            {"amount":500.00,"tenor":6,"ecNumber":"1234567A","mobileNumber":"0772123123",
+             "nationalIdNumber":"63-1234567A63","dateOfBirth":"1990-05-14"}
             """;
 
     private static final String COMPLETE = """
-            {"amount":500.00,"tenor":6,"ecnumber":"1234567A","mobileNumber":"0772123123",
-             "nationalId":"63-1234567A63","dateOfBirth":"1990-05-14",
-             "fname":"James","lname":"Mufambanaayo","maritalStatus":"MARRIED","placeOfBirth":"Harare",
-             "purposeOfLoan":"HOME_IMPROVEMENT","lineOfBusiness":"SERVICES",
+            {"amount":500.00,"tenor":6,"ecNumber":"1234567A","mobileNumber":"0772123123",
+             "nationalIdNumber":"63-1234567A63","dateOfBirth":"1990-05-14",
+             "firstName":"James","lastName":"Mufambanaayo","maritalStatus":"MARRIED","placeOfBirth":"Harare",
+             "loanPurpose":"HOME_IMPROVEMENT","lineOfBusiness":"SERVICES",
+             "numberOfDependants":3,"numberOfChildren":2,
              "address":{"street":"123 Samora Machel Ave","city":"Harare"},
              "employmentDetail":{"employerName":"Mutare City Council","employeeNumber":"EMP-001",
                                  "employmentStartDate":"2022-01-01","grossSalary":1500.00},
@@ -55,151 +61,240 @@ class LoanApplicationWebContractTest {
                           "address":{"street":"123 Samora Machel Ave","city":"Harare"}}}
             """;
 
+    private static final String QUOTE = """
+            {"amount":500.00,"tenor":6}
+            """;
+
     private LoanService loanService;
-    private InternalApprovalService approvalService;
+    private CreditDecisionService creditDecisionService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         loanService = mock(LoanService.class);
-        approvalService = mock(InternalApprovalService.class);
+        creditDecisionService = mock(CreditDecisionService.class);
 
-        InternalLoanApplicationController applications = new InternalLoanApplicationController();
-        ReflectionTestUtils.setField(applications, "loanService", loanService);
-        LoanManagementController management = new LoanManagementController();
-        ReflectionTestUtils.setField(management, "internalApprovalService", approvalService);
-        ReflectionTestUtils.setField(management, "disbursementService", mock(DisbursementService.class));
+        LoanController controller = new LoanController(loanService, mock(LoanReadScopeResolver.class),
+                creditDecisionService, mock(DisbursementService.class));
 
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
-        mvc = MockMvcBuilders.standaloneSetup(applications, management)
-                .setControllerAdvice(new RestExceptionHandler())
+        mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
     }
 
+    // --- POST /lending/v1/loans ----------------------------------------------------------------
+
     @Test
-    @DisplayName("POST /api/loans with only the loan terms → ONE 400 naming every field InnBucks needs")
-    void applicationWithOnlyTermsIs400() throws Exception {
-        mvc.perform(post("/api/loans").contentType(MediaType.APPLICATION_JSON).content(QUOTE))
+    @DisplayName("an application with only the terms and identity → ONE 400 naming every field InnBucks needs")
+    void applicationWithOnlyIdentityIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(IDENTITY))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value(
-                        "address: Address is required; "
-                                + "employmentDetail: Employment detail is required; "
-                                + "fname: First name is required; "
-                                + "lineOfBusiness: Line of business is required; "
-                                + "lname: Last name is required; "
-                                + "maritalStatus: Marital status is required; "
-                                + "nextOfKin: Next of kin is required; "
-                                + "placeOfBirth: Place of birth is required; "
-                                + "purposeOfLoan: Purpose of loan is required"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Request validation failed"))
+                .andExpect(jsonPath("$.data.length()").value(9))
+                .andExpect(jsonPath("$.data.address").value("Address is required"))
+                .andExpect(jsonPath("$.data.employmentDetail").value("Employment detail is required"))
+                .andExpect(jsonPath("$.data.firstName").value("First name is required"))
+                .andExpect(jsonPath("$.data.lastName").value("Last name is required"))
+                .andExpect(jsonPath("$.data.lineOfBusiness").value("Line of business is required"))
+                .andExpect(jsonPath("$.data.loanPurpose").value("Loan purpose is required"))
+                .andExpect(jsonPath("$.data.maritalStatus").value("Marital status is required"))
+                .andExpect(jsonPath("$.data.nextOfKin").value("Next of kin is required"))
+                .andExpect(jsonPath("$.data.placeOfBirth").value("Place of birth is required"));
         verifyNoInteractions(loanService);
     }
 
     @Test
-    @DisplayName("POST /api/loans with a partial next of kin → 400 with nested field paths")
+    @DisplayName("a partial next of kin → 400 keyed by the nested field paths")
     void partialNextOfKinIs400WithNestedPaths() throws Exception {
         String body = COMPLETE.replace(
                 "\"nextOfKin\":{\"firstName\":\"Jane\",\"mobileNumber\":\"0772321321\",\"relationship\":\"SPOUSE\",",
                 "\"nextOfKin\":{\"firstName\":\"Jane\",");
-        mvc.perform(post("/api/loans").contentType(MediaType.APPLICATION_JSON).content(body))
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value(
-                        "nextOfKin.mobileNumber: Next of kin mobile number is required; "
-                                + "nextOfKin.relationship: Next of kin relationship is required"));
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data['nextOfKin.mobileNumber']").value("Next of kin mobile number is required"))
+                .andExpect(jsonPath("$.data['nextOfKin.relationship']").value("Next of kin relationship is required"));
     }
 
     @Test
-    @DisplayName("POST /api/loans complete → 200 from the service")
-    void completeApplicationIsAccepted() throws Exception {
-        when(loanService.requestLoan(any())).thenReturn(LoanResponse.builder()
-                .loanApprovalStatus(LoanApprovalStatus.NEW).internalReference("000000042")
-                .message("Loan Sent For Approval").build());
+    @DisplayName("a complete application → 201 CREATED with the new loan's id and reference; every field binds")
+    void completeApplicationIsCreated() throws Exception {
+        when(loanService.requestLoan(any()))
+                .thenReturn(new LoanApplicationResponse(42L, "000000042", LoanApprovalStatus.NEW));
 
-        mvc.perform(post("/api/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.internalReference").value("000000042"));
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("CREATED"))
+                .andExpect(jsonPath("$.message").value("Loan sent for approval"))
+                .andExpect(jsonPath("$.data.id").value(42))
+                .andExpect(jsonPath("$.data.reference").value("000000042"))
+                .andExpect(jsonPath("$.data.ssbApprovalStatus").value("NEW"));
+
+        ArgumentCaptor<LoanApplicationRequest> bound = ArgumentCaptor.forClass(LoanApplicationRequest.class);
+        verify(loanService).requestLoan(bound.capture());
+        LoanApplicationRequest request = bound.getValue();
+        assertThat(request.getEcNumber()).isEqualTo("1234567A");
+        assertThat(request.getNationalIdNumber()).isEqualTo("63-1234567A63");
+        assertThat(request.getFirstName()).isEqualTo("James");
+        assertThat(request.getLastName()).isEqualTo("Mufambanaayo");
+        assertThat(request.getNumberOfDependants()).isEqualTo(3);
+        assertThat(request.getNumberOfChildren()).isEqualTo(2);
+        assertThat(request.getAmountType()).isEqualTo(LoanAmountType.NET_OF_FEES);
     }
 
     @Test
-    @DisplayName("POST /api/loans/calculate with only the terms → 200: a quote needs no applicant details")
-    void calculatorStillQuotesFromTheTerms() throws Exception {
-        when(loanService.calculate(any(), any())).thenReturn(LoanDetails.builder().tenor(6).build());
+    @DisplayName("an applicant with a loan in flight → 409 APPLICATION_PENDING, not a 200 with a rejected status")
+    void pendingApplicationIs409() throws Exception {
+        when(loanService.requestLoan(any())).thenThrow(new PendingApplicationException(17L));
 
-        mvc.perform(post("/api/loans/calculate").contentType(MediaType.APPLICATION_JSON).content(QUOTE))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tenor").value(6));
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("APPLICATION_PENDING"))
+                .andExpect(jsonPath("$.message").value("You have a pending loan application."))
+                // The other loan is the applicant's, not necessarily one the caller may read.
+                .andExpect(jsonPath("$.data").doesNotExist());
     }
 
     @Test
-    @DisplayName("an omitted `type` binds as NET_OF_FEES — the documented default, and what decides the principal")
-    void omittedTypeDefaultsToNetOfFees() throws Exception {
-        when(loanService.calculate(any(), any())).thenReturn(LoanDetails.builder().tenor(6).build());
+    @DisplayName("a rule the application breaks → 400 INVALID_REQUEST with the rule's message")
+    void ruleViolationIs400() throws Exception {
+        when(loanService.requestLoan(any())).thenThrow(new IllegalArgumentException("EC Number is not valid"));
 
-        mvc.perform(post("/api/loans/calculate").contentType(MediaType.APPLICATION_JSON).content(QUOTE))
-                .andExpect(status().isOk());
-
-        ArgumentCaptor<LoanRequest> bound = ArgumentCaptor.forClass(LoanRequest.class);
-        verify(loanService).calculate(bound.capture(), any());
-        assertThat(bound.getValue().getType()).isEqualTo(LoanAmountType.NET_OF_FEES);
-    }
-
-    @Test
-    @DisplayName("a non-Zimbabwean-mobile number → 400 on the calculator and the application alike")
-    void badMobileIs400() throws Exception {
-        mvc.perform(post("/api/loans/calculate").contentType(MediaType.APPLICATION_JSON)
-                        .content(QUOTE.replace("0772123123", "0242123456")))
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value(
-                        "mobileNumber: must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123"));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("EC Number is not valid"));
     }
 
     @Test
-    @DisplayName("an enum sent as its label (\"Married\") → 400, no longer a 500")
+    @DisplayName("an enum sent as its label (\"Married\") → 400 MALFORMED_REQUEST")
     void unreadableBodyIs400() throws Exception {
-        mvc.perform(post("/api/loans").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON)
                         .content(COMPLETE.replace("\"MARRIED\"", "\"Married\"")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Malformed request body — check enum values and yyyy-MM-dd dates"));
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Malformed request body - check enum values and yyyy-MM-dd dates"));
     }
 
     @Test
-    @DisplayName("POST /api/loans/{id}/approve refused by the loan's state → 400 with the reason, no longer a 500")
-    void approvalRefusalIs400() throws Exception {
-        when(approvalService.approveLoan(any(), eq(42L)))
+    @DisplayName("a non-Zimbabwean-mobile number → 400 on the mobileNumber field")
+    void badMobileIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON)
+                        .content(COMPLETE.replace("\"mobileNumber\":\"0772123123\"", "\"mobileNumber\":\"0242123456\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.mobileNumber").value(
+                        "must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123"));
+    }
+
+    // --- POST /lending/v1/loan-quotes ------------------------------------------------------------
+
+    @Test
+    @DisplayName("a quote needs only amount and tenor → 200 in the envelope")
+    void quoteNeedsOnlyTheTerms() throws Exception {
+        when(loanService.calculate(any(), any())).thenReturn(LoanQuote.builder().tenor(6).build());
+
+        mvc.perform(post("/lending/v1/loan-quotes").contentType(MediaType.APPLICATION_JSON).content(QUOTE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.tenor").value(6))
+                // Unset figures are left out, not sent as null.
+                .andExpect(jsonPath("$.data.startDate").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("an omitted amountType binds as NET_OF_FEES: the documented default, and what decides the principal")
+    void omittedAmountTypeDefaultsToNetOfFees() throws Exception {
+        when(loanService.calculate(any(), any())).thenReturn(LoanQuote.builder().tenor(6).build());
+
+        mvc.perform(post("/lending/v1/loan-quotes").contentType(MediaType.APPLICATION_JSON).content(QUOTE))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<LoanQuoteRequest> bound = ArgumentCaptor.forClass(LoanQuoteRequest.class);
+        verify(loanService).calculate(bound.capture(), isNull());
+        assertThat(bound.getValue().amountType()).isEqualTo(LoanAmountType.NET_OF_FEES);
+    }
+
+    @Test
+    @DisplayName("a quote with no tenor → 400 on the tenor field")
+    void quoteWithoutTenorIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loan-quotes").contentType(MediaType.APPLICATION_JSON).content("{\"amount\":500}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.tenor").value("Loan tenor is required"));
+        verifyNoInteractions(loanService);
+    }
+
+    // --- POST /lending/v1/loans/{loanId}/credit-decision ----------------------------------------
+
+    @Test
+    @DisplayName("a decision answers with the loan and names the decision in the message")
+    void decisionAnswersWithTheLoan() throws Exception {
+        LoanResponse loan = new LoanResponse();
+        loan.setId(42L);
+        loan.setCreditApprovalStatus(InternalApprovalStatus.REJECTED);
+        when(creditDecisionService.decide(eq(42L), any())).thenReturn(loan);
+
+        mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECTED\",\"comment\":\"Deduction capacity too low\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Loan rejected"))
+                .andExpect(jsonPath("$.data.id").value(42))
+                .andExpect(jsonPath("$.data.creditApprovalStatus").value("REJECTED"));
+
+        ArgumentCaptor<CreditDecisionRequest> bound = ArgumentCaptor.forClass(CreditDecisionRequest.class);
+        verify(creditDecisionService).decide(eq(42L), bound.capture());
+        assertThat(bound.getValue().getDecision()).isEqualTo(InternalApprovalStatus.REJECTED);
+        assertThat(bound.getValue().getComment()).isEqualTo("Deduction capacity too low");
+    }
+
+    @Test
+    @DisplayName("a decision with no decision → 400 on the decision field")
+    void missingDecisionIs400() throws Exception {
+        mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.decision").value("Decision is required (APPROVED or REJECTED)"));
+        verifyNoInteractions(creditDecisionService);
+    }
+
+    @Test
+    @DisplayName("a decision the loan's state refuses → 400 with the reason")
+    void decisionRefusalIs400() throws Exception {
+        when(creditDecisionService.decide(eq(42L), any()))
                 .thenThrow(new LoanApprovalException("Loan has already been rejected"));
 
-        mvc.perform(post("/api/loans/42/approve").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"APPROVED\"}"))
+        mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVED\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Loan has already been rejected"));
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Loan has already been rejected"));
     }
 
     @Test
-    @DisplayName("POST /api/loans/{id}/approve on an unknown loan → 404 in the error envelope")
-    void approvalOfUnknownLoanIs404() throws Exception {
-        when(approvalService.approveLoan(any(), eq(7L))).thenThrow(new NotFoundException("Loan 7 not found"));
+    @DisplayName("a decision on an unknown loan → 404 in the envelope")
+    void decisionOnUnknownLoanIs404() throws Exception {
+        when(creditDecisionService.decide(eq(7L), any())).thenThrow(new NotFoundException("Loan 7 not found"));
 
-        mvc.perform(post("/api/loans/7/approve").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"APPROVED\"}"))
+        mvc.perform(post("/lending/v1/loans/7/credit-decision").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVED\"}"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.error").value("Loan 7 not found"));
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Loan 7 not found"));
     }
 
     @Test
-    @DisplayName("POST /api/loans/{id}/approve by the loan's originator → 403 naming why (maker-checker)")
+    @DisplayName("an approval by the loan's originator → 403 naming why (maker-checker)")
     void originatorApprovalIs403() throws Exception {
-        when(approvalService.approveLoan(any(), eq(42L))).thenThrow(new AccessDeniedException(
+        when(creditDecisionService.decide(eq(42L), any())).thenThrow(new AccessDeniedException(
                 "Loan 000000042 was originated by credit.manager, who cannot also approve it; another credit officer must"));
 
-        mvc.perform(post("/api/loans/42/approve").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"APPROVED\"}"))
+        mvc.perform(post("/lending/v1/loans/42/credit-decision").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVED\"}"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status").value(403))
-                .andExpect(jsonPath("$.error").value("Loan 000000042 was originated by credit.manager, who cannot"
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Loan 000000042 was originated by credit.manager, who cannot"
                         + " also approve it; another credit officer must"));
     }
 }

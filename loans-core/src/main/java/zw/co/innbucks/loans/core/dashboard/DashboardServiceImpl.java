@@ -44,8 +44,8 @@ public class DashboardServiceImpl implements DashboardService {
 
         return DashboardStatsResponse.builder()
                 .totalLoans(loanRepository.count())
-                .loansByApprovalStatus(byApproval)
-                .pendingInternalApprovals(loanRepository.countByLoanApprovalStatusAndInternalApprovalStatus(
+                .loansBySsbApprovalStatus(byApproval)
+                .pendingCreditApprovals(loanRepository.countByLoanApprovalStatusAndInternalApprovalStatus(
                         LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING))
                 .loansByDisbursementStatus(byDisbursement)
                 .totalDisbursedAmount(loanRepository.sumDisbursedAmountForSuccessfulDisbursements())

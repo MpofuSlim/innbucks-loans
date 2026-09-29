@@ -14,9 +14,9 @@ import zw.co.innbucks.loans.core.api.*;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionGroupRepository;
 import zw.co.innbucks.loans.core.exception.DuplicateUserByUsernameException;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.merchant.MerchantMapper;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 
@@ -49,13 +49,12 @@ public class CreateUserServiceImpl implements CreateUserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final Random random;
-    private final MerchantMapper merchantMapper;
     private final NotificationService notificationService;
     private final CommissionGroupRepository commissionGroupRepository;
 
     @Transactional
-    public CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode) {
-        CreateUserRequest request = CreateUserRequest.builder()
+    public UserResponse create(CreateUserRequest createAgentRequest, String merchantCode) {
+        NewUser request = NewUser.builder()
                 .email(createAgentRequest.getEmail())
                 .groups(List.of(createAgentRequest.getGroup()))
                 .idNumber(createAgentRequest.getIdNumber())
@@ -70,7 +69,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         return create(request);
     }
 
-    private CommissionGroup resolveCommissionGroup(CreateUserRequest request, Merchant merchant) {
+    private CommissionGroup resolveCommissionGroup(NewUser request, Merchant merchant) {
         if (MERCHANT_DEFINED == merchant.getCommissionStructure()) {
             return merchant.getCommissionGroup();
         }
@@ -85,10 +84,18 @@ public class CreateUserServiceImpl implements CreateUserService {
         return commissionGroupRepository.findByNameIgnoreCase(ZERO_BASED_DEFAULT).orElseThrow();
     }
 
+    /**
+     * An unknown username is logged and otherwise ignored, so the endpoint answers the same either
+     * way and cannot be used to find out which usernames exist.
+     */
     @Override
     public void resetPassword(ForgotPasswordRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new DuplicateUserByUsernameException(request.getUsername()));
+        Optional<User> account = userRepository.findByUsername(request.getUsername());
+        if (account.isEmpty()) {
+            logger.info("Forgot-password request for an unknown username; nothing sent");
+            return;
+        }
+        User user = account.get();
         String generatedPassword = generatePassword();
         user.setPassword(passwordEncoder.encode(generatedPassword));
         user.setTemporaryPassword(true);
@@ -96,15 +103,10 @@ public class CreateUserServiceImpl implements CreateUserService {
         user.bumpTokenVersion();
         userRepository.save(user);
 
-        UserDto userDto = new UserDto();
-        userDto.setFirstName(user.getFirstName());
-        userDto.setUsername(user.getUsername());
-        userDto.setMobileNumber(user.getMobileNumber());
-        notifyUser(userDto, generatedPassword);
+        notifyUser(user.getFirstName(), user.getUsername(), user.getMobileNumber(), generatedPassword);
     }
 
-    @Transactional
-    public CreateUserResponse create(CreateUserRequest createUserRequest) {
+    private UserResponse create(NewUser createUserRequest) {
         logger.info("Creating user {}", createUserRequest.getUsername());
 
         validateRequest(createUserRequest);
@@ -115,7 +117,7 @@ public class CreateUserServiceImpl implements CreateUserService {
         }
 
         Merchant merchant = merchantRepository.findByMerchantCode(createUserRequest.getMerchantCode())
-                .orElseThrow(() -> new RuntimeException("Merchant not found"));
+                .orElseThrow(() -> new NotFoundException("Merchant " + createUserRequest.getMerchantCode() + " not found"));
 
         CommissionGroup commissionGroup = resolveCommissionGroup(createUserRequest, merchant);
 
@@ -139,32 +141,17 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         User savedUser = userRepository.save(user);
 
-        UserDto userDto = new UserDto();
-        userDto.setMerchant(merchantMapper.fromMerchant(merchant));
-        userDto.setEmail(createUserRequest.getEmail());
-        userDto.setFirstName(createUserRequest.getFirstName());
-        userDto.setId(savedUser.getId());
-        userDto.setIdNumber(TextUtils.trimSpecialCharacters(createUserRequest.getIdNumber()).toUpperCase());
-        userDto.setLastName(createUserRequest.getLastName());
-        userDto.setMobileNumber(MsisdnUtils.formatMsisdnInternational(createUserRequest.getMobileNumber()));
-        userDto.setGroups(createUserRequest.getGroups());
-        userDto.setUsername(createUserRequest.getUsername());
-        userDto.setTemporaryPassword(true);
-        userDto.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(commissionGroup));
-        userDto.setPhysicalAddress(createUserRequest.getPhysicalAddress());
-
-        CreateUserResponse createUserResponse = new CreateUserResponse(userDto);
-        notifyUser(userDto, generatedPassword);
+        notifyUser(savedUser.getFirstName(), savedUser.getUsername(), savedUser.getMobileNumber(), generatedPassword);
         logger.info("Created user {} with id {}", createUserRequest.getUsername(), savedUser.getId());
-        return createUserResponse;
+        return UserResponse.from(savedUser);
     }
 
-    private void notifyUser(UserDto user, String generatedPassword) {
-        String message = String.format(PASSWORD_SMS_TEMPLATE, user.getFirstName(), user.getUsername(), generatedPassword);
-        notificationService.sendSms(MsisdnUtils.formatMsisdnInternational(user.getMobileNumber()), message);
+    private void notifyUser(String firstName, String username, String mobileNumber, String generatedPassword) {
+        String message = String.format(PASSWORD_SMS_TEMPLATE, firstName, username, generatedPassword);
+        notificationService.sendSms(MsisdnUtils.formatMsisdnInternational(mobileNumber), message);
     }
 
-    private void validateRequest(CreateUserRequest createUserRequest) {
+    private void validateRequest(NewUser createUserRequest) {
 
         if (!StringUtils.hasText(createUserRequest.getUsername())) {
             throw new ValidationException("Username is required");

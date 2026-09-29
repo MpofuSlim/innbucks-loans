@@ -6,13 +6,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import zw.co.innbucks.loans.core.api.AuthRequest;
-import zw.co.innbucks.loans.core.api.AuthResponse;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
-import zw.co.innbucks.loans.core.merchant.MerchantMapper;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserRepository;
 
@@ -47,7 +46,7 @@ class LoginLockoutTest {
 
     @BeforeEach
     void setUp() {
-        auth = new AuthServiceImpl(users, mock(MerchantMapper.class), encoder, jwtService, auditService, 7, 30);
+        auth = new AuthServiceImpl(users, encoder, jwtService, auditService, 7, 30);
         user = new User();
         user.setId(5L);
         user.setUsername("teller1");
@@ -59,8 +58,8 @@ class LoginLockoutTest {
         clearInvocations(encoder);
     }
 
-    private static AuthRequest attempt(String password) {
-        return AuthRequest.builder().username("teller1").password(password).build();
+    private static LoginRequest attempt(String password) {
+        return LoginRequest.builder().username("teller1").password(password).build();
     }
 
     @Test
@@ -109,7 +108,7 @@ class LoginLockoutTest {
         user.setLockedUntil(LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1));
         user.setFailedLoginAttempts(7);
 
-        AuthResponse response = auth.login(attempt(PASSWORD));
+        LoginResponse response = auth.login(attempt(PASSWORD));
 
         assertThat(response.getAccessToken()).isEqualTo("token");
         verify(users, atLeastOnce()).clearFailedLogins(5L);
@@ -133,7 +132,7 @@ class LoginLockoutTest {
     void unknownUserHasNoTimingOracle() {
         when(users.findByUsername("nobody")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auth.login(AuthRequest.builder().username("nobody").password("guess-123").build()))
+        assertThatThrownBy(() -> auth.login(LoginRequest.builder().username("nobody").password("guess-123").build()))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("Invalid username or password");
 

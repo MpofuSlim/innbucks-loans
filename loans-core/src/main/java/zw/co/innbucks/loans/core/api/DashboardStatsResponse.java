@@ -25,11 +25,11 @@ public class DashboardStatsResponse {
 
     private long totalLoans;
 
-    /** Loan count keyed by {@code LoanApprovalStatus} name (NEW, PROCESSING, APPROVED, REJECTED, PAID, FAILED). */
-    private Map<String, Long> loansByApprovalStatus;
+    /** Loan count keyed by SSB approval status (NEW, PROCESSING, APPROVED, REJECTED, PAID, FAILED). */
+    private Map<String, Long> loansBySsbApprovalStatus;
 
-    /** Loans awaiting internal approval: upstream-APPROVED and internal status PENDING. */
-    private long pendingInternalApprovals;
+    /** Loans awaiting a Credit decision: SSB has approved the deduction and Credit has not decided. */
+    private long pendingCreditApprovals;
 
     /** Loan count keyed by {@code LoanDisbursementStatus} name (PENDING, SUCCESS, FAILED). */
     private Map<String, Long> loansByDisbursementStatus;

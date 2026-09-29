@@ -91,7 +91,7 @@ public class StartupTask implements CommandLineRunner {
         Optional<CommissionGroup> optionalCommissionGroup = commissionGroupRepository.findByNameIgnoreCase(commissionGroup.getName());
         if (optionalCommissionGroup.isPresent()) {
             // Heal DBs seeded before commission groups were created enabled: a
-            // disabled default is invisible to GET /api/parameters/commission-groups.
+            // disabled default is invisible to GET /lending/v1/commission-groups.
             CommissionGroup existing = optionalCommissionGroup.get();
             if (!existing.isEnabled()) {
                 existing.setEnabled(true);
@@ -185,7 +185,7 @@ public class StartupTask implements CommandLineRunner {
                     .orElseThrow(() -> new ValidationException("Default commission group not found"));
 
             merchantService.createMerchant(CreateMerchantRequest.builder()
-                    .code(DEFAULT_MERCHANT_CODE)
+                    .merchantCode(DEFAULT_MERCHANT_CODE)
                     .companyName(DEFAULT_MERCHANT_NAME)
                     .disbursementType(CUSTOMER_MOBILE_WALLET)
                     .commissionStructure(MERCHANT_DEFINED)

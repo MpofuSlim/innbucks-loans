@@ -24,7 +24,7 @@ public class CreateMerchantRequest {
     @NotNull(message = "Disbursement type is required")
     private DisbursementType disbursementType;
     @NotBlank(message = "Merchant code is required")
-    private String code;
-    private CommissionStructure commissionStructure;;
+    private String merchantCode;
+    private CommissionStructure commissionStructure;
     private Long commissionGroupId;
 }

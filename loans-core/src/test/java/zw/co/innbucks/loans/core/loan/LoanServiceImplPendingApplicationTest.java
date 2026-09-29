@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.data.jpa.repository.Query;
-import zw.co.innbucks.loans.core.LoanResponse;
+import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static zw.co.innbucks.loans.core.loan.LoanParameterNames.*;
@@ -79,9 +80,9 @@ class LoanServiceImplPendingApplicationTest {
         validatorFactory.close();
     }
 
-    private static LoanRequest application(String ecNumber) {
-        LoanRequest request = LoanRequestValidationTest.completeApplication();
-        request.setEcnumber(ecNumber);
+    private static LoanApplicationRequest application(String ecNumber) {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setEcNumber(ecNumber);
         return request;
     }
 
@@ -95,15 +96,16 @@ class LoanServiceImplPendingApplicationTest {
                 LoanAccountStatus.PENDING, LoanDisbursementStatus.PENDING);
     }
 
-    private void assertRefusedAsPending(LoanResponse response) {
-        assertThat(response.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
-        assertThat(response.getMessage()).isEqualTo("You have a pending loan application.");
-        assertThat(response.getInternalReference()).isNull();
+    /** Refused as a conflict, not answered as a rejected loan: nothing was created. */
+    private void assertRefusedAsPending(LoanApplicationRequest request) {
+        assertThatThrownBy(() -> service.requestLoan(request))
+                .isInstanceOf(PendingApplicationException.class)
+                .hasMessage("You have a pending loan application.");
         verify(loanRepository, never()).save(any());
     }
 
-    private void assertAccepted(LoanResponse response) {
-        assertThat(response.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+    private void assertAccepted(LoanApplicationResponse response) {
+        assertThat(response.ssbApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         verify(loanRepository).save(any(Loan.class));
     }
 
@@ -122,7 +124,7 @@ class LoanServiceImplPendingApplicationTest {
     void lowerCaseEcNumberIsMatched() {
         when(loanRepository.findStatusesByEcNumber(EC_NUMBER)).thenReturn(List.of(lodgedWithNdasenda()));
 
-        assertRefusedAsPending(service.requestLoan(application("1234567a")));
+        assertRefusedAsPending(application("1234567a"));
     }
 
     @Test
@@ -141,7 +143,7 @@ class LoanServiceImplPendingApplicationTest {
     void processingApplicationBlocks() {
         when(loanRepository.findStatusesByEcNumber(EC_NUMBER)).thenReturn(List.of(lodgedWithNdasenda()));
 
-        assertRefusedAsPending(service.requestLoan(application(EC_NUMBER)));
+        assertRefusedAsPending(application(EC_NUMBER));
     }
 
     @Test
@@ -151,7 +153,7 @@ class LoanServiceImplPendingApplicationTest {
                 LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING,
                 LoanAccountStatus.PENDING, LoanDisbursementStatus.PENDING)));
 
-        assertRefusedAsPending(service.requestLoan(application(EC_NUMBER)));
+        assertRefusedAsPending(application(EC_NUMBER));
     }
 
     @Test
@@ -183,7 +185,7 @@ class LoanServiceImplPendingApplicationTest {
         // ...but the person's national ID has an application with Ndasenda.
         when(loanRepository.findStatusesByNationalId(NATIONAL_ID)).thenReturn(List.of(lodgedWithNdasenda()));
 
-        assertRefusedAsPending(service.requestLoan(application(EC_NUMBER)));
+        assertRefusedAsPending(application(EC_NUMBER));
     }
 
     @Test
@@ -202,8 +204,8 @@ class LoanServiceImplPendingApplicationTest {
     @Test
     @DisplayName("a national ID that normalises to nothing is neither locked nor matched")
     void blankNationalIdIsNotMatched() {
-        LoanRequest request = application(EC_NUMBER);
-        request.setNationalId("--");
+        LoanApplicationRequest request = application(EC_NUMBER);
+        request.setNationalIdNumber("--");
 
         assertAccepted(service.requestLoan(request));
         verify(loanRepository).lockApplicant("loan-application:ec:" + EC_NUMBER);

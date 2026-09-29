@@ -5,9 +5,9 @@ package zw.co.innbucks.loans.core.loan;
  * quote — everything the InnBucks pre-approved application
  * ({@code InnbucksDisbursementService.createLoanAccount}) sends or dereferences.
  *
- * <p>A separate group because {@code POST /api/loans/calculate} takes the same
- * {@link LoanRequest} and must keep quoting from the {@code Default} group
- * alone; only an application is held to this set.
+ * <p>A separate group so the {@code Default} group stays what every
+ * {@link LoanApplicationRequest} needs whatever else it carries; only an
+ * application is held to this set. A quote takes {@link LoanQuoteRequest} instead.
  *
  * <p>Why these are enforced up front: without them the application was
  * accepted, sent for payroll approval and credit sign-off, and only failed —

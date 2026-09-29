@@ -274,7 +274,7 @@ public class LoanBookingJob {
         // simply stays PENDING for an operator — never re-booked, never re-paid.
         // Nothing is flagged for cancellation either: the customer may hold this loan. If the
         // inquiry reports it missing, an operator confirms with InnBucks and resolves it through
-        // POST /api/loans/{id}/booking/confirm-not-booked, which fails it and flags the deduction.
+        // POST /lending/v1/loans/{loanId}/booking/not-booked, which fails it and flags the deduction.
         log.error("Loan account creation outcome unknown for loan: {}; holding it for the inquiry job",
                 loan.getId(), ex);
         hold(loan, "InnBucks loan application outcome unknown (held, not failed): " + describe(ex));

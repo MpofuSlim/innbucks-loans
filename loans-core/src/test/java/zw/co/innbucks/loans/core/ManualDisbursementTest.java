@@ -5,7 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
-import zw.co.innbucks.loans.core.ManualDisbursementResult.Outcome;
+import zw.co.innbucks.loans.core.ManualDisbursementResponse.Outcome;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
@@ -149,7 +149,7 @@ class ManualDisbursementTest {
     void refusedBookingIsPaidWithTheStableReference() {
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(result.getReference()).isEqualTo(STABLE_REF);
@@ -288,7 +288,7 @@ class ManualDisbursementTest {
     void aTimeoutIsInDoubtAndBlocksTheNextCall() {
         rail = request -> answer(DisbursementStatus.UNKNOWN, "I/O error: Read timed out");
 
-        ManualDisbursementResult first = service.disburse(42L);
+        ManualDisbursementResponse first = service.disburse(42L);
 
         assertThat(first.getOutcome()).isEqualTo(Outcome.IN_DOUBT);
         assertThat(first.getReference()).isEqualTo(STABLE_REF);
@@ -311,7 +311,7 @@ class ManualDisbursementTest {
             throw new IllegalStateException("boom");
         };
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.IN_DOUBT);
         assertThat(attempts).singleElement().satisfies(row ->
@@ -323,14 +323,14 @@ class ManualDisbursementTest {
     void aDefiniteRefusalMayBeRetriedUnderTheSameReference() {
         rail = request -> answer(DisbursementStatus.FAILED, "responseCode 51 Insufficient funds");
 
-        ManualDisbursementResult first = service.disburse(42L);
+        ManualDisbursementResponse first = service.disburse(42L);
 
         assertThat(first.getOutcome()).isEqualTo(Outcome.REFUSED);
         assertThat(attempts).singleElement().satisfies(row ->
                 assertThat(row.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED));
 
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
-        ManualDisbursementResult second = service.disburse(42L);
+        ManualDisbursementResponse second = service.disburse(42L);
 
         assertThat(second.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(sent).extracting(DisbursementRequest::getTransactionReference).containsExactly(STABLE_REF, STABLE_REF);
@@ -408,7 +408,7 @@ class ManualDisbursementTest {
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
         doThrow(new RuntimeException("gateway down")).when(notificationService).sendSms(anyString(), anyString());
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
@@ -449,7 +449,7 @@ class ManualDisbursementTest {
             return answer(DisbursementStatus.SUCCESS, "Approved");
         };
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(loan.getDeductionCancellationStatus()).isNull();
@@ -467,7 +467,7 @@ class ManualDisbursementTest {
         flagged(DeductionCancellationService.REASON_BOOKING_FAILED);
         rail = request -> answer(DisbursementStatus.FAILED, "Insufficient float");
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.REFUSED);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
@@ -482,7 +482,7 @@ class ManualDisbursementTest {
         flagged(DeductionCancellationService.REASON_BOOKING_FAILED);
         rail = request -> answer(DisbursementStatus.UNKNOWN, "Read timed out");
 
-        ManualDisbursementResult result = service.disburse(42L);
+        ManualDisbursementResponse result = service.disburse(42L);
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.IN_DOUBT);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);

@@ -11,8 +11,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import zw.co.innbucks.loans.core.api.FindLoansRequest;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -32,7 +35,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * The scoped reads behind {@code /api/loans/search} and {@code /api/loans/{id}}.
+ * The scoped reads behind {@code GET /lending/v1/loans} and {@code GET /lending/v1/loans/{loanId}}.
  * The scope must be IN the query — so these evaluate the {@link Specification}
  * the service hands the repository against mocked criteria objects and assert
  * which columns it constrains, rather than trusting a filter applied afterwards.
@@ -65,12 +68,15 @@ class LoanServiceImplReadScopeTest {
     @Test
     @DisplayName("an agent's search is constrained to their merchant AND to loans they created")
     void originatorSearchConstrainsMerchantAndUser() {
-        LoanDto own = new LoanDto();
-        when(loanMapper.fromLoans(any())).thenReturn(List.of(own));
+        Loan loan = new Loan();
+        LoanSummaryResponse own = new LoanSummaryResponse();
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(loan)));
+        when(loanMapper.toSummary(loan)).thenReturn(own);
 
-        List<LoanDto> result = service.findLoans(new FindLoansRequest(), LoanReadScope.originator("M-001", 7L));
+        var result = service.findLoans(LoanSearchCriteria.builder().build(), LoanReadScope.originator("M-001", 7L),
+                PageRequest.of(0, 20));
 
-        assertThat(result).containsExactly(own);
+        assertThat(result.getContent()).containsExactly(own);
         evaluate(capturedSearch());
         verify(root).join("merchant", JoinType.LEFT);
         verify(cb).equal(lowerMerchantCode, "m-001");
@@ -78,9 +84,25 @@ class LoanServiceImplReadScopeTest {
     }
 
     @Test
+    @DisplayName("a merchant filter narrows an agent's scope and never widens it: both merchants are required")
+    void merchantFilterCannotWidenTheScope() {
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+
+        service.findLoans(LoanSearchCriteria.builder().merchantCode("M-002").build(),
+                LoanReadScope.originator("M-001", 7L), PageRequest.of(0, 20));
+
+        evaluate(capturedSearch());
+        verify(cb).equal(lowerMerchantCode, "m-002");
+        verify(cb).equal(lowerMerchantCode, "m-001");
+        verify(cb).equal(path("createdByUser", "id"), 7L);
+    }
+
+    @Test
     @DisplayName("a platform-wide search carries no merchant or originator constraint")
     void platformSearchIsUnconstrained() {
-        service.findLoans(new FindLoansRequest(), LoanReadScope.platform());
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+
+        service.findLoans(LoanSearchCriteria.builder().build(), LoanReadScope.platform(), PageRequest.of(0, 20));
 
         evaluate(capturedSearch());
         verify(root, never()).join(eq("merchant"), any(JoinType.class));
@@ -88,12 +110,27 @@ class LoanServiceImplReadScopeTest {
     }
 
     @Test
+    @DisplayName("a page is newest first with the id as tie-break, so paging neither repeats nor skips loans")
+    void pagesAreNewestFirstWithATotalOrder() {
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+
+        service.findLoans(LoanSearchCriteria.builder().build(), LoanReadScope.platform(), PageRequest.of(2, 50));
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(loanRepository).findAll(any(Specification.class), pageable.capture());
+        assertThat(pageable.getValue().getPageNumber()).isEqualTo(2);
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(50);
+        assertThat(pageable.getValue().getSort())
+                .isEqualTo(Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id")));
+    }
+
+    @Test
     @DisplayName("a scoped single read queries id + merchant + originator, never the bare findById")
     void scopedGetConstrainsIdMerchantAndUser() {
         Loan loan = new Loan();
-        LoanDto dto = new LoanDto();
+        LoanResponse dto = new LoanResponse();
         when(loanRepository.findOne(any(Specification.class))).thenReturn(Optional.of(loan));
-        when(loanMapper.fromLoan(loan)).thenReturn(dto);
+        when(loanMapper.toResponse(loan)).thenReturn(dto);
 
         assertThat(service.getLoan(42L, LoanReadScope.originator("M-001", 7L))).isSameAs(dto);
 
@@ -118,7 +155,7 @@ class LoanServiceImplReadScopeTest {
     @Test
     @DisplayName("a missing id is a NotFoundException (the controller no longer maps every exception to 404)")
     void missingLoanIsNotFound() {
-        when(loanRepository.findById(42L)).thenReturn(Optional.empty());
+        when(loanRepository.findOne(any(Specification.class))).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getLoan(42L, LoanReadScope.platform()))
                 .isInstanceOf(NotFoundException.class)
@@ -128,7 +165,7 @@ class LoanServiceImplReadScopeTest {
     @SuppressWarnings("unchecked")
     private Specification<Loan> capturedSearch() {
         ArgumentCaptor<Specification<Loan>> spec = ArgumentCaptor.forClass(Specification.class);
-        verify(loanRepository).findAll(spec.capture());
+        verify(loanRepository).findAll(spec.capture(), any(Pageable.class));
         return spec.getValue();
     }
 

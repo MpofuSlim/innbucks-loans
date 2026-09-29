@@ -2,11 +2,10 @@ package zw.co.innbucks.loans.core;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import zw.co.innbucks.loans.core.api.AuthRequest;
-import zw.co.innbucks.loans.core.api.AuthResponse;
-import zw.co.innbucks.loans.core.api.CreateAgentRequest;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
 import zw.co.innbucks.loans.core.api.CreateUserRequest;
-import zw.co.innbucks.loans.core.api.UserDto;
+import zw.co.innbucks.loans.core.api.UserResponse;
 import zw.co.innbucks.loans.core.auth.JwtProperties;
 import zw.co.innbucks.loans.core.channel.Channel;
 import zw.co.innbucks.loans.core.disbursements.InnbucksAuthRequest;
@@ -16,8 +15,8 @@ import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationRequest;
 import zw.co.innbucks.loans.core.loan.BankingDetail;
 import zw.co.innbucks.loans.core.loan.Customer;
 import zw.co.innbucks.loans.core.loan.Loan;
-import zw.co.innbucks.loans.core.loan.LoanDto;
-import zw.co.innbucks.loans.core.loan.LoanRequest;
+import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
+import zw.co.innbucks.loans.core.loan.LoanResponse;
 import zw.co.innbucks.loans.core.loan.NextOfKin;
 import zw.co.innbucks.loans.core.loan.Witness;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalRequest;
@@ -27,6 +26,7 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaDeductionBatch;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
+import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
@@ -96,18 +96,17 @@ class SensitiveToStringTest {
     }
 
     @Test
-    @DisplayName("LoanRequest prints no national ID, next-of-kin ID, bank details, images or signature")
+    @DisplayName("LoanApplicationRequest prints no national ID, next-of-kin ID, bank details, images or signature")
     void loanRequestHidesKycAndDocuments() {
-        LoanRequest request = LoanRequest.builder()
+        LoanApplicationRequest request = LoanApplicationRequest.builder()
                 .amount(new BigDecimal("500"))
-                .ecnumber("1234567A")
+                .ecNumber("1234567A")
                 .tenor(12)
-                .nationalId(NATIONAL_ID)
+                .nationalIdNumber(NATIONAL_ID)
                 .nextOfKin(nextOfKin())
-                .nextOfKinIdNumber(NEXT_OF_KIN_ID)
                 .witness(witness())
                 .bankingDetail(bankingDetail())
-                .signatureData(SIGNATURE)
+                .signature(SIGNATURE)
                 .nationalIdPicture(IMAGE)
                 .payslipPicture(IMAGE)
                 .channelId("superapp")
@@ -118,7 +117,7 @@ class SensitiveToStringTest {
     }
 
     @Test
-    @DisplayName("Loan and LoanDto print none of the applicant's KYC, documents or the creator's password hash")
+    @DisplayName("Loan and LoanResponse print none of the applicant's KYC, documents or the creator's password hash")
     void loanHidesKycAndDocuments() {
         Loan loan = new Loan();
         loan.setEcNumber("1234567A");
@@ -131,7 +130,7 @@ class SensitiveToStringTest {
         loan.setWitness(witness());
         loan.setCreatedByUser(user("creator-1"));
 
-        LoanDto dto = new LoanDto();
+        LoanResponse dto = new LoanResponse();
         dto.setNationalIdNumber(NATIONAL_ID);
         dto.setSignature(SIGNATURE);
         dto.setNationalIdPicture(IMAGE);
@@ -154,21 +153,22 @@ class SensitiveToStringTest {
     @Test
     @DisplayName("user-management requests print neither a password hash nor any ID number")
     void userRequestsHideIdNumbersAndHashes() {
-        CreateUserRequest createUserRequest = CreateUserRequest.builder()
+        NewUser newUser = NewUser.builder()
                 .username("new-user")
                 .idNumber(NATIONAL_ID)
                 .build();
-        UserDto userDto = new UserDto();
-        userDto.setUsername("new-user");
-        userDto.setPassword(PASSWORD_HASH);
-        userDto.setIdNumber(NATIONAL_ID);
-        CreateAgentRequest createAgentRequest = new CreateAgentRequest();
-        createAgentRequest.setIdNumber(NATIONAL_ID);
+        UserResponse userResponse = UserResponse.builder()
+                .username("new-user")
+                .idNumber(NATIONAL_ID)
+                .build();
+        CreateUserRequest createUserRequest = new CreateUserRequest();
+        createUserRequest.setIdNumber(NATIONAL_ID);
 
+        assertNoPii(newUser);
+        assertNoPii(userResponse);
         assertNoPii(createUserRequest);
-        assertNoPii(userDto);
-        assertNoPii(createAgentRequest);
-        assertThat(createUserRequest.toString()).contains("new-user");
+        assertThat(newUser.toString()).contains("new-user");
+        assertThat(userResponse.toString()).contains("new-user");
     }
 
     @Test
@@ -190,10 +190,10 @@ class SensitiveToStringTest {
                 .reference("000000042").ecnumber("1234567A").idNumber(NATIONAL_ID).build();
         LoanAccountCreationRequest application = LoanAccountCreationRequest.builder()
                 .participantReference("000000042").idNumber(NATIONAL_ID).nextOfKinIdNumber(NEXT_OF_KIN_ID).build();
-        AuthRequest login = new AuthRequest();
+        LoginRequest login = new LoginRequest();
         login.setUsername("admin");
         login.setPassword(secret);
-        AuthResponse issued = AuthResponse.builder().accessToken(secret).tokenType("Bearer").build();
+        LoginResponse issued = LoginResponse.builder().accessToken(secret).tokenType("Bearer").build();
 
         for (Object dto : List.of(innbucksLogin, innbucksToken, ndasendaToken, batch, approval, application,
                 login, issued)) {

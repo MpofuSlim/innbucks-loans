@@ -1,88 +1,119 @@
 package zw.co.innbucks.loans.controller;
 
-import jakarta.validation.Valid;
-
-
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import zw.co.innbucks.loans.core.api.AuthRequest;
-import zw.co.innbucks.loans.core.api.AuthResponse;
 import zw.co.innbucks.loans.core.api.ForgotPasswordRequest;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
 import zw.co.innbucks.loans.core.auth.AuthService;
-import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.user.CreateUserService;
+import zw.co.innbucks.loans.web.ApiExamples;
+import zw.co.innbucks.loans.web.ApiPaths;
+import zw.co.innbucks.loans.web.ApiResult;
 
+@Tag(name = "Authentication", description = "Sign-in and password recovery. No token needed.")
 @RestController
+@RequestMapping(ApiPaths.BASE + "/auth")
+@RequiredArgsConstructor
+@SecurityRequirements
 @Slf4j
-@RequestMapping("/api")
-@Tag(name = "AUTHENTICATION")
 public class AuthController {
 
-    @Autowired
-    private AuthService authService;
+    static final String FORGOT_PASSWORD_MESSAGE =
+            "If the account exists, a temporary password has been sent to its mobile number";
 
-    @Autowired
-    private CreateUserService createUserService;
+    private final AuthService authService;
+    private final CreateUserService createUserService;
 
-
-    @Operation(summary = "GET ACCESS TOKEN",
-            description = "When provided with valid login credentials, returns an access token"
-    )
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200",
-                    description = "Authenticated"),
-            @ApiResponse(responseCode = "401",
-                    description = "Invalid credentials"),
-            @ApiResponse(responseCode = "423",
-                    description = "Account locked after too many consecutive failed sign-ins (default 7). The body's"
-                            + " lockedUntil says when sign-in reopens and retryAfterSeconds counts down to it, also"
-                            + " sent as Retry-After. A successful sign-in resets the count; a super-admin password"
-                            + " reset lifts the lock early."),
-
-            @ApiResponse(responseCode = "500",
-                    description = "Represents an Error Caused by a System Malfunction")
+    @Operation(summary = "Sign in",
+            description = "Returns a bearer token. When temporaryPassword is true the user must change their"
+                    + " password (PUT /me/password) before anything else. Seven consecutive wrong passwords lock"
+                    + " the account for 30 minutes; a super-admin password reset lifts the lock early.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Signed in", content = @Content(examples = @ExampleObject("""
+                    {
+                      "code": "OK",
+                      "message": "Success",
+                      "data": {
+                        "accessToken": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI3In0.c2lnbmF0dXJl",
+                        "tokenType": "Bearer",
+                        "expiresIn": 3600,
+                        "temporaryPassword": false,
+                        "groups": ["AGENTS"],
+                        "merchantCode": "harare-motors",
+                        "merchantName": "Harare Motor Spares"
+                      }
+                    }"""))),
+            @ApiResponse(responseCode = "400", description = "Username or password missing",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "VALIDATION_ERROR",
+                              "message": "Request validation failed",
+                              "data": {
+                                "password": "Password is required"
+                              }
+                            }"""))),
+            @ApiResponse(responseCode = "401", description = "Wrong username or password",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "UNAUTHORIZED",
+                              "message": "Invalid username or password"
+                            }"""))),
+            @ApiResponse(responseCode = "423", description = "Account locked; Retry-After says for how many seconds",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "ACCOUNT_LOCKED",
+                              "message": "Account temporarily locked due to too many failed sign-in attempts",
+                              "data": {
+                                "lockedUntil": "2026-09-29T11:02:00+02:00",
+                                "retryAfterSeconds": 1740
+                              }
+                            }"""))),
+            @ApiResponse(responseCode = "500", description = "Server fault",
+                    content = @Content(examples = @ExampleObject(ApiExamples.INTERNAL_ERROR)))
     })
-    @PostMapping("/auth/token")
-    public AuthResponse authenticate(@Valid @RequestBody AuthRequest authRequest) {
-        try {
-            log.info("Authenticating user: {}", authRequest.getUsername());
-            return authService.login(authRequest);
-        } catch (AccountLockedException ex) {
-            throw ex; // a 423 with the time the lock ends, not a 401 reading "wrong password"
-        } catch (Exception ex) {
-            log.error("Error getting access token.", ex);
-            throw new BadCredentialsException(ex.getMessage());
-        }
+    @PostMapping("/login")
+    public ApiResult<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+        log.info("Sign-in for user {}", request.getUsername());
+        return ApiResult.ok(authService.login(request));
     }
 
-    @Operation(summary = "FORGOT PASSWORD",
-            description = "Sends a temporary password to the registered mobile number"
-    )
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200",
-                    description = "Authenticated"),
-            @ApiResponse(responseCode = "500",
-                    description = "Represents an Error Caused by a System Malfunction")
+    @Operation(summary = "Forgot password",
+            description = "Sends a temporary password by SMS to the account's registered mobile number. The answer"
+                    + " is the same whether or not the username exists, so it cannot be used to find accounts; the"
+                    + " SMS is sent in the background, so a delivery failure is not reported here either.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Accepted", content = @Content(examples = @ExampleObject("""
+                    {
+                      "code": "OK",
+                      "message": "If the account exists, a temporary password has been sent to its mobile number"
+                    }"""))),
+            @ApiResponse(responseCode = "400", description = "Username missing",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "VALIDATION_ERROR",
+                              "message": "Request validation failed",
+                              "data": {
+                                "username": "Username is required"
+                              }
+                            }""")))
     })
-    @PostMapping("/auth/forgot-password")
-    public ResponseEntity forgotPassword(@Valid @RequestBody ForgotPasswordRequest authRequest) {
-        try {
-            log.info("Resetting password for user: {}", authRequest.getUsername());
-            createUserService.resetPassword(authRequest);
-            return ResponseEntity.ok().build();
-        } catch (Exception ex) {
-            log.error("Error getting access token.", ex);
-            throw new BadCredentialsException(ex.getMessage());
-        }
+    @PostMapping("/forgot-password")
+    public ApiResult<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        log.info("Forgot-password request for user {}", request.getUsername());
+        createUserService.resetPassword(request);
+        return ApiResult.ok(FORGOT_PASSWORD_MESSAGE, null);
     }
 }
