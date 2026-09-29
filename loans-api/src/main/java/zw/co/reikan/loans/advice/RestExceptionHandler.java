@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import zw.co.reikan.loans.core.exception.BusinessException;
+import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
@@ -81,6 +82,13 @@ public class RestExceptionHandler {
     public ResponseEntity<ErrorResponse> handleNotFound(NotFoundException ex) {
         log.warn("Not found: {}", ex.getMessage());
         return new ResponseEntity<>(new ErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage()), HttpStatus.NOT_FOUND);
+    }
+
+    /** A manual payout the loan's state forbids: the request is valid, paying the loan now is not. */
+    @ExceptionHandler(DisbursementNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleDisbursementNotAllowed(DisbursementNotAllowedException ex) {
+        log.warn("Manual disbursement refused: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.CONFLICT, ex.getMessage()), HttpStatus.CONFLICT);
     }
 
     /**
