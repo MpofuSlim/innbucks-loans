@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
@@ -51,7 +52,7 @@ class NdasendaLoanApprovalServiceImplTest {
         props.setDeductionResponsesByDateRangeEndpoint(BY_DATE);
         props.setDeductionResponsesByBatchId(BY_BATCH);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthServiceImpl.class), props,
-                loanRepository, mock(LoanBatchService.class), notificationService);
+                loanRepository, mock(LoanBatchService.class), notificationService, mock(AuditService.class));
 
         loan = Loan.builder().loanApprovalStatus(LoanApprovalStatus.PROCESSING)
                 .mobileNumber("+263782606983").build();
