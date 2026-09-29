@@ -41,7 +41,7 @@ class SmsTemplatesTest {
         sms.put("REJECTED_LOAN", String.format(SmsMessages.REJECTED_LOAN, REF, AMOUNT));
         sms.put("PROCESSING_LOAN", String.format(SmsMessages.PROCESSING_LOAN, REF, AMOUNT));
         // The SSB submission job formats with the reference alone.
-        new LoanApprovalServiceJob(null, null, null, null, null).smsMessages
+        LoanApprovalServiceJob.SMS_MESSAGES
                 .forEach((status, template) -> sms.put("job " + status, String.format(template, REF)));
         sms.put("SMS_MSG", DisbursementService.walletDisbursementSms(disbursedLoan(MOBILE)));
         sms.put("SMS_MSG_CONSUMER_FINANCE", String.format(DisbursementService.SMS_MSG_CONSUMER_FINANCE,

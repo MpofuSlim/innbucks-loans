@@ -131,6 +131,14 @@ ndasenda:
   username: "${NDASENDA_USERNAME:}"
   security-code: "${NDASENDA_SECURITY_CODE:}"
   deduction-code: "${NDASENDA_DEDUCTION_CODE:}"
+  # Lodging a deduction is irreversible, so only a lodgement that provably never reached Ndasenda is
+  # tried again: up to max-attempts, backing off from retry-backoff-minutes (doubling), then FAILED.
+  # Anything that may have reached Ndasenda is held as PROCESSING for its answer, never re-sent. A
+  # claim left unsettled for stale-claim-minutes (a run that died mid-lodgement) is held the same way.
+  lodgement:
+    max-attempts: "${NDASENDA_LODGEMENT_MAX_ATTEMPTS:3}"
+    retry-backoff-minutes: "${NDASENDA_LODGEMENT_RETRY_BACKOFF_MINUTES:10}"
+    stale-claim-minutes: "${NDASENDA_LODGEMENT_STALE_CLAIM_MINUTES:30}"
   commit:
     deduction:
       batch:
@@ -141,6 +149,15 @@ ndasenda:
       batch:
         responses:
           cron: "0 */10 * * * ?"
+  # The response job reads from the oldest lodgement still awaiting Ndasenda's
+  # answer (less a day) up to today, so a missed day is picked up by the next
+  # run. lookback-days caps how far back one run reads: a lodgement that never
+  # gets an answer would otherwise keep every run reading further back.
+  # overdue-after-days: a lodgement waiting longer than this is logged at ERROR
+  # and audited as NDASENDA_RESPONSE_OVERDUE, once per loan.
+  responses:
+    lookback-days: "${NDASENDA_RESPONSES_LOOKBACK_DAYS:45}"
+    overdue-after-days: "${NDASENDA_RESPONSES_OVERDUE_AFTER_DAYS:7}"
 
 innbucks:
   api-key: "${INNBUCKS_API_KEY:}"

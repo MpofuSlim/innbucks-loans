@@ -81,7 +81,7 @@ class NdasendaLoanApprovalServiceImplTest {
     void ssbRejectionSendsNoUpstreamText() {
         ndasendaResponds(NdasendaDeductionStatus.FAILED, NDASENDA_REASON);
 
-        service.processDeductionResponses(LocalDate.of(2026, 9, 23));
+        service.sweepDeductionResponses(LocalDate.of(2026, 9, 23).atTime(10, 0));
 
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(notificationService).sendSms(eq("+263782606983"), text.capture());
@@ -99,7 +99,7 @@ class NdasendaLoanApprovalServiceImplTest {
     void ssbApprovalSendsNoSms() {
         ndasendaResponds(NdasendaDeductionStatus.SUCCESS, "Accepted");
 
-        service.processDeductionResponses(LocalDate.of(2026, 9, 23));
+        service.sweepDeductionResponses(LocalDate.of(2026, 9, 23).atTime(10, 0));
 
         verify(notificationService, never()).sendSms(anyString(), anyString());
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);

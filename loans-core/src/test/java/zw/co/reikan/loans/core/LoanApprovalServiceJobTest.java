@@ -1,123 +1,682 @@
 package zw.co.reikan.loans.core;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.UnknownContentTypeException;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
-import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
-import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalResponse;
 import zw.co.reikan.loans.core.ndasenda.LoanApprovalService;
+import zw.co.reikan.loans.core.ndasenda.LodgementException;
+import zw.co.reikan.loans.core.ndasenda.NdasendaAuthServiceImpl;
+import zw.co.reikan.loans.core.ndasenda.NdasendaDeductionsBatchRequest;
+import zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
+import zw.co.reikan.loans.core.ndasenda.NdasendaParameters;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.net.ConnectException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * The lodgement job marks a loan FAILED for ANY exception, including one thrown after Ndasenda
- * accepted the lodgement, and a FAILED loan is never lodged again. Where the batch number proves
- * the lodgement got through, the live deduction is flagged for cancellation.
+ * Lodging a loan with Ndasenda puts an irreversible stop order on a civil servant's salary. The job
+ * used to run every NEW loan inside one transaction with no claim, mark ANY failure FAILED, and resend
+ * the POST whenever the answer could not be read — so a rollback, a second instance or an unreadable
+ * answer each lodged a loan twice, and a timeout gave up on a deduction that may be live. These pin
+ * the outcomes: claimed before the call, sent once, and settled per loan by what is actually known.
+ *
+ * <p>Most cases drive the real {@link NdasendaLoanApprovalServiceImpl} over a mocked
+ * {@link RestTemplate}, so "sent once" is counted at the HTTP client.</p>
  */
 class LoanApprovalServiceJobTest {
 
-    private LoanApprovalService loanApprovalService;
+    private static final String DEDUCTIONS = "https://ndasenda.test/api/v1/deductions/requests";
+    private static final String EC_NUMBER = "1234567A";
+    private static final String NATIONAL_ID = "63-1234567A63";
+
+    private RestTemplate restTemplate;
+    private NdasendaAuthServiceImpl auth;
     private LoanRepository loanRepository;
     private NotificationService notificationService;
+    private LoanBatchService loanBatchService;
     private AuditService auditService;
-    private LoanApprovalServiceJob job;
-    private Loan loan;
+    private RecordingTransactions transactions;
+    private final Map<Long, Loan> loans = new LinkedHashMap<>();
+    private ListAppender<ILoggingEvent> logs;
 
     @BeforeEach
     void setUp() {
-        loanApprovalService = mock(LoanApprovalService.class);
+        restTemplate = mock(RestTemplate.class);
+        auth = mock(NdasendaAuthServiceImpl.class);
+        when(auth.getAccessToken()).thenReturn("tok-abc");
         loanRepository = mock(LoanRepository.class);
         notificationService = mock(NotificationService.class);
+        loanBatchService = mock(LoanBatchService.class);
         auditService = mock(AuditService.class);
-        job = new LoanApprovalServiceJob(loanApprovalService, loanRepository, notificationService,
-                mock(LoanBatchService.class),
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+        transactions = new RecordingTransactions();
 
-        loan = Loan.builder()
+        // The repository over an in-memory table: the due query applies the same rule as the JPQL.
+        when(loanRepository.findIdsDueForLodgement(any())).thenAnswer(call -> {
+            LocalDateTime now = call.getArgument(0);
+            return loans.values().stream()
+                    .filter(l -> l.getLoanApprovalStatus() == LoanApprovalStatus.NEW && l.getLodgementClaimedAt() == null
+                            && (l.getNextLodgementAttemptAt() == null || !l.getNextLodgementAttemptAt().isAfter(now)))
+                    .map(Loan::getId).toList();
+        });
+        when(loanRepository.findIdsWithLodgementClaimedBefore(any())).thenAnswer(call -> {
+            LocalDateTime cutoff = call.getArgument(0);
+            return loans.values().stream()
+                    .filter(l -> l.getLoanApprovalStatus() == LoanApprovalStatus.NEW && l.getLodgementClaimedAt() != null
+                            && l.getLodgementClaimedAt().isBefore(cutoff))
+                    .map(Loan::getId).toList();
+        });
+        when(loanRepository.findByIdForUpdate(anyLong())).thenAnswer(call -> Optional.ofNullable(loans.get((Long) call.getArgument(0))));
+        when(loanRepository.save(any(Loan.class))).thenAnswer(call -> call.getArgument(0));
+
+        logs = new ListAppender<>();
+        logs.start();
+        logger(LoanApprovalServiceJob.class).addAppender(logs);
+        logger(NdasendaLoanApprovalServiceImpl.class).addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogs() {
+        logger(LoanApprovalServiceJob.class).detachAppender(logs);
+        logger(NdasendaLoanApprovalServiceImpl.class).detachAppender(logs);
+    }
+
+    private static Logger logger(Class<?> type) {
+        return (Logger) LoggerFactory.getLogger(type);
+    }
+
+    private Loan newLoan(long id) {
+        Loan loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
-                .ecNumber("1234567A")
-                .nationalIdNumber("63-1234567A63")
+                .ecNumber(EC_NUMBER)
+                .nationalIdNumber(NATIONAL_ID)
                 .grossedMonthlyDeduction(new BigDecimal("98.50"))
                 .tenor(6)
                 .mobileNumber("0772123123")
                 .build();
-        loan.setId(42L);
-        when(loanRepository.findByLoanApprovalStatus(LoanApprovalStatus.NEW)).thenReturn(List.of(loan));
+        loan.setId(id);
+        loans.put(id, loan);
+        return loan;
     }
 
-    @Test
-    @DisplayName("a failure AFTER the lodgement reached Ndasenda (batch number held) flags the deduction")
-    void failureAfterLodgementFlagsCancellation() {
-        when(loanApprovalService.requestApproval(any())).thenReturn(LoanApprovalResponse.builder()
-                .status(LoanApprovalStatus.PROCESSING)
-                .batchNumber("BATCH-20260923-01")
-                .startDate(LocalDate.of(2026, 10, 1))
-                .endDate(LocalDate.of(2027, 3, 31))
-                .build());
-        doThrow(new IllegalStateException("SMS gateway unreachable"))
-                .when(notificationService).sendSms(anyString(), anyString());
+    private LoanApprovalServiceJob job(LoanApprovalService service) {
+        return new LoanApprovalServiceJob(service, loanRepository, notificationService, loanBatchService,
+                auditService, transactions, 3, 10, 30);
+    }
 
-        job.processSsbApprovals();
+    /** The job over the real Ndasenda client, talking to the mocked RestTemplate. */
+    private LoanApprovalServiceJob ndasendaJob() {
+        return job(ndasenda());
+    }
 
-        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
-        assertThat(loan.getBatchNumber()).isEqualTo("BATCH-20260923-01");
-        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
-        assertThat(loan.getDeductionCancellationReason()).isEqualTo("LODGEMENT_FAILED");
-        verify(loanRepository, atLeastOnce()).save(loan);
+    private NdasendaLoanApprovalServiceImpl ndasenda() {
+        NdasendaParameters props = new NdasendaParameters();
+        props.setDeductionRequestsEndpoint(DEDUCTIONS);
+        props.setDeductionCode("DC01");
+        props.setSecurityCode("SEC01");
+        return new NdasendaLoanApprovalServiceImpl(restTemplate, auth, props, loanRepository, loanBatchService,
+                notificationService, auditService, mock(DeductionCancellationService.class));
+    }
 
+    /** Ndasenda's answer to each lodgement POST, chosen by the loan reference it carries. */
+    private void ndasendaAnswers(Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>> answer) {
+        when(restTemplate.exchange(eq(DEDUCTIONS), eq(HttpMethod.POST), any(HttpEntity.class),
+                eq(NdasendaDeductionsBatchRequest.class)))
+                .thenAnswer(call -> {
+                    HttpEntity<?> entity = call.getArgument(2);
+                    NdasendaDeductionsBatchRequest batch = (NdasendaDeductionsBatchRequest) entity.getBody();
+                    return answer.apply(batch.getDeductions().get(0).getReference());
+                });
+    }
+
+    private static ResponseEntity<NdasendaDeductionsBatchRequest> accepted(String batchId) {
+        return ResponseEntity.ok(NdasendaDeductionsBatchRequest.builder().id(batchId).build());
+    }
+
+    private int lodgementPosts() {
+        return (int) mockingDetails(restTemplate).getInvocations().stream()
+                .filter(call -> call.getMethod().getName().equals("exchange")
+                        && DEDUCTIONS.equals(call.getArgument(0)) && call.getArgument(1) == HttpMethod.POST)
+                .count();
+    }
+
+    private List<AuditLog> audits() {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
-        verify(auditService).record(captor.capture());
-        AuditLog audit = captor.getValue().build();
-        assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_REQUIRED");
-        assertThat(audit.getActorId()).isEqualTo("ssb-approval-job");
-        assertThat(audit.getCorrelationId()).isEqualTo("BATCH-20260923-01");
+        verify(auditService, atLeast(0)).record(captor.capture());
+        return captor.getAllValues().stream().map(AuditLog.AuditLogBuilder::build).toList();
+    }
+
+    private static HttpClientErrorException clientError(HttpStatus status) {
+        return (HttpClientErrorException) HttpClientErrorException.create(status, status.getReasonPhrase(),
+                HttpHeaders.EMPTY, ("{\"error\":\"" + NATIONAL_ID + "\"}").getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8);
     }
 
     @Test
-    @DisplayName("a lodgement that never reached Ndasenda (no batch number) is FAILED with nothing to cancel")
-    void failureBeforeLodgementDoesNotFlag() {
-        when(loanApprovalService.requestApproval(any()))
-                .thenThrow(new RuntimeException("Failed to request loan approval"));
+    @DisplayName("an accepted lodgement is PROCESSING with Ndasenda's batch id, sent once, batch listed, customer told")
+    void acceptedLodgementIsProcessingWithBatchId() {
+        Loan loan = newLoan(42);
+        ndasendaAnswers(reference -> accepted("BATCH-20260929-01"));
 
-        job.processSsbApprovals();
-
-        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
-        assertThat(loan.getBatchNumber()).isNull();
-        assertThat(loan.getDeductionCancellationStatus()).isNull();
-        verify(loanRepository).save(loan);
-        verifyNoInteractions(auditService);
-    }
-
-    @Test
-    @DisplayName("a clean lodgement is PROCESSING with nothing to cancel")
-    void cleanLodgementDoesNotFlag() {
-        when(loanApprovalService.requestApproval(any())).thenReturn(LoanApprovalResponse.builder()
-                .status(LoanApprovalStatus.PROCESSING)
-                .batchNumber("BATCH-20260923-01")
-                .build());
-
-        job.processSsbApprovals();
+        ndasendaJob().processSsbApprovals();
 
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
-        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(loan.getBatchNumber()).isEqualTo("BATCH-20260929-01");
+        assertThat(loan.getLodgementClaimedAt()).isNotNull();
+        assertThat(loan.getNextLodgementAttemptAt()).isNull();
+        assertThat(loan.getApprovalAttempt()).isNull();
+        assertThat(loan.getRepaymentStartDate()).isNotNull();
+        assertThat(lodgementPosts()).isEqualTo(1);
+        verify(loanBatchService).save("BATCH-20260929-01");
+        verify(notificationService).sendSms(eq("0772123123"), eq(String.format(
+                "Your loan application with ref # %s has been received and is being processed."
+                        + " You will be notified of the outcome shortly. Thank you for choosing Innbucks.", "000000042")));
         verifyNoInteractions(auditService);
+        // The claim, then the settle, each committed on its own.
+        assertThat(transactions.events).containsExactly("begin", "commit", "begin", "commit");
+        assertThat(transactions.propagations).containsOnly(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    @Test
+    @DisplayName("an SMS failure after a clean lodgement leaves it PROCESSING - it used to FAIL a live deduction")
+    void smsFailureAfterLodgementKeepsItProcessing() {
+        Loan loan = newLoan(42);
+        ndasendaAnswers(reference -> accepted("BATCH-20260929-01"));
+        doThrow(new IllegalStateException("SMS gateway unreachable")).when(notificationService).sendSms(anyString(), anyString());
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getBatchNumber()).isEqualTo("BATCH-20260929-01");
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(lodgementPosts()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("one loan refused by Ndasenda is FAILED on its own; the next loan is still lodged and committed")
+    void aRefusedLoanDoesNotAffectTheNext() {
+        Loan refused = newLoan(41);
+        Loan lodged = newLoan(42);
+        ndasendaAnswers(reference -> {
+            if (reference.equals("000000041")) {
+                throw clientError(HttpStatus.BAD_REQUEST);
+            }
+            return accepted("BATCH-20260929-02");
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(refused.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(lodged.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(lodged.getBatchNumber()).isEqualTo("BATCH-20260929-02");
+        assertThat(lodgementPosts()).isEqualTo(2);
+        // Four separate transactions: a claim and a settle per loan, none rolled back.
+        assertThat(transactions.events).containsExactly("begin", "commit", "begin", "commit",
+                "begin", "commit", "begin", "commit");
+    }
+
+    @Test
+    @DisplayName("a loan whose outcome cannot be saved rolls back alone and stays claimed; the next loan commits")
+    void aSettleFailureRollsBackOnlyThatLoan() {
+        Loan unrecorded = newLoan(41);
+        Loan lodged = newLoan(42);
+        ndasendaAnswers(reference -> accepted(reference.equals("000000041") ? "BATCH-A" : "BATCH-B"));
+        int[] savesOf41 = {0};
+        when(loanRepository.save(any(Loan.class))).thenAnswer(call -> {
+            Loan loan = call.getArgument(0);
+            // The claim's save succeeds; the settle's save of loan 41 does not.
+            if (loan.getId() == 41L && ++savesOf41[0] == 2) {
+                throw new OptimisticLockingFailureException("loan 41 changed under the settle");
+            }
+            return loan;
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(transactions.events).containsExactly(
+                "begin", "commit", "begin", "rollback",  // loan 41: claim committed, settle rolled back
+                "begin", "commit", "begin", "commit");   // loan 42: untouched by 41's failure
+        assertThat(unrecorded.getLodgementClaimedAt()).as("the committed claim stands").isNotNull();
+        assertThat(lodged.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(lodged.getBatchNumber()).isEqualTo("BATCH-B");
+        assertThat(lodgementPosts()).isEqualTo(2);
+        assertThat(audits()).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_NOT_RECORDED");
+        assertThat(audits().get(0).getDetail()).contains("batch=BATCH-A").doesNotContain(NATIONAL_ID);
+    }
+
+    @Test
+    @DisplayName("a loan another instance claimed first is not lodged")
+    void claimAlreadyTakenIsNotLodged() {
+        Loan loan = newLoan(42);
+        LocalDateTime theirs = LocalDateTime.now().minusSeconds(5);
+        // The due list was read before the other instance's claim committed.
+        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        loan.setLodgementClaimedAt(theirs);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service);
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(loan.getLodgementClaimedAt()).isEqualTo(theirs);
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("connection refused: nothing was sent, so the loan stays NEW with attempt 1 and a backoff, and the run stops")
+    void connectRefusedStaysNewAndStopsTheRun() {
+        Loan first = newLoan(41);
+        Loan second = newLoan(42);
+        ndasendaAnswers(reference -> {
+            throw new ResourceAccessException("I/O error on POST request: Connection refused",
+                    new ConnectException("Connection refused"));
+        });
+        LoanApprovalServiceJob job = ndasendaJob();
+        LocalDateTime before = LocalDateTime.now();
+
+        job.processSsbApprovals();
+
+        assertThat(first.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(first.getApprovalAttempt()).isEqualTo(1);
+        assertThat(first.getLodgementClaimedAt()).as("claim released").isNull();
+        assertThat(first.getNextLodgementAttemptAt()).isAfterOrEqualTo(before.plusMinutes(10))
+                .isBefore(LocalDateTime.now().plusMinutes(11));
+        assertThat(first.getLoanStatusMessage()).contains("never reached Ndasenda").contains("Connection refused");
+        // Ndasenda is down: the second loan is not even claimed, let alone sent.
+        verify(loanRepository, never()).findByIdForUpdate(42L);
+        assertThat(second.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(second.getApprovalAttempt()).isNull();
+        assertThat(lodgementPosts()).isEqualTo(1);
+        verifyNoInteractions(auditService, notificationService);
+
+        // And lodging pauses: the next minute's run sends nothing.
+        job.processSsbApprovals();
+        assertThat(lodgementPosts()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the access token cannot be fetched: the lodgement is never sent and the loan stays NEW")
+    void tokenFetchFailureIsNotSent() {
+        Loan loan = newLoan(42);
+        newLoan(43);
+        // Even a read timeout on the TOKEN endpoint happens before the lodgement POST exists.
+        when(auth.getAccessToken()).thenThrow(new ResourceAccessException("I/O error on POST request for token",
+                new SocketTimeoutException("Read timed out")));
+        ndasendaAnswers(reference -> accepted("never"));
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(lodgementPosts()).isZero();
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(loan.getApprovalAttempt()).isEqualTo(1);
+        assertThat(loan.getLodgementClaimedAt()).isNull();
+        assertThat(loan.getNextLodgementAttemptAt()).isNotNull();
+        assertThat(loan.getLoanStatusMessage()).contains("access token could not be fetched");
+        verify(loanRepository, never()).findByIdForUpdate(43L);
+    }
+
+    @Test
+    @DisplayName("the third attempt that never reaches Ndasenda FAILS the loan - nothing lodged, nothing to cancel")
+    void thirdNotSentAttemptFails() {
+        Loan loan = newLoan(42);
+        loan.setApprovalAttempt(2);
+        ndasendaAnswers(reference -> {
+            throw new ResourceAccessException("I/O error", new ConnectException("Connection refused"));
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(loan.getApprovalAttempt()).isEqualTo(3);
+        assertThat(loan.getLodgementClaimedAt()).isNull();
+        assertThat(loan.getNextLodgementAttemptAt()).isNull();
+        assertThat(loan.getLoanStatusMessage()).startsWith("Not lodged: 3 attempt(s) never reached Ndasenda");
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        // As before, a FAILED lodgement sends the customer nothing.
+        verifyNoInteractions(notificationService);
+        List<AuditLog> audits = audits();
+        assertThat(audits).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_ATTEMPTS_EXHAUSTED");
+        assertThat(audits.get(0).getStateTransitionDelta()).isEqualTo("{\"from\":\"NEW\",\"to\":\"FAILED\"}");
+    }
+
+    @Test
+    @DisplayName("a loan still in its backoff is not lodged")
+    void loanInBackoffIsNotLodged() {
+        Loan loan = newLoan(42);
+        loan.setApprovalAttempt(1);
+        loan.setNextLodgementAttemptAt(LocalDateTime.now().plusMinutes(5));
+        ndasendaAnswers(reference -> accepted("BATCH"));
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(lodgementPosts()).isZero();
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+    }
+
+    static Stream<Arguments> unknownOutcomes() {
+        return Stream.of(
+                Arguments.of("read timeout", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref -> {
+                    throw new ResourceAccessException("I/O error on POST request: Read timed out",
+                            new SocketTimeoutException("Read timed out"));
+                }),
+                Arguments.of("connection reset", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref -> {
+                    throw new ResourceAccessException("I/O error on POST request: Connection reset",
+                            new SocketException("Connection reset"));
+                }),
+                Arguments.of("HTTP 502", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref -> {
+                    throw HttpServerErrorException.create(HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY,
+                            ("{\"echo\":\"" + NATIONAL_ID + "\"}").getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+                }),
+                Arguments.of("HTTP 409", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref -> {
+                    throw clientError(HttpStatus.CONFLICT);
+                }),
+                Arguments.of("unreadable 2xx", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref -> {
+                    throw new UnknownContentTypeException(NdasendaDeductionsBatchRequest.class, MediaType.TEXT_HTML,
+                            HttpStatus.OK, "OK", HttpHeaders.EMPTY, "<html>login</html>".getBytes(StandardCharsets.UTF_8));
+                }),
+                Arguments.of("2xx without a batch id", (Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>>) ref ->
+                        ResponseEntity.ok(NdasendaDeductionsBatchRequest.builder().build()))
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unknownOutcomes")
+    @DisplayName("an outcome that may have lodged the deduction is held for Ndasenda's answer: audited, not FAILED, not sent again")
+    void unknownOutcomeIsHeldNotFailedNotResent(String label,
+                                               Function<String, ResponseEntity<NdasendaDeductionsBatchRequest>> answer) {
+        Loan loan = newLoan(42);
+        Loan next = newLoan(43);
+        ndasendaAnswers(answer);
+
+        ndasendaJob().processSsbApprovals();
+
+        // PROCESSING is what the response job resolves with Ndasenda's own answer.
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getBatchNumber()).isNull();
+        assertThat(loan.getApprovalAttempt()).isNull();
+        assertThat(loan.getLodgementClaimedAt()).as("the claim stays: never sent again").isNotNull();
+        assertThat(loan.getLoanStatusMessage()).startsWith("Ndasenda lodgement outcome unknown")
+                .doesNotContain(NATIONAL_ID);
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(lodgementPosts()).as("sent exactly once").isEqualTo(1);
+        verifyNoInteractions(notificationService);
+
+        List<AuditLog> audits = audits();
+        assertThat(audits).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_UNKNOWN");
+        assertThat(audits.get(0).getStateTransitionDelta()).isEqualTo("{\"from\":\"NEW\",\"to\":\"PROCESSING\"}");
+        assertThat(audits.get(0).getDetail()).contains("reference=000000042").contains("ecNumber=*****67A")
+                .doesNotContain(NATIONAL_ID).doesNotContain(EC_NUMBER);
+        assertThat(logs.list).anyMatch(event -> event.getFormattedMessage().startsWith("NDASENDA LODGEMENT OUTCOME UNKNOWN"));
+
+        // Ndasenda may be unwell: the run stopped before the next loan.
+        verify(loanRepository, never()).findByIdForUpdate(43L);
+        assertThat(next.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+
+        // A fresh job (a restart, another instance: no pause) still never sends the held loan again.
+        ndasendaJob().processSsbApprovals();
+        assertThat(mockingDetails(restTemplate).getInvocations().stream()
+                .filter(call -> call.getMethod().getName().equals("exchange"))
+                .map(call -> ((NdasendaDeductionsBatchRequest) ((HttpEntity<?>) call.getArgument(2)).getBody())
+                        .getDeductions().get(0).getReference()))
+                .containsOnly("000000042", "000000043")
+                .filteredOn("000000042"::equals).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("an unreadable answer is no longer re-POSTed: the token is refreshed, the lodgement is not")
+    void unreadableAnswerRefreshesTokenButDoesNotResend() {
+        newLoan(42);
+        ndasendaAnswers(reference -> {
+            throw new UnknownContentTypeException(NdasendaDeductionsBatchRequest.class, MediaType.TEXT_HTML,
+                    HttpStatus.OK, "OK", HttpHeaders.EMPTY, new byte[0]);
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(lodgementPosts()).isEqualTo(1);
+        verify(auth).refreshToken();
+    }
+
+    @Test
+    @DisplayName("Ndasenda's own refusal (4xx) FAILS the loan, audited, with no upstream body copied")
+    void refusalFails() {
+        Loan loan = newLoan(42);
+        ndasendaAnswers(reference -> {
+            throw clientError(HttpStatus.UNPROCESSABLE_ENTITY);
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(loan.getApprovalAttempt()).isEqualTo(1);
+        assertThat(loan.getLoanStatusMessage()).isEqualTo("Ndasenda refused the lodgement with HTTP 422");
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(lodgementPosts()).isEqualTo(1);
+        verifyNoInteractions(notificationService);
+        assertThat(audits()).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_REFUSED");
+    }
+
+    @Test
+    @DisplayName("a 401 is replayed once with a fresh token (Ndasenda processed nothing), and that replay can succeed")
+    void unauthorizedIsReplayedOnce() {
+        Loan loan = newLoan(42);
+        int[] posts = {0};
+        ndasendaAnswers(reference -> {
+            if (++posts[0] == 1) {
+                throw clientError(HttpStatus.UNAUTHORIZED);
+            }
+            return accepted("BATCH-AFTER-REFRESH");
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(lodgementPosts()).isEqualTo(2);
+        verify(auth).refreshToken();
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getBatchNumber()).isEqualTo("BATCH-AFTER-REFRESH");
+    }
+
+    @Test
+    @DisplayName("a 401 on the replay too means nothing was processed: NEW with attempt 1, run stopped, no third POST")
+    void unauthorizedTwiceIsNotSent() {
+        Loan loan = newLoan(42);
+        newLoan(43);
+        ndasendaAnswers(reference -> {
+            throw clientError(HttpStatus.UNAUTHORIZED);
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(lodgementPosts()).isEqualTo(2);
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(loan.getApprovalAttempt()).isEqualTo(1);
+        assertThat(loan.getLodgementClaimedAt()).isNull();
+        verify(loanRepository, never()).findByIdForUpdate(43L);
+    }
+
+    @Test
+    @DisplayName("a deduction that cannot be built (an instalment too large for the wire) is not sent, and the run carries on")
+    void unbuildableDeductionIsNotSentAndRunCarriesOn() {
+        Loan oversized = newLoan(41);
+        oversized.setGrossedMonthlyDeduction(new BigDecimal("21474836.48"));
+        Loan lodged = newLoan(42);
+        ndasendaAnswers(reference -> accepted("BATCH-42"));
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(oversized.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(oversized.getApprovalAttempt()).isEqualTo(1);
+        assertThat(oversized.getLoanStatusMessage()).contains("could not be built");
+        assertThat(lodged.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(lodgementPosts()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an exception nobody classified is treated as an unknown outcome, never as FAILED")
+    void unclassifiedFailureIsHeld() {
+        Loan loan = newLoan(42);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+        when(service.requestApproval(any())).thenThrow(new IllegalStateException("boom after send"));
+
+        job(service).processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getLodgementClaimedAt()).isNotNull();
+        verify(service, times(1)).requestApproval(any());
+    }
+
+    @Test
+    @DisplayName("a claim a dead run left behind is held for Ndasenda's answer, not sent again")
+    void abandonedClaimIsHeld() {
+        Loan loan = newLoan(42);
+        loan.setLodgementClaimedAt(LocalDateTime.now().minusMinutes(45));
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service);
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getLodgementClaimedAt()).isNotNull();
+        assertThat(loan.getLoanStatusMessage()).contains("was never recorded");
+        assertThat(audits()).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_UNKNOWN");
+    }
+
+    @Test
+    @DisplayName("a recent claim is an in-flight lodgement: left alone")
+    void recentClaimIsLeftAlone() {
+        Loan loan = newLoan(42);
+        LocalDateTime claimed = LocalDateTime.now().minusMinutes(5);
+        loan.setLodgementClaimedAt(claimed);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service, auditService);
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(loan.getLodgementClaimedAt()).isEqualTo(claimed);
+    }
+
+    @Test
+    @DisplayName("a slow lodgement held as abandoned meanwhile still records Ndasenda's batch id when it returns")
+    void lateAcceptanceAfterHoldIsRecorded() {
+        Loan loan = newLoan(42);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+        when(service.requestApproval(any())).thenAnswer(call -> {
+            // Another instance's sweep held the loan while this call hung.
+            loan.setLoanApprovalStatus(LoanApprovalStatus.PROCESSING);
+            return LoanApprovalResponse.builder().status(LoanApprovalStatus.PROCESSING).batchNumber("BATCH-LATE").build();
+        });
+
+        job(service).processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
+        assertThat(loan.getBatchNumber()).isEqualTo("BATCH-LATE");
+    }
+
+    @Test
+    @DisplayName("an outcome for a loan that moved on meanwhile (Ndasenda already answered) is audited, not applied")
+    void outcomeForLoanThatMovedOnIsNotApplied() {
+        Loan loan = newLoan(42);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+        when(service.requestApproval(any())).thenAnswer(call -> {
+            loan.setLoanApprovalStatus(LoanApprovalStatus.APPROVED);
+            loan.setApprovalReference("ND-7001");
+            throw new LodgementException(LodgementException.Kind.REFUSED, "Ndasenda refused the lodgement with HTTP 400", null);
+        });
+
+        job(service).processSsbApprovals();
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
+        assertThat(audits()).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_NOT_RECORDED");
+    }
+
+    @Test
+    @DisplayName("the lodgement is logged by reference and masked EC number, never the national ID or full EC number")
+    void lodgementLogsNoPii() {
+        newLoan(42);
+        ndasendaAnswers(reference -> accepted("BATCH-20260929-01"));
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(logs.list).isNotEmpty()
+                .allSatisfy(event -> assertThat(event.getFormattedMessage())
+                        .doesNotContain(NATIONAL_ID).doesNotContain(EC_NUMBER));
+        assertThat(logs.list).anyMatch(event -> event.getFormattedMessage()
+                .equals("Lodging Ndasenda deduction for reference 000000042 ec *****67A tenor 6"));
+    }
+
+    /** Opens, commits and rolls back nothing real; records the order so each loan's boundaries are visible. */
+    private static final class RecordingTransactions implements PlatformTransactionManager {
+        final List<String> events = new ArrayList<>();
+        final List<Integer> propagations = new ArrayList<>();
+
+        @Override
+        public TransactionStatus getTransaction(TransactionDefinition definition) {
+            events.add("begin");
+            propagations.add(definition.getPropagationBehavior());
+            return new SimpleTransactionStatus();
+        }
+
+        @Override
+        public void commit(TransactionStatus status) {
+            events.add("commit");
+        }
+
+        @Override
+        public void rollback(TransactionStatus status) {
+            events.add("rollback");
+        }
     }
 }
