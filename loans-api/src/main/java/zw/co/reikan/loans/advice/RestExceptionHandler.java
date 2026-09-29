@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import zw.co.reikan.loans.core.exception.BusinessException;
+import zw.co.reikan.loans.core.exception.ConflictException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.notifications.NotificationDeliveryException;
 
@@ -80,6 +81,12 @@ public class RestExceptionHandler {
         return new ResponseEntity<>(new ErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage()), HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
+        log.warn("Conflict: {}", ex.getMessage());
+        return new ResponseEntity<>(new ErrorResponse(HttpStatus.CONFLICT, ex.getMessage()), HttpStatus.CONFLICT);
+    }
+
     /**
      * An unparseable body — malformed JSON, an enum value that is not one of the
      * names (e.g. "Married" for MARRIED), a date not in yyyy-MM-dd. It is the
@@ -114,7 +121,7 @@ public class RestExceptionHandler {
     }
 
     @Data
-    private static class ErrorResponse {
+    public static class ErrorResponse {
         private final int status;
         private final String error;
 

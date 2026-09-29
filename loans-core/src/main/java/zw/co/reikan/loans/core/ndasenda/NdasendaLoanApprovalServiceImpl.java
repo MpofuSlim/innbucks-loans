@@ -14,6 +14,9 @@ import org.springframework.web.client.UnknownContentTypeException;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
+import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -44,6 +47,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private static final BigDecimal CENTS = new BigDecimal("100");
     static final String RESPONSE_UNMATCHED = "NDASENDA_RESPONSE_UNMATCHED";
     static final String RESPONSE_FAILED = "NDASENDA_RESPONSE_FAILED";
+    static final String RESPONSE_CONFLICT = "NDASENDA_RESPONSE_CONFLICT";
     static final String SYSTEM_ACTOR = "ndasenda-response-job";
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd");
     private final RestTemplate restTemplate;
@@ -53,6 +57,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final LoanBatchService loanBatchService;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final DeductionCancellationService deductionCancellationService;
 
     Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, APPROVED_LOAN,
             LoanApprovalStatus.REJECTED, REJECTED_LOAN,
@@ -275,7 +280,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     /**
      * A response we cannot tie to a loan is a stop order on someone's salary that our books do not
      * know about, so it is never dropped quietly: it is logged at ERROR with the identifiers needed
-     * to find it at Ndasenda, and audited. The rest of the batch always carries on.
+     * to find it at Ndasenda, and audited. The rest of the batch always carries on. A response for a
+     * loan no longer awaiting Ndasenda is never applied; if it disagrees, it is reported the same way.
      */
     void processDeductionRequestResponse(String batchId, NdasendaDeduction response) {
         // Not the whole record: its toString carries the national ID and EC number in full.
@@ -292,38 +298,92 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             }
 
             loanRepository.findById(id)
-                    .ifPresentOrElse(loan -> {
-                        if (response.getStatus().getApprovalStatus() == loan.getLoanApprovalStatus()) {
-                            log.info("Loan already updated: {}", response.getStatus().getApprovalStatus());
-                            return;
-                        }
-
-                        loan.setLoanApprovalStatus(response.getStatus().getApprovalStatus());
-                        loan.setDateApproved(LocalDateTime.now());
-                        loan.setApprovalReference(response.getId());
-
-                        if (LoanApprovalStatus.APPROVED == response.getStatus().getApprovalStatus()) {
-                            loan.setDisbursementAttempts(0);
-                            loan.setNextDisbursementAttemptDate(LocalDateTime.now());
-                            loan.setLoanAccountStatus(LoanAccountStatus.PENDING);
-                        }
-
-                        final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
-                                String.format("%09d", loan.getId()), loan.getDisbursedAmount(), response.getMessage());
-
-                        //Do not send notification for SSB approval. SMS will be sent on internal approval
-                        if (LoanApprovalStatus.APPROVED != response.getStatus().getApprovalStatus()) {
-                            notificationService.sendSms(loan.getMobileNumber(), text);
-                        }
-
-                        loanRepository.save(loan);
-                    }, () -> reportUnmatched(batchId, response, "unknown_loan"));
+                    .ifPresentOrElse(loan -> applyResponse(batchId, response, loan),
+                            () -> reportUnmatched(batchId, response, "unknown_loan"));
         } catch (Exception ex) {
             String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             log.error("NDASENDA RESPONSE FAILED: deduction {} batch {} reference {} status {} ec {} (audited)",
                     response.getId(), batchId, response.getReference(), response.getStatus(),
                     maskEcNumber(response.getEcNumber()), ex);
             audit(RESPONSE_FAILED, batchId, response, "error=" + reason);
+        }
+    }
+
+    private void applyResponse(String batchId, NdasendaDeduction response, Loan loan) {
+        LoanApprovalStatus outcome = response.getStatus().getApprovalStatus();
+        if (outcome == loan.getLoanApprovalStatus()) {
+            log.info("Loan already updated: {}", outcome);
+            return;
+        }
+        // The job re-reads the whole day's batches every 10 minutes, and one reference can carry
+        // several records (a FAILED and a SUCCESS after a duplicate lodgement). Only a loan still
+        // waiting on Ndasenda takes its answer: applied later, it would flip a decided loan, or
+        // re-queue a booked or paid one for booking and payment.
+        if (!awaitingNdasendaOutcome(loan)) {
+            reportConflict(batchId, response, loan);
+            return;
+        }
+
+        loan.setLoanApprovalStatus(outcome);
+        loan.setDateApproved(LocalDateTime.now());
+        loan.setApprovalReference(response.getId());
+        // A FAILED lodgement flagged for cancellation now has Ndasenda's answer, which settles it.
+        deductionCancellationService.withdraw(loan, String.valueOf(response.getStatus()), SYSTEM_ACTOR);
+
+        // Account and disbursement fields belong to the booking jobs once the account has left PENDING.
+        if (LoanApprovalStatus.APPROVED == outcome
+                && (loan.getLoanAccountStatus() == null || loan.getLoanAccountStatus() == LoanAccountStatus.PENDING)) {
+            loan.setDisbursementAttempts(0);
+            loan.setNextDisbursementAttemptDate(LocalDateTime.now());
+            loan.setLoanAccountStatus(LoanAccountStatus.PENDING);
+        }
+
+        final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
+                String.format("%09d", loan.getId()), loan.getDisbursedAmount(), response.getMessage());
+
+        //Do not send notification for SSB approval. SMS will be sent on internal approval
+        if (LoanApprovalStatus.APPROVED != outcome) {
+            notificationService.sendSms(loan.getMobileNumber(), text);
+        }
+
+        loanRepository.save(loan);
+    }
+
+    /**
+     * PROCESSING is the normal wait. FAILED with a lodgement reference is the ambiguous case: the
+     * lodgement reached Ndasenda before a later step threw, so Ndasenda's answer is still the one
+     * that counts - unless an operator has already cancelled that deduction, which no answer undoes.
+     */
+    static boolean awaitingNdasendaOutcome(Loan loan) {
+        if (loan.getLoanApprovalStatus() == LoanApprovalStatus.PROCESSING) {
+            return true;
+        }
+        return loan.getLoanApprovalStatus() == LoanApprovalStatus.FAILED
+                && DeductionCancellationService.wasLodged(loan)
+                && loan.getDeductionCancellationStatus() != DeductionCancellationStatus.CANCELLED_EXTERNALLY;
+    }
+
+    private void reportConflict(String batchId, NdasendaDeduction response, Loan loan) {
+        String held = "loanId=" + loan.getId() + " loanStatus=" + loan.getLoanApprovalStatus()
+                + " internalApproval=" + loan.getInternalApprovalStatus()
+                + " accountStatus=" + loan.getLoanAccountStatus()
+                + " disbursementStatus=" + loan.getDisbursementStatus()
+                + " cancellation=" + loan.getDeductionCancellationStatus();
+        log.error("NDASENDA RESPONSE CONFLICT: deduction {} batch {} reference {} status {} ec {} disagrees with {}"
+                        + " - the loan is no longer awaiting Ndasenda, so nothing was applied (audited)",
+                response.getId(), batchId, response.getReference(), response.getStatus(),
+                maskEcNumber(response.getEcNumber()), held);
+        audit(RESPONSE_CONFLICT, batchId, response, held);
+
+        // Ndasenda accepting the deduction of a loan we have closed (declined, or a lodgement we gave
+        // up on) leaves a live stop order on a salary for a loan that will never be paid. The loan
+        // stays exactly as it is; only the cancellation is tracked.
+        boolean closed = loan.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED
+                || loan.getLoanApprovalStatus() == LoanApprovalStatus.FAILED;
+        if (response.getStatus() == NdasendaDeductionStatus.SUCCESS && closed
+                && deductionCancellationService.markRequired(loan,
+                DeductionCancellationService.REASON_ACCEPTED_AFTER_CLOSE, SYSTEM_ACTOR, "system")) {
+            loanRepository.save(loan);
         }
     }
 
@@ -355,7 +415,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     }
 
     /** Keeps only the last 3 characters; anything that short is masked whole. */
-    static String maskEcNumber(String ecNumber) {
+    public static String maskEcNumber(String ecNumber) {
         if (ecNumber == null) {
             return null;
         }

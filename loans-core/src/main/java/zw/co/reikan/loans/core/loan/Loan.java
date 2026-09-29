@@ -233,6 +233,31 @@ public class Loan extends BaseEntity {
     @Column(name = "internal_approval_comment")
     private String internalApprovalComment;
 
+    /**
+     * Set by {@link DeductionCancellationService} when a loan whose deduction was lodged with
+     * Ndasenda will not be paid. New nullable columns rather than new values on an existing
+     * status enum, whose CHECK constraint ddl-auto would never widen.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "deduction_cancellation_status")
+    private DeductionCancellationStatus deductionCancellationStatus;
+
+    /** One of the {@code DeductionCancellationService.REASON_*} codes; a string so a new one needs no DDL. */
+    @Column(name = "deduction_cancellation_reason")
+    private String deductionCancellationReason;
+
+    @Column(name = "deduction_cancellation_requested_at")
+    private LocalDateTime deductionCancellationRequestedAt;
+
+    @Column(name = "deduction_cancellation_note")
+    private String deductionCancellationNote;
+
+    @Column(name = "deduction_cancelled_by")
+    private String deductionCancelledBy;
+
+    @Column(name = "deduction_cancelled_at")
+    private LocalDateTime deductionCancelledAt;
+
     @Column(name = "created_by")
     private String createdBy;
 

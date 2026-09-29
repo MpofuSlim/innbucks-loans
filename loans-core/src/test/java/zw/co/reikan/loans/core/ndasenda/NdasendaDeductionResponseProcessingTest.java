@@ -11,7 +11,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
+import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
+import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
@@ -57,7 +62,8 @@ class NdasendaDeductionResponseProcessingTest {
         notificationService = mock(NotificationService.class);
         auditService = mock(AuditService.class);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthServiceImpl.class), props,
-                loanRepository, mock(LoanBatchService.class), notificationService, auditService);
+                loanRepository, mock(LoanBatchService.class), notificationService, auditService,
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
     }
 
     private static NdasendaDeduction deduction(String id, String reference, NdasendaDeductionStatus status) {
@@ -205,6 +211,171 @@ class NdasendaDeductionResponseProcessingTest {
 
         verify(loanRepository, never()).save(any());
         verifyNoInteractions(notificationService, auditService);
+    }
+
+    // --- rewind guard ------------------------------------------------------------------------
+
+    private Loan disbursedLoan() {
+        Loan loan = loan(LoanApprovalStatus.APPROVED);
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setApprovalReference("ND-1000");
+        loan.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
+        loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+        loan.setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
+        loan.setDisbursementAttempts(1);
+        return loan;
+    }
+
+    @Test
+    @DisplayName("rewind guard: an APPROVED response for a booked and paid loan changes nothing and sends no SMS")
+    void approvalForPaidLoanChangesNothing() {
+        Loan loan = disbursedLoan();
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7004", "000000042", NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-1000");
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
+        assertThat(loan.getDisbursementAttempts()).isEqualTo(1);
+        assertThat(loan.getNextDisbursementAttemptDate()).isNull();
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService, auditService);
+    }
+
+    @Test
+    @DisplayName("rewind guard: a FAILED response for a disbursed loan changes nothing, sends no SMS, and is a CONFLICT")
+    void rejectionForDisbursedLoanIsAConflict() {
+        Loan loan = disbursedLoan();
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7005", "000000042", NdasendaDeductionStatus.FAILED));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-1000");
+        assertThat(loan.getDateApproved()).isNull();
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+
+        AuditLog audit = auditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
+        assertThat(audit.getEntityType()).isEqualTo("NDASENDA_DEDUCTION");
+        assertThat(audit.getEntityId()).isEqualTo("ND-7005");
+        assertThat(audit.getCorrelationId()).isEqualTo(BATCH);
+        assertThat(audit.getDetail())
+                .contains("loanId=42", "loanStatus=APPROVED", "accountStatus=CREATED", "disbursementStatus=SUCCESS",
+                        "status=FAILED", "ecNumber=*****67A")
+                .doesNotContain(EC_NUMBER, NATIONAL_ID);
+    }
+
+    @Test
+    @DisplayName("rewind guard: a SUCCESS cannot flip a declined loan to APPROVED — the live deduction is flagged instead")
+    void approvalForDeclinedLoanFlagsCancellationInsteadOfFlipping() {
+        Loan loan = loan(LoanApprovalStatus.REJECTED);
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setApprovalReference("ND-7001");
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7006", "000000042", NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-7001");
+        assertThat(loan.getLoanAccountStatus()).isNull();
+        assertThat(loan.getNextDisbursementAttemptDate()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("ACCEPTED_AFTER_CLOSE");
+        verify(loanRepository).save(loan);
+        verifyNoInteractions(notificationService);
+
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, times(2)).record(captor.capture());
+        assertThat(captor.getAllValues()).extracting(b -> b.build().getEventType())
+                .containsExactly("NDASENDA_RESPONSE_CONFLICT", "DEDUCTION_CANCELLATION_REQUIRED");
+    }
+
+    @Test
+    @DisplayName("rewind guard: a FAILED loan with no lodgement reference is not awaiting Ndasenda")
+    void failedLoanWithoutLodgementIsNotRevived() {
+        Loan loan = loan(LoanApprovalStatus.FAILED);
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7007", "000000042", NdasendaDeductionStatus.FAILED));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+        assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
+    }
+
+    @Test
+    @DisplayName("a SUCCESS for a FAILED loan we never saw reach Ndasenda (e.g. a timed-out POST) stays FAILED, flagged")
+    void acceptanceOfUnrecordedLodgementIsFlagged() {
+        Loan loan = loan(LoanApprovalStatus.FAILED);
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7012", "000000042", NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(loan.getApprovalReference()).isNull();
+        assertThat(loan.getLoanAccountStatus()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("ACCEPTED_AFTER_CLOSE");
+        verify(loanRepository).save(loan);
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    @DisplayName("a FAILED loan whose lodgement reached Ndasenda takes its answer, and the provisional flag is withdrawn")
+    void ambiguousLodgementTakesTheAnswerAndWithdrawsTheFlag() {
+        Loan loan = loan(LoanApprovalStatus.FAILED);
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setDeductionCancellationStatus(DeductionCancellationStatus.REQUIRED);
+        loan.setDeductionCancellationReason("LODGEMENT_FAILED");
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7008", "000000042", NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-7008");
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(loan.getDeductionCancellationReason()).isNull();
+        verify(loanRepository).save(loan);
+        verifyNoInteractions(notificationService);
+        AuditLog audit = auditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_WITHDRAWN");
+        assertThat(audit.getDetail()).contains("reason=LODGEMENT_FAILED", "ndasendaOutcome=SUCCESS");
+    }
+
+    @Test
+    @DisplayName("a FAILED lodgement already cancelled on Ndasenda's portal is never revived by a late SUCCESS")
+    void cancelledLodgementIsNotRevived() {
+        Loan loan = loan(LoanApprovalStatus.FAILED);
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7009", "000000042", NdasendaDeductionStatus.SUCCESS));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
+        assertThat(loan.getLoanAccountStatus()).isNull();
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
+        verify(loanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+        assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
+    }
+
+    @Test
+    @DisplayName("a duplicate-lodgement FAILED record after the SUCCESS was applied leaves the approval in place")
+    void secondRecordForSameReferenceCannotFlipTheFirst() {
+        Loan loan = loan(LoanApprovalStatus.PROCESSING);
+        loan.setBatchNumber(BATCH);
+
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7010", "000000042", NdasendaDeductionStatus.SUCCESS));
+        service.processDeductionRequestResponse(BATCH, deduction("ND-7011", "000000042", NdasendaDeductionStatus.FAILED));
+
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
+        assertThat(loan.getApprovalReference()).isEqualTo("ND-7010");
+        verify(loanRepository, times(1)).save(loan);
+        verifyNoInteractions(notificationService);
+        assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
     }
 
     @Test

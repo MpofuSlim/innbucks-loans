@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
@@ -27,10 +28,13 @@ import java.util.Map;
 @Profile("scheduled-tasks")
 public class LoanApprovalServiceJob {
 
+    static final String SYSTEM_ACTOR = "ssb-approval-job";
+
     private final LoanApprovalService loanApprovalService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
     private final LoanBatchService loanBatchService;
+    private final DeductionCancellationService deductionCancellationService;
 
     Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.REJECTED, "We regret to inform you that your loan application with ref # %s has been declined. Contact Innbucks for more Info.",
             LoanApprovalStatus.PROCESSING, "Your loan application with ref # %s has been received and is being processed. You will be notified of the outcome shortly. Thank you for choosing Innbucks!"
@@ -81,6 +85,13 @@ public class LoanApprovalServiceJob {
             loan.setApprovalAttempt(loan.getApprovalAttempt() == null ? 1 : loan.getApprovalAttempt() + 1);
             loan.setLoanApprovalStatus(LoanApprovalStatus.FAILED);
             loan.setLoanStatusMessage(StringUtils.left(ex.getMessage(), 250));
+            // FAILED is also where a step AFTER a successful lodgement lands (saving the batch, the
+            // SMS), and a FAILED loan is never lodged again. A batch number proves the deduction
+            // reached Ndasenda, so it may be live on a loan we have given up on.
+            if (DeductionCancellationService.wasLodged(loan)) {
+                deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_LODGEMENT_FAILED,
+                        SYSTEM_ACTOR, "system");
+            }
             loanRepository.save(loan);
         }
     }

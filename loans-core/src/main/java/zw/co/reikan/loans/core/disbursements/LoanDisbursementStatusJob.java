@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
@@ -20,9 +21,12 @@ import static zw.co.reikan.loans.core.DisbursementService.SMS_MSG;
 @Profile("scheduled-tasks")
 public class LoanDisbursementStatusJob {
 
+    static final String SYSTEM_ACTOR = "loan-disbursement-status-job";
+
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
+    private final DeductionCancellationService deductionCancellationService;
 
     /**
      * Processes loans with PENDING disbursement status.
@@ -77,6 +81,10 @@ public class LoanDisbursementStatusJob {
         } else if (newStatus == LoanDisbursementStatus.FAILED) {
             // Loan disbursement has failed
             loan.setDisbursementStatusMessage(response.getResponseDescription());
+            // InnBucks' own answer, so definitive; flagged here rather than only by the saga, which
+            // skips terminal sagas and loans older than 30 days. Saved with the loan below.
+            deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_FAILED,
+                    SYSTEM_ACTOR, "system");
         }
         // If still PENDING, do nothing special
     }

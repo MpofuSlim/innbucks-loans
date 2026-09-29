@@ -5,8 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientResponseException;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -23,9 +25,12 @@ import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
 @Profile("scheduled-tasks")
 public class LoanAccountCreationJob {
 
+    static final String SYSTEM_ACTOR = "loan-account-creation-job";
+
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
+    private final DeductionCancellationService deductionCancellationService;
 
     /**
      * Processes pending loan accounts that have been approved.
@@ -106,6 +111,8 @@ public class LoanAccountCreationJob {
         loan.setDisbursementReference(response.getReference());
         loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: "
                 + (response.getMessage() == null ? "unsuccessful response" : response.getMessage())));
+        // InnBucks answered and refused, so no loan was booked; the deduction Ndasenda accepted is live.
+        flagDeduction(loan, DeductionCancellationService.REASON_BOOKING_FAILED);
     }
 
     private void handleAccountCreationException(Loan loan, Exception ex) {
@@ -114,6 +121,33 @@ public class LoanAccountCreationJob {
         loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
         loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
         loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
+        flagDeduction(loan, refusedByInnbucks(ex)
+                ? DeductionCancellationService.REASON_BOOKING_FAILED
+                : DeductionCancellationService.REASON_BOOKING_IN_DOUBT);
+    }
+
+    /**
+     * Only InnBucks' own 4xx proves it did not book. A 5xx, a timeout, a reset after the request
+     * left or a parse error may follow a booking that landed, and InnBucks pays on booking; so may
+     * a 409 (plausibly "this participantReference already exists") and a 408 (it stopped reading,
+     * which says nothing about what it did). A 401 here answers our one re-authenticated replay.
+     */
+    static boolean refusedByInnbucks(Exception ex) {
+        if (ex instanceof HttpClientErrorException http) {
+            int status = http.getStatusCode().value();
+            return status != 408 && status != 409;
+        }
+        return false;
+    }
+
+    /**
+     * Flagged here, where the reason is known, rather than only when the saga compensates: the
+     * saga never sees a loan whose saga is already terminal (an SSB_VERIFICATION_FAILED lodgement
+     * that Ndasenda later accepted) or one created more than 30 days ago. Every loan here was
+     * accepted by Ndasenda, so its deduction is live. Saved with the loan by the caller.
+     */
+    private void flagDeduction(Loan loan, String reason) {
+        deductionCancellationService.markRequired(loan, reason, SYSTEM_ACTOR, "system");
     }
 
     /**
