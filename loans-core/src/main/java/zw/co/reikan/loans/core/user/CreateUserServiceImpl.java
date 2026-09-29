@@ -54,7 +54,7 @@ public class CreateUserServiceImpl implements CreateUserService {
     private final CommissionGroupRepository commissionGroupRepository;
 
     @Transactional
-    public CreateUserResponse create(CreateAgentRequest createAgentRequest, User parentAgent, String merchantCode) {
+    public CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode) {
         CreateUserRequest request = CreateUserRequest.builder()
                 .email(createAgentRequest.getEmail())
                 .groups(List.of(createAgentRequest.getGroup()))
@@ -64,7 +64,6 @@ public class CreateUserServiceImpl implements CreateUserService {
                 .firstName(createAgentRequest.getFirstName())
                 .lastName(createAgentRequest.getLastName())
                 .merchantCode(merchantCode)
-                .agent(parentAgent)
                 .commissionGroupId(createAgentRequest.getCommissionGroupId())
                 .physicalAddress(createAgentRequest.getPhysicalAddress())
                 .build();
@@ -74,10 +73,6 @@ public class CreateUserServiceImpl implements CreateUserService {
     private CommissionGroup resolveCommissionGroup(CreateUserRequest request, Merchant merchant) {
         if (MERCHANT_DEFINED == merchant.getCommissionStructure()) {
             return merchant.getCommissionGroup();
-        }
-
-        if (request.getAgent() != null) {
-            return request.getAgent().getCommissionGroup();
         }
 
         if (ObjectUtils.isEmpty(request.getCommissionGroupId())) {
@@ -139,7 +134,6 @@ public class CreateUserServiceImpl implements CreateUserService {
         user.setIdNumber(Utils.trimSpecialCharacters(createUserRequest.getIdNumber()).toUpperCase());
         user.setGroups(createUserRequest.getGroups() == null ? new HashSet<>()
                 : new HashSet<>(createUserRequest.getGroups()));
-        user.setAgent(createUserRequest.getAgent());
         user.setCommissionGroup(commissionGroup);
         user.setPhysicalAddress(createUserRequest.getPhysicalAddress());
 
@@ -156,7 +150,6 @@ public class CreateUserServiceImpl implements CreateUserService {
         userDTO.setGroups(createUserRequest.getGroups());
         userDTO.setUsername(createUserRequest.getUsername());
         userDTO.setTemporaryPassword(true);
-        userDTO.setAgentId(createUserRequest.getAgent() == null ? null : createUserRequest.getAgent().getId());
         userDTO.setCommissionGroup(CommissionGroupDto.fromCommissionGroup(commissionGroup));
         userDTO.setPhysicalAddress(createUserRequest.getPhysicalAddress());
 

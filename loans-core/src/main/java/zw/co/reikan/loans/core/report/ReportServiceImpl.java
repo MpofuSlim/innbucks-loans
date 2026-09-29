@@ -12,8 +12,6 @@ import zw.co.reikan.loans.core.api.DisbursementsReportResponse;
 import zw.co.reikan.loans.core.api.DisbursementsReportResponse.DailyDisbursement;
 import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse;
 import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse.StatusBreakdown;
-import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse;
-import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse.MerchantPerformance;
 import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
@@ -89,20 +87,6 @@ public class ReportServiceImpl implements ReportService {
             totalProvider = totalProvider.add(provider);
         }
         return new CommissionsReportResponse(range.from(), range.to(), totalAgent, totalProvider, merchants);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate,
-                                                                       String merchantCode) {
-        Range range = resolveRange(fromDate, toDate);
-        String code = resolveMerchantCode(merchantCode);
-        List<MerchantPerformance> merchants = new ArrayList<>();
-        for (Object[] row : loanRepository.merchantPerformance(range.start(), range.end(), code)) {
-            merchants.add(new MerchantPerformance((String) row[0], (String) row[1], asLong(row[2]),
-                    asBigDecimal(row[3]), asLong(row[4]), asBigDecimal(row[5])));
-        }
-        return new MerchantPerformanceReportResponse(range.from(), range.to(), merchants);
     }
 
     @Override

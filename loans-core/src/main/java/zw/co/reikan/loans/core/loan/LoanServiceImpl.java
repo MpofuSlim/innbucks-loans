@@ -83,7 +83,7 @@ public class LoanServiceImpl implements LoanService {
 
         final List<Loan> all = loanRepository.findAll(where(withApprovalStatus(request.getApprovalStatus()))
                 .and(withMerchantCode(request.getMerchantCode()))
-                .and(createdByUserOrAsAgent(request.getUserId()))
+                .and(createdByUserId(request.getUserId()))
                 .and(withDisbursementStatus(request.getDisbursementStatus()))
                 .and(withInternalApprovalStatus(request.getInternalApprovalStatus()))
                 .and(withCreatedDateBetween(atStartOfDay(request.getFromDate()), atEndOfDay(request.getToDate()))));
@@ -123,7 +123,7 @@ public class LoanServiceImpl implements LoanService {
         // the same 404 as a missing id, which keeps this from being an existence oracle.
         return loanRepository.findOne(where(withId(id))
                         .and(withMerchantCode(scope.merchantCode()))
-                        .and(createdByUserOrAsAgent(scope.userId())))
+                        .and(createdByUserId(scope.userId())))
                 .map(loanMapper::fromLoan)
                 .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
     }
@@ -145,7 +145,7 @@ public class LoanServiceImpl implements LoanService {
 
     /**
      * Transactional so the applicant lock below spans the pending check AND the
-     * insert. The bulk path joins its per-item REQUIRES_NEW transaction here.
+     * insert.
      */
     @Override
     @Transactional
@@ -156,15 +156,14 @@ public class LoanServiceImpl implements LoanService {
                 maskEcNumber(loanRequest.getEcnumber()), loanRequest.getAmount(), loanRequest.getTenor());
 
         // The HTTP body is already checked by @Validated on the controller (one
-        // 400 listing every field). This repeats it for callers that reach the
-        // service directly — bulk upload above all — so an application missing
-        // what InnBucks needs is refused HERE, not accepted and then failed at
-        // the InnBucks step after the customer believed they had applied.
+        // 400 listing every field). This repeats it for any caller that reaches the
+        // service directly, so an application missing what InnBucks needs is
+        // refused HERE, not accepted and then failed at the InnBucks step after
+        // the customer believed they had applied.
         requireCompleteApplication(loanRequest);
 
         // Zero-trust content: the attached documents are checked by their byte signature before the
-        // application touches business state. This ran for bulk rows only, so a single application
-        // could attach an executable or any unrecognised file.
+        // application touches business state, so an executable or unrecognised file is refused.
         fileSignatureValidator.requireAcceptedBase64Document("nationalIdPicture", loanRequest.getNationalIdPicture());
         fileSignatureValidator.requireAcceptedBase64Document("payslipPicture", loanRequest.getPayslipPicture());
 
@@ -266,7 +265,6 @@ public class LoanServiceImpl implements LoanService {
                 .profession(loanRequest.getProfession())
                 .createdBy(loggedInUser.getUsername())
                 .createdByUser(loggedInUser)
-                .agent(loggedInUser.getAgent())
                 .merchant(loggedInUser.getMerchant())
                 .channel(optionalChannel.orElse(null))
                 .loanStartDate(loanDetails.getStartDate())
@@ -284,7 +282,7 @@ public class LoanServiceImpl implements LoanService {
     /**
      * Refuses an application that fails the Default or {@link LoanApplicationChecks}
      * constraints, in the same {@code field: message; ...} shape (full property
-     * path, sorted) the web layer's validation 400 uses, so a bulk row and an
+     * path, sorted) the web layer's validation 400 uses, so a direct call and an
      * HTTP call report a missing field identically.
      */
     private void requireCompleteApplication(LoanRequest loanRequest) {

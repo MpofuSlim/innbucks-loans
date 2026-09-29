@@ -335,10 +335,6 @@ public class Loan extends BaseEntity {
     private User createdByUser;
 
     @ManyToOne
-    @JoinColumn(name = "agent_id")
-    private User agent;
-
-    @ManyToOne
     @JoinColumn(name = "channel_id")
     private Channel channel;
 

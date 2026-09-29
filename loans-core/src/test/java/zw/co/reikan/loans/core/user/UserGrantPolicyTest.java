@@ -7,7 +7,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -24,52 +23,22 @@ class UserGrantPolicyTest {
     private static final String OTHER = "merchant-b";
 
     @Test
-    @DisplayName("ONLY BULKIT_ADMIN may grant BULKIT_ADMIN, CREDIT_MANAGER, FINANCE, ORGANISATION_SUPER_USER or RETAIL_SALES")
-    void privilegedGroupsAreAdminOnly() {
-        Set<UserGroup> privileged = EnumSet.of(BULKIT_ADMIN, CREDIT_MANAGER, FINANCE, ORGANISATION_SUPER_USER, RETAIL_SALES);
-        for (UserGroup caller : UserGroup.values()) {
-            Set<UserGroup> grantable = UserGrantPolicy.grantableBy(EnumSet.of(caller));
-            if (caller == BULKIT_ADMIN) {
-                assertThat(grantable).containsAll(privileged);
-            } else {
-                assertThat(grantable).as("grantable by %s", caller).doesNotContainAnyElementsOf(privileged);
-            }
+    @DisplayName("only BULKIT_ADMIN grants groups: every other group grants nothing")
+    void grantMatrix() {
+        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(BULKIT_ADMIN))).isEqualTo(EnumSet.allOf(UserGroup.class));
+        for (UserGroup caller : EnumSet.complementOf(EnumSet.of(BULKIT_ADMIN))) {
+            assertThat(UserGrantPolicy.grantableBy(EnumSet.of(caller))).as("grantable by %s", caller).isEmpty();
         }
     }
 
     @Test
-    @DisplayName("the matrix: admins anything, super users and retail sales field staff, agents their sub-agents")
-    void grantMatrix() {
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(BULKIT_ADMIN))).isEqualTo(EnumSet.allOf(UserGroup.class));
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(ORGANISATION_SUPER_USER))).containsExactlyInAnyOrder(AGENTS, SUB_AGENTS);
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(RETAIL_SALES))).containsExactlyInAnyOrder(AGENTS, SUB_AGENTS);
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(AGENTS))).containsExactly(SUB_AGENTS);
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(SUB_AGENTS))).isEmpty();
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(CREDIT_MANAGER))).isEmpty();
-        assertThat(UserGrantPolicy.grantableBy(EnumSet.of(FINANCE))).isEmpty();
-    }
-
-    @Test
-    @DisplayName("an agent creating a CREDIT_MANAGER — even in their own merchant — is refused")
-    void agentCannotMintCreditManager() {
+    @DisplayName("an agent creating a user of any group, even in their own merchant, is refused")
+    void agentCannotCreateUsers() {
         assertThatThrownBy(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(AGENTS), OWN, CREDIT_MANAGER, OWN))
                 .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("Not allowed to create a CREDIT_MANAGER user; your role may create: [SUB_AGENTS]");
-    }
-
-    @Test
-    @DisplayName("a non-admin is confined to their own merchant, compared exactly")
-    void nonAdminIsConfinedToOwnMerchant() {
-        assertThatThrownBy(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(AGENTS), OWN, SUB_AGENTS, OTHER))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("Not allowed to create users in merchant merchant-b: you may only create users in your own merchant");
-        assertThatThrownBy(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(ORGANISATION_SUPER_USER), OWN, AGENTS, "MERCHANT-A"))
+                .hasMessage("Not allowed to create a CREDIT_MANAGER user; your role may create: []");
+        assertThatThrownBy(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(CREDIT_MANAGER, FINANCE), OWN, AGENTS, OWN))
                 .isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(RETAIL_SALES), OWN, AGENTS, OTHER))
-                .isInstanceOf(AccessDeniedException.class);
-
-        assertThatCode(() -> UserGrantPolicy.checkMayCreate(EnumSet.of(AGENTS), OWN, SUB_AGENTS, OWN))
-                .doesNotThrowAnyException();
     }
 
     @Test
@@ -86,10 +55,10 @@ class UserGrantPolicyTest {
     void callerGroupsFromAuthorities() {
         assertThat(UserGrantPolicy.callerGroups(List.of(
                 new SimpleGrantedAuthority("ROLE_AGENTS"),
-                new SimpleGrantedAuthority("ROLE_RETAIL_SALES"),
+                new SimpleGrantedAuthority("ROLE_FINANCE"),
                 new SimpleGrantedAuthority("SCOPE_read"),
                 new SimpleGrantedAuthority("CREDIT_MANAGER"),
                 new SimpleGrantedAuthority("ROLE_UNKNOWN"))))
-                .containsExactlyInAnyOrder(AGENTS, RETAIL_SALES);
+                .containsExactlyInAnyOrder(AGENTS, FINANCE);
     }
 }

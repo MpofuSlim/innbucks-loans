@@ -71,7 +71,7 @@ class StartupTaskTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "api", "api,dummy-loan-approval"})
+    @ValueSource(strings = {"", "api", "api,scheduled-tasks"})
     @DisplayName("deployment profile set + blank password → NO admin created, and the boot carries on")
     void deploymentWithBlankPasswordCreatesNoAdmin(String profiles) throws Exception {
         environment.setActiveProfiles(StringUtils.commaDelimitedListToStringArray(profiles));

@@ -25,16 +25,8 @@ public class LoanSpecification {
         }
     }
 
-    public static Specification<Loan> createdByUserOrAsAgent(Long userId) {
-        return (root, query, cb) -> {
-            if (userId == null) {
-                return null;
-            }
-            return cb.or(
-                    cb.equal(root.get("createdByUser").get("id"), userId),
-                    cb.equal(root.get("agent").get("id"), userId)
-            );
-        };
+    public static Specification<Loan> createdByUserId(Long userId) {
+        return (root, query, cb) -> userId == null ? null : cb.equal(root.get("createdByUser").get("id"), userId);
     }
 
     public static Specification<Loan> withDisbursementStatus(LoanDisbursementStatus status) {

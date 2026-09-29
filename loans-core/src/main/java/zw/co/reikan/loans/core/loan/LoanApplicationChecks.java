@@ -13,7 +13,7 @@ package zw.co.reikan.loans.core.loan;
  * accepted, sent for payroll approval and credit sign-off, and only failed —
  * or threw a NullPointerException — at the InnBucks step, after the customer
  * believed they had applied. Enforced on the HTTP body (all errors in one 400)
- * AND in {@code LoanServiceImpl.requestLoan}, because bulk upload calls the
+ * AND in {@code LoanServiceImpl.requestLoan}, for any caller that reaches the
  * service directly.
  */
 public interface LoanApplicationChecks {

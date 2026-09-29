@@ -31,6 +31,4 @@ public class AuthResponse implements Serializable {
     private String merchantName;
     @JsonProperty("merchant_code")
     private String merchantCode;
-    private Long agentId;
-    private String agentName;
 }

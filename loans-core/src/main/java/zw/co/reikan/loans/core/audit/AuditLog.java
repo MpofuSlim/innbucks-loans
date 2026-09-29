@@ -44,7 +44,7 @@ public class AuditLog implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** e.g. SAGA_TRANSITION, BULK_ITEM_REJECTED, CHANNEL_SIGNATURE_INVALID, VELOCITY_LIMIT_TRIPPED */
+    /** e.g. SAGA_TRANSITION, ACCOUNT_LOCKED, DEDUCTION_CANCELLATION_REQUIRED */
     @Column(name = "event_type", length = 64, nullable = false)
     private String eventType;
 

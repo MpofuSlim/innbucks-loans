@@ -63,7 +63,7 @@ class LoanServiceImplReadScopeTest {
     }
 
     @Test
-    @DisplayName("an agent's search is constrained to their merchant AND to loans they created or agent")
+    @DisplayName("an agent's search is constrained to their merchant AND to loans they created")
     void originatorSearchConstrainsMerchantAndUser() {
         LoanDto own = new LoanDto();
         when(loanMapper.fromLoans(any())).thenReturn(List.of(own));
@@ -75,18 +75,6 @@ class LoanServiceImplReadScopeTest {
         verify(root).join("merchant", JoinType.LEFT);
         verify(cb).equal(lowerMerchantCode, "m-001");
         verify(cb).equal(path("createdByUser", "id"), 7L);
-        verify(cb).equal(path("agent", "id"), 7L);
-    }
-
-    @Test
-    @DisplayName("merchant management's search is constrained to the merchant, every originator")
-    void merchantSearchConstrainsMerchantOnly() {
-        service.findLoans(new FindLoansRequest(), LoanReadScope.merchant("M-001"));
-
-        evaluate(capturedSearch());
-        verify(cb).equal(lowerMerchantCode, "m-001");
-        verify(root, never()).get("createdByUser");
-        verify(root, never()).get("agent");
     }
 
     @Test
@@ -97,7 +85,6 @@ class LoanServiceImplReadScopeTest {
         evaluate(capturedSearch());
         verify(root, never()).join(eq("merchant"), any(JoinType.class));
         verify(root, never()).get("createdByUser");
-        verify(root, never()).get("agent");
     }
 
     @Test
@@ -156,7 +143,7 @@ class LoanServiceImplReadScopeTest {
         spec.toPredicate(root, mock(CriteriaQuery.class), cb);
     }
 
-    /** The deep-stubbed path the spec navigated, e.g. {@code root.get("agent").get("id")}. */
+    /** The deep-stubbed path the spec navigated, e.g. {@code root.get("createdByUser").get("id")}. */
     private Path<Object> path(String association, String attribute) {
         return root.get(association).get(attribute);
     }

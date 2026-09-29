@@ -10,5 +10,5 @@ public interface CreateUserService {
 
     CreateUserResponse create(CreateUserRequest createUserRequest);
 
-    CreateUserResponse create(CreateAgentRequest createAgentRequest, User parentAgent, String merchantCode);
+    CreateUserResponse create(CreateAgentRequest createAgentRequest, String merchantCode);
 }

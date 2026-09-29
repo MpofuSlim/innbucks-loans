@@ -17,17 +17,9 @@ import static zw.co.reikan.loans.core.user.UserGroup.*;
  * this any authenticated caller could mint a CREDIT_MANAGER and approve their own
  * loans, or plant a user in someone else's merchant.
  *
- * <p>The matrix follows how the rest of the API already treats each role:</p>
- * <ul>
- *   <li>{@code BULKIT_ADMIN} — the platform owner: any group, in any merchant.</li>
- *   <li>{@code ORGANISATION_SUPER_USER}, {@code RETAIL_SALES} — onboard field staff
- *       ({@code AGENTS}, {@code SUB_AGENTS}), in their own merchant.</li>
- *   <li>{@code AGENTS} — their own sales consultants ({@code SUB_AGENTS}), in their
- *       own merchant.</li>
- * </ul>
- * <p>Every other group is BULKIT_ADMIN's alone to grant: CREDIT_MANAGER approves loans,
- * FINANCE and ORGANISATION_SUPER_USER carry merchant-wide authority, and RETAIL_SALES
- * reads every merchant's loans — each is more than any other grantor holds.</p>
+ * <p>Only {@code BULKIT_ADMIN}, the platform owner, grants groups: any group, in any
+ * merchant. CREDIT_MANAGER approves loans and FINANCE reconciles them, and a field
+ * agent ({@code AGENTS}) captures applications; none of them creates users.</p>
  */
 public final class UserGrantPolicy {
 
@@ -37,9 +29,6 @@ public final class UserGrantPolicy {
 
     static {
         GRANTABLE.put(BULKIT_ADMIN, EnumSet.allOf(UserGroup.class));
-        GRANTABLE.put(ORGANISATION_SUPER_USER, EnumSet.of(AGENTS, SUB_AGENTS));
-        GRANTABLE.put(RETAIL_SALES, EnumSet.of(AGENTS, SUB_AGENTS));
-        GRANTABLE.put(AGENTS, EnumSet.of(SUB_AGENTS));
     }
 
     private UserGrantPolicy() {

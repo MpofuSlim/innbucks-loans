@@ -4,7 +4,6 @@ import zw.co.reikan.loans.core.api.AgentPerformanceReportResponse;
 import zw.co.reikan.loans.core.api.CommissionsReportResponse;
 import zw.co.reikan.loans.core.api.DisbursementsReportResponse;
 import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse;
-import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse;
 
 import java.time.LocalDate;
 
@@ -21,8 +20,6 @@ public interface ReportService {
     LoanPortfolioReportResponse loanPortfolioReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
     CommissionsReportResponse commissionsReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
-
-    MerchantPerformanceReportResponse merchantPerformanceReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 
     AgentPerformanceReportResponse agentPerformanceReport(LocalDate fromDate, LocalDate toDate, String merchantCode);
 }

@@ -110,10 +110,6 @@ public class AuthServiceImpl implements AuthService {
             response.setMerchantName(user.getMerchant().getCompanyName());
             response.setMerchantCode(user.getMerchant().getMerchantCode());
         }
-        if (user.getAgent() != null) {
-            response.setAgentId(user.getAgent().getId());
-            response.setAgentName(user.getAgent().getUsername());
-        }
         return response;
     }
 
@@ -222,7 +218,6 @@ public class AuthServiceImpl implements AuthService {
         dto.setExternalSystemId(user.getExternalSystemId());
         dto.setGroups(new ArrayList<>(user.getGroups()));
         dto.setPhysicalAddress(user.getPhysicalAddress());
-        dto.setAgentId(user.getAgent() == null ? null : user.getAgent().getId());
         if (user.getMerchant() != null) {
             dto.setMerchant(merchantMapper.fromMerchant(user.getMerchant()));
         }

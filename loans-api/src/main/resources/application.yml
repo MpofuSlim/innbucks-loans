@@ -6,7 +6,7 @@ server:
 
 spring:
   profiles:
-    active: api,dummy-loan-approval
+    active: api
 
   # --- PostgreSQL (local development) ---
   datasource:
@@ -59,8 +59,7 @@ spring:
   #    NdasendaDeductionBatchCommitDailyJob commits, and neither token cache
   #    is synchronised; how Ndasenda and InnBucks treat those races is
   #    unverified.
-  #  - LoanApprovalServiceJob (NEW loans) and IdempotencyPurgeJob (idempotency
-  #    rows) share no rows with another job.
+  #  - LoanApprovalServiceJob (NEW loans) shares no rows with another job.
   # Optimistic locking turns an overlap into a failure rather than a lost
   # update, but on the booking path that failure means booking twice. What
   # bounds how long one call can hold the other jobs back is http.client
@@ -218,8 +217,3 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-
-# --- Bulk ingestion pipeline ------------------------------------------------
-bulk-ingestion:
-  chunk-size: "${BULK_INGESTION_CHUNK_SIZE:100}"
-  max-batch-size: "${BULK_INGESTION_MAX_BATCH_SIZE:5000}"

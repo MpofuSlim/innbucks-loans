@@ -70,9 +70,6 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private Boolean temporaryPassword;
 
-    @ManyToOne(optional = true)
-    private User agent;
-
     @ManyToOne
     private CommissionGroup commissionGroup;
 

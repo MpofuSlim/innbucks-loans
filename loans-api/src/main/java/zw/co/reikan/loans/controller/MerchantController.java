@@ -106,16 +106,15 @@ public class MerchantController {
 
     @Operation(operationId = "createMerchantAgent",
             summary = "CREATE AGENT",
-            description = "Create merchant Agent or User. BULKIT_ADMIN may create any group in any merchant; "
-                    + "ORGANISATION_SUPER_USER and RETAIL_SALES may create AGENTS and SUB_AGENTS, and AGENTS may "
-                    + "create SUB_AGENTS, in their own merchant only.",
+            description = "Create a merchant user: an agent, a credit manager or finance. BULKIT_ADMIN only, "
+                    + "in any merchant.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping({"/{merchantCode}/agents"})
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES','AGENTS')")
+    @PreAuthorize("hasRole('BULKIT_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Group not grantable by the caller, or another merchant"),
+            @ApiResponse(responseCode = "403", description = "Caller is not BULKIT_ADMIN"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createAgent(Principal principal,
@@ -125,61 +124,29 @@ public class MerchantController {
         User loggedInUser = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
 
-        // Group (body) and merchant (path) are both caller-chosen: the role gate above
-        // alone would let any agent mint a CREDIT_MANAGER, or a user in another merchant.
+        // Group (body) and merchant (path) are both caller-chosen, so the grant policy is
+        // checked as well as the role gate: widening the gate alone must never let a caller
+        // hand out a group, or reach a merchant, that it may not.
         UserGrantPolicy.checkMayCreate(callerGroups(principal), loggedInUser.getMerchant().getMerchantCode(),
                 createUserRequest.getGroup(), merchantCode);
 
-        User agent = UserGroup.SUB_AGENTS == createUserRequest.getGroup() ? loggedInUser : null;
-
-        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent, merchantCode);
-        SaveUserResponse saveUserResponse = new SaveUserResponse();
-        saveUserResponse.setUser(createUserResponse.user());
-        return ResponseEntity.ok(saveUserResponse);
-    }
-
-    @Operation(summary = "CREATE SALES CONSULTANT",
-            description = "Add a sales consultant.",
-            security = {@SecurityRequirement(name = BEARER_TOKEN)}
-    )
-    @PostMapping({"/agents/{externalSystemId}/sales-consultant"})
-    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-            @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<SaveUserResponse> createSalesConsultant(Principal principal,
-                                                                  @Valid @RequestBody CreateAgentRequest createUserRequest,
-                                                                  @PathVariable String externalSystemId) {
-
-        log.info("Creating sales consultant for user {}", externalSystemId);
-
-        Jwt token = ((JwtAuthenticationToken) principal).getToken();
-        boolean canAddSubAgent = findUserService.hasAnyRole(token, List.of(UserGroup.AGENTS.name(),
-                UserGroup.ORGANISATION_SUPER_USER.name(), UserGroup.RETAIL_SALES.name()));
-        if (!canAddSubAgent) {
-            throw new RuntimeException("Can't add sub agent");
-        }
-        User agent = findUserService.findUserExternalSystemId(externalSystemId)
-                .orElseThrow(() -> new RuntimeException(String.format("User not found for %s - ", externalSystemId)));
-        createUserRequest.setGroup(UserGroup.SUB_AGENTS);
-        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, agent,
-                agent.getMerchant().getMerchantCode());
+        CreateUserResponse createUserResponse = createUserService.create(createUserRequest, merchantCode);
         SaveUserResponse saveUserResponse = new SaveUserResponse();
         saveUserResponse.setUser(createUserResponse.user());
         return ResponseEntity.ok(saveUserResponse);
     }
 
     @Operation(summary = "CREATE USER",
-            description = "Create merchant User. Same group and merchant rules as CREATE AGENT.",
+            description = "Create a merchant user. Same as CREATE AGENT: BULKIT_ADMIN only.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @PostMapping({"/{merchantCode}/users"})
     // Needed here too: the call to createAgent below is a self-invocation, which
     // bypasses the method-security proxy and so createAgent's own @PreAuthorize.
-    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','ORGANISATION_SUPER_USER','RETAIL_SALES','AGENTS')")
+    @PreAuthorize("hasRole('BULKIT_ADMIN')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-            @ApiResponse(responseCode = "403", description = "Group not grantable by the caller, or another merchant"),
+            @ApiResponse(responseCode = "403", description = "Caller is not BULKIT_ADMIN"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
     public ResponseEntity<SaveUserResponse> createUser(Principal principal,
@@ -189,49 +156,19 @@ public class MerchantController {
     }
 
     @Operation(summary = "FIND AGENTS",
-            description = "List all agents for the given merchant",
+            description = "List every user of the given merchant. BULKIT_ADMIN and CREDIT_MANAGER only.",
             security = {@SecurityRequirement(name = BEARER_TOKEN)}
     )
     @GetMapping("/{code}/agents")
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER')")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
             @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
+            @ApiResponse(responseCode = "403", description = "Caller is not BULKIT_ADMIN or CREDIT_MANAGER"),
             @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
             @ApiResponse(responseCode = "500", description = "Processing error")})
-    public ResponseEntity<UserListingResponse> findAgentsForMerchant(Principal principal, @PathVariable String code) {
-
-        Jwt token = ((JwtAuthenticationToken) principal).getToken();
-
-        boolean canViewAllUsers = findUserService.hasAnyRole(token, List.of(UserGroup.ORGANISATION_SUPER_USER.name(),
-                UserGroup.RETAIL_SALES.name(), UserGroup.BULKIT_ADMIN.name(), UserGroup.CREDIT_MANAGER.name()));
-
-        List<UserDTO> merchantUsers = authService.findUsersByMerchantCode(code);
-
-        if (canViewAllUsers) {
-            return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers).build());
-        }
-
-        User loggedInUser = findUserService.resolveUserFromAccessToken(token)
-                .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-
-        return ResponseEntity.ok(UserListingResponse.builder().users(merchantUsers.stream()
-                .filter(u -> loggedInUser.getId().equals(u.getAgentId()))
-                .toList()).build());
+    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
+        return ResponseEntity.ok(UserListingResponse.builder().users(authService.findUsersByMerchantCode(code)).build());
     }
-
-//    @Operation(summary = "FIND LOANS",
-//            description = "List all loans for the given merchant",
-//            security = {@SecurityRequirement(name = BEARER_TOKEN)}
-//    )
-//    @GetMapping("/{code}/loans")
-//    @ApiResponses({@ApiResponse(responseCode = "200", description = "Success"),
-//            @ApiResponse(responseCode = "401", description = "Unauthorized. authentication failed"),
-//            @ApiResponse(responseCode = "400", description = "Bad request, missing required fields"),
-//            @ApiResponse(responseCode = "500", description = "Processing error")})
-//    public ResponseEntity<UserListingResponse> findAgentsForMerchant(@PathVariable String code) {
-//        List<UserDTO> keycloakUsers = keycloakService.findUsersByMerchantCode(code);
-//        return ResponseEntity.ok(UserListingResponse.builder().users(keycloakUsers).build());
-//    }
-
 
     @Operation(operationId = "findMerchantLoans",
             summary = "FIND LOANS",
@@ -272,16 +209,7 @@ public class MerchantController {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
         User user = findUserService.resolveUserFromAccessToken(token)
                 .orElseThrow(() -> new RuntimeException("Unable to resolve user from token"));
-        boolean isSuperAdmin = findUserService.hasAnyRole(token, List.of(UserGroup.BULKIT_ADMIN.name(),
-                UserGroup.RETAIL_SALES.name()));
-        if (isSuperAdmin) {
-            return null;
-        }
-        boolean isOrgSuperUser = findUserService.hasRole(token, UserGroup.ORGANISATION_SUPER_USER.name());
-        if (isOrgSuperUser) {
-            if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {
-                throw new AccessDeniedException("User not allowed to complete this operation");
-            }
+        if (findUserService.hasRole(token, UserGroup.BULKIT_ADMIN.name())) {
             return null;
         }
         if (!user.getMerchant().getMerchantCode().equalsIgnoreCase(merchantCode)) {
