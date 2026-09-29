@@ -9,16 +9,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
-import zw.co.reikan.loans.core.loan.DeductionCancellationDto;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
@@ -33,17 +34,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * A loan that fails at the InnBucks step must say WHY. It used to read only
- * {@code disbursementStatus: FAILED}, leaving nobody able to tell bad data from
- * an outage from a refusal. The failure also flags the payroll deduction Ndasenda
- * already accepted — as BOOKING_FAILED only when InnBucks itself refused, since a
- * timed-out booking may have booked and paid the loan.
+ * A loan that fails at the InnBucks step must say WHY — and, because InnBucks books AND
+ * pays on the one call, whether it DEFINITELY did not book: only a refusal may later be
+ * recovered by a manual payout; anything ambiguous is held, never marked failed. A refusal
+ * also flags the payroll deduction Ndasenda already accepted (BOOKING_FAILED); an ambiguous
+ * outcome flags nothing, since the customer may hold the loan and the inquiry job settles it.
  */
 class LoanAccountCreationJobTest {
 
     private DisbursementService disbursementService;
     private LoanRepository loanRepository;
     private AuditService auditService;
+    private LoanDisbursementRepository loanDisbursementRepository;
     private LoanAccountCreationJob job;
     private Loan loan;
 
@@ -52,8 +54,10 @@ class LoanAccountCreationJobTest {
         disbursementService = mock(DisbursementService.class);
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
+        loanDisbursementRepository = mock(LoanDisbursementRepository.class);
         job = new LoanAccountCreationJob(disbursementService, loanRepository, mock(NotificationService.class),
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)),
+                loanDisbursementRepository);
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)
@@ -68,16 +72,29 @@ class LoanAccountCreationJobTest {
                 any(), any(), any())).thenReturn(List.of(loan));
     }
 
+    private static HttpClientErrorException clientError(HttpStatus status, String body) {
+        return HttpClientErrorException.create(status, status.getReasonPhrase(), HttpHeaders.EMPTY,
+                body.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+    }
+
+    private void assertHeldForInquiry() {
+        assertThat(loan.getBookingFailureKind()).isEqualTo(BookingFailureKind.AMBIGUOUS);
+        // CREATED + PENDING is what LoanDisbursementStatusJob polls: a booking that landed resolves.
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
+        assertThat(loan.getDisbursementReference()).isEqualTo("000000042");
+        verify(loanRepository).save(loan);
+    }
+
     @Test
-    @DisplayName("an InnBucks HTTP refusal records its status and body on the loan")
+    @DisplayName("an InnBucks HTTP refusal records its status and body on the loan, as REFUSED")
     void httpRefusalRecordsInnbucksReason() {
-        when(disbursementService.createLoanAccount(loan)).thenThrow(HttpClientErrorException.create(
-                HttpStatus.BAD_REQUEST, "Bad Request", HttpHeaders.EMPTY,
-                "{\"responseCode\":\"05\",\"responseDescription\":\"Invalid idNumber\"}"
-                        .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST,
+                "{\"responseCode\":\"05\",\"responseDescription\":\"Invalid idNumber\"}"));
 
         job.processLoanAccountCreation();
 
+        assertThat(loan.getBookingFailureKind()).isEqualTo(BookingFailureKind.REFUSED);
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);
         assertThat(loan.getDisbursementStatusMessage()).isEqualTo(
@@ -87,25 +104,84 @@ class LoanAccountCreationJobTest {
     }
 
     @Test
-    @DisplayName("a network failure records the exception message")
+    @DisplayName("a network failure is AMBIGUOUS: recorded with its message, held — not marked failed")
     void networkFailureRecordsMessage() {
         when(disbursementService.createLoanAccount(loan))
                 .thenThrow(new ResourceAccessException("I/O error: Connection refused"));
 
         job.processLoanAccountCreation();
 
+        assertHeldForInquiry();
         assertThat(loan.getDisbursementStatusMessage())
-                .isEqualTo("InnBucks loan application failed: I/O error: Connection refused");
+                .isEqualTo("InnBucks loan application outcome unknown (held, not failed): I/O error: Connection refused");
     }
 
     @Test
-    @DisplayName("an unsuccessful response records its message")
+    @DisplayName("a read timeout is AMBIGUOUS — InnBucks may have booked and paid before we stopped listening")
+    void readTimeoutIsAmbiguous() {
+        when(disbursementService.createLoanAccount(loan))
+                .thenThrow(new ResourceAccessException("I/O error: Read timed out"));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+    }
+
+    @Test
+    @DisplayName("a 5xx is AMBIGUOUS, not a definite failure")
+    void serverErrorIsAmbiguous() {
+        when(disbursementService.createLoanAccount(loan)).thenThrow(HttpServerErrorException.create(
+                HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+        assertThat(loan.getDisbursementStatusMessage())
+                .isEqualTo("InnBucks loan application outcome unknown (held, not failed): HTTP 502");
+    }
+
+    @Test
+    @DisplayName("an unreadable answer is AMBIGUOUS")
+    void parseErrorIsAmbiguous() {
+        when(disbursementService.createLoanAccount(loan))
+                .thenThrow(new RestClientException("Error while extracting response"));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+    }
+
+    @Test
+    @DisplayName("a 409 is AMBIGUOUS — on a booking keyed by participantReference it may mean 'already booked'")
+    void conflictIsAmbiguous() {
+        when(disbursementService.createLoanAccount(loan))
+                .thenThrow(clientError(HttpStatus.CONFLICT, "{\"responseDescription\":\"Duplicate reference\"}"));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+    }
+
+    @Test
+    @DisplayName("a 401 surviving the one re-authenticated replay is InnBucks refusing us: REFUSED")
+    void finalUnauthorizedIsRefused() {
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.UNAUTHORIZED, ""));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getBookingFailureKind()).isEqualTo(BookingFailureKind.REFUSED);
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("an unsuccessful response we read records its message, as REFUSED")
     void unsuccessfulResponseRecordsMessage() {
         when(disbursementService.createLoanAccount(loan)).thenReturn(LoanAccountCreationResponse.builder()
                 .reference("000000042").success(false).message("InnBucks answered HTTP 302").build());
 
         job.processLoanAccountCreation();
 
+        assertThat(loan.getBookingFailureKind()).isEqualTo(BookingFailureKind.REFUSED);
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.FAILED);
         assertThat(loan.getDisbursementStatusMessage())
                 .isEqualTo("InnBucks loan application failed: InnBucks answered HTTP 302");
@@ -123,14 +199,16 @@ class LoanAccountCreationJobTest {
     }
 
     @Test
-    @DisplayName("success leaves no failure message and marks the account CREATED")
+    @DisplayName("success leaves no failure message, clears an earlier refusal and marks the account CREATED")
     void successLeavesNoMessage() {
+        loan.setBookingFailureKind(BookingFailureKind.REFUSED);
         when(disbursementService.createLoanAccount(loan)).thenReturn(LoanAccountCreationResponse.builder()
                 .reference("000000042").success(true).build());
 
         job.processLoanAccountCreation();
 
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(loan.getBookingFailureKind()).isNull();
         assertThat(loan.getDisbursementStatusMessage()).isNull();
     }
 
@@ -174,39 +252,37 @@ class LoanAccountCreationJobTest {
     }
 
     @Test
-    @DisplayName("a timed-out booking is flagged IN DOUBT, never plain BOOKING_FAILED, and the queue says to check first")
-    void timeoutIsFlaggedInDoubtNotBookingFailed() {
+    @DisplayName("a timed-out booking is held for the inquiry job and flags nothing — the customer may hold the loan")
+    void timeoutIsHeldAndFlagsNothing() {
         when(disbursementService.createLoanAccount(loan)).thenThrow(new ResourceAccessException(
                 "I/O error on POST request: Read timed out", new SocketTimeoutException("Read timed out")));
 
         job.processLoanAccountCreation();
 
-        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
-        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_IN_DOUBT");
-        assertThat(requiredAuditedOnce().getDetail()).contains("reason=BOOKING_IN_DOUBT");
-
-        DeductionCancellationDto row = DeductionCancellationDto.from(loan);
-        assertThat(row.getReason()).isEqualTo("BOOKING_IN_DOUBT");
-        assertThat(row.getAction()).contains("confirm with InnBucks that no loan was booked");
-        assertThat(row.getDisbursementStatusMessage()).contains("Read timed out");
+        assertHeldForInquiry();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
     }
 
     @Test
-    @DisplayName("a 5xx, a 409 or a 408 may follow a booking that landed: IN DOUBT")
-    void serverErrorsAndAmbiguousClientErrorsAreInDoubt() {
+    @DisplayName("a 5xx, a 409 or a 408 may follow a booking that landed: AMBIGUOUS, nothing flagged")
+    void serverErrorsAndAmbiguousClientErrorsFlagNothing() {
         for (Exception ex : List.of(
                 HttpServerErrorException.create(HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY,
                         new byte[0], StandardCharsets.UTF_8),
                 clientError(HttpStatus.CONFLICT),
                 clientError(HttpStatus.REQUEST_TIMEOUT))) {
-            assertThat(LoanAccountCreationJob.refusedByInnbucks(ex)).as(ex.getMessage()).isFalse();
+            assertThat(LoanAccountCreationJob.classify(ex)).as(ex.getMessage()).isEqualTo(BookingFailureKind.AMBIGUOUS);
         }
-        assertThat(LoanAccountCreationJob.refusedByInnbucks(clientError(HttpStatus.UNAUTHORIZED))).isTrue();
-        assertThat(LoanAccountCreationJob.refusedByInnbucks(clientError(HttpStatus.UNPROCESSABLE_ENTITY))).isTrue();
+        assertThat(LoanAccountCreationJob.classify(clientError(HttpStatus.UNAUTHORIZED)))
+                .isEqualTo(BookingFailureKind.REFUSED);
+        assertThat(LoanAccountCreationJob.classify(clientError(HttpStatus.UNPROCESSABLE_ENTITY)))
+                .isEqualTo(BookingFailureKind.REFUSED);
 
         when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.CONFLICT));
         job.processLoanAccountCreation();
-        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_IN_DOUBT");
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
     }
 
     @Test
@@ -230,5 +306,40 @@ class LoanAccountCreationJobTest {
 
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         verifyNoInteractions(auditService);
+    }
+
+    @Test
+    @DisplayName("a loan already disbursed is never booked — booking would pay it again")
+    void skipsALoanAlreadyDisbursed() {
+        loan.setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
+        assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
+        assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("a loan with any manual payout attempt is never booked")
+    void skipsALoanWithAManualPayoutAttempt() {
+        when(loanDisbursementRepository.existsByLoanId(42L)).thenReturn(true);
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a loan whose earlier booking is AMBIGUOUS is never re-booked, even if reset to PENDING")
+    void skipsALoanWithAnAmbiguousBooking() {
+        loan.setBookingFailureKind(BookingFailureKind.AMBIGUOUS);
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
     }
 }

@@ -23,6 +23,7 @@ import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanBatchService;
 import zw.co.reikan.loans.core.loan.LoanPublicReferenceService;
+import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
 import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 import zw.co.reikan.loans.core.saga.LoanSaga;
@@ -101,7 +102,7 @@ class RevivedLodgementBookingFailureTest {
                 LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED, LoanAccountStatus.PENDING))
                 .thenReturn(List.of(loan));
         new LoanAccountCreationJob(disbursementService, loanRepository, mock(NotificationService.class),
-                cancellations).processLoanAccountCreation();
+                cancellations, mock(LoanDisbursementRepository.class)).processLoanAccountCreation();
 
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
