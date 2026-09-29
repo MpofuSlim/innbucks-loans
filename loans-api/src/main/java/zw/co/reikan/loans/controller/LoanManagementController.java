@@ -16,6 +16,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.ManualDisbursementResult;
+import zw.co.reikan.loans.core.disbursements.BookingNotBookedRequest;
+import zw.co.reikan.loans.core.disbursements.BookingResolutionService;
+import zw.co.reikan.loans.core.disbursements.HeldBookingDto;
 import zw.co.reikan.loans.core.loan.*;
 
 import java.util.List;
@@ -40,6 +43,9 @@ public class LoanManagementController {
 
     @Autowired
     private DeductionCancellationService deductionCancellationService;
+
+    @Autowired
+    private BookingResolutionService bookingResolutionService;
 
     @Operation(operationId = "disburseLoan",
             summary = "MANUAL RECOVERY PAYOUT",
@@ -154,6 +160,69 @@ public class LoanManagementController {
                                                              @Valid @RequestBody DeductionCancellationRequest request) {
         log.info("Recording deduction cancelled for loan: {}", id);
         return deductionCancellationService.markCancelledExternally(id, request.getNote());
+    }
+
+    @Operation(summary = "HELD INNBUCKS BOOKINGS",
+            description = "Loans held as booked at InnBucks without a confirmed payout (account CREATED,"
+                    + " disbursement PENDING): the inquiry job settles each one InnBucks reports paid. Loans InnBucks"
+                    + " reports it holds no loan for come first (bookingNotFoundAt), then oldest first."
+                    + " bookingFailureKind AMBIGUOUS means the booking call's outcome was never known. A loan InnBucks"
+                    + " confirms it never booked is resolved with POST /api/loans/{id}/booking/confirm-not-booked.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Loans held as booked, reported-missing first",
+                    content = {@Content(mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = HeldBookingDto.class)))}),
+            @ApiResponse(responseCode = "401",
+                    description = "Not authenticated"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller is not BULKIT_ADMIN, CREDIT_MANAGER or FINANCE"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @GetMapping("/loans/held-bookings")
+    @PreAuthorize("hasAnyRole('BULKIT_ADMIN','CREDIT_MANAGER','FINANCE')")
+    public List<HeldBookingDto> findHeldBookings() {
+        log.info("Finding loans held as booked at InnBucks");
+        return bookingResolutionService.findHeld();
+    }
+
+    @Operation(summary = "CONFIRM INNBUCKS BOOKING NOT BOOKED",
+            description = "BULKIT_ADMIN only. Records that InnBucks confirmed it booked no loan under this loan's"
+                    + " reference. The loan becomes FAILED with a REFUSED booking - eligible for the manual recovery"
+                    + " payout - and its Ndasenda deduction is flagged for cancellation (BOOKING_FAILED). Nothing is"
+                    + " sent to InnBucks. Confirm with InnBucks first: if the booking did land, a recovery payout"
+                    + " would pay the loan twice.",
+            security = {@SecurityRequirement(name = BEARER_TOKEN)}
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Recorded; the loan as it now stands",
+                    content = {@Content(mediaType = "application/json",
+                            schema = @Schema(implementation = HeldBookingDto.class))}),
+            @ApiResponse(responseCode = "400",
+                    description = "No note given"),
+            @ApiResponse(responseCode = "401",
+                    description = "Not authenticated"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller is not a BULKIT_ADMIN"),
+            @ApiResponse(responseCode = "404",
+                    description = "No such loan"),
+            @ApiResponse(responseCode = "409",
+                    description = "The loan has no booking awaiting InnBucks (it is not CREATED/PENDING)"),
+
+            @ApiResponse(responseCode = "500",
+                    description = "Represents an Error Caused by a System Malfunction")
+    })
+    @PostMapping("/loans/{id}/booking/confirm-not-booked")
+    @PreAuthorize("hasRole('BULKIT_ADMIN')")
+    public HeldBookingDto confirmBookingNotBooked(@PathVariable Long id,
+                                                  @Valid @RequestBody BookingNotBookedRequest request) {
+        log.info("Recording InnBucks booking of loan {} as never landed", id);
+        return bookingResolutionService.confirmNotBooked(id, request.getNote());
     }
 
 }

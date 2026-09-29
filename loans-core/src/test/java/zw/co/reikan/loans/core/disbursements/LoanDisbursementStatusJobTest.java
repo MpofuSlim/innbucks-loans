@@ -8,6 +8,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.audit.AuditLog;
+import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -39,6 +41,9 @@ class LoanDisbursementStatusJobTest {
 
     @Mock
     private DeductionCancellationService deductionCancellationService;
+
+    @Mock
+    private AuditService auditService;
 
     @InjectMocks
     private LoanDisbursementStatusJob loanDisbursementStatusJob;
@@ -267,5 +272,80 @@ class LoanDisbursementStatusJobTest {
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
         verify(testLoan).setDateDisbursed(any(LocalDateTime.class));
         verify(loanRepository).save(testLoan);
+    }
+
+    private static LoanDisbursementStatusResponse notFound() {
+        LoanDisbursementStatusResponse response = LoanDisbursementStatusResponse.builder()
+                .responseCode("004").responseDescription("Record not found")
+                .success(true).status(LoanDisbursementStatus.PENDING).build();
+        response.setNotFound(true);
+        return response;
+    }
+
+    private List<AuditLog> audited() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, atLeast(0)).record(captor.capture());
+        return captor.getAllValues().stream().map(AuditLog.AuditLogBuilder::build).toList();
+    }
+
+    @Test
+    void notFound_isReportedOnceAndNeverFailsTheLoan() {
+        Loan held = new Loan();
+        held.setId(42L);
+        held.setLoanAccountStatus(LoanAccountStatus.CREATED);
+        held.setDisbursementStatus(LoanDisbursementStatus.PENDING);
+        held.setBookingFailureKind(BookingFailureKind.AMBIGUOUS);
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(held));
+        when(disbursementService.checkLoanDisbursementStatus(held)).thenReturn(notFound());
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+        LocalDateTime firstReported = held.getBookingNotFoundAt();
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // Held for an operator: InnBucks has not confirmed what "not found" looks like, and a
+        // failed loan is open to a second payout.
+        assertThat(held.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
+        assertThat(held.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
+        assertThat(held.getBookingFailureKind()).isEqualTo(BookingFailureKind.AMBIGUOUS);
+        assertThat(firstReported).isNotNull();
+        assertThat(held.getBookingNotFoundAt()).isEqualTo(firstReported);
+        assertThat(held.getDisbursementStatusMessage()).contains("InnBucks reports no loan under reference");
+        verifyNoInteractions(deductionCancellationService, notificationService);
+        assertThat(audited()).singleElement().satisfies(row -> {
+            assertThat(row.getEventType()).isEqualTo("INNBUCKS_BOOKING_NOT_FOUND");
+            assertThat(row.getActorId()).isEqualTo("loan-disbursement-status-job");
+            assertThat(row.getDetail()).contains("bookingFailureKind=AMBIGUOUS");
+        });
+    }
+
+    @Test
+    void aLoanReportedMissingThatInnbucksFindsAgainIsCleared() {
+        testLoan.setBookingNotFoundAt(LocalDateTime.of(2026, 9, 29, 8, 0));
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(pendingResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        assertThat(testLoan.getBookingNotFoundAt()).isNull();
+        assertThat(audited()).singleElement()
+                .satisfies(row -> assertThat(row.getEventType()).isEqualTo("INNBUCKS_BOOKING_FOUND"));
+    }
+
+    @Test
+    void anUnreachableInquiryNeitherReportsNorClearsNotFound() {
+        LocalDateTime since = LocalDateTime.of(2026, 9, 29, 8, 0);
+        testLoan.setBookingNotFoundAt(since);
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(LoanDisbursementStatusResponse
+                .builder().responseCode("999").success(false).status(LoanDisbursementStatus.PENDING).build());
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        assertThat(testLoan.getBookingNotFoundAt()).isEqualTo(since);
+        verifyNoInteractions(auditService);
     }
 }

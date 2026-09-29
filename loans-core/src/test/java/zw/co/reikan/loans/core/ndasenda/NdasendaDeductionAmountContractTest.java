@@ -111,7 +111,9 @@ class NdasendaDeductionAmountContractTest {
     void overflowIsRefusedNotWrapped() {
         // 21,474,836.48 is 2^31 cents; intValue() wrapped it to -2147483648.
         assertThatThrownBy(() -> service.requestApproval(deduction("21474836.48")))
-                .isInstanceOf(ArithmeticException.class);
+                .isInstanceOfSatisfying(LodgementException.class,
+                        ex -> assertThat(ex.getKind()).isEqualTo(LodgementException.Kind.NOT_SENT))
+                .hasCauseInstanceOf(ArithmeticException.class);
 
         wireMock.verify(0, postRequestedFor(urlEqualTo(DEDUCTIONS)));
     }

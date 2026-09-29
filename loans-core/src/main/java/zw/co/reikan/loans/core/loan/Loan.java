@@ -114,8 +114,24 @@ public class Loan extends BaseEntity {
     @Column(name = "approval_reference")
     private String approvalReference;
 
+    /** Lodgement attempts that provably never reached Ndasenda; see {@code LoanApprovalServiceJob}. */
     @Column(name = "approval_attempt")
     private Integer approvalAttempt;
+
+    /**
+     * When the lodgement job claimed this loan to send its deduction to Ndasenda, committed BEFORE the
+     * call so no other run or instance sends it too. Cleared only when that lodgement provably never
+     * reached Ndasenda; otherwise it stays, as the time the deduction was sent. A NEW loan carrying one
+     * is never sent again, so re-lodging a held loan (once Ndasenda confirms it never arrived) means
+     * setting it back to NEW AND clearing this. New nullable columns rather than new status values,
+     * whose CHECK constraint ddl-auto would never widen.
+     */
+    @Column(name = "lodgement_claimed_at")
+    private LocalDateTime lodgementClaimedAt;
+
+    /** Earliest time a lodgement that never reached Ndasenda is tried again. */
+    @Column(name = "next_lodgement_attempt_at")
+    private LocalDateTime nextLodgementAttemptAt;
 
     @Column(name = "batch_number")
     private String batchNumber;
@@ -207,6 +223,15 @@ public class Loan extends BaseEntity {
     @Column(name = "booking_failure_kind")
     private BookingFailureKind bookingFailureKind;
 
+    /**
+     * When the InnBucks inquiry first answered that it holds no loan under this reference. Not
+     * acted on automatically: InnBucks has not confirmed what its inquiry returns for a missing
+     * loan, and marking a paid loan failed would open it to a second payout. It puts the loan in
+     * front of an operator instead. Cleared if a later inquiry finds the loan.
+     */
+    @Column(name = "booking_not_found_at")
+    private LocalDateTime bookingNotFoundAt;
+
     @Enumerated(EnumType.STRING)
     private LineOfBusiness lineOfBusiness;
 
@@ -271,6 +296,13 @@ public class Loan extends BaseEntity {
 
     @Column(name = "deduction_cancelled_at")
     private LocalDateTime deductionCancelledAt;
+
+    /**
+     * When the response job reported this loan as waiting too long for Ndasenda's answer; null until
+     * then. Kept so the alert is raised once rather than on every run.
+     */
+    @Column(name = "ndasenda_response_overdue_at")
+    private LocalDateTime ndasendaResponseOverdueAt;
 
     @Column(name = "created_by")
     private String createdBy;
