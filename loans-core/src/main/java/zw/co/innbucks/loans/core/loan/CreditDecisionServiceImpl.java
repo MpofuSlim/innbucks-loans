@@ -14,7 +14,6 @@ import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
-import zw.co.innbucks.loans.core.user.User;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -43,6 +42,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final AuditService auditService;
     private final CreditDecisionRepository creditDecisionRepository;
     private final CreditReasonCodeRepository creditReasonCodeRepository;
+    private final CreditDecisionLog creditDecisionLog;
     private final TransactionTemplate transactionTemplate;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
@@ -50,6 +50,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                                      DeductionCancellationService deductionCancellationService,
                                      AuditService auditService, CreditDecisionRepository creditDecisionRepository,
                                      CreditReasonCodeRepository creditReasonCodeRepository,
+                                     CreditDecisionLog creditDecisionLog,
                                      PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.authService = authService;
@@ -59,6 +60,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.auditService = auditService;
         this.creditDecisionRepository = creditDecisionRepository;
         this.creditReasonCodeRepository = creditReasonCodeRepository;
+        this.creditDecisionLog = creditDecisionLog;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -137,7 +139,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                     username, DeductionCancellationService.PORTAL_CHANNEL);
         }
         Loan saved = loanRepository.save(loan);
-        record(saved, CreditAction.valueOf(decision.name()), reason.getCode(), comment, username, now);
+        creditDecisionLog.record(saved, CreditAction.valueOf(decision.name()), reason.getCode(), comment, username,
+                now);
         return new Decided(saved, loanMapper.toResponse(saved), payee);
     }
 
@@ -164,8 +167,10 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             loan.setInternalApprovalBy(null);
             loan.setInternalApprovalReasonCode(null);
             Loan saved = loanRepository.save(loan);
-            record(saved, CreditAction.RESUBMITTED, null, comment, username, LocalDateTime.now(ZoneOffset.UTC));
-            return loanMapper.toResponse(saved);
+            creditDecisionLog.record(saved, CreditAction.RESUBMITTED, null, comment, username,
+                    LocalDateTime.now(ZoneOffset.UTC));
+            LoanResponse view = loanMapper.toResponse(saved);
+            return scope.platformWide() ? view : view.withoutPayslipReview();
         }));
     }
 
@@ -215,22 +220,6 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         return reason;
     }
 
-    /** Appends to the loan's credit decision log, in the caller's transaction. */
-    private void record(Loan loan, CreditAction action, String reasonCode, String comment, String username,
-                        LocalDateTime at) {
-        String snapshot = CreditDecisionSnapshot.of(loan).toJson();
-        creditDecisionRepository.save(CreditDecision.builder()
-                .loanId(loan.getId())
-                .action(action)
-                .reasonCode(reasonCode)
-                .comment(comment)
-                .performedBy(username)
-                .performedAt(at)
-                .loanSnapshot(snapshot)
-                .snapshotSha256(AuditService.sha256Hex(snapshot))
-                .build());
-    }
-
     /**
      * Segregation of duties (FR-PBL-029): nobody approves a loan they originated, resubmitted or are a
      * party to, since that one person would then decide both who is paid and that they are paid. A
@@ -238,10 +227,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
      */
     private void requireNoConflictOfInterest(Loan loan, String approver) {
         String reference = loan.getReference();
-        boolean originated = StringUtils.equalsIgnoreCase(approver, loan.getCreatedBy())
-                || (loan.getCreatedByUser() != null
-                && StringUtils.equalsIgnoreCase(approver, loan.getCreatedByUser().getUsername()));
-        if (originated) {
+        if (SegregationOfDuties.originated(loan, approver)) {
             throw new AccessDeniedException(String.format(
                     "Loan %s was originated by %s, who cannot also approve it; another credit officer must",
                     reference, approver));
@@ -252,43 +238,10 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                     "Loan %s was resubmitted by %s, who cannot also approve it; another credit officer must",
                     reference, approver));
         }
-        if (isPartyTo(loan, authService.getLoggedInUser())) {
+        if (SegregationOfDuties.isPartyTo(loan, authService.getLoggedInUser())) {
             throw new AccessDeniedException(String.format(
                     "%s is a party to loan %s and cannot approve it; another credit officer must", approver, reference));
         }
-    }
-
-    /**
-     * The applicant, their next of kin, or the holder of the wallet the loan pays: matched on the
-     * user's ID number or mobile number, however either was typed.
-     */
-    static boolean isPartyTo(Loan loan, User user) {
-        if (user == null) {
-            return false;
-        }
-        String idNumber = identityNumber(user.getIdNumber());
-        String mobile = nationalMobileNumber(user.getMobileNumber());
-        NextOfKin nextOfKin = loan.getNextOfKin();
-        boolean sameId = idNumber != null
-                && (idNumber.equals(identityNumber(loan.getNationalIdNumber()))
-                || (nextOfKin != null && idNumber.equals(identityNumber(nextOfKin.getNationalId()))));
-        boolean sameMobile = mobile != null
-                && (mobile.equals(nationalMobileNumber(loan.getMobileNumber()))
-                || mobile.equals(nationalMobileNumber(loan.payoutWalletNumber()))
-                || (nextOfKin != null && mobile.equals(nationalMobileNumber(nextOfKin.getMobileNumber()))));
-        return sameId || sameMobile;
-    }
-
-    /** Letters and digits only, upper case: 63-1234567-A-42 and 631234567a42 are one ID. */
-    private static String identityNumber(String value) {
-        String normalized = value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
-        return normalized.isEmpty() ? null : normalized;
-    }
-
-    /** The last nine digits, which every spelling of a Zimbabwean mobile shares. */
-    private static String nationalMobileNumber(String value) {
-        String digits = value == null ? "" : value.replaceAll("\\D", "");
-        return digits.length() < 9 ? null : digits.substring(digits.length() - 9);
     }
 
     /** Refused before anything is recorded: a loan with nowhere to pay would only fail at booking. */

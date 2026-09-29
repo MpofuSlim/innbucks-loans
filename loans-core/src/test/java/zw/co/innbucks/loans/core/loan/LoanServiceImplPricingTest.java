@@ -46,7 +46,8 @@ class LoanServiceImplPricingTest {
         parameters = mock(ParameterService.class);
         service = new LoanServiceImpl(mock(LoanRepository.class), parameters, mock(LoanMapper.class),
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
-                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator());
+                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator(),
+                mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
     }
 
     private void rates(String monthlyInterest, String commission, String adminFee) {

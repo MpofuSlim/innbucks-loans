@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.loan;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -83,15 +84,31 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
 
-    /** NEW loans due for lodgement with Ndasenda: unclaimed and past any retry backoff. Oldest first. */
+    /**
+     * NEW loans due for lodgement with Ndasenda: unclaimed, past any retry backoff, and not held for payslip
+     * review (FR-SSB-007). Oldest first.
+     */
     @Query("""
             select l.id from Loan l
             where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.NEW
               and l.lodgementClaimedAt is null
               and (l.nextLodgementAttemptAt is null or l.nextLodgementAttemptAt <= :now)
+              and (l.payslipReviewStatus is null
+                   or l.payslipReviewStatus = zw.co.innbucks.loans.core.loan.PayslipReviewStatus.CLEARED)
             order by l.id
             """)
     List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now);
+
+    /** The applications already on file with this payslip, newest first, as who applied with it. */
+    @Query("""
+            select new zw.co.innbucks.loans.core.loan.PayslipMatch(l.id, l.ecNumber, l.nationalIdNumber)
+            from Loan l where l.payslipSha256 = :payslipSha256
+            order by l.id desc
+            """)
+    List<PayslipMatch> findPayslipMatches(@Param("payslipSha256") String payslipSha256, Pageable page);
+
+    /** The applications waiting in the payslip review queue, oldest first. */
+    List<Loan> findByPayslipReviewStatusOrderByIdAsc(PayslipReviewStatus payslipReviewStatus);
 
     /** NEW loans whose lodgement was claimed before {@code cutoff} and never settled. */
     @Query("""

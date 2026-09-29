@@ -21,6 +21,7 @@ import zw.co.innbucks.loans.controller.DeductionCancellationController;
 import zw.co.innbucks.loans.controller.HeldBookingController;
 import zw.co.innbucks.loans.controller.LoanController;
 import zw.co.innbucks.loans.controller.MerchantController;
+import zw.co.innbucks.loans.controller.PayslipReviewController;
 import zw.co.innbucks.loans.controller.ReportController;
 import zw.co.innbucks.loans.controller.UserController;
 import zw.co.innbucks.loans.core.audit.AuditService;
@@ -49,7 +50,7 @@ class SwaggerExamplesTest {
     private static final List<Class<?>> CONTROLLERS = List.of(AuthController.class, CommissionGroupController.class,
             CreditReasonCodeController.class, CurrentUserController.class, DashboardController.class,
             DeductionBatchController.class, DeductionCancellationController.class, HeldBookingController.class,
-            LoanController.class,
+            LoanController.class, PayslipReviewController.class,
             MerchantController.class, ReportController.class, UserController.class);
 
     record Example(String where, String json) {

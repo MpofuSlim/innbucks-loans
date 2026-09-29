@@ -12,6 +12,7 @@ import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.files.DocumentFingerprint;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
@@ -24,6 +25,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static zw.co.innbucks.loans.core.loan.LoanParameterNames.*;
@@ -39,6 +41,7 @@ class LoanServiceImplApplicationTest {
 
     private ValidatorFactory validatorFactory;
     private LoanRepository loanRepository;
+    private PayslipReviewService payslipReviewService;
     private LoanServiceImpl service;
 
     @BeforeEach
@@ -61,8 +64,10 @@ class LoanServiceImplApplicationTest {
         AuthService auth = mock(AuthService.class);
         when(auth.getLoggedInUser()).thenReturn(agent);
 
+        payslipReviewService = mock(PayslipReviewService.class);
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
-                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator());
+                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator(),
+                new PayslipFraudDetector(loanRepository), payslipReviewService);
     }
 
     @AfterEach
@@ -213,5 +218,104 @@ class LoanServiceImplApplicationTest {
         service.requestLoan(withDocuments);
 
         verify(loanRepository).save(any());
+    }
+
+    // ── Payslip fraud controls (FR-SSB-007) ───────────────────────────────────
+
+    private static final String PAYSLIP = java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes());
+
+    private Loan applyWithPayslip(LoanApplicationRequest request) {
+        request.setPayslipPicture(PAYSLIP);
+        service.requestLoan(request);
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        verify(loanRepository).save(saved.capture());
+        return saved.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<PayslipFraudDetector.Finding> held(Loan loan) {
+        ArgumentCaptor<List<PayslipFraudDetector.Finding>> findings = ArgumentCaptor.forClass(List.class);
+        verify(payslipReviewService).hold(eq(loan), findings.capture());
+        return findings.getValue();
+    }
+
+    @Test
+    @DisplayName("a payslip already on file under another identity holds the application for review")
+    void payslipOfAnotherApplicantIsHeld() {
+        when(loanRepository.findPayslipMatches(any(), any()))
+                .thenReturn(List.of(new PayslipMatch(17L, "7654321B", "637654321B42")));
+
+        Loan loan = applyWithPayslip(LoanApplicationRequestValidationTest.completeApplication());
+
+        assertThat(loan.getPayslipSha256()).isEqualTo(DocumentFingerprint.of(PAYSLIP));
+        assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
+        assertThat(held(loan)).containsExactly(new PayslipFraudDetector.Finding(
+                PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT, 17L, "Same payslip file as loan 000000017"));
+        // The two applications are looked up under one lock, so neither passes the other unseen.
+        verify(loanRepository).lockApplicant("loan-application:payslip:" + loan.getPayslipSha256());
+    }
+
+    @Test
+    @DisplayName("the same payslip from the same applicant is held too; a shared EC number alone is not the same person")
+    void payslipOfTheSameApplicantIsHeld() {
+        when(loanRepository.findPayslipMatches(any(), any())).thenReturn(List.of(
+                new PayslipMatch(9L, "1234567a", "63-1234567-A-63"),
+                new PayslipMatch(8L, "1234567A", "639999999Z99")));
+
+        Loan loan = applyWithPayslip(LoanApplicationRequestValidationTest.completeApplication());
+
+        assertThat(held(loan))
+                .extracting(PayslipFraudDetector.Finding::reason, PayslipFraudDetector.Finding::matchedLoanId)
+                .containsExactly(
+                        tuple(PayslipFraudReason.PAYSLIP_REUSED_BY_SAME_APPLICANT, 9L),
+                        tuple(PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT, 8L));
+    }
+
+    @Test
+    @DisplayName("deductions adding up to more than gross less net hold the application")
+    void deductionsBeyondThePayslipAreHeld() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        // Gross 1500.00 less net 1100.00 leaves 400.00; these add up to 450.00.
+        request.setPayslipDeductions(List.of(
+                new PayslipDeduction("ZIMRA PAYE", new BigDecimal("300.00")),
+                new PayslipDeduction("PSMAS medical aid", new BigDecimal("150.00"))));
+
+        Loan loan = applyWithPayslip(request);
+
+        assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
+        assertThat(held(loan)).containsExactly(new PayslipFraudDetector.Finding(
+                PayslipFraudReason.DEDUCTIONS_EXCEED_GROSS_LESS_NET, null,
+                "Deductions total 450.00 but gross less net is 400.00"));
+    }
+
+    @Test
+    @DisplayName("deductions up to gross less net are ordinary: not every line need be captured")
+    void deductionsWithinThePayslipPass() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setPayslipDeductions(List.of(new PayslipDeduction("ZIMRA PAYE", new BigDecimal("400.00"))));
+
+        Loan loan = applyWithPayslip(request);
+
+        assertThat(loan.getPayslipReviewStatus()).isNull();
+        verifyNoInteractions(payslipReviewService);
+    }
+
+    @Test
+    @DisplayName("an application with nothing suspect is fingerprinted and not held")
+    void cleanApplicationIsNotHeld() {
+        Loan loan = applyWithPayslip(LoanApplicationRequestValidationTest.completeApplication());
+
+        assertThat(loan.getPayslipSha256()).hasSize(64);
+        assertThat(loan.getPayslipReviewStatus()).isNull();
+        verifyNoInteractions(payslipReviewService);
+    }
+
+    @Test
+    @DisplayName("an application with no payslip takes no payslip lock and matches nothing")
+    void noPayslipNoLock() {
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+
+        verify(loanRepository, never()).lockApplicant(startsWith("loan-application:payslip:"));
+        verify(loanRepository, never()).findPayslipMatches(any(), any());
     }
 }

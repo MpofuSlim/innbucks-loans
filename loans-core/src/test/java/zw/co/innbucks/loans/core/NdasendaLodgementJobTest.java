@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
@@ -36,6 +37,7 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.loan.PayslipReviewStatus;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalResponse;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalService;
 import zw.co.innbucks.loans.core.ndasenda.LodgementException;
@@ -314,6 +316,40 @@ class NdasendaLodgementJobTest {
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         assertThat(loan.getLodgementClaimedAt()).isEqualTo(theirs);
         verify(loanRepository, never()).save(any());
+    }
+
+    @ParameterizedTest(name = "payslip review {0}")
+    @EnumSource(value = PayslipReviewStatus.class, names = {"PENDING", "CONFIRMED"})
+    @DisplayName("a loan held or rejected at payslip review is never lodged, even when the due list still names it")
+    void payslipReviewHoldsTheLoanBack(PayslipReviewStatus review) {
+        Loan loan = newLoan(42);
+        loan.setPayslipReviewStatus(review);
+        // Read before the review landed: the claim re-checks under the lock.
+        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service);
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(loan.getLodgementClaimedAt()).isNull();
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a loan cleared at payslip review is lodged like any other")
+    void clearedLoanIsLodged() {
+        Loan loan = newLoan(42);
+        loan.setPayslipReviewStatus(PayslipReviewStatus.CLEARED);
+        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        LoanApprovalService service = mock(LoanApprovalService.class);
+        when(service.requestApproval(any())).thenReturn(
+                LoanApprovalResponse.builder().status(LoanApprovalStatus.PROCESSING).batchNumber("BATCH-A").build());
+
+        job(service).processSsbApprovals();
+
+        verify(service).requestApproval(any());
+        assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
     }
 
     @Test

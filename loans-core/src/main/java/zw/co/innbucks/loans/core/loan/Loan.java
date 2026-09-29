@@ -374,6 +374,27 @@ public class Loan extends BaseEntity {
     @Column(name = "payslip_picture", columnDefinition = "text")
     private String payslipPicture;
 
+    /** SHA-256 of the payslip's decoded bytes (see DocumentFingerprint); null when there is none. */
+    @Column(name = "payslip_sha256", length = 64)
+    private String payslipSha256;
+
+    /**
+     * Null unless something about the payslip raised a concern (FR-SSB-007). PENDING holds the loan back
+     * from SSB until a reviewer clears or confirms it.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payslip_review_status", length = 32)
+    private PayslipReviewStatus payslipReviewStatus;
+
+    @Column(name = "payslip_reviewed_by")
+    private String payslipReviewedBy;
+
+    @Column(name = "payslip_reviewed_at")
+    private LocalDateTime payslipReviewedAt;
+
+    @Column(name = "payslip_review_comment")
+    private String payslipReviewComment;
+
     /**
      * Where the customer's wallet payout goes. A loan captured before the wallet number existed was
      * given its mobile number by the V3 migration; the fallback keeps a row written by an older build

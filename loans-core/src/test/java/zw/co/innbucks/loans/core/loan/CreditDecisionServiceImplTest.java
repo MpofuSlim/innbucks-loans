@@ -14,6 +14,7 @@ import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.exception.BusinessException;
+import zw.co.innbucks.loans.core.files.DocumentFingerprint;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -90,7 +91,8 @@ class CreditDecisionServiceImplTest {
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, notificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService), auditService,
-                creditDecisionRepository, creditReasonCodeRepository, mock(PlatformTransactionManager.class));
+                creditDecisionRepository, creditReasonCodeRepository, new CreditDecisionLog(creditDecisionRepository),
+                mock(PlatformTransactionManager.class));
     }
 
     private static CreditDecisionRequest decide(InternalApprovalStatus status) {
@@ -297,7 +299,7 @@ class CreditDecisionServiceImplTest {
         assertThat(snapshot.path("payoutAccount").asString()).isEqualTo("****0001");
         // The document by its hash, never its content.
         assertThat(snapshot.path("documents").path("payslipPictureSha256").asString())
-                .isEqualTo(AuditService.sha256Hex("JVBERi0xLjQK"));
+                .isEqualTo(DocumentFingerprint.of("JVBERi0xLjQK"));
         assertThat(entry.getLoanSnapshot()).doesNotContain("JVBERi0xLjQK", "631234567A42", "782606983", "0771000001");
     }
 
@@ -606,30 +608,30 @@ class CreditDecisionServiceImplTest {
         @Test
         @DisplayName("is the applicant, by ID number however it is typed")
         void applicantById() {
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user("63-1234567 a 42", null))).isTrue();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user("63-1234567 a 42", null))).isTrue();
         }
 
         @Test
         @DisplayName("is the applicant, or holds the payout wallet, by mobile number however it is typed")
         void applicantOrWalletByMobile() {
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user(null, "0782606983"))).isTrue();
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user(null, "+263 71 234 5678"))).isTrue();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user(null, "0782606983"))).isTrue();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user(null, "+263 71 234 5678"))).isTrue();
         }
 
         @Test
         @DisplayName("is the next of kin, by ID or mobile")
         void nextOfKin() {
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user("637654321C42", null))).isTrue();
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user(null, "0772345678"))).isTrue();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user("637654321C42", null))).isTrue();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user(null, "0772345678"))).isTrue();
         }
 
         @Test
         @DisplayName("is not an unrelated officer, nor one with no ID or mobile on file")
         void unrelated() {
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user("639999999Z99", "263771111111"))).isFalse();
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user(null, null))).isFalse();
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), user(" ", "12"))).isFalse();
-            assertThat(CreditDecisionServiceImpl.isPartyTo(loan(), null)).isFalse();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user("639999999Z99", "263771111111"))).isFalse();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user(null, null))).isFalse();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), user(" ", "12"))).isFalse();
+            assertThat(SegregationOfDuties.isPartyTo(loan(), null)).isFalse();
         }
     }
 

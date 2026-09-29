@@ -35,6 +35,11 @@ public record LoanStatusSnapshot(Long id,
                                  LoanDisbursementStatus disbursementStatus) {
 
     public boolean isInFlight() {
+        // Rejected by Credit, including an application rejected at payslip review before it was ever
+        // lodged (still NEW): an outcome.
+        if (internalApprovalStatus == InternalApprovalStatus.REJECTED) {
+            return false;
+        }
         if (disbursementStatus == LoanDisbursementStatus.SUCCESS
                 || disbursementStatus == LoanDisbursementStatus.FAILED
                 || loanAccountStatus == LoanAccountStatus.FAILED) {

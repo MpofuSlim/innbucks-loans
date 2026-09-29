@@ -72,7 +72,8 @@ class LoanServiceImplPendingApplicationTest {
         when(auth.getLoggedInUser()).thenReturn(agent);
 
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
-                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator());
+                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator(),
+                new PayslipFraudDetector(loanRepository), mock(PayslipReviewService.class));
     }
 
     @AfterEach

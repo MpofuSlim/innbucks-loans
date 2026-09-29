@@ -392,4 +392,104 @@ public final class ApiExamples {
                 { "code": "RETURN_OTHER", "decision": "RETURNED", "description": "Other; see comment" }
               ]
             }""";
+
+    /** Loan 57 held for review: Rudo Chikwanha's payslip file (loan 42) under another applicant. */
+    public static final String PAYSLIP_REVIEW_QUEUE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "loanId": 57,
+                  "reference": "000000057",
+                  "createdAt": "2026-10-01T09:20:11+02:00",
+                  "createdBy": "tmoyo",
+                  "merchantCode": "harare-motors",
+                  "firstName": "Tendai",
+                  "lastName": "Ncube",
+                  "ecNumber": "7654321B",
+                  "nationalIdNumber": "637654321B42",
+                  "grossSalary": 850.00,
+                  "netSalary": 620.00,
+                  "flags": [
+                    {
+                      "reason": "PAYSLIP_REUSED_BY_ANOTHER_APPLICANT",
+                      "detail": "Same payslip file as loan 000000042",
+                      "matchedLoanId": 42,
+                      "matchedReference": "000000042",
+                      "matchedFirstName": "Rudo",
+                      "matchedLastName": "Chikwanha",
+                      "matchedEcNumber": "1234567A",
+                      "matchedNationalIdNumber": "631234567A42",
+                      "matchedCreatedAt": "2026-09-29T10:15:30+02:00",
+                      "matchedSsbApprovalStatus": "APPROVED",
+                      "matchedCreditApprovalStatus": "APPROVED"
+                    },
+                    {
+                      "reason": "DEDUCTIONS_EXCEED_GROSS_LESS_NET",
+                      "detail": "Deductions total 280.00 but gross less net is 230.00"
+                    }
+                  ]
+                }
+              ]
+            }""";
+
+    private static final String LOAN_57 = """
+                "id": 57,
+                "reference": "000000057",
+                "createdAt": "2026-10-01T09:20:11+02:00",
+                "createdBy": "tmoyo",
+                "merchantCode": "harare-motors",
+                "merchantName": "Harare Motor Spares",
+                "firstName": "Tendai",
+                "lastName": "Ncube",
+                "ecNumber": "7654321B",
+                "mobileNumber": "263772345678",
+                "walletNumber": "263772345678",
+                "principal": 531.91,
+                "disbursedAmount": 500.00,
+                "tenor": 3,
+                "monthlyInstallment": 202.69,
+                "grossedMonthlyDeduction": 208.96,
+                "ssbApprovalStatus": "NEW",""";
+
+    /** Loan 57 after {@code cmanager} clears its payslip review: next in line for SSB lodgement. */
+    public static final String LOAN_PAYSLIP_REVIEW_CLEARED = """
+            {
+              "code": "OK",
+              "message": "Payslip review cleared; the application goes on to SSB",
+              "data": {
+            """ + LOAN_57 + """
+
+                "creditApprovalStatus": "PENDING",
+                "payslipReviewStatus": "CLEARED",
+                "payslipReviewedBy": "cmanager",
+                "payslipReviewedAt": "2026-10-01T11:02:40+02:00",
+                "payslipReviewComment": "Ministry payroll confirmed the applicant at grade D2; loan 42 was scanned with the wrong payslip",
+                "bookingStatus": "PENDING",
+                "disbursementStatus": "PENDING"
+              }
+            }""";
+
+    /** Loan 57 after {@code cmanager} confirms the suspicion: rejected before it ever reached SSB. */
+    public static final String LOAN_PAYSLIP_REVIEW_CONFIRMED = """
+            {
+              "code": "OK",
+              "message": "Suspected fraud confirmed; the application is rejected",
+              "data": {
+            """ + LOAN_57 + """
+
+                "creditApprovalStatus": "REJECTED",
+                "creditDecisionAt": "2026-10-01T11:02:40+02:00",
+                "creditDecisionBy": "cmanager",
+                "creditDecisionComment": "Payslip belongs to the applicant on loan 42; the applicant does not appear on the payroll",
+                "creditDecisionReasonCode": "REJECT_SUSPECTED_FRAUD",
+                "payslipReviewStatus": "CONFIRMED",
+                "payslipReviewedBy": "cmanager",
+                "payslipReviewedAt": "2026-10-01T11:02:40+02:00",
+                "payslipReviewComment": "Payslip belongs to the applicant on loan 42; the applicant does not appear on the payroll",
+                "bookingStatus": "PENDING",
+                "disbursementStatus": "PENDING"
+              }
+            }""";
 }
