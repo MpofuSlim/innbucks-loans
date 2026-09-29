@@ -36,11 +36,13 @@ public class InnbucksServiceImpl extends DisbursementService {
 
     public InnbucksServiceImpl(LoanRepository loanRepository, NotificationService notificationService,
                                LoanDisbursementRepository loanDisbursementRepository,
+                               DeductionCancellationService deductionCancellationService,
                                RestTemplate restTemplate, InnbucksParameters parameters,
                                InnbucksAuthService innbucksAuthService,
                                PlatformTransactionManager transactionManager
     ) {
-        super(loanRepository, notificationService, loanDisbursementRepository, transactionManager);
+        super(loanRepository, notificationService, loanDisbursementRepository, deductionCancellationService,
+                transactionManager);
         this.innbucksAuthService = innbucksAuthService;
         this.restTemplate = restTemplate;
         this.parameters = parameters;

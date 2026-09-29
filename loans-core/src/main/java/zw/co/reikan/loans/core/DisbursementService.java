@@ -28,6 +28,7 @@ public abstract class DisbursementService {
 
     /** Prefix of the one deposit reference a loan's manual payout ever uses: {@code MD-<loan reference>}. */
     public static final String MANUAL_REFERENCE_PREFIX = "MD-";
+    static final String MANUAL_PAYOUT_ACTOR = "manual-payout";
 
     /**
      * The wallet-disbursement SMS for {@code loan}, naming the wallet by its last
@@ -42,14 +43,17 @@ public abstract class DisbursementService {
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
     private final LoanDisbursementRepository loanDisbursementRepository;
+    private final DeductionCancellationService deductionCancellationService;
     private final TransactionTemplate transactionTemplate;
 
     protected DisbursementService(LoanRepository loanRepository, NotificationService notificationService,
                                   LoanDisbursementRepository loanDisbursementRepository,
+                                  DeductionCancellationService deductionCancellationService,
                                   PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.notificationService = notificationService;
         this.loanDisbursementRepository = loanDisbursementRepository;
+        this.deductionCancellationService = deductionCancellationService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         // Always a fresh transaction: the claim must be COMMITTED before InnBucks is called,
         // even if a future caller wraps disburse() in a transaction of its own.
@@ -146,6 +150,8 @@ public abstract class DisbursementService {
 
         loan.setDisbursementAttempts(loan.getDisbursementAttempts() == null ? 1 : loan.getDisbursementAttempts() + 1);
         loan.setDisbursementReference(reference);
+        // A paid loan keeps its repayment: off the cancellation queue before any money can move.
+        String unflaggedReason = deductionCancellationService.withdrawForPayout(loan, reference);
         loanRepository.save(loan);
 
         LoanDisbursement attempt = new LoanDisbursement();
@@ -156,7 +162,7 @@ public abstract class DisbursementService {
         attempt = loanDisbursementRepository.save(attempt);
 
         log.info("Manual payout {} claimed for loan {} (attempt {})", reference, loanId, loan.getDisbursementAttempts());
-        return new Claim(loan.getId(), attempt.getId(), reference, request);
+        return new Claim(loan.getId(), attempt.getId(), reference, request, unflaggedReason);
     }
 
     /** Every refusal is a 409 naming the reason; nothing has been sent when one is thrown. */
@@ -172,6 +178,11 @@ public abstract class DisbursementService {
         if (loan.getInternalApprovalStatus() != InternalApprovalStatus.APPROVED) {
             throw notAllowed("Loan %s is not credit-approved (status %s)"
                     .formatted(loanRef, loan.getInternalApprovalStatus()));
+        }
+        if (loan.getDeductionCancellationStatus() == DeductionCancellationStatus.CANCELLED_EXTERNALLY) {
+            throw notAllowed(("The payroll deduction of loan %s was recorded as cancelled at Ndasenda by %s at %s;"
+                    + " paid now, the loan would have no repayment. A manual payout is not allowed")
+                    .formatted(loanRef, loan.getDeductionCancelledBy(), loan.getDeductionCancelledAt()));
         }
         if (loan.getBookingFailureKind() == BookingFailureKind.AMBIGUOUS) {
             throw notAllowed(("The InnBucks booking of loan %s has an unknown outcome and may already have paid it."
@@ -254,6 +265,7 @@ public abstract class DisbursementService {
                 attempt.setDisbursementStatus(LoanDisbursementStatus.FAILED);
                 attempt.setDisbursementStatusMessage(truncate(refused));
                 loan.setDisbursementStatusMessage(truncate(refused));
+                reflag(loan, claim, claim.unflaggedReason());
                 yield ManualDisbursementResult.builder().outcome(Outcome.REFUSED).reference(reference)
                         .message(refused + ". Nothing was paid; the loan may be tried again.").build();
             }
@@ -262,12 +274,21 @@ public abstract class DisbursementService {
                 String unknown = "Outcome of manual payout %s unknown: %s".formatted(reference, detail);
                 attempt.setDisbursementStatusMessage(truncate(unknown));
                 loan.setDisbursementStatusMessage(truncate(unknown));
+                // The customer may now hold the money: confirm with InnBucks before cancelling anything.
+                reflag(loan, claim, DeductionCancellationService.REASON_BOOKING_IN_DOUBT);
                 yield inDoubt(reference, unknown + ".");
             }
         };
         loanDisbursementRepository.save(attempt);
         loanRepository.save(loan);
         return new Settled(loan, result);
+    }
+
+    /** Puts back a flag the claim withdrew; a loan that was not flagged stays as it was. Saved by the caller. */
+    private void reflag(Loan loan, Claim claim, String reason) {
+        if (claim.unflaggedReason() != null) {
+            deductionCancellationService.markRequired(loan, reason, MANUAL_PAYOUT_ACTOR, "system");
+        }
     }
 
     private static ManualDisbursementResult inDoubt(String reference, String detail) {
@@ -317,7 +338,9 @@ public abstract class DisbursementService {
         return message.length() <= 255 ? message : message.substring(0, 252) + "...";
     }
 
-    private record Claim(Long loanId, Long attemptId, String reference, DisbursementRequest request) {
+    /** {@code unflaggedReason}: the cancellation reason the claim withdrew, or null if the loan was not flagged. */
+    private record Claim(Long loanId, Long attemptId, String reference, DisbursementRequest request,
+                         String unflaggedReason) {
     }
 
     private record Settled(Loan loan, ManualDisbursementResult result) {

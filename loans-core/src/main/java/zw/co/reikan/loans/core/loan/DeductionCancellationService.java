@@ -122,6 +122,33 @@ public class DeductionCancellationService {
                 "reason=" + reason + " ndasendaOutcome=" + ndasendaOutcome, null);
     }
 
+    /**
+     * A recovery payout is about to pay a loan flagged for cancellation, and a paid loan must keep
+     * its repayment. The flag comes off BEFORE InnBucks is called, under the payout's row lock, so the
+     * loan leaves the operator queue and nobody can record its deduction cancelled while money may be
+     * moving; the payout flags it again if nothing was paid or it cannot tell. Only mutates the loan.
+     *
+     * @return the reason the loan was flagged with, or null if it was not flagged
+     */
+    public String withdrawForPayout(Loan loan, String payoutReference) {
+        if (loan.getDeductionCancellationStatus() != DeductionCancellationStatus.REQUIRED) {
+            return null;
+        }
+        String reason = loan.getDeductionCancellationReason();
+        loan.setDeductionCancellationStatus(null);
+        loan.setDeductionCancellationReason(null);
+        loan.setDeductionCancellationRequestedAt(null);
+
+        String username = authService.getLoggedInUsername();
+        log.warn("DEDUCTION CANCELLATION WITHDRAWN: loan {} reference {} ec {} was flagged {} and is being paid by"
+                        + " manual payout {} - its deduction must stay; flagged again if that payout does not pay"
+                        + " (audited)",
+                loan.getId(), loan.getReference(), maskEcNumber(loan.getEcNumber()), reason, payoutReference);
+        audit(CANCELLATION_WITHDRAWN, loan, username, PORTAL_CHANNEL, DeductionCancellationStatus.REQUIRED, null,
+                "reason=" + reason + " manualPayout=" + payoutReference, null);
+        return reason;
+    }
+
     /** Loans whose deduction still has to be cancelled, oldest first. */
     @Transactional(readOnly = true)
     public List<DeductionCancellationDto> findRequired() {
