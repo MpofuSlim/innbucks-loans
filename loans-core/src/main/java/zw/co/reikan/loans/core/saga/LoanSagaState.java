@@ -53,7 +53,10 @@ public enum LoanSagaState {
                     // fast-path: bureau + credit can resolve between two reconciliation ticks
                     CREDIT_APPROVED, CREDIT_REJECTED, DISBURSEMENT_PENDING, DISBURSED, DISBURSEMENT_FAILED),
             CREDIT_ASSESSMENT_PENDING, Set.of(CREDIT_APPROVED, CREDIT_REJECTED,
-                    DISBURSEMENT_PENDING, DISBURSED, DISBURSEMENT_FAILED),
+                    DISBURSEMENT_PENDING, DISBURSED, DISBURSEMENT_FAILED,
+                    // Corrections: sagas opened before PROCESSING was read as unverified moved here on a
+                    // lodgement Ndasenda had not answered. Its answer, or a re-lodgement, must still land.
+                    SSB_VERIFICATION_PENDING, SSB_REJECTED, SSB_VERIFICATION_FAILED),
             CREDIT_APPROVED, Set.of(DISBURSEMENT_PENDING, DISBURSED, DISBURSEMENT_FAILED),
             DISBURSEMENT_PENDING, Set.of(DISBURSED, DISBURSEMENT_FAILED),
             DISBURSEMENT_FAILED, Set.of(COMPENSATED)
@@ -61,6 +64,11 @@ public enum LoanSagaState {
 
     public boolean isTerminal() {
         return TERMINAL.contains(this);
+    }
+
+    /** The states a saga never leaves. */
+    public static Set<LoanSagaState> terminalStates() {
+        return TERMINAL;
     }
 
     public boolean canTransitionTo(LoanSagaState next) {

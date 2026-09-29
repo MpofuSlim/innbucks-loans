@@ -5,6 +5,7 @@ import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanStatusSnapshot;
 
 /**
  * Pure projection of the EXISTING loan status columns onto the saga state
@@ -18,11 +19,18 @@ public final class LoanSagaStateResolver {
     }
 
     public static LoanSagaState resolve(Loan loan) {
-        LoanApprovalStatus approval = loan.getLoanApprovalStatus();
-        InternalApprovalStatus internal = loan.getInternalApprovalStatus();
-        LoanDisbursementStatus disbursement = loan.getDisbursementStatus();
-        LoanAccountStatus account = loan.getLoanAccountStatus();
+        return resolve(loan.getLoanApprovalStatus(), loan.getInternalApprovalStatus(),
+                loan.getLoanAccountStatus(), loan.getDisbursementStatus());
+    }
 
+    /** From the status columns alone, so the orchestrator can tell which loans moved without loading them. */
+    public static LoanSagaState resolve(LoanStatusSnapshot loan) {
+        return resolve(loan.loanApprovalStatus(), loan.internalApprovalStatus(),
+                loan.loanAccountStatus(), loan.disbursementStatus());
+    }
+
+    private static LoanSagaState resolve(LoanApprovalStatus approval, InternalApprovalStatus internal,
+                                         LoanAccountStatus account, LoanDisbursementStatus disbursement) {
         // Money outcomes trump everything.
         if (disbursement == LoanDisbursementStatus.SUCCESS) {
             return LoanSagaState.DISBURSED;
@@ -39,11 +47,14 @@ public final class LoanSagaStateResolver {
         if (approval == LoanApprovalStatus.FAILED) {
             return LoanSagaState.SSB_VERIFICATION_FAILED;
         }
-        if (approval == null || approval == LoanApprovalStatus.NEW) {
+        // PROCESSING is lodged and still awaiting Ndasenda's answer, which can yet be a refusal: not
+        // verified. Reading it as verified moved the saga to credit assessment, from where Ndasenda's
+        // refusal was an illegal transition, so the saga never finished.
+        if (approval == null || approval == LoanApprovalStatus.NEW || approval == LoanApprovalStatus.PROCESSING) {
             return LoanSagaState.SSB_VERIFICATION_PENDING;
         }
 
-        // SSB verified (PROCESSING / APPROVED / PAID) — credit assessment phase.
+        // SSB verified (APPROVED / PAID) — credit assessment phase.
         if (internal == InternalApprovalStatus.REJECTED) {
             return LoanSagaState.CREDIT_REJECTED;
         }

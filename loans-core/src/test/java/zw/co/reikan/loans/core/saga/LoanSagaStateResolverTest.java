@@ -6,6 +6,7 @@ import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
+import zw.co.reikan.loans.core.loan.LoanStatusSnapshot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,30 +40,60 @@ class LoanSagaStateResolverTest {
     }
 
     @Test
+    void lodgedButUnanswered_isStillSsbVerificationPending() {
+        // PROCESSING is lodged with Ndasenda and still awaiting its answer, which can be a refusal.
+        assertEquals(SSB_VERIFICATION_PENDING, LoanSagaStateResolver.resolve(
+                loan(LoanApprovalStatus.PROCESSING, null, null, null)));
+        assertEquals(SSB_VERIFICATION_PENDING, LoanSagaStateResolver.resolve(
+                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.PENDING, null, null)));
+    }
+
+    @Test
     void ssbVerified_flowsIntoCreditAssessment() {
         assertEquals(CREDIT_ASSESSMENT_PENDING, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.PENDING, null, null)));
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING, null, null)));
         assertEquals(CREDIT_REJECTED, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.REJECTED, null, null)));
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.REJECTED, null, null)));
+    }
+
+    @Test
+    void theStatusColumnsAloneResolveAsTheLoanDoes() {
+        for (LoanApprovalStatus approval : LoanApprovalStatus.values()) {
+            Loan loan = loan(approval, InternalApprovalStatus.APPROVED, LoanAccountStatus.CREATED,
+                    LoanDisbursementStatus.PENDING);
+            assertEquals(LoanSagaStateResolver.resolve(loan), LoanSagaStateResolver.resolve(new LoanStatusSnapshot(
+                    1L, approval, InternalApprovalStatus.APPROVED, LoanAccountStatus.CREATED,
+                    LoanDisbursementStatus.PENDING)));
+        }
+    }
+
+    @Test
+    void sagasMovedToCreditAssessmentOnAnUnansweredLodgement_canStillTakeNdasendasAnswer() {
+        assertTrue(CREDIT_ASSESSMENT_PENDING.canTransitionTo(SSB_REJECTED));
+        assertTrue(CREDIT_ASSESSMENT_PENDING.canTransitionTo(SSB_VERIFICATION_FAILED));
+        assertTrue(CREDIT_ASSESSMENT_PENDING.canTransitionTo(SSB_VERIFICATION_PENDING));
+        // Nothing past credit assessment ever rests on an unanswered lodgement.
+        assertFalse(CREDIT_APPROVED.canTransitionTo(SSB_REJECTED));
+        assertFalse(DISBURSEMENT_PENDING.canTransitionTo(SSB_VERIFICATION_PENDING));
     }
 
     @Test
     void creditApproved_thenAccountCreated_isDisbursementPending() {
         assertEquals(CREDIT_APPROVED, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.APPROVED,
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED,
                         LoanAccountStatus.PENDING, null)));
         assertEquals(DISBURSEMENT_PENDING, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.APPROVED,
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED,
                         LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)));
     }
 
     @Test
     void moneyOutcomesTrumpEverything() {
         assertEquals(DISBURSED, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.APPROVED,
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED,
                         LoanAccountStatus.CREATED, LoanDisbursementStatus.SUCCESS)));
         assertEquals(DISBURSEMENT_FAILED, LoanSagaStateResolver.resolve(
-                loan(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.APPROVED,
+                loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED,
                         LoanAccountStatus.CREATED, LoanDisbursementStatus.FAILED)));
     }
 

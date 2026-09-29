@@ -61,15 +61,23 @@ public class LoanSagaTransitionService {
 
         LoanSagaState from = saga.getCurrentState();
         if (!from.canTransitionTo(observed)) {
+            if (observed.name().equals(saga.getFlaggedAnomaly())) {
+                return; // already reported; the loan has not moved since
+            }
             log.warn("SAGA ANOMALY loan {}: illegal transition {} -> {} (recorded, not applied)",
                     loan.getId(), from, observed);
             auditService.recordTransition("LOAN_SAGA", String.valueOf(loan.getId()), SYSTEM_ACTOR,
                     "system", from.name(), observed.name(),
                     "ILLEGAL TRANSITION — flagged for operator review", correlationId(loan));
+            // Remembered so the next tick does not report it again: once a minute, forever, it
+            // buried the audit trail and the log under one stuck loan.
+            saga.setFlaggedAnomaly(observed.name());
+            sagaRepository.save(saga);
             return;
         }
 
         // ── FORWARD EXECUTION ───────────────────────────────────────────────
+        saga.setFlaggedAnomaly(null);
         saga.setCurrentState(observed);
         saga.setLastTransitionAt(LocalDateTime.now(ZoneOffset.UTC));
         sagaRepository.save(saga);
