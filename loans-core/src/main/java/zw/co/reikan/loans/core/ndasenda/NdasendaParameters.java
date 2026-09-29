@@ -19,4 +19,18 @@ public class NdasendaParameters {
     private String password;
     private String deductionCode;
     private String securityCode;
+    private Responses responses = new Responses();
+
+    /** How the deduction-response job reads back the answers to our lodgements. */
+    @Data
+    public static class Responses {
+        /**
+         * The furthest back, in days, one run reads responses. A run reads back to the oldest
+         * lodgement still awaiting Ndasenda, so this bounds what one stuck loan can cost every run.
+         */
+        private int lookbackDays = 45;
+
+        /** Days a lodgement may wait for Ndasenda's answer before it is reported overdue, once. */
+        private int overdueAfterDays = 7;
+    }
 }

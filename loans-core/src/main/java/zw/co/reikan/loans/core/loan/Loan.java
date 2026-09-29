@@ -277,6 +277,13 @@ public class Loan extends BaseEntity {
     @Column(name = "deduction_cancelled_at")
     private LocalDateTime deductionCancelledAt;
 
+    /**
+     * When the response job reported this loan as waiting too long for Ndasenda's answer; null until
+     * then. Kept so the alert is raised once rather than on every run.
+     */
+    @Column(name = "ndasenda_response_overdue_at")
+    private LocalDateTime ndasendaResponseOverdueAt;
+
     @Column(name = "created_by")
     private String createdBy;
 

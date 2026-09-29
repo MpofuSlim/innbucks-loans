@@ -11,4 +11,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByCorrelationIdOrderByIdAsc(String correlationId);
 
     List<AuditLog> findByEntityTypeAndEntityIdOrderByIdAsc(String entityType, String entityId);
+
+    boolean existsByEventTypeAndEntityTypeAndEntityId(String eventType, String entityType, String entityId);
 }

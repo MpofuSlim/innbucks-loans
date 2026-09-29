@@ -49,6 +49,15 @@ public class AuditService {
                 .correlationId(correlationId));
     }
 
+    /**
+     * Whether an event of this type is already on record for this entity, for a caller that reports a
+     * finding once rather than every time it sees it. A null id has no record to find.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasRecorded(String eventType, String entityType, String entityId) {
+        return entityId != null && repository.existsByEventTypeAndEntityTypeAndEntityId(eventType, entityType, entityId);
+    }
+
     public static String sha256Hex(byte[] payload) {
         if (payload == null) {
             return null;
