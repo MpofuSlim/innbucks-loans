@@ -11,8 +11,10 @@ import zw.co.reikan.loans.core.DisbursementService;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
+import zw.co.reikan.loans.core.loan.DisbursementType;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanRepository;
+import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
@@ -144,6 +146,41 @@ class LoanDisbursementStatusJobTest {
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(notificationService).sendSms(eq("1234567890"), text.capture());
         assertThat(text.getValue()).contains("wallet ending 7890").doesNotContain("1234567890");
+    }
+
+    @Test
+    void notifyCustomer_aMerchantLoanNamesTheMerchantNotTheCustomersWallet() {
+        testLoan.setMerchant(Merchant.builder().companyName("Mega Furnishers")
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber("0771000001").build());
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // The automatic payout used to tell every customer the money reached their own wallet,
+        // though a consumer-finance loan is paid to the merchant.
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        assertThat(text.getValue()).contains("has been paid to Mega Furnishers", "collect goods")
+                .doesNotContain("wallet", "0771000001");
+    }
+
+    @Test
+    void notifyCustomer_aCustomerWalletMerchantStillNamesTheWallet() {
+        testLoan.setMerchant(Merchant.builder().companyName("Innbucks")
+                .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET).build());
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        assertThat(text.getValue()).contains("wallet ending 7890").doesNotContain("collect goods");
     }
 
     @Test

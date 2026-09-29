@@ -97,7 +97,9 @@ public class LoanDisbursementStatusJob {
 
     private void notifyCustomer(Loan loan) {
         try {
-            final String message = DisbursementService.walletDisbursementSms(loan);
+            // A merchant loan paid the merchant: the customer is told where to collect the goods,
+            // not that the money reached their own wallet.
+            final String message = DisbursementService.disbursementSms(loan);
             notificationService.sendSms(loan.getMobileNumber(), message);
             log.info("Notification sent successfully to customer: {}", loan.getMobileNumber());
         } catch (Exception ex) {
