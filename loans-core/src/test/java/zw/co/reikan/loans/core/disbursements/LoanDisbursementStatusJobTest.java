@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.disbursements;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -118,6 +120,21 @@ class LoanDisbursementStatusJobTest {
         // Verify loan was updated correctly
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
         verify(testLoan).setDateDisbursed(any(LocalDateTime.class));
+    }
+
+    @Test
+    void notifyCustomer_namesTheWalletByItsLastFourDigitsOnly() {
+        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
+                .thenReturn(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // The SMS used to print the full wallet number back to the customer.
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        assertThat(text.getValue()).contains("wallet ending 7890").doesNotContain("1234567890");
     }
 
     @Test

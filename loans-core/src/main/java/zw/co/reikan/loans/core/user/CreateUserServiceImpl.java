@@ -40,8 +40,9 @@ public class CreateUserServiceImpl implements CreateUserService {
             "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
 
 
-    private static final String PASSWORD_SMS_TEMPLATE = """
-            %s, your account is ready. Username: %s, Temp password: %s. Please change password after login.""";
+    // No colons: the SMS gateway refuses ! : / ? " * ; in a body.
+    public static final String PASSWORD_SMS_TEMPLATE = """
+            %s, your account is ready. Username %s, Temp password %s. Please change password after login.""";
 
     private static final Logger logger = LoggerFactory.getLogger(CreateUserServiceImpl.class);
     private final MerchantRepository merchantRepository;
