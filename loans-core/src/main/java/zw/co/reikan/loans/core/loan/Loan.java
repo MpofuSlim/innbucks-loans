@@ -204,6 +204,15 @@ public class Loan extends BaseEntity {
     @Column(name = "booking_failure_kind")
     private BookingFailureKind bookingFailureKind;
 
+    /**
+     * When the InnBucks inquiry first answered that it holds no loan under this reference. Not
+     * acted on automatically: InnBucks has not confirmed what its inquiry returns for a missing
+     * loan, and marking a paid loan failed would open it to a second payout. It puts the loan in
+     * front of an operator instead. Cleared if a later inquiry finds the loan.
+     */
+    @Column(name = "booking_not_found_at")
+    private LocalDateTime bookingNotFoundAt;
+
     @Enumerated(EnumType.STRING)
     private LineOfBusiness lineOfBusiness;
 

@@ -319,13 +319,61 @@ class InnbucksLoanApiContractTest {
     }
 
     @Test
-    @DisplayName("apply: connect-refused surfaces as an exception rather than a false success")
+    @DisplayName("apply: connect-refused is NOT SENT — the booking never reached InnBucks, so the loan may be retried")
     void applyConnectRefused() {
         // Login is on the live WireMock; only the loan URLs point at a closed port.
         InnbucksServiceImpl refused = serviceAt("http://localhost:" + wireMock.port(), "http://localhost:1");
 
         assertThatThrownBy(() -> refused.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)))
-                .isInstanceOf(ResourceAccessException.class);
+                .isInstanceOf(BookingNotSentException.class)
+                .hasMessageContaining("could not connect to InnBucks");
+    }
+
+    @Test
+    @DisplayName("apply: a refused login is NOT SENT — no booking request is made, and it is not a refusal of the loan")
+    void refusedLoginIsNotSent() {
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withStatus(401)
+                .withBody("{\"message\":\"bad credentials\"}")));
+
+        assertThatThrownBy(() -> service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)))
+                .isInstanceOf(BookingNotSentException.class)
+                .hasMessageContaining("InnBucks login failed");
+        wireMock.verify(0, postRequestedFor(urlEqualTo(APPLY)));
+    }
+
+    @Test
+    @DisplayName("apply: a login outage (5xx) is NOT SENT, not an unknown booking outcome")
+    void loginOutageIsNotSent() {
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).willReturn(aResponse().withStatus(503)));
+
+        assertThatThrownBy(() -> service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)))
+                .isInstanceOf(BookingNotSentException.class);
+        wireMock.verify(0, postRequestedFor(urlEqualTo(APPLY)));
+    }
+
+    @Test
+    @DisplayName("apply: a login that fails on the 401 replay is NOT SENT — the first attempt's 401 was not processed")
+    void loginFailingOnReplayIsNotSent() {
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).inScenario("login").whenScenarioStateIs(STARTED)
+                .willReturn(okJson("{\"accessToken\":\"" + TOKEN + "\"}")).willSetStateTo("revoked"));
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).inScenario("login").whenScenarioStateIs("revoked")
+                .willReturn(aResponse().withStatus(403)));
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(aResponse().withStatus(401)));
+
+        assertThatThrownBy(() -> service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)))
+                .isInstanceOf(BookingNotSentException.class);
+        wireMock.verify(1, postRequestedFor(urlEqualTo(APPLY)));
+    }
+
+    @Test
+    @DisplayName("apply: a read timeout is NOT 'not sent' — InnBucks may have booked and paid; never re-sent")
+    void readTimeoutIsNotNotSent() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}").withFixedDelay(3_000)));
+
+        assertThatThrownBy(() -> service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)))
+                .isInstanceOf(ResourceAccessException.class)
+                .isNotInstanceOf(BookingNotSentException.class);
+        wireMock.verify(1, postRequestedFor(urlEqualTo(APPLY)));
     }
 
     @Test
@@ -345,5 +393,46 @@ class InnbucksLoanApiContractTest {
         wireMock.verify(getRequestedFor(urlEqualTo(INQUIRY + "000000042"))
                 .withHeader("Authorization", equalTo("Bearer " + TOKEN))
                 .withHeader("X-Api-Key", equalTo(API_KEY)));
+    }
+
+    @Test
+    @DisplayName("inquiry: responseCode 004 is reported as NOT FOUND — and still PENDING, never FAILED")
+    void inquiry004IsNotFound() {
+        // 004 = "not found" is the repo's existing model, NOT a code InnBucks has confirmed — see class doc.
+        wireMock.stubFor(get(urlEqualTo(INQUIRY + "000000042")).willReturn(okJson("""
+                {"responseCode":"004","responseDescription":"Record not found"}
+                """)));
+
+        LoanDisbursementStatusResponse status =
+                service.checkLoanDisbursementStatus(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET));
+
+        assertThat(status.isNotFound()).isTrue();
+        assertThat(status.getStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("inquiry: HTTP 404 is reported as NOT FOUND — and still PENDING")
+    void inquiry404IsNotFound() {
+        wireMock.stubFor(get(urlEqualTo(INQUIRY + "000000042")).willReturn(aResponse().withStatus(404)));
+
+        LoanDisbursementStatusResponse status =
+                service.checkLoanDisbursementStatus(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET));
+
+        assertThat(status.isNotFound()).isTrue();
+        assertThat(status.getStatus()).isEqualTo(LoanDisbursementStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("inquiry: a found loan is not NOT FOUND, and a 5xx says nothing about whether it exists")
+    void foundAndUnreachableAreNotNotFound() {
+        wireMock.stubFor(get(urlEqualTo(INQUIRY + "000000042")).willReturn(okJson("""
+                {"responseCode":"000","additionalData":{"loanDetails":{"status":"PROCESSING"}}}
+                """)));
+        assertThat(service.checkLoanDisbursementStatus(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET))
+                .isNotFound()).isFalse();
+
+        wireMock.stubFor(get(urlEqualTo(INQUIRY + "000000042")).willReturn(aResponse().withStatus(502)));
+        assertThat(service.checkLoanDisbursementStatus(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET))
+                .isNotFound()).isFalse();
     }
 }
