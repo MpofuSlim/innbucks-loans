@@ -3,6 +3,7 @@ package zw.co.reikan.loans.core.disbursements;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
@@ -10,6 +11,11 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.audit.AuditLog;
+import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
@@ -18,7 +24,9 @@ import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,12 +36,15 @@ import static org.mockito.Mockito.*;
 /**
  * A loan that fails at the InnBucks step must say WHY — and, because InnBucks books AND
  * pays on the one call, whether it DEFINITELY did not book: only a refusal may later be
- * recovered by a manual payout; anything ambiguous is held, never marked failed.
+ * recovered by a manual payout; anything ambiguous is held, never marked failed. A refusal
+ * also flags the payroll deduction Ndasenda already accepted (BOOKING_FAILED); an ambiguous
+ * outcome flags nothing, since the customer may hold the loan and the inquiry job settles it.
  */
 class LoanAccountCreationJobTest {
 
     private DisbursementService disbursementService;
     private LoanRepository loanRepository;
+    private AuditService auditService;
     private LoanDisbursementRepository loanDisbursementRepository;
     private LoanAccountCreationJob job;
     private Loan loan;
@@ -42,8 +53,10 @@ class LoanAccountCreationJobTest {
     void setUp() {
         disbursementService = mock(DisbursementService.class);
         loanRepository = mock(LoanRepository.class);
+        auditService = mock(AuditService.class);
         loanDisbursementRepository = mock(LoanDisbursementRepository.class);
         job = new LoanAccountCreationJob(disbursementService, loanRepository, mock(NotificationService.class),
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)),
                 loanDisbursementRepository);
 
         loan = Loan.builder()
@@ -51,6 +64,8 @@ class LoanAccountCreationJobTest {
                 .internalApprovalStatus(InternalApprovalStatus.APPROVED)
                 .loanAccountStatus(LoanAccountStatus.PENDING)
                 .merchant(Merchant.builder().accountNumber("123456789").build())
+                .batchNumber("BATCH-20260901-07")
+                .ecNumber("1234567A")
                 .build();
         loan.setId(42L);
         when(loanRepository.findByLoanApprovalStatusAndInternalApprovalStatusAndLoanAccountStatus(
@@ -195,6 +210,102 @@ class LoanAccountCreationJobTest {
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
         assertThat(loan.getBookingFailureKind()).isNull();
         assertThat(loan.getDisbursementStatusMessage()).isNull();
+    }
+
+    private static HttpClientErrorException clientError(HttpStatus status) {
+        return HttpClientErrorException.create(status, status.getReasonPhrase(), HttpHeaders.EMPTY,
+                new byte[0], StandardCharsets.UTF_8);
+    }
+
+    private AuditLog requiredAuditedOnce() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService).record(captor.capture());
+        return captor.getValue().build();
+    }
+
+    @Test
+    @DisplayName("an InnBucks 4xx refusal flags the lodged deduction BOOKING_FAILED, saved with the failure")
+    void refusalFlagsDeductionBookingFailed() {
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
+        verify(loanRepository).save(loan);
+        AuditLog audit = requiredAuditedOnce();
+        assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_REQUIRED");
+        assertThat(audit.getActorId()).isEqualTo("loan-account-creation-job");
+        assertThat(audit.getDetail()).contains("reason=BOOKING_FAILED").doesNotContain("1234567A");
+    }
+
+    @Test
+    @DisplayName("a non-2xx answer InnBucks gave without throwing is a refusal too")
+    void unsuccessfulResponseFlagsDeductionBookingFailed() {
+        when(disbursementService.createLoanAccount(loan)).thenReturn(LoanAccountCreationResponse.builder()
+                .reference("000000042").success(false).message("InnBucks answered HTTP 302").build());
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
+    }
+
+    @Test
+    @DisplayName("a timed-out booking is held for the inquiry job and flags nothing — the customer may hold the loan")
+    void timeoutIsHeldAndFlagsNothing() {
+        when(disbursementService.createLoanAccount(loan)).thenThrow(new ResourceAccessException(
+                "I/O error on POST request: Read timed out", new SocketTimeoutException("Read timed out")));
+
+        job.processLoanAccountCreation();
+
+        assertHeldForInquiry();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    @DisplayName("a 5xx, a 409 or a 408 may follow a booking that landed: AMBIGUOUS, nothing flagged")
+    void serverErrorsAndAmbiguousClientErrorsFlagNothing() {
+        for (Exception ex : List.of(
+                HttpServerErrorException.create(HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY,
+                        new byte[0], StandardCharsets.UTF_8),
+                clientError(HttpStatus.CONFLICT),
+                clientError(HttpStatus.REQUEST_TIMEOUT))) {
+            assertThat(LoanAccountCreationJob.classify(ex)).as(ex.getMessage()).isEqualTo(BookingFailureKind.AMBIGUOUS);
+        }
+        assertThat(LoanAccountCreationJob.classify(clientError(HttpStatus.UNAUTHORIZED)))
+                .isEqualTo(BookingFailureKind.REFUSED);
+        assertThat(LoanAccountCreationJob.classify(clientError(HttpStatus.UNPROCESSABLE_ENTITY)))
+                .isEqualTo(BookingFailureKind.REFUSED);
+
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.CONFLICT));
+        job.processLoanAccountCreation();
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    @DisplayName("a loan older than the saga's 30-day window is still flagged when its booking fails")
+    void oldLoanIsFlaggedToo() {
+        loan.setCreatedDate(LocalDateTime.now().minusDays(90));
+        when(disbursementService.createLoanAccount(loan)).thenThrow(clientError(HttpStatus.BAD_REQUEST));
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+    }
+
+    @Test
+    @DisplayName("a successful booking flags nothing")
+    void successFlagsNothing() {
+        when(disbursementService.createLoanAccount(loan)).thenReturn(LoanAccountCreationResponse.builder()
+                .reference("000000042").success(true).build());
+
+        job.processLoanAccountCreation();
+
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
     }
 
     @Test

@@ -3,8 +3,12 @@ package zw.co.reikan.loans.core;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.reikan.loans.core.ManualDisbursementResult.Outcome;
+import zw.co.reikan.loans.core.audit.AuditLog;
+import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.disbursements.BookingFailureKind;
 import zw.co.reikan.loans.core.disbursements.LoanAccountCreationResponse;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
@@ -12,6 +16,8 @@ import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatusResponse;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.reikan.loans.core.exception.NotFoundException;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
 import zw.co.reikan.loans.core.loan.DisbursementStatus;
 import zw.co.reikan.loans.core.loan.DisbursementType;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
@@ -24,6 +30,7 @@ import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -50,6 +57,7 @@ class ManualDisbursementTest {
     private LoanDisbursementRepository attemptRepository;
     private NotificationService notificationService;
     private PlatformTransactionManager transactionManager;
+    private AuditService auditService;
     private final List<LoanDisbursement> attempts = new ArrayList<>();
     private final List<DisbursementRequest> sent = new ArrayList<>();
     private Function<DisbursementRequest, DisbursementResponse> rail;
@@ -62,6 +70,9 @@ class ManualDisbursementTest {
         attemptRepository = mock(LoanDisbursementRepository.class);
         notificationService = mock(NotificationService.class);
         transactionManager = mock(PlatformTransactionManager.class);
+        auditService = mock(AuditService.class);
+        AuthService authService = mock(AuthService.class);
+        when(authService.getLoggedInUsername()).thenReturn("ops.admin");
 
         when(attemptRepository.save(any())).thenAnswer(inv -> {
             LoanDisbursement row = inv.getArgument(0);
@@ -75,7 +86,8 @@ class ManualDisbursementTest {
         when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
-        service = new DisbursementService(loanRepository, notificationService, attemptRepository, transactionManager) {
+        service = new DisbursementService(loanRepository, notificationService, attemptRepository,
+                new DeductionCancellationService(loanRepository, auditService, authService), transactionManager) {
             @Override
             public DisbursementResponse disburseFunds(DisbursementRequest request) {
                 sent.add(request);
@@ -356,5 +368,91 @@ class ManualDisbursementTest {
 
         assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
+    }
+
+    // --- Ndasenda deduction cancellation (#77) meets the recovery payout ---
+
+    private void flagged(String reason) {
+        loan.setBatchNumber("BATCH-20260901-07");
+        loan.setDeductionCancellationStatus(DeductionCancellationStatus.REQUIRED);
+        loan.setDeductionCancellationReason(reason);
+        loan.setDeductionCancellationRequestedAt(LocalDateTime.of(2026, 9, 20, 8, 30));
+    }
+
+    private List<AuditLog> audited() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, atLeast(0)).record(captor.capture());
+        return captor.getAllValues().stream().map(AuditLog.AuditLogBuilder::build).toList();
+    }
+
+    @Test
+    @DisplayName("refused: the deduction was recorded cancelled at Ndasenda — paid now, the loan has no repayment")
+    void refusedWhenTheDeductionWasCancelledAtNdasenda() {
+        loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
+        loan.setDeductionCancelledBy("ops.clerk");
+        assertRefusedBeforeAnythingWasSent("recorded as cancelled at Ndasenda by ops.clerk");
+    }
+
+    @Test
+    @DisplayName("a flagged loan leaves the cancellation queue BEFORE InnBucks is called, audited with the payout")
+    void theFlagComesOffBeforeTheCall() {
+        flagged(DeductionCancellationService.REASON_BOOKING_FAILED);
+        rail = request -> {
+            // Committed with the claim: no operator can record the deduction cancelled mid-payout.
+            assertThat(loan.getDeductionCancellationStatus()).isNull();
+            verify(transactionManager, times(1)).commit(any());
+            return answer(DisbursementStatus.SUCCESS, "Approved");
+        };
+
+        ManualDisbursementResult result = service.disburse(42L);
+
+        assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        assertThat(loan.getDeductionCancellationReason()).isNull();
+        assertThat(audited()).singleElement().satisfies(row -> {
+            assertThat(row.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_WITHDRAWN");
+            assertThat(row.getActorId()).isEqualTo("ops.admin");
+            assertThat(row.getDetail()).contains("reason=BOOKING_FAILED", "manualPayout=" + STABLE_REF);
+        });
+    }
+
+    @Test
+    @DisplayName("a refused payout puts the flag back with its original reason: nothing was paid")
+    void aRefusedPayoutReflagsTheDeduction() {
+        flagged(DeductionCancellationService.REASON_BOOKING_FAILED);
+        rail = request -> answer(DisbursementStatus.FAILED, "Insufficient float");
+
+        ManualDisbursementResult result = service.disburse(42L);
+
+        assertThat(result.getOutcome()).isEqualTo(Outcome.REFUSED);
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_FAILED");
+        assertThat(audited()).extracting(AuditLog::getEventType)
+                .containsExactly("DEDUCTION_CANCELLATION_WITHDRAWN", "DEDUCTION_CANCELLATION_REQUIRED");
+    }
+
+    @Test
+    @DisplayName("a payout in doubt is flagged BOOKING_IN_DOUBT — the customer may hold the money, so check first")
+    void aPayoutInDoubtIsFlaggedInDoubt() {
+        flagged(DeductionCancellationService.REASON_BOOKING_FAILED);
+        rail = request -> answer(DisbursementStatus.UNKNOWN, "Read timed out");
+
+        ManualDisbursementResult result = service.disburse(42L);
+
+        assertThat(result.getOutcome()).isEqualTo(Outcome.IN_DOUBT);
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        assertThat(loan.getDeductionCancellationReason()).isEqualTo("BOOKING_IN_DOUBT");
+    }
+
+    @Test
+    @DisplayName("a loan that was never flagged is not flagged by its payout, whatever the outcome")
+    void anUnflaggedLoanStaysUnflagged() {
+        rail = request -> answer(DisbursementStatus.UNKNOWN, "Read timed out");
+
+        service.disburse(42L);
+
+        assertThat(loan.getDeductionCancellationStatus()).isNull();
+        verifyNoInteractions(auditService);
     }
 }

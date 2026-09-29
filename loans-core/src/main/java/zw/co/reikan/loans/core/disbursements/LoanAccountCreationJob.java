@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientResponseException;
 import zw.co.reikan.loans.core.DisbursementService;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanDisbursementRepository;
@@ -24,9 +25,12 @@ import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
 @Profile("scheduled-tasks")
 public class LoanAccountCreationJob {
 
+    static final String SYSTEM_ACTOR = "loan-account-creation-job";
+
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
+    private final DeductionCancellationService deductionCancellationService;
     private final LoanDisbursementRepository loanDisbursementRepository;
 
     /**
@@ -128,6 +132,8 @@ public class LoanAccountCreationJob {
         loan.setDisbursementReference(response.getReference());
         loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: "
                 + (response.getMessage() == null ? "unsuccessful response" : response.getMessage())));
+        // InnBucks answered and refused, so no loan was booked; the deduction Ndasenda accepted is live.
+        flagDeduction(loan, DeductionCancellationService.REASON_BOOKING_FAILED);
     }
 
     private void handleAccountCreationException(Loan loan, Exception ex) {
@@ -139,6 +145,8 @@ public class LoanAccountCreationJob {
             loan.setLoanAccountStatus(LoanAccountStatus.FAILED);
             loan.setDisbursementStatus(LoanDisbursementStatus.FAILED);
             loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
+            // InnBucks said no, so nothing was booked; the deduction Ndasenda accepted is live.
+            flagDeduction(loan, DeductionCancellationService.REASON_BOOKING_FAILED);
             return;
         }
 
@@ -146,6 +154,8 @@ public class LoanAccountCreationJob {
         // read as "definitively not paid" and invite a recovery payout. Treat it as booked
         // instead: the inquiry job resolves a booking that landed, and one that did not
         // simply stays PENDING for an operator — never re-booked, never re-paid.
+        // Nothing is flagged for cancellation either: the customer may hold this loan, and the
+        // inquiry job flags BOOKING_FAILED if InnBucks later answers that it failed.
         log.error("Loan account creation outcome unknown for loan: {}; holding it for the inquiry job",
                 loan.getId(), ex);
         loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
@@ -162,12 +172,22 @@ public class LoanAccountCreationJob {
      * a 408 (it stopped reading, which is not a statement of what it did). A 401 reaching
      * here is the answer to our one re-authenticated replay, so it counts as a refusal.
      */
-    private static BookingFailureKind classify(Exception ex) {
+    static BookingFailureKind classify(Exception ex) {
         if (ex instanceof HttpClientErrorException http) {
             int status = http.getStatusCode().value();
             return status == 408 || status == 409 ? BookingFailureKind.AMBIGUOUS : BookingFailureKind.REFUSED;
         }
         return BookingFailureKind.AMBIGUOUS;
+    }
+
+    /**
+     * Flagged here, where the reason is known, rather than only when the saga compensates: the
+     * saga never sees a loan whose saga is already terminal (an SSB_VERIFICATION_FAILED lodgement
+     * that Ndasenda later accepted) or one created more than 30 days ago. Every loan here was
+     * accepted by Ndasenda, so its deduction is live. Saved with the loan by the caller.
+     */
+    private void flagDeduction(Loan loan, String reason) {
+        deductionCancellationService.markRequired(loan, reason, SYSTEM_ACTOR, "system");
     }
 
     /**

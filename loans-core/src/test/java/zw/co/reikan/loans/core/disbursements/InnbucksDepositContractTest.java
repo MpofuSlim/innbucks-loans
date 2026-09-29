@@ -14,6 +14,7 @@ import zw.co.reikan.loans.core.DisbursementRequest;
 import zw.co.reikan.loans.core.DisbursementResponse;
 import zw.co.reikan.loans.core.ManualDisbursementResult;
 import zw.co.reikan.loans.core.exception.DisbursementNotAllowedException;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.DisbursementStatus;
 import zw.co.reikan.loans.core.loan.DisbursementType;
 import zw.co.reikan.loans.core.loan.InternalApprovalStatus;
@@ -129,8 +130,9 @@ class InnbucksDepositContractTest {
         when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
-        return new InnbucksServiceImpl(loans, mock(NotificationService.class), attemptRepository, restTemplate,
-                params, new InnbucksAuthService(restTemplate, params), mock(PlatformTransactionManager.class));
+        return new InnbucksServiceImpl(loans, mock(NotificationService.class), attemptRepository,
+                mock(DeductionCancellationService.class), restTemplate, params,
+                new InnbucksAuthService(restTemplate, params), mock(PlatformTransactionManager.class));
     }
 
     private static DisbursementRequest customerDeposit() {

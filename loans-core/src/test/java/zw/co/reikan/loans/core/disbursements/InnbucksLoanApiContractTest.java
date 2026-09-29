@@ -12,6 +12,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Address;
 import zw.co.reikan.loans.core.loan.DisbursementType;
 import zw.co.reikan.loans.core.loan.EmploymentDetail;
@@ -104,7 +105,8 @@ class InnbucksLoanApiContractTest {
 
         InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
         return new InnbucksServiceImpl(mock(LoanRepository.class), mock(NotificationService.class),
-                mock(LoanDisbursementRepository.class), restTemplate, params, auth,
+                mock(LoanDisbursementRepository.class), mock(DeductionCancellationService.class),
+                restTemplate, params, auth,
                 mock(PlatformTransactionManager.class));
     }
 
