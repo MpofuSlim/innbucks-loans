@@ -21,7 +21,7 @@ class LoansApiApplicationTests {
     void contextLoads() {
     }
 
-    /** On a fresh database too: the sequence is created at boot, not by a manual script. */
+    /** On a fresh database too: the sequence is created by the migrations, not by a manual script. */
     @Test
     void publicLoanReferencesCanBeDrawn() {
         assertThat(publicReferenceService.next()).matches("LN-\\d{4}-\\d{5,}");

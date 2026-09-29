@@ -8,8 +8,8 @@ import lombok.NoArgsConstructor;
 import jakarta.persistence.*;
 
 @Data
-@Table(name = "loan_batch", indexes = {
-        @Index(name = "uq_loan_batch_batch_number", columnList = "batch_number", unique = true)
+@Table(name = "loan_batches", indexes = {
+        @Index(name = "uq_loan_batches_batch_number", columnList = "batch_number", unique = true)
 })
 @Builder
 @AllArgsConstructor

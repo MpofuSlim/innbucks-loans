@@ -12,8 +12,8 @@ import zw.co.innbucks.loans.core.loan.DisbursementType;
 import jakarta.persistence.*;
 
 @Data
-@Table(name = "merchant", indexes = {
-        @Index(name = "idx_merchant_code", columnList = "merchantCode")
+@Table(name = "merchants", indexes = {
+        @Index(name = "idx_merchants_merchant_code", columnList = "merchant_code")
 })
 @Builder
 @AllArgsConstructor
@@ -41,7 +41,7 @@ public class Merchant extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private CommissionStructure commissionStructure;
 
-    @Column(name = "physical_addess")
+    @Column(name = "physical_address")
     private String physicalAddress;
 
     @Column(name = "contact_person_name")

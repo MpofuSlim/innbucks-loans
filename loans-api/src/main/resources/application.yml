@@ -20,24 +20,19 @@ spring:
       data-source-properties:
         stringtype: unspecified
 
+  # The schema is Flyway's (loans-core db/migration); Hibernate only checks it
+  # matches. JpaSchemaConfig enforces validate and the naming in code, because
+  # /app/config replaces this file on the box.
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     open-in-view: false
-    defer-datasource-initialization: false
     properties:
       hibernate:
         jdbc:
           batch_size: 1000
-        hbm2dll:
-          create_namespaces: true
-        globally_quoted_identifiers: true
-      org:
-        hibernate:
-          envers:
-            default_schema: audit
 
   # --- @Scheduled jobs: ONE thread, deliberately --------------------------
   # Boot's default, pinned so it is not raised without redoing this audit. A

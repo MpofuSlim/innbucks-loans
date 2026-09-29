@@ -13,8 +13,8 @@ import zw.co.innbucks.loans.core.loan.BaseEntity;
 import zw.co.innbucks.loans.core.user.User;
 
 @Entity
-@Table(name = "channel", indexes = {
-        @Index(name = "idx_channel_id", columnList = "channel_id")
+@Table(name = "channels", indexes = {
+        @Index(name = "idx_channels_channel_id", columnList = "channel_id")
 })
 @Data
 @Builder

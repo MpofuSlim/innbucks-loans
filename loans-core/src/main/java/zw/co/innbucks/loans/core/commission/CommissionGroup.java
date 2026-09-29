@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
-@Table(name = "commission_group")
+@Table(name = "commission_groups")
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
