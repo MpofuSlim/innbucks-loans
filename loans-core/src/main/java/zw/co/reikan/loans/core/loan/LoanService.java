@@ -22,5 +22,15 @@ public interface LoanService {
 
     List<LoanDto> findLoansForMerchant(FindLoansInternalRequest request);
 
+    /** {@link #findLoans} narrowed to what the caller may read. */
+    List<LoanDto> findLoans(FindLoansRequest findLoansRequest, LoanReadScope scope);
+
+    /** @throws zw.co.reikan.loans.core.exception.NotFoundException when no loan has this id */
     LoanDto getLoan(Long id);
+
+    /**
+     * @throws zw.co.reikan.loans.core.exception.NotFoundException when no loan has this id
+     *         OR it lies outside the scope — deliberately indistinguishable
+     */
+    LoanDto getLoan(Long id, LoanReadScope scope);
 }
