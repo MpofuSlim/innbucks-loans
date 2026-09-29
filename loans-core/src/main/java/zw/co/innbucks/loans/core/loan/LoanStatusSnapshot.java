@@ -49,8 +49,8 @@ public record LoanStatusSnapshot(Long id,
             return true;
         }
         // Covers both SSB-approved phases: credit still to decide, and credit
-        // approved with the account/disbursement still running (checked above).
-        return loanApprovalStatus == LoanApprovalStatus.APPROVED
-                && internalApprovalStatus != InternalApprovalStatus.REJECTED;
+        // approved with the account/disbursement still running (a credit refusal
+        // and a settled disbursement are both checked above).
+        return loanApprovalStatus == LoanApprovalStatus.APPROVED;
     }
 }

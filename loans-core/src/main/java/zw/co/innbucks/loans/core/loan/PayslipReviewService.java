@@ -139,7 +139,7 @@ public class PayslipReviewService {
         if (outcome == PayslipReviewStatus.CONFIRMED) {
             // The same decline as any credit rejection: nothing says why.
             notificationService.sendSms(loan.getMobileNumber(),
-                    String.format(SmsMessages.REJECTED_LOAN, loan.getReference(), loan.getDisbursedAmount()));
+                    String.format(SmsMessages.REJECTED_LOAN, loan.getReference()));
         }
         return reviewed.view();
     }
