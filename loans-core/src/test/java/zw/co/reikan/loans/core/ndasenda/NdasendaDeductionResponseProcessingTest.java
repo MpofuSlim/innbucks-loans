@@ -161,7 +161,7 @@ class NdasendaDeductionResponseProcessingTest {
     }
 
     @Test
-    @DisplayName("matched rejection: loan updated, SMS sent and saved exactly as before — nothing audited")
+    @DisplayName("matched rejection: loan updated, fixed decline SMS sent, reason kept on the loan — nothing audited")
     void matchedRejectionIsUnchanged() {
         Loan loan = loan(LoanApprovalStatus.PROCESSING);
 
@@ -171,9 +171,11 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getApprovalReference()).isEqualTo("ND-7001");
         assertThat(loan.getDateApproved()).isNotNull();
         assertThat(loan.getLoanAccountStatus()).isNull();
+        // The customer gets the fixed decline; Ndasenda's reason stays on the loan for staff.
+        assertThat(loan.getLoanStatusMessage()).isEqualTo("Insufficient net salary");
         verify(notificationService).sendSms("0772123123",
                 "We regret to inform you that your loan application with ref # 000000042 has been declined. "
-                        + "Insufficient net salary. Contact Innbucks for more Info");
+                        + "Please contact Innbucks for more information.");
         verify(loanRepository).save(loan);
         verifyNoInteractions(auditService);
     }
