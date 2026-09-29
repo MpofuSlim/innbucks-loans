@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -215,13 +216,16 @@ class LoggingInterceptorTest {
         logger.setLevel(Level.DEBUG);
         WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
         wireMock.start();
-        try {
+        // The template comes from RestConfig's bean exactly as the application wires it, whatever
+        // collaborators that bean method takes, rather than from a direct call pinned to its signature.
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
+                RestConfig.class, HttpClientConfig.class, LoggingInterceptor.class)) {
             wireMock.stubFor(post(urlEqualTo("/connect/token")).willReturn(aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody("{\"access_token\":\"" + ACCESS_TOKEN + "\",\"refresh_token\":\"refresh-5\","
                             + "\"expires_in\":3600}")));
-            RestTemplate restTemplate = new RestConfig().restTemplate(interceptor);
+            RestTemplate restTemplate = context.getBean(RestTemplate.class);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
