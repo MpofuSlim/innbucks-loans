@@ -2,6 +2,7 @@ package zw.co.reikan.loans.core.ndasenda;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
@@ -23,6 +24,7 @@ import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -338,8 +340,15 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             loan.setLoanAccountStatus(LoanAccountStatus.PENDING);
         }
 
+        // Ndasenda's reason is for staff: the customer's decline only tells
+        // them to contact us, so the reason has to be on the loan when they do.
+        if (LoanApprovalStatus.REJECTED == outcome && StringUtils.isNotBlank(response.getMessage())) {
+            loan.setLoanStatusMessage(StringUtils.left(response.getMessage(), 250));
+        }
+
+        // Reference and amount only — upstream text never reaches the customer.
         final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
-                String.format("%09d", loan.getId()), loan.getDisbursedAmount(), response.getMessage());
+                String.format("%09d", loan.getId()), loan.getDisbursedAmount());
 
         //Do not send notification for SSB approval. SMS will be sent on internal approval
         if (LoanApprovalStatus.APPROVED != outcome) {
@@ -439,8 +448,13 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     }
 
 
+    /**
+     * Rounds to the cent rather than truncating ({@code intValue()} dropped any
+     * sub-cent remainder: 10.005 went out as 1000), and converts exactly, so an
+     * amount too large for an int fails here instead of wrapping to a wrong one.
+     */
     private int toCents(BigDecimal amount) {
-        return amount.multiply(CENTS).intValue();
+        return amount.multiply(CENTS).setScale(0, RoundingMode.HALF_UP).intValueExact();
     }
 
     private String formatDate(LocalDate localDate) {

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import zw.co.reikan.loans.core.LoanResponse;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
@@ -18,6 +19,7 @@ import zw.co.reikan.loans.core.commission.CommissionGroup;
 import zw.co.reikan.loans.core.commission.CommissionStructure;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
@@ -85,10 +87,41 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
+    public List<LoanDto> findLoans(FindLoansRequest request, LoanReadScope scope) {
+        if (scope.platformWide()) {
+            return findLoans(request);
+        }
+        // The same merchant + originator predicates MerchantController's search uses.
+        return findLoansForMerchant(FindLoansInternalRequest.builder()
+                .merchantCode(scope.merchantCode())
+                .userId(scope.userId())
+                .approvalStatus(request.getApprovalStatus())
+                .internalApprovalStatus(request.getInternalApprovalStatus())
+                .disbursementStatus(request.getDisbursementStatus())
+                .fromDate(request.getFromDate())
+                .toDate(request.getToDate())
+                .build());
+    }
+
+    @Override
     public LoanDto getLoan(Long id) {
         return loanRepository.findById(id)
                 .map(loanMapper::fromLoan)
-                .orElseThrow();
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
+    }
+
+    @Override
+    public LoanDto getLoan(Long id, LoanReadScope scope) {
+        if (scope.platformWide()) {
+            return getLoan(id);
+        }
+        // Scope applied IN the query, so an out-of-scope loan is simply not found —
+        // the same 404 as a missing id, which keeps this from being an existence oracle.
+        return loanRepository.findOne(where(withId(id))
+                        .and(withMerchantCode(scope.merchantCode()))
+                        .and(createdByUserOrAsAgent(scope.userId())))
+                .map(loanMapper::fromLoan)
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
     }
 
 
@@ -111,7 +144,12 @@ public class LoanServiceImpl implements LoanService {
         return localDate.atTime(LocalTime.MAX);
     }
 
+    /**
+     * Transactional so the applicant lock below spans the pending check AND the
+     * insert. The bulk path joins its per-item REQUIRES_NEW transaction here.
+     */
     @Override
+    @Transactional
     public LoanResponse requestLoan(LoanRequest loanRequest) {
 
         log.info("Requesting loan approval: {}", loanRequest);
@@ -127,7 +165,10 @@ public class LoanServiceImpl implements LoanService {
         // (@Valid on the controller). What remains here are the business rules that need
         // runtime context: EC-number format, the 18+ age rule, and (in calculate) the
         // DB-driven amount/tenor ranges and the pending-loan check.
-        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber());
+
+        // Stored upper-cased, as the national ID already is, so the pending check
+        // compares like with like ("1234567a" and "1234567A" are one person).
+        final String formattedEcNumber = Utils.trimSpecialCharacters(loanRequest.getEcnumber()).toUpperCase();
 
         if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
             throw new IllegalArgumentException("EC Number is not valid");
@@ -140,9 +181,11 @@ public class LoanServiceImpl implements LoanService {
 
         final String formattedIdNumber = Utils.trimSpecialCharacters(loanRequest.getNationalId()).toUpperCase();
 
-        boolean hasPendingLoan = findPendingLoan(formattedEcNumber).isPresent();
+        lockApplicant(formattedEcNumber, formattedIdNumber);
+        Optional<Long> pendingLoanId = findPendingLoan(formattedEcNumber, formattedIdNumber);
 
-        if (hasPendingLoan) {
+        if (pendingLoanId.isPresent()) {
+            log.info("Refusing loan application: loan {} for this applicant is still in flight", pendingLoanId.get());
             return LoanResponse.builder()
                     .loanApprovalStatus(LoanApprovalStatus.REJECTED)
                     .message("You have a pending loan application.")
@@ -262,9 +305,40 @@ public class LoanServiceImpl implements LoanService {
         return user.getCommissionGroup();
     }
 
-    public Optional<Loan> findPendingLoan(String ecNumber) {
-        return loanRepository.findByEcNumberAndLoanApprovalStatus(Utils.trimSpecialCharacters(ecNumber).toUpperCase(),
-                LoanApprovalStatus.NEW);
+    /**
+     * Serialises applications for the same person across every node. Without it
+     * two concurrent submissions both read "nothing pending" before either has
+     * inserted, and both are lodged with Ndasenda. Transaction-scoped, so it is
+     * held until {@link #requestLoan}'s insert commits. Always EC then national
+     * ID, so every submission takes the two in the same order.
+     */
+    private void lockApplicant(String ecNumber, String nationalIdNumber) {
+        loanRepository.lockApplicant("loan-application:ec:" + ecNumber);
+        if (!nationalIdNumber.isEmpty()) {
+            loanRepository.lockApplicant("loan-application:nid:" + nationalIdNumber);
+        }
+    }
+
+    /**
+     * The id of this applicant's application still in flight, if any — see
+     * {@link LoanStatusSnapshot#isInFlight()} for what that means. Matched by EC
+     * number and then by national ID, so the same person under a mistyped EC
+     * number is caught too. A national ID that normalises to nothing identifies
+     * nobody, so it is not matched against other blank rows.
+     */
+    private Optional<Long> findPendingLoan(String ecNumber, String nationalIdNumber) {
+        Optional<Long> pending = firstInFlight(loanRepository.findStatusesByEcNumber(ecNumber));
+        if (pending.isEmpty() && !nationalIdNumber.isEmpty()) {
+            pending = firstInFlight(loanRepository.findStatusesByNationalId(nationalIdNumber));
+        }
+        return pending;
+    }
+
+    private static Optional<Long> firstInFlight(List<LoanStatusSnapshot> loans) {
+        return loans.stream()
+                .filter(LoanStatusSnapshot::isInFlight)
+                .map(LoanStatusSnapshot::id)
+                .findFirst();
     }
 
     @Override
@@ -300,7 +374,7 @@ public class LoanServiceImpl implements LoanService {
                 .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
 
         BigDecimal monthlyInterestRate = new BigDecimal(params.get(MONTHLY_INTEREST_RATE));
-        BigDecimal interestRate = monthlyInterestRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal interestRate = percentToFraction(monthlyInterestRate);
 
         BigDecimal powerValue = interestRate.add(ONE).pow(request.getTenor());
 
@@ -315,7 +389,7 @@ public class LoanServiceImpl implements LoanService {
 
         BigDecimal commissionRate = new BigDecimal(params.get(COMMISSION_RATE));
 
-        BigDecimal commissionRateToUse = commissionRate.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal commissionRateToUse = percentToFraction(commissionRate);
 
         BigDecimal grossedMonthlyPayment = installment.divide(ONE.subtract(commissionRateToUse), 2, RoundingMode.HALF_UP);
 
@@ -359,11 +433,24 @@ public class LoanServiceImpl implements LoanService {
     }
 
     private BigDecimal getCommissionAmount(BigDecimal totalCommissionAmount, boolean percentage, BigDecimal commissionAmount) {
-        return percentage ? totalCommissionAmount.multiply(commissionAmount.divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP)) : commissionAmount;
+        // The share is a rate (exact); the amount it produces is money (to the cent).
+        return percentage
+                ? totalCommissionAmount.multiply(percentToFraction(commissionAmount)).setScale(2, RoundingMode.HALF_UP)
+                : commissionAmount;
+    }
+
+    /**
+     * Percent to fraction ("2.5" -> 0.025), exact: dividing by 100 always
+     * terminates, so no scale is needed and none may be imposed. This used to
+     * round the FRACTION to two decimals, which priced 2.5% as 3% and 3.75% as
+     * 4%. Rates stay exact; only the money amounts they produce are rounded.
+     */
+    private static BigDecimal percentToFraction(BigDecimal percent) {
+        return percent.divide(ONE_HUNDRED);
     }
 
     private void amortizeLoan(LoanDetails loanDetails) {
-        BigDecimal interestRate = loanDetails.getInterestRate().divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal interestRate = percentToFraction(loanDetails.getInterestRate());
         BigDecimal remainingPrincipal = loanDetails.getPrincipal();
 
         for (int paymentNumber = 1; paymentNumber <= loanDetails.getTenor(); paymentNumber++) {
@@ -395,7 +482,7 @@ public class LoanServiceImpl implements LoanService {
         }
 
         if (LoanAmountType.NET_OF_FEES == request.getType()) {
-            return request.getAmount().divide(ONE.subtract(adminFeeRate.divide(ONE_HUNDRED)), 2, RoundingMode.HALF_UP);
+            return request.getAmount().divide(ONE.subtract(percentToFraction(adminFeeRate)), 2, RoundingMode.HALF_UP);
         }
         return request.getAmount();
     }

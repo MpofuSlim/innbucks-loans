@@ -50,6 +50,18 @@ public class MsisdnUtil {
         return trimmedMsisdn.substring(trimmedMsisdn.length() - MINIMUM_MSISDN_LENGTH);
     }
 
+    /**
+     * The last four digits of {@code msisdn} — how customer-facing text names a
+     * wallet ("wallet ending 6983") without printing the whole number. Non-digits
+     * are ignored, so every stored spelling ({@code 0782606983},
+     * {@code +263782606983}) masks alike.
+     */
+    public static String lastFourDigits(final String msisdn) {
+
+        final String digits = msisdn == null ? "" : msisdn.replaceAll("\\D", "");
+        return digits.length() <= 4 ? digits : digits.substring(digits.length() - 4);
+    }
+
     public static String formatMsisdnInternational(String msisdn) {
         return INTERNATIONAL_CODE + formatMsisdnMinimum(msisdn);
     }

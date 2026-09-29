@@ -213,6 +213,34 @@ class InnbucksLoanApiContractTest {
     }
 
     @Test
+    @DisplayName("apply: amounts round to the cent — a sub-cent remainder is not truncated away")
+    void applyRoundsAmountsToTheCent() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        Loan loan = collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        loan.setPrincipal(new BigDecimal("500.005"));
+        loan.getEmploymentDetail().setGrossSalary(new BigDecimal("1500.554"));
+
+        service.createLoanAccount(loan);
+
+        // 500.005 -> 50000.5 -> 50001 (intValue() truncated it to 50000);
+        // 1500.554 -> 150055.4 -> 150055 — rounding, not a ceiling.
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.amount", equalTo("50001")))
+                .withRequestBody(matchingJsonPath("$.grossSalary", equalTo("150055"))));
+    }
+
+    @Test
+    @DisplayName("apply: an amount too large for the wire's int is refused before sending, never wrapped")
+    void applyRefusesAnAmountThatOverflows() {
+        Loan loan = collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET);
+        // 21,474,836.48 is 2^31 cents; intValue() wrapped it to -2147483648.
+        loan.setPrincipal(new BigDecimal("21474836.48"));
+
+        assertThatThrownBy(() -> service.createLoanAccount(loan)).isInstanceOf(ArithmeticException.class);
+        wireMock.verify(0, postRequestedFor(urlEqualTo(APPLY)));
+    }
+
+    @Test
     @DisplayName("apply: sends nothing the collection does not — no numberOfChildren, no settlement for a customer wallet")
     void applySendsNoFieldOutsideTheCollection() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));

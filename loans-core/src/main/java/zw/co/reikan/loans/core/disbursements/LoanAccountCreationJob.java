@@ -16,7 +16,6 @@ import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
 
-import static zw.co.reikan.loans.core.DisbursementService.SMS_MSG;
 import static zw.co.reikan.loans.core.loan.LoanApprovalStatus.APPROVED;
 
 @Service
@@ -88,12 +87,7 @@ public class LoanAccountCreationJob {
 
     private void notifyCustomer(Loan loan) {
         try {
-            final String message = String.format(
-                    SMS_MSG,
-                    loan.getDisbursedAmount(),
-                    loan.getReference(),
-                    loan.getMobileNumber()
-            );
+            final String message = DisbursementService.walletDisbursementSms(loan);
             notificationService.sendSms(loan.getMobileNumber(), message);
             log.info("Notification sent successfully to customer: {}", loan.getMobileNumber());
         } catch (Exception ex) {

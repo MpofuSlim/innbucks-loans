@@ -17,6 +17,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -28,16 +29,18 @@ class InternalApprovalServiceImplTest {
 
     private LoanRepository loanRepository;
     private AuditService auditService;
+    private NotificationService notificationService;
     private InternalApprovalServiceImpl service;
 
     @BeforeEach
     void setUp() {
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
+        notificationService = mock(NotificationService.class);
         AuthService authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("credit.manager");
         service = new InternalApprovalServiceImpl(loanRepository, authService,
-                mock(LoanMapper.class), mock(NotificationService.class),
+                mock(LoanMapper.class), notificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService));
     }
 
@@ -49,10 +52,17 @@ class InternalApprovalServiceImplTest {
 
     private Loan given(LoanApprovalStatus payroll, InternalApprovalStatus internal) {
         Loan loan = Loan.builder().loanApprovalStatus(payroll).internalApprovalStatus(internal)
-                .batchNumber("BATCH-20260901-07").ecNumber("1234567A").build();
+                .batchNumber("BATCH-20260901-07").ecNumber("1234567A")
+                .mobileNumber("+263782606983").build();
         loan.setId(42L);
         when(loanRepository.findById(42L)).thenReturn(Optional.of(loan));
         return loan;
+    }
+
+    private String sentSms() {
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendSms(eq("+263782606983"), text.capture());
+        return text.getValue();
     }
 
     @Test
@@ -146,5 +156,33 @@ class InternalApprovalServiceImplTest {
 
         assertThat(response.getMessage()).isEqualTo("Approved successfully");
         verify(loanRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("a rejection answers with the decision recorded, not \"Approved successfully\"")
+    void rejectionNamesTheDecision() {
+        given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        InternalApprovalResponse response = service.approveLoan(decide(InternalApprovalStatus.REJECTED), 42L);
+
+        assertThat(response.getMessage()).isEqualTo("Rejected successfully");
+    }
+
+    @Test
+    @DisplayName("the reviewer's comment is kept on the loan and never sent to the customer")
+    void rejectionSmsCarriesNoReviewerComment() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        InternalApprovalRequest request = decide(InternalApprovalStatus.REJECTED);
+        request.setComment("Payslip looks edited: DTI 62%, do not re-apply!");
+
+        service.approveLoan(request, 42L);
+
+        assertThat(loan.getInternalApprovalComment()).isEqualTo("Payslip looks edited: DTI 62%, do not re-apply!");
+        assertThat(sentSms())
+                .isEqualTo("We regret to inform you that your loan application with ref # 000000042 "
+                        + "has been declined. Please contact Innbucks for more information.")
+                .doesNotContain("Payslip");
     }
 }
