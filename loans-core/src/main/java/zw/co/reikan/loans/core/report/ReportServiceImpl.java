@@ -14,6 +14,7 @@ import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse;
 import zw.co.reikan.loans.core.api.LoanPortfolioReportResponse.StatusBreakdown;
 import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse;
 import zw.co.reikan.loans.core.api.MerchantPerformanceReportResponse.MerchantPerformance;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.exception.ValidationException;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
 import zw.co.reikan.loans.core.loan.LoanRepository;
@@ -23,7 +24,6 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +33,7 @@ public class ReportServiceImpl implements ReportService {
 
     private final LoanRepository loanRepository;
     private final MerchantRepository merchantRepository;
+    private final MarketTimeZone marketTimeZone;
 
     @Override
     @Transactional(readOnly = true)
@@ -42,7 +43,8 @@ public class ReportServiceImpl implements ReportService {
         List<DailyDisbursement> days = new ArrayList<>();
         long totalCount = 0;
         BigDecimal totalDisbursed = BigDecimal.ZERO;
-        for (Object[] row : loanRepository.disbursementsByDay(range.start(), range.end(), code)) {
+        for (Object[] row : loanRepository.disbursementsByDay(range.start(), range.end(), code,
+                marketTimeZone.zone().getId())) {
             long count = asLong(row[1]);
             BigDecimal amount = asBigDecimal(row[2]);
             days.add(new DailyDisbursement(asLocalDate(row[0]), count, amount));
@@ -117,14 +119,19 @@ public class ReportServiceImpl implements ReportService {
         return new AgentPerformanceReportResponse(range.from(), range.to(), agents);
     }
 
-    /** Defaults: month-to-date. Bounds are inclusive whole days. */
+    /**
+     * Defaults: month-to-date. Bounds are inclusive whole days of the MARKET's calendar, converted to
+     * the UTC the columns hold: a report of the 1st in Harare runs from 22:00 UTC on the last day of
+     * the previous month, not from UTC midnight, which counted two hours of the previous day's loans.
+     */
     private Range resolveRange(LocalDate fromDate, LocalDate toDate) {
-        LocalDate from = fromDate == null ? LocalDate.now().withDayOfMonth(1) : fromDate;
-        LocalDate to = toDate == null ? LocalDate.now() : toDate;
+        LocalDate today = marketTimeZone.today();
+        LocalDate from = fromDate == null ? today.withDayOfMonth(1) : fromDate;
+        LocalDate to = toDate == null ? today : toDate;
         if (from.isAfter(to)) {
             throw new ValidationException("fromDate must not be after toDate");
         }
-        return new Range(from, to);
+        return new Range(from, to, marketTimeZone.startOfDayUtc(from), marketTimeZone.endOfDayUtc(to));
     }
 
     /**
@@ -142,14 +149,8 @@ public class ReportServiceImpl implements ReportService {
         return code;
     }
 
-    private record Range(LocalDate from, LocalDate to) {
-        LocalDateTime start() {
-            return from.atStartOfDay();
-        }
-
-        LocalDateTime end() {
-            return to.atTime(LocalTime.MAX);
-        }
+    /** {@code from}/{@code to} are the market days reported on; {@code start}/{@code end} the UTC bounds queried. */
+    private record Range(LocalDate from, LocalDate to, LocalDateTime start, LocalDateTime end) {
     }
 
     private static long asLong(Object value) {

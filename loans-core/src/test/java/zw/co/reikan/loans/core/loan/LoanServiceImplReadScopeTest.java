@@ -15,6 +15,7 @@ import org.springframework.data.jpa.domain.Specification;
 import zw.co.reikan.loans.core.api.FindLoansRequest;
 import zw.co.reikan.loans.core.auth.AuthService;
 import zw.co.reikan.loans.core.channel.ChannelRepository;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -52,7 +53,7 @@ class LoanServiceImplReadScopeTest {
         loanMapper = mock(LoanMapper.class);
         service = new LoanServiceImpl(loanRepository, mock(ParameterService.class), loanMapper,
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
-                mock(Validator.class));
+                mock(Validator.class), new MarketTimeZone("ZW"));
 
         root = mock(Root.class, RETURNS_DEEP_STUBS);
         cb = mock(CriteriaBuilder.class);

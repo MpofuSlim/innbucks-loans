@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
@@ -65,7 +66,7 @@ class NdasendaDeductionResponseProcessingTest {
         auditService = mock(AuditService.class);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthServiceImpl.class), props,
                 loanRepository, mock(LoanBatchService.class), notificationService, auditService,
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
     }
 
     private static NdasendaDeduction deduction(String id, String reference, NdasendaDeductionStatus status) {

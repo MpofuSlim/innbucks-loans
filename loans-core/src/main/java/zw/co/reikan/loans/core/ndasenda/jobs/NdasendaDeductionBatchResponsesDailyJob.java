@@ -9,6 +9,7 @@ import zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
 import zw.co.reikan.loans.core.ndasenda.ResponseSweepResult;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @RequiredArgsConstructor
 @Component
@@ -21,7 +22,7 @@ public class NdasendaDeductionBatchResponsesDailyJob {
     @Scheduled(cron = "${ndasenda.fetch.deduction.batch.responses.cron}")
     public void execute() {
         try {
-            ResponseSweepResult run = approvalService.sweepDeductionResponses(LocalDateTime.now());
+            ResponseSweepResult run = approvalService.sweepDeductionResponses(LocalDateTime.now(ZoneOffset.UTC));
             if (run.incomplete()) {
                 // Each failure was logged where it happened. This line marks the run itself: an incomplete
                 // run is not a quiet one, and loans still waiting may have answers it could not read.

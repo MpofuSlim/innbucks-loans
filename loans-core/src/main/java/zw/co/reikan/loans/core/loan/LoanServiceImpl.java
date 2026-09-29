@@ -21,6 +21,7 @@ import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.reikan.loans.core.exception.NotFoundException;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.merchant.Merchant;
 import zw.co.reikan.loans.core.merchant.MerchantRepository;
 import zw.co.reikan.loans.core.parameter.ParameterService;
@@ -30,7 +31,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +59,7 @@ public class LoanServiceImpl implements LoanService {
     private final MerchantRepository merchantRepository;
     private final ChannelRepository channelRepository;
     private final Validator validator;
+    private final MarketTimeZone marketTimeZone;
 
     @Override
     public LoanStatisticsResponse getStatistics(FindLoansInternalRequest request) {
@@ -131,18 +132,13 @@ public class LoanServiceImpl implements LoanService {
         return loanRepository.findById(Long.parseLong(reference));
     }
 
+    /** A filter's days are the market's; the columns hold UTC, so each bound is converted. */
     private LocalDateTime atStartOfDay(LocalDate localDate) {
-        if (localDate == null) {
-            return null;
-        }
-        return localDate.atStartOfDay();
+        return marketTimeZone.startOfDayUtc(localDate);
     }
 
     private LocalDateTime atEndOfDay(LocalDate localDate) {
-        if (localDate == null) {
-            return null;
-        }
-        return localDate.atTime(LocalTime.MAX);
+        return marketTimeZone.endOfDayUtc(localDate);
     }
 
     /**
@@ -178,7 +174,7 @@ public class LoanServiceImpl implements LoanService {
         }
 
         val dateOfBirth = loanRequest.getDateOfBirth();
-        if (dateOfBirth.isAfter(LocalDate.now().minusYears(18))) {
+        if (dateOfBirth.isAfter(marketTimeZone.today().minusYears(18))) {
             throw new IllegalArgumentException("Must be 18+ years");
         }
 

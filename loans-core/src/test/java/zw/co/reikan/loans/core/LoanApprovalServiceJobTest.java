@@ -30,6 +30,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.UnknownContentTypeException;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
@@ -50,6 +51,7 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -166,7 +168,7 @@ class LoanApprovalServiceJobTest {
         props.setDeductionCode("DC01");
         props.setSecurityCode("SEC01");
         return new NdasendaLoanApprovalServiceImpl(restTemplate, auth, props, loanRepository, loanBatchService,
-                notificationService, auditService, mock(DeductionCancellationService.class));
+                notificationService, auditService, mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));
     }
 
     /** Ndasenda's answer to each lodgement POST, chosen by the loan reference it carries. */
@@ -300,7 +302,7 @@ class LoanApprovalServiceJobTest {
     @DisplayName("a loan another instance claimed first is not lodged")
     void claimAlreadyTakenIsNotLodged() {
         Loan loan = newLoan(42);
-        LocalDateTime theirs = LocalDateTime.now().minusSeconds(5);
+        LocalDateTime theirs = LocalDateTime.now(ZoneOffset.UTC).minusSeconds(5);
         // The due list was read before the other instance's claim committed.
         when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
         loan.setLodgementClaimedAt(theirs);
@@ -324,7 +326,7 @@ class LoanApprovalServiceJobTest {
                     new ConnectException("Connection refused"));
         });
         LoanApprovalServiceJob job = ndasendaJob();
-        LocalDateTime before = LocalDateTime.now();
+        LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
 
         job.processSsbApprovals();
 
@@ -332,7 +334,7 @@ class LoanApprovalServiceJobTest {
         assertThat(first.getApprovalAttempt()).isEqualTo(1);
         assertThat(first.getLodgementClaimedAt()).as("claim released").isNull();
         assertThat(first.getNextLodgementAttemptAt()).isAfterOrEqualTo(before.plusMinutes(10))
-                .isBefore(LocalDateTime.now().plusMinutes(11));
+                .isBefore(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(11));
         assertThat(first.getLoanStatusMessage()).contains("never reached Ndasenda").contains("Connection refused");
         // Ndasenda is down: the second loan is not even claimed, let alone sent.
         verify(loanRepository, never()).findByIdForUpdate(42L);
@@ -396,7 +398,7 @@ class LoanApprovalServiceJobTest {
     void loanInBackoffIsNotLodged() {
         Loan loan = newLoan(42);
         loan.setApprovalAttempt(1);
-        loan.setNextLodgementAttemptAt(LocalDateTime.now().plusMinutes(5));
+        loan.setNextLodgementAttemptAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(5));
         ndasendaAnswers(reference -> accepted("BATCH"));
 
         ndasendaJob().processSsbApprovals();
@@ -581,7 +583,7 @@ class LoanApprovalServiceJobTest {
     @DisplayName("a claim a dead run left behind is held for Ndasenda's answer, not sent again")
     void abandonedClaimIsHeld() {
         Loan loan = newLoan(42);
-        loan.setLodgementClaimedAt(LocalDateTime.now().minusMinutes(45));
+        loan.setLodgementClaimedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(45));
         LoanApprovalService service = mock(LoanApprovalService.class);
 
         job(service).processSsbApprovals();
@@ -597,7 +599,7 @@ class LoanApprovalServiceJobTest {
     @DisplayName("a recent claim is an in-flight lodgement: left alone")
     void recentClaimIsLeftAlone() {
         Loan loan = newLoan(42);
-        LocalDateTime claimed = LocalDateTime.now().minusMinutes(5);
+        LocalDateTime claimed = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5);
         loan.setLodgementClaimedAt(claimed);
         LoanApprovalService service = mock(LoanApprovalService.class);
 

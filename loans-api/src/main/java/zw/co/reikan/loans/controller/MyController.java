@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import zw.co.reikan.loans.core.api.FindLoansInternalRequest;
 import zw.co.reikan.loans.core.api.LoanStatisticsResponse;
 import zw.co.reikan.loans.core.api.UserDTO;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.loan.BaseEntity;
 import zw.co.reikan.loans.core.loan.LoanService;
 import zw.co.reikan.loans.core.user.FindUserService;
@@ -36,6 +37,7 @@ public class MyController {
 
     private final FindUserService findUserService;
     private final LoanService loanService;
+    private final MarketTimeZone marketTimeZone;
 
     @Operation(summary = "MY SALES CONSULTANTS",
             description = "Find sales consultants for the logged in user",
@@ -72,8 +74,10 @@ public class MyController {
                                                @RequestParam(required = false) LocalDate fromDate,
                                                @RequestParam(required = false) LocalDate toDate) {
         Jwt token = ((JwtAuthenticationToken) principal).getToken();
-        LocalDate fromDateToUse = fromDate == null ? LocalDate.now().withDayOfMonth(1) : fromDate;
-        LocalDate toDateToUse = toDate == null ? LocalDate.now() : toDate;
+        // Month-to-date on the market's calendar, not the server's.
+        LocalDate today = marketTimeZone.today();
+        LocalDate fromDateToUse = fromDate == null ? today.withDayOfMonth(1) : fromDate;
+        LocalDate toDateToUse = toDate == null ? today : toDate;
         log.info("getting sales stats between {} and {}", fromDateToUse, toDateToUse);
 
         return findUserService.resolveUserFromAccessToken(token)

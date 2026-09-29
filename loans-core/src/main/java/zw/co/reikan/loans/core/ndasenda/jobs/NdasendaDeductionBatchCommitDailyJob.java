@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import zw.co.reikan.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @RequiredArgsConstructor
 @Component
@@ -19,7 +20,7 @@ public class NdasendaDeductionBatchCommitDailyJob {
 
     @Scheduled(cron = "${ndasenda.commit.deduction.batch.requests.cron}")
     public void execute() {
-        log.info("Committing open batch until now - {}", LocalDateTime.now());
+        log.info("Committing open batch until now - {}", LocalDateTime.now(ZoneOffset.UTC));
         approvalService.commitDeductionRequestsUntilNow();
     }
 }

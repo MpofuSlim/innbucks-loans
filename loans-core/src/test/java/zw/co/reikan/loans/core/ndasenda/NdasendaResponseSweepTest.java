@@ -22,6 +22,7 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
 import zw.co.reikan.loans.core.auth.AuthService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.Loan;
 import zw.co.reikan.loans.core.loan.LoanApprovalStatus;
@@ -93,7 +94,7 @@ class NdasendaResponseSweepTest {
         props.setDeductionCode(DEDUCTION_CODE);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthServiceImpl.class), props,
                 loanRepository, mock(LoanBatchService.class), notificationService, auditService,
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
 
         when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class),
                 any(ParameterizedTypeReference.class), any(Object[].class)))

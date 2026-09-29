@@ -17,6 +17,7 @@ import org.springframework.web.client.UnknownContentTypeException;
 import zw.co.reikan.loans.core.Utils;
 import zw.co.reikan.loans.core.audit.AuditLog;
 import zw.co.reikan.loans.core.audit.AuditService;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 import zw.co.reikan.loans.core.disbursements.LoanAccountStatus;
 import zw.co.reikan.loans.core.loan.DeductionCancellationService;
 import zw.co.reikan.loans.core.loan.DeductionCancellationStatus;
@@ -31,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -74,6 +76,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final NotificationService notificationService;
     private final AuditService auditService;
     private final DeductionCancellationService deductionCancellationService;
+    private final MarketTimeZone marketTimeZone;
 
     Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, APPROVED_LOAN,
             LoanApprovalStatus.REJECTED, REJECTED_LOAN,
@@ -96,7 +99,9 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         final LocalDate loanEndDate;
         final NdasendaDeductionsBatchRequest batch;
         try {
-            loanStartDate = LocalDate.now().plusMonths(1).withDayOfMonth(1);
+            // The month is the market's: a loan lodged at 00:30 on the 1st in Harare is still 22:30 on the
+            // last day of the previous month in UTC, and would have been deducted a month early.
+            loanStartDate = marketTimeZone.today().plusMonths(1).withDayOfMonth(1);
             LocalDate endDate = loanStartDate.plusMonths(request.getTenor() - 1); //subtract 1 because month is inclusive
             loanEndDate = endDate.withDayOfMonth(endDate.lengthOfMonth());
 
@@ -212,7 +217,9 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
      * thrown: the rest of the run carries on, and the next run reads it again.</p>
      */
     public ResponseSweepResult sweepDeductionResponses(LocalDateTime now) {
-        LocalDate today = now.toLocalDate();
+        // now is UTC, like every stored stamp it is compared with; the day is the market's, which is how
+        // Ndasenda dates its batches.
+        LocalDate today = marketTimeZone.localDay(now);
         List<NdasendaAwaitingLoan> awaiting = loanRepository.findAwaitingNdasendaOutcome();
         LocalDate from = responseWindowStart(today, awaiting, ndasendaProps.getResponses().getLookbackDays());
         log.info("Process deduction responses from {} to {}: {} loan(s) awaiting Ndasenda", from, today, awaiting.size());
@@ -240,6 +247,8 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         return awaiting.stream()
                 .map(NdasendaAwaitingLoan::lodgedAt)
                 .filter(Objects::nonNull)
+                // The stamp's UTC day: never later than its market day in any market we serve (all
+                // are ahead of UTC), so the window can only start earlier, never miss a day.
                 .map(LocalDateTime::toLocalDate)
                 .min(Comparator.naturalOrder())
                 .map(oldest -> oldest.minusDays(1))
@@ -600,7 +609,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         }
 
         loan.setLoanApprovalStatus(outcome);
-        loan.setDateApproved(LocalDateTime.now());
+        loan.setDateApproved(LocalDateTime.now(ZoneOffset.UTC));
         loan.setApprovalReference(response.getId());
         // A FAILED lodgement flagged for cancellation now has Ndasenda's answer, which settles it.
         deductionCancellationService.withdraw(loan, String.valueOf(response.getStatus()), SYSTEM_ACTOR);
@@ -609,7 +618,7 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
         if (LoanApprovalStatus.APPROVED == outcome
                 && (loan.getLoanAccountStatus() == null || loan.getLoanAccountStatus() == LoanAccountStatus.PENDING)) {
             loan.setDisbursementAttempts(0);
-            loan.setNextDisbursementAttemptDate(LocalDateTime.now());
+            loan.setNextDisbursementAttemptDate(LocalDateTime.now(ZoneOffset.UTC));
             loan.setLoanAccountStatus(LoanAccountStatus.PENDING);
         }
 

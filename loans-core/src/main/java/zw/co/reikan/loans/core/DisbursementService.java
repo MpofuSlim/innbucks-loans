@@ -19,6 +19,7 @@ import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Slf4j
 public abstract class DisbursementService {
@@ -269,7 +270,7 @@ public abstract class DisbursementService {
 
         ManualDisbursementResult result = switch (status) {
             case SUCCESS -> {
-                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
                 String paid = response.getApprovalCode() == null
                         ? "Paid by manual recovery payout %s".formatted(reference)
                         : "Paid by manual recovery payout %s (InnBucks auth %s)".formatted(reference, response.getApprovalCode());

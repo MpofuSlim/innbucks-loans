@@ -14,6 +14,7 @@ import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcOperations;
 
 import java.sql.SQLException;
+import zw.co.reikan.loans.core.config.MarketTimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -40,7 +41,7 @@ class LoanPublicReferenceServiceTest {
     @BeforeEach
     void setUp() {
         jdbc = mock(JdbcOperations.class);
-        service = new LoanPublicReferenceService(jdbc);
+        service = new LoanPublicReferenceService(jdbc, new MarketTimeZone("ZW"));
         logger = (Logger) LoggerFactory.getLogger(LoanPublicReferenceService.class);
         appender = new ListAppender<>();
         appender.start();

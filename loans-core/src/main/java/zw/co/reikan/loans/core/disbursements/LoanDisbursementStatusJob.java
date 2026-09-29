@@ -16,6 +16,7 @@ import zw.co.reikan.loans.core.loan.LoanRepository;
 import zw.co.reikan.loans.core.notifications.NotificationService;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Service
 @Slf4j
@@ -124,7 +125,7 @@ public class LoanDisbursementStatusJob {
 
         if (newStatus == LoanDisbursementStatus.SUCCESS) {
             // Loan has been successfully disbursed
-            loan.setDateDisbursed(LocalDateTime.now());
+            loan.setDateDisbursed(LocalDateTime.now(ZoneOffset.UTC));
             return true;
         } else if (newStatus == LoanDisbursementStatus.FAILED) {
             // Loan disbursement has failed
@@ -165,7 +166,7 @@ public class LoanDisbursementStatusJob {
         if (loan.getBookingNotFoundAt() != null) {
             return;
         }
-        loan.setBookingNotFoundAt(LocalDateTime.now());
+        loan.setBookingNotFoundAt(LocalDateTime.now(ZoneOffset.UTC));
         log.error("INNBUCKS BOOKING NOT FOUND: loan {} reference {} is held as booked but InnBucks reports no loan"
                         + " under it - confirm with InnBucks, then resolve with POST /api/loans/{}/booking/confirm-not-booked"
                         + " if it never landed (audited)",
