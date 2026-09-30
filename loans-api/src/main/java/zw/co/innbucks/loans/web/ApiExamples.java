@@ -1551,16 +1551,46 @@ public final class ApiExamples {
                   "updatedAt": "2026-09-30T12:00:00+02:00"
                 }""";
 
-    /** A checkpoint an administrator added: Finance confirms the payout of any loan of 2,000 or more first. */
-    private static final String STAGE_HIGH_VALUE_PAYOUT_CHECK = """
+    /**
+     * A checkpoint an administrator added on the 29th: a credit manager checks an application of 1,000 or more captured
+     * on the portal against the originals before its deduction is lodged.
+     */
+    private static final String STAGE_AGENT_APPLICATION_REVIEW = """
                 {
-                  "code": "HIGH_VALUE_PAYOUT_CHECK",
+                  "code": "AGENT_APPLICATION_REVIEW",
                   "kind": "CHECKPOINT",
-                  "name": "High-value payout check",
-                  "description": "Finance confirms the payout details of a loan of 2,000 or more before it is paid",
+                  "name": "Agent application review",
+                  "description": "A credit manager checks an application captured on the portal against the originals before it is lodged",
+                  "displayOrder": 15,
+                  "holdPoint": "BEFORE_LODGEMENT",
+                  "minimumPrincipal": 1000.00,
+                  "channels": ["PORTAL"],
+                  "active": true,
+                  "activeSince": "2026-09-29T09:15:04+02:00",
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "assignRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "targetHours": 8,
+                  "escalationHours": 24,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
+                  "updatedBy": "admin",
+                  "updatedAt": "2026-09-29T09:15:04+02:00"
+                }""";
+
+    /**
+     * The payout authorisation (FR-SSB-018) as seeded, and switched on by an administrator on the 2nd: no loan Credit
+     * approves is paid until Finance authorises its payout.
+     */
+    private static final String STAGE_PAYOUT_AUTHORISATION = """
+                {
+                  "code": "PAYOUT_AUTHORISATION",
+                  "kind": "CHECKPOINT",
+                  "name": "Payout authorisation",
+                  "description": "Authorise the payout of a loan Credit has approved, or decline it",
                   "displayOrder": 35,
                   "holdPoint": "BEFORE_BOOKING",
-                  "minimumPrincipal": 2000.00,
                   "channels": [],
                   "active": true,
                   "activeSince": "2026-10-02T09:15:04+02:00",
@@ -1616,7 +1646,7 @@ public final class ApiExamples {
 
     /**
      * The stages as seeded (who could do what before the workflow was configurable, and a service level each), with
-     * the checkpoint an administrator added, in display order.
+     * the payout authorisation switched on and the checkpoint an administrator added, in display order.
      */
     public static final String WORKFLOW_STAGES = """
             {
@@ -1625,11 +1655,13 @@ public final class ApiExamples {
               "data": [
             """ + STAGE_PAYSLIP_REVIEW + """
             ,
+            """ + STAGE_AGENT_APPLICATION_REVIEW + """
+            ,
             """ + STAGE_CREDIT_DECISION + """
             ,
             """ + STAGE_MORE_INFORMATION + """
             ,
-            """ + STAGE_HIGH_VALUE_PAYOUT_CHECK + """
+            """ + STAGE_PAYOUT_AUTHORISATION + """
             ,
             """ + STAGE_LATER + """
 
@@ -1683,35 +1715,60 @@ public final class ApiExamples {
               }
             }""";
 
-    public static final String CHECKPOINT_STAGE_REQUEST = """
+    /** Switching the payout authorisation on, leaving the rest of its seeded configuration as it was. */
+    public static final String PAYOUT_AUTHORISATION_ON_REQUEST = """
             {
-              "code": "HIGH_VALUE_PAYOUT_CHECK",
-              "holdPoint": "BEFORE_BOOKING",
-              "name": "High-value payout check",
-              "description": "Finance confirms the payout details of a loan of 2,000 or more before it is paid",
-              "minimumPrincipal": 2000.00,
+              "name": "Payout authorisation",
+              "description": "Authorise the payout of a loan Credit has approved, or decline it",
               "assignment": "OPTIONAL",
-              "viewRoles": ["CREDIT_MANAGER"],
+              "viewRoles": ["CREDIT_MANAGER", "FINANCE"],
               "workRoles": ["FINANCE"],
               "assignRoles": ["FINANCE"],
               "targetHours": 4,
               "escalationHours": 8,
               "escalateTo": ["SUPER_ADMIN", "FINANCE"],
+              "notifyAssignee": true,
+              "active": true
+            }""";
+
+    public static final String PAYOUT_AUTHORISATION_ON = """
+            {
+              "code": "OK",
+              "message": "Workflow stage updated; it applies to items already waiting as well",
+              "data": """ + STAGE_PAYOUT_AUTHORISATION + """
+
+            }""";
+
+    public static final String CHECKPOINT_STAGE_REQUEST = """
+            {
+              "code": "AGENT_APPLICATION_REVIEW",
+              "holdPoint": "BEFORE_LODGEMENT",
+              "name": "Agent application review",
+              "description": "A credit manager checks an application captured on the portal against the originals before it is lodged",
+              "minimumPrincipal": 1000.00,
+              "channels": ["PORTAL"],
+              "assignment": "OPTIONAL",
+              "viewRoles": ["CREDIT_MANAGER"],
+              "workRoles": ["CREDIT_MANAGER"],
+              "assignRoles": ["CREDIT_MANAGER"],
+              "targetHours": 8,
+              "escalationHours": 24,
+              "escalateTo": ["SUPER_ADMIN"],
               "notifyAssignee": true
             }""";
 
     public static final String CHECKPOINT_STAGE_CREATED = """
             {
               "code": "CREATED",
-              "message": "Checkpoint stage created; it holds loans at BEFORE_BOOKING from now",
-              "data": """ + STAGE_HIGH_VALUE_PAYOUT_CHECK + """
+              "message": "Checkpoint stage created; it holds loans at BEFORE_LODGEMENT from now",
+              "data": """ + STAGE_AGENT_APPLICATION_REVIEW + """
 
             }""";
 
     public static final String CHECKPOINT_STAGE_EXISTS = """
             {
               "code": "CONFLICT",
-              "message": "Workflow stage HIGH_VALUE_PAYOUT_CHECK already exists"
+              "message": "Workflow stage AGENT_APPLICATION_REVIEW already exists"
             }""";
 
     public static final String CHECKPOINT_NOT_FOUND = """
@@ -1738,8 +1795,8 @@ public final class ApiExamples {
               "code": "OK",
               "message": "Cleared; the loan carries on",
               "data": {
-                "stage": "HIGH_VALUE_PAYOUT_CHECK",
-                "stageName": "High-value payout check",
+                "stage": "PAYOUT_AUTHORISATION",
+                "stageName": "Payout authorisation",
                 "holdPoint": "BEFORE_BOOKING",
                 "loanId": 61,
                 "reference": "000000061",
@@ -1756,8 +1813,8 @@ public final class ApiExamples {
               "code": "OK",
               "message": "The application is declined",
               "data": {
-                "stage": "HIGH_VALUE_PAYOUT_CHECK",
-                "stageName": "High-value payout check",
+                "stage": "PAYOUT_AUTHORISATION",
+                "stageName": "Payout authorisation",
                 "holdPoint": "BEFORE_BOOKING",
                 "loanId": 61,
                 "reference": "000000061",
@@ -1771,8 +1828,8 @@ public final class ApiExamples {
             }""";
 
     /**
-     * Loan 61's checkpoints on the morning of the 2nd: waiting at the payout check with {@code finance1}, having been
-     * cleared at an agent-application review before it was lodged.
+     * Loan 61's checkpoints on the morning of the 2nd: waiting for its payout to be authorised, with {@code finance1},
+     * having been cleared at the agent application review before it was lodged.
      */
     public static final String LOAN_61_CHECKPOINTS = """
             {
@@ -1780,8 +1837,8 @@ public final class ApiExamples {
               "message": "Success",
               "data": [
                 {
-                  "stage": "HIGH_VALUE_PAYOUT_CHECK",
-                  "name": "High-value payout check",
+                  "stage": "PAYOUT_AUTHORISATION",
+                  "name": "Payout authorisation",
                   "holdPoint": "BEFORE_BOOKING",
                   "status": "PENDING",
                   "enteredAt": "2026-10-02T09:41:12+02:00",
@@ -1800,13 +1857,17 @@ public final class ApiExamples {
               ]
             }""";
 
-    /** The queues as {@code cmanager} sees them at 11:03 on the 30th, before loan 42 is approved. */
+    /**
+     * The queues as {@code cmanager} sees them at 11:03 on the 30th, before loan 42 is approved. The payout
+     * authorisation is not switched on until the 2nd, and a stage that is off has no queue.
+     */
     public static final String WORK_QUEUES = """
             {
               "code": "OK",
               "message": "Success",
               "data": [
                 { "stage": "PAYSLIP_REVIEW", "name": "Payslip review", "assignment": "OPTIONAL", "targetHours": 24, "escalationHours": 48, "waiting": 1, "overdue": 0, "escalated": 0, "unassigned": 1, "assignedToMe": 0 },
+                { "stage": "AGENT_APPLICATION_REVIEW", "name": "Agent application review", "assignment": "OPTIONAL", "targetHours": 8, "escalationHours": 24, "waiting": 0, "overdue": 0, "escalated": 0, "unassigned": 0, "assignedToMe": 0 },
                 { "stage": "CREDIT_DECISION", "name": "Credit decision", "assignment": "OPTIONAL", "targetHours": 24, "escalationHours": 48, "waiting": 2, "overdue": 1, "escalated": 1, "unassigned": 1, "assignedToMe": 1 },
                 { "stage": "MORE_INFORMATION", "name": "More information", "assignment": "NONE", "targetHours": 48, "escalationHours": 96, "waiting": 0, "overdue": 0, "escalated": 0 },
                 { "stage": "EMPLOYMENT_EVENT_REVIEW", "name": "Employment event review", "assignment": "OPTIONAL", "targetHours": 48, "escalationHours": 96, "waiting": 0, "overdue": 0, "escalated": 0, "unassigned": 0, "assignedToMe": 0 },

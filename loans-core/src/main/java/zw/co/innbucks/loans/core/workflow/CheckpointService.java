@@ -38,7 +38,8 @@ import java.util.stream.Collectors;
 /**
  * Clears loans at checkpoints, or declines them there (FR-SSB-014). A decline is a credit rejection like any other: it
  * carries a credit reason code, goes in the credit decision log, flags a lodged SSB deduction for cancellation and
- * tells the applicant. Whoever decides must work the checkpoint, and may not be the loan's originator or a party to it.
+ * tells the applicant. Whoever decides must work the checkpoint, and may not be the loan's originator or a party to it,
+ * nor, at a checkpoint after Credit's approval such as the payout authorisation (FR-SSB-018), whoever approved it.
  */
 @Slf4j
 @Service
@@ -70,7 +71,8 @@ public class CheckpointService {
      * @throws ConflictException        the checkpoint is not holding the loan (not at its point, not one it applies to,
      *                                  already decided, or inactive), or the loan is assigned to someone else at an
      *                                  EXCLUSIVE checkpoint
-     * @throws AccessDeniedException    the caller originated the loan or is a party to it
+     * @throws AccessDeniedException    the caller originated the loan or is a party to it, or approved it at Credit and
+     *                                  the checkpoint follows that approval
      * @throws IllegalArgumentException a decline without an active REJECTED reason code
      */
     @Transactional
@@ -188,6 +190,11 @@ public class CheckpointService {
         if (SegregationOfDuties.originated(loan, username)) {
             throw new AccessDeniedException(String.format(
                     "Loan %s was originated by %s, who cannot also decide its %s; someone else must",
+                    loan.getReference(), username, stage.getName()));
+        }
+        if (stage.barsCreditApprover() && SegregationOfDuties.approved(loan, username)) {
+            throw new AccessDeniedException(String.format(
+                    "Loan %s was approved by %s, who cannot also decide its %s; someone else must",
                     loan.getReference(), username, stage.getName()));
         }
         User user = authService.getLoggedInUser();

@@ -221,6 +221,26 @@ class CheckpointServiceTest {
     }
 
     @Test
+    @DisplayName("at a checkpoint after Credit's approval, whoever approved the loan may neither clear nor decline it")
+    void approverMayNotDecideAfterTheApproval() {
+        loan.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
+        loan.setInternalApprovalBy("Finance1");
+
+        assertThatThrownBy(() -> service.decide("HIGH_VALUE_PAYOUT_CHECK", 61L, clear()))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Loan 000000061 was approved by finance1, who cannot also decide its High-value payout"
+                        + " check; someone else must");
+        assertThatThrownBy(() -> service.decide("HIGH_VALUE_PAYOUT_CHECK", 61L, decline("REJECT_IDENTITY")))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(decisions, never()).save(any());
+        verifyNoInteractions(creditDecisionLog, deductionCancellationService, loanNotificationService);
+
+        loan.setInternalApprovalBy("cmanager");
+        assertThat(service.decide("HIGH_VALUE_PAYOUT_CHECK", 61L, clear()).outcome())
+                .isEqualTo(CheckpointOutcome.CLEARED);
+    }
+
+    @Test
     @DisplayName("at an EXCLUSIVE checkpoint, someone else's item is refused before anything is recorded")
     void assignedElsewhere() {
         doThrow(new ConflictException("assigned to finance2")).when(guard).requireMayAct(stage, loan, "finance1");

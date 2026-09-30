@@ -9,6 +9,7 @@ import org.springframework.security.access.AccessDeniedException;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.user.User;
@@ -81,6 +82,8 @@ class WorkQueueServiceTest {
         when(moreInformationQueue.waiting()).thenReturn(List.of());
         checkpointQueue = mock(StageQueue.class);
         when(queues.of(WorkflowFixtures.stageCoded("HIGH_VALUE_PAYOUT_CHECK"))).thenReturn(checkpointQueue);
+        when(stageService.stage("HIGH_VALUE_PAYOUT_CHECK"))
+                .thenReturn(WorkflowFixtures.checkpoint("HIGH_VALUE_PAYOUT_CHECK", HoldPoint.BEFORE_BOOKING));
 
         loan = WorkflowFixtures.loan(42L, "tmoyo");
         loan.setPrincipal(new BigDecimal("531.91"));
@@ -334,6 +337,24 @@ class WorkQueueServiceTest {
             assertThatThrownBy(() -> service.assign("CREDIT_DECISION", 42L, "rnyathi"))
                     .isInstanceOf(IllegalArgumentException.class);
             verify(itemRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("a checkpoint after Credit's approval is never given to whoever approved the loan")
+        void approverNotGivenACheckpointAfterTheApproval() {
+            when(itemRepository.findByStageCodeAndLoanIdAndEnteredAt(any(), any(), any())).thenReturn(Optional.empty());
+            when(checkpointQueue.enteredAt(loan)).thenReturn(Optional.of(entered));
+            loan.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
+            loan.setInternalApprovalBy("FMOYO");
+            as(admin);
+
+            assertThatThrownBy(() -> service.assign("HIGH_VALUE_PAYOUT_CHECK", 42L, "fmoyo"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("fmoyo approved loan 000000042, so cannot be given its High-value payout check");
+            verify(itemRepository, never()).save(any());
+
+            loan.setInternalApprovalBy("cmanager");
+            assertThat(service.assign("HIGH_VALUE_PAYOUT_CHECK", 42L, "fmoyo").assignedTo()).isEqualTo("fmoyo");
         }
 
         @Test

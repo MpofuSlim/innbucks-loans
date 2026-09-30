@@ -7,7 +7,8 @@ import java.util.Locale;
 
 /**
  * Who may not sign off a loan (FR-PBL-029): whoever originated it, and anyone who is a party to it. One
- * person must not both put a loan forward and wave it through.
+ * person must not both put a loan forward and wave it through. Nor, at a check made after Credit has
+ * approved the loan, whoever approved it (FR-SSB-018): the check would otherwise be the approval again.
  */
 public final class SegregationOfDuties {
 
@@ -19,6 +20,12 @@ public final class SegregationOfDuties {
         return StringUtils.equalsIgnoreCase(username, loan.getCreatedBy())
                 || (loan.getCreatedByUser() != null
                 && StringUtils.equalsIgnoreCase(username, loan.getCreatedByUser().getUsername()));
+    }
+
+    /** Whoever approved it at Credit, ignoring case: a separate check after the approval is not theirs to make. */
+    public static boolean approved(Loan loan, String username) {
+        return loan.getInternalApprovalStatus() == InternalApprovalStatus.APPROVED && StringUtils.isNotBlank(username)
+                && StringUtils.equalsIgnoreCase(username, loan.getInternalApprovalBy());
     }
 
     /**

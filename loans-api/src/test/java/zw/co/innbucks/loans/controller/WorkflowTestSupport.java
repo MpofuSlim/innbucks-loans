@@ -7,6 +7,7 @@ import org.springframework.security.authorization.method.PreAuthorizeAuthorizati
 import zw.co.innbucks.loans.core.user.UserGroup;
 import zw.co.innbucks.loans.core.workflow.AssignmentMode;
 import zw.co.innbucks.loans.core.workflow.Entitlement;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
 import zw.co.innbucks.loans.core.workflow.StageKind;
 import zw.co.innbucks.loans.core.workflow.StageRole;
 import zw.co.innbucks.loans.core.workflow.WorkflowAccess;
@@ -29,8 +30,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * The {@code @PreAuthorize} interceptor as production runs it, resolving {@code @workflowAccess} against the workflow
- * stages as V12 seeds them (FR-SSB-014), so the web tests prove the configurable entitlements reproduce who could do
- * what before they became configurable.
+ * stages as V12 and V14 seed them (FR-SSB-014, FR-SSB-018), so the web tests prove the configurable entitlements
+ * reproduce who could do what before they became configurable.
  */
 final class WorkflowTestSupport {
 
@@ -50,8 +51,22 @@ final class WorkflowTestSupport {
                         role(UserGroup.CREDIT_MANAGER, Entitlement.ASSIGN)),
                 stage("DEDUCTION_CANCELLATION", 24, 48, role(UserGroup.CREDIT_MANAGER, Entitlement.VIEW),
                         role(UserGroup.FINANCE, Entitlement.VIEW), role(UserGroup.FINANCE, Entitlement.WORK),
-                        role(UserGroup.FINANCE, Entitlement.ASSIGN)))
+                        role(UserGroup.FINANCE, Entitlement.ASSIGN)),
+                payoutAuthorisation())
                 .stream().collect(Collectors.toMap(WorkflowStage::getCode, Function.identity()));
+    }
+
+    /** The payout authorisation as V14 seeds it: a checkpoint before booking, worked by Finance, switched off. */
+    private static WorkflowStage payoutAuthorisation() {
+        WorkflowStage stage = stage("PAYOUT_AUTHORISATION", 4, 8, role(UserGroup.CREDIT_MANAGER, Entitlement.VIEW),
+                role(UserGroup.FINANCE, Entitlement.VIEW), role(UserGroup.FINANCE, Entitlement.WORK),
+                role(UserGroup.FINANCE, Entitlement.ASSIGN));
+        stage.setKind(StageKind.CHECKPOINT);
+        stage.setHoldPoint(HoldPoint.BEFORE_BOOKING);
+        stage.setActive(false);
+        stage.setActiveSince(LocalDateTime.of(2026, 9, 30, 10, 0));
+        stage.getEscalationRoles().add(UserGroup.FINANCE);
+        return stage;
     }
 
     /** Access as seeded. */

@@ -24,4 +24,12 @@ public enum HoldPoint {
     public int displayOrder() {
         return displayOrder;
     }
+
+    /**
+     * Whether a loan reaches it only once Credit has approved it. A checkpoint here is then a check separate from that
+     * approval (the payout authorisation of FR-SSB-018 is one), so whoever approved the loan cannot decide it too.
+     */
+    public boolean followsCreditApproval() {
+        return this == BEFORE_BOOKING;
+    }
 }

@@ -149,6 +149,14 @@ public class WorkflowStage {
     }
 
     /**
+     * Whether its decision is also barred to whoever approved the loan at Credit: a checkpoint a loan reaches only
+     * once approved, such as the payout authorisation (FR-SSB-018), is a check separate from that approval.
+     */
+    public boolean barsCreditApprover() {
+        return isCheckpoint() && holdPoint != null && holdPoint.followsCreditApproval();
+    }
+
+    /**
      * Whether this checkpoint applies to the loan, by its principal and channel; always false for a system stage.
      * Whether the loan is at the checkpoint's point is a separate question.
      */
