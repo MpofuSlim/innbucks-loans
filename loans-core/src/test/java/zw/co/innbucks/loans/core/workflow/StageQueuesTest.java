@@ -267,21 +267,40 @@ class StageQueuesTest {
     @DisplayName("every stage has exactly one queue, or the application does not start")
     void everyStageHasOneQueue() {
         CreditDecisionRepository decisions = mock(CreditDecisionRepository.class);
-        List<StageQueue> all = List.of(
+        List<SystemStageQueue> all = List.of(
                 new PayslipReviewQueue(loanRepository, mock(PayslipFraudFlagRepository.class)),
                 new CreditDecisionQueue(loanRepository, decisions), new MoreInformationQueue(loanRepository, decisions),
                 new EmploymentEventReviewQueue(loanRepository, mock(LoanEmploymentEventRepository.class)),
                 new DeductionCancellationQueue(loanRepository));
 
-        assertThat(new StageQueues(all).of(SystemStage.MORE_INFORMATION)).isInstanceOf(MoreInformationQueue.class);
-        assertThatThrownBy(() -> new StageQueues(all.subList(0, 4)))
+        CheckpointDecisionRepository checkpointDecisions = mock(CheckpointDecisionRepository.class);
+        assertThat(new StageQueues(all, loanRepository, checkpointDecisions).of(SystemStage.MORE_INFORMATION))
+                .isInstanceOf(MoreInformationQueue.class);
+        assertThatThrownBy(() -> new StageQueues(all.subList(0, 4), loanRepository, checkpointDecisions))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("No queue for workflow stage DEDUCTION_CANCELLATION");
-        List<StageQueue> twice = new ArrayList<>(all);
+        List<SystemStageQueue> twice = new ArrayList<>(all);
         twice.add(new DeductionCancellationQueue(loanRepository));
-        assertThatThrownBy(() -> new StageQueues(twice))
+        assertThatThrownBy(() -> new StageQueues(twice, loanRepository, checkpointDecisions))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Two queues for workflow stage DEDUCTION_CANCELLATION");
+    }
+
+    @Test
+    @DisplayName("a checkpoint's queue is built for it as it is asked for")
+    void checkpointQueue() {
+        CreditDecisionRepository decisions = mock(CreditDecisionRepository.class);
+        List<SystemStageQueue> all = List.of(
+                new PayslipReviewQueue(loanRepository, mock(PayslipFraudFlagRepository.class)),
+                new CreditDecisionQueue(loanRepository, decisions), new MoreInformationQueue(loanRepository, decisions),
+                new EmploymentEventReviewQueue(loanRepository, mock(LoanEmploymentEventRepository.class)),
+                new DeductionCancellationQueue(loanRepository));
+        StageQueues queues = new StageQueues(all, loanRepository, mock(CheckpointDecisionRepository.class));
+
+        assertThat(queues.of(WorkflowFixtures.checkpoint("PAYOUT_CHECK", HoldPoint.BEFORE_BOOKING)))
+                .isInstanceOf(CheckpointQueue.class);
+        assertThat(queues.of(WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL)))
+                .isInstanceOf(CreditDecisionQueue.class);
     }
 
     private static CreditDecision decision(long id, long loanId, CreditAction action, LocalDateTime at) {

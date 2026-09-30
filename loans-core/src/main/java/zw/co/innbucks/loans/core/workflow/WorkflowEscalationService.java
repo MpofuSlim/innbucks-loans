@@ -23,7 +23,6 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -79,12 +78,11 @@ public class WorkflowEscalationService {
     public int escalateOverdue() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Escalated> escalated = new ArrayList<>();
-        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAsc()) {
-            Optional<SystemStage> system = SystemStage.of(stage.getCode());
-            if (system.isEmpty() || stage.getEscalationHours() == null) {
+        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAscCodeAsc()) {
+            if (!stage.isActive() || stage.getEscalationHours() == null) {
                 continue;
             }
-            StageQueue queue = stageQueues.of(system.get());
+            StageQueue queue = stageQueues.of(stage);
             LocalDateTime cutoff = now.minusHours(stage.getEscalationHours());
             List<Waiting> due = queue.waiting().stream().filter(wait -> !wait.enteredAt().isAfter(cutoff)).toList();
             Map<Long, WorkItem> items = workQueueService.currentItems(stage.getCode(), due);
@@ -189,10 +187,7 @@ public class WorkflowEscalationService {
         if (one.assignee() != null) {
             return assigneeEmails.get(one.assignee().toLowerCase());
         }
-        boolean workedByOriginator = SystemStage.of(one.stage().getCode())
-                .map(stage -> !stage.assignable())
-                .orElse(false);
-        return workedByOriginator ? one.originatorEmail() : null;
+        return one.stage().assignable() ? null : one.originatorEmail();
     }
 
     private static void add(Map<String, List<Escalated>> byRecipient, String email, Escalated one) {

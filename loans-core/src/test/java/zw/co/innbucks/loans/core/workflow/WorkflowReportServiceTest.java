@@ -48,7 +48,7 @@ class WorkflowReportServiceTest {
     @BeforeEach
     void setUp() {
         WorkflowStageRepository stages = mock(WorkflowStageRepository.class);
-        when(stages.findAllByOrderByDisplayOrderAsc()).thenReturn(List.of(
+        when(stages.findAllByOrderByDisplayOrderAscCodeAsc()).thenReturn(List.of(
                 WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL), WorkflowFixtures.moreInformation()));
         creditQueue = mock(StageQueue.class);
         moreInformationQueue = mock(StageQueue.class);
@@ -56,7 +56,9 @@ class WorkflowReportServiceTest {
         when(moreInformationQueue.endedBetween(any(), any())).thenReturn(List.of());
         StageQueues queues = mock(StageQueues.class);
         when(queues.of(SystemStage.CREDIT_DECISION)).thenReturn(creditQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("CREDIT_DECISION"))).thenReturn(creditQueue);
         when(queues.of(SystemStage.MORE_INFORMATION)).thenReturn(moreInformationQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("MORE_INFORMATION"))).thenReturn(moreInformationQueue);
         itemRepository = mock(WorkItemRepository.class);
         when(itemRepository.findByStageCodeAndLoanIdIn(any(), anyCollection())).thenReturn(List.of());
         loanRepository = mock(LoanRepository.class);

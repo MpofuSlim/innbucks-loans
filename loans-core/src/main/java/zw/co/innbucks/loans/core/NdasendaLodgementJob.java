@@ -24,6 +24,8 @@ import zw.co.innbucks.loans.core.ndasenda.LoanApprovalService;
 import zw.co.innbucks.loans.core.ndasenda.LodgementException;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -86,6 +88,7 @@ public class NdasendaLodgementJob {
     private final LoanNotificationService loanNotificationService;
     private final LoanBatchService loanBatchService;
     private final AuditService auditService;
+    private final CheckpointGate checkpointGate;
     private final TransactionTemplate transactionTemplate;
     private final int maxAttempts;
     private final Duration retryBackoff;
@@ -99,6 +102,7 @@ public class NdasendaLodgementJob {
                                   LoanNotificationService loanNotificationService,
                                   LoanBatchService loanBatchService,
                                   AuditService auditService,
+                                  CheckpointGate checkpointGate,
                                   PlatformTransactionManager transactionManager,
                                   @Value("${ndasenda.lodgement.max-attempts:3}") int maxAttempts,
                                   @Value("${ndasenda.lodgement.retry-backoff-minutes:10}") long retryBackoffMinutes,
@@ -112,6 +116,7 @@ public class NdasendaLodgementJob {
         this.loanNotificationService = loanNotificationService;
         this.loanBatchService = loanBatchService;
         this.auditService = auditService;
+        this.checkpointGate = checkpointGate;
         this.maxAttempts = maxAttempts;
         this.retryBackoff = Duration.ofMinutes(retryBackoffMinutes);
         this.staleClaimAfter = Duration.ofMinutes(staleClaimMinutes);
@@ -132,7 +137,9 @@ public class NdasendaLodgementJob {
             return;
         }
 
-        List<Long> due = loanRepository.findIdsDueForLodgement(now);
+        // Held at a checkpoint (FR-SSB-014): not lodged until it is cleared.
+        List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_LODGEMENT,
+                loanRepository.findIdsDueForLodgement(now));
         log.info("SSB lodgement run: {} loan(s) due", due.size());
         for (int i = 0; i < due.size(); i++) {
             if (!lodge(due.get(i))) {
@@ -195,6 +202,7 @@ public class NdasendaLodgementJob {
                 || heldForPayslipReview(loan)
                 || loan.getInternalApprovalStatus() == InternalApprovalStatus.REJECTED
                 || loanRepository.isHeldForEmploymentEvent(loanId)
+                || checkpointGate.holding(HoldPoint.BEFORE_LODGEMENT, loan).isPresent()
                 || loan.getLodgementClaimedAt() != null
                 || (loan.getNextLodgementAttemptAt() != null && loan.getNextLodgementAttemptAt().isAfter(now))) {
             log.info("Loan {} is no longer due for lodgement (claimed, settled, deferred, held or declined since the run"

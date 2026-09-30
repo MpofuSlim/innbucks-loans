@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
-class EmploymentEventReviewQueue implements StageQueue {
+class EmploymentEventReviewQueue implements SystemStageQueue {
 
     private static final BinaryOperator<LocalDateTime> EARLIER = (a, b) -> a.isBefore(b) ? a : b;
 

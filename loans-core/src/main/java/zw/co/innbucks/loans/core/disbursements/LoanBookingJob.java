@@ -21,12 +21,16 @@ import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.loan.PayoutDestination;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 
 import static zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED;
 
@@ -65,6 +69,7 @@ public class LoanBookingJob {
     private final TransactionTemplate transactionTemplate;
     private final Duration staleClaimAfter;
     private final LoanNotificationService loanNotificationService;
+    private final CheckpointGate checkpointGate;
 
     public LoanBookingJob(DisbursementService disbursementService,
                                   LoanRepository loanRepository,
@@ -72,6 +77,7 @@ public class LoanBookingJob {
                                   LoanDisbursementRepository loanDisbursementRepository,
                                   AuditService auditService,
                                   LoanNotificationService loanNotificationService,
+                                  CheckpointGate checkpointGate,
                                   PlatformTransactionManager transactionManager,
                                   @Value("${innbucks.booking.stale-claim-minutes:30}") long staleClaimMinutes) {
         if (staleClaimMinutes < 1) {
@@ -83,6 +89,7 @@ public class LoanBookingJob {
         this.loanDisbursementRepository = loanDisbursementRepository;
         this.auditService = auditService;
         this.loanNotificationService = loanNotificationService;
+        this.checkpointGate = checkpointGate;
         this.staleClaimAfter = Duration.ofMinutes(staleClaimMinutes);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         // Always a fresh transaction: the claim must be COMMITTED before InnBucks is called, and each
@@ -96,7 +103,9 @@ public class LoanBookingJob {
         log.info("Starting LoanBookingJob...");
         holdAbandonedClaims(LocalDateTime.now(ZoneOffset.UTC));
 
-        List<Long> due = loanRepository.findIdsDueForBooking();
+        // Held at a checkpoint (FR-SSB-014): not booked, so not paid, until it is cleared.
+        List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_BOOKING,
+                loanRepository.findIdsDueForBooking());
         for (int i = 0; i < due.size(); i++) {
             if (!book(due.get(i))) {
                 log.warn("InnBucks booking run stopped at loan {}; {} loan(s) left for the next run",
@@ -186,6 +195,13 @@ public class LoanBookingJob {
         if (loanRepository.isHeldForEmploymentEvent(loan.getId())) {
             // Held since the due list was read (FR-SSB-024): an officer releases or declines it first.
             log.info("Loan {} is held for an employment event; not booking it until it is released", loan.getId());
+            return true;
+        }
+        Optional<WorkflowStage> checkpoint = checkpointGate.holding(HoldPoint.BEFORE_BOOKING, loan);
+        if (checkpoint.isPresent()) {
+            // Held at a checkpoint since the due list was read (FR-SSB-014): cleared or declined there first.
+            log.info("Loan {} is held at checkpoint {}; not booking it until it is cleared", loan.getId(),
+                    checkpoint.get().getCode());
             return true;
         }
         return false;

@@ -65,6 +65,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Stream;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.CheckpointGates;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -157,13 +161,16 @@ class NdasendaLodgementJobTest {
         return loan;
     }
 
+    /** No checkpoints, unless a test configures one. */
+    private CheckpointGate checkpointGate = CheckpointGates.none();
+
     private NdasendaLodgementJob job(LoanApprovalService service) {
         return job(service, loanNotificationService);
     }
 
     private NdasendaLodgementJob job(LoanApprovalService service, LoanNotificationService notifications) {
         return new NdasendaLodgementJob(service, loanRepository, notifications, loanBatchService,
-                auditService, transactions, 3, 10, 30);
+                auditService, checkpointGate, transactions, 3, 10, 30);
     }
 
     /** The job over the real Ndasenda client, talking to the mocked RestTemplate. */
@@ -363,6 +370,28 @@ class NdasendaLodgementJobTest {
         verifyNoInteractions(service);
         assertThat(held.getLodgementClaimedAt()).isNull();
         assertThat(declined.getLodgementClaimedAt()).isNull();
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a loan a checkpoint holds before lodgement is left out of the run, and refused under the lock if a"
+            + " checkpoint caught it after the due list was read")
+    void checkpointKeepsTheLoanBack() {
+        Loan filtered = newLoan(42);
+        Loan caughtLate = newLoan(43);
+        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L, 43L));
+        checkpointGate = mock(CheckpointGate.class);
+        when(checkpointGate.withoutHeld(HoldPoint.BEFORE_LODGEMENT, List.of(42L, 43L))).thenReturn(List.of(43L));
+        when(checkpointGate.holding(HoldPoint.BEFORE_LODGEMENT, caughtLate)).thenReturn(Optional.of(
+                WorkflowStage.builder().code("AGENT_APPLICATION_REVIEW").build()));
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service);
+        verify(loanRepository, never()).findByIdForUpdate(42L);
+        assertThat(filtered.getLodgementClaimedAt()).isNull();
+        assertThat(caughtLate.getLodgementClaimedAt()).isNull();
         verify(loanRepository, never()).save(any());
     }
 

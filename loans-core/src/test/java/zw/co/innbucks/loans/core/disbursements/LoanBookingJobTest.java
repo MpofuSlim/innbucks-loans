@@ -33,9 +33,13 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 /**
@@ -53,6 +57,7 @@ class LoanBookingJobTest {
     private LoanNotificationService loanNotificationService;
     private LoanDisbursementRepository loanDisbursementRepository;
     private PlatformTransactionManager transactionManager;
+    private CheckpointGate checkpointGate;
     private LoanBookingJob job;
     private Loan loan;
 
@@ -64,10 +69,15 @@ class LoanBookingJobTest {
         auditService = mock(AuditService.class);
         loanDisbursementRepository = mock(LoanDisbursementRepository.class);
         transactionManager = mock(PlatformTransactionManager.class);
+        // No checkpoint holds anything unless a test says so.
+        checkpointGate = mock(CheckpointGate.class);
+        when(checkpointGate.withoutHeld(any(), anyList())).thenAnswer(i -> i.getArgument(1));
+        when(checkpointGate.holding(any(), any())).thenReturn(Optional.empty());
         job = new LoanBookingJob(disbursementService, loanRepository,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
                         mock(WorkAssignmentGuard.class)),
-                loanDisbursementRepository, auditService, loanNotificationService, transactionManager, 30);
+                loanDisbursementRepository, auditService, loanNotificationService, checkpointGate,
+                transactionManager, 30);
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)
@@ -347,6 +357,30 @@ class LoanBookingJobTest {
     @DisplayName("a loan held for an employment event since the due list was read is not booked (FR-SSB-024)")
     void skipsALoanHeldForAnEmploymentEvent() {
         when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
+        assertThat(loan.getBookingClaimedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("a loan a checkpoint holds before booking is left out of the run (FR-SSB-014)")
+    void checkpointLeavesTheLoanOutOfTheRun() {
+        when(checkpointGate.withoutHeld(HoldPoint.BEFORE_BOOKING, List.of(42L))).thenReturn(List.of());
+
+        job.processLoanAccountCreation();
+
+        verify(loanRepository, never()).findByIdForUpdate(42L);
+        verify(disbursementService, never()).createLoanAccount(any());
+    }
+
+    @Test
+    @DisplayName("a loan a checkpoint caught after the due list was read is not booked (FR-SSB-014)")
+    void checkpointCaughtUnderTheLock() {
+        when(checkpointGate.holding(HoldPoint.BEFORE_BOOKING, loan)).thenReturn(Optional.of(
+                WorkflowStage.builder().code("HIGH_VALUE_PAYOUT_CHECK").build()));
 
         job.processLoanAccountCreation();
 

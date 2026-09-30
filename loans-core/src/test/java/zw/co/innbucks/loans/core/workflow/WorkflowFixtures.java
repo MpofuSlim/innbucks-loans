@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.core.workflow;
 
+import org.mockito.ArgumentMatchers;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserGroup;
@@ -41,6 +42,25 @@ final class WorkflowFixtures {
                 .updatedBy("system").updatedAt(SEEDED_AT).build();
     }
 
+    /** When the fixture checkpoints became active: 09:15:04 in Harare on the 2nd. */
+    static final LocalDateTime CHECKPOINT_ACTIVE_SINCE = LocalDateTime.of(2026, 10, 2, 7, 15, 4);
+
+    /**
+     * A checkpoint at the point, for every loan: Finance works and assigns it, Credit managers see it; 4 hours,
+     * escalated after 8.
+     */
+    static WorkflowStage checkpoint(String code, HoldPoint point) {
+        WorkflowStage stage = stage(code, "High-value payout check", AssignmentMode.OPTIONAL, 4, 8,
+                new StageRole(UserGroup.CREDIT_MANAGER, Entitlement.VIEW),
+                new StageRole(UserGroup.FINANCE, Entitlement.WORK),
+                new StageRole(UserGroup.FINANCE, Entitlement.ASSIGN));
+        stage.setKind(StageKind.CHECKPOINT);
+        stage.setHoldPoint(point);
+        stage.setDisplayOrder(point.displayOrder());
+        stage.setActiveSince(CHECKPOINT_ACTIVE_SINCE);
+        return stage;
+    }
+
     static User user(String username, UserGroup... groups) {
         User user = new User();
         user.setUsername(username);
@@ -59,5 +79,10 @@ final class WorkflowFixtures {
         loan.setNationalIdNumber("631234567A42");
         loan.setMobileNumber("263771234567");
         return loan;
+    }
+
+    /** Matches the stage with this code, for stubbing {@link StageQueues#of(WorkflowStage)}. */
+    static WorkflowStage stageCoded(String code) {
+        return ArgumentMatchers.argThat(stage -> stage != null && code.equals(stage.getCode()));
     }
 }

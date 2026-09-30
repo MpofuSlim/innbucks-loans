@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,19 +22,31 @@ import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.user.UserGroup;
+import zw.co.innbucks.loans.core.workflow.AssignmentMode;
+import zw.co.innbucks.loans.core.workflow.CheckpointDecisionRequest;
+import zw.co.innbucks.loans.core.workflow.CheckpointDecisionResponse;
+import zw.co.innbucks.loans.core.workflow.CheckpointOutcome;
+import zw.co.innbucks.loans.core.workflow.CheckpointService;
+import zw.co.innbucks.loans.core.workflow.CreateCheckpointStageRequest;
 import zw.co.innbucks.loans.core.workflow.Entitlement;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.StageKind;
 import zw.co.innbucks.loans.core.workflow.StageRole;
 import zw.co.innbucks.loans.core.workflow.WorkItemResponse;
 import zw.co.innbucks.loans.core.workflow.WorkQueueService;
 import zw.co.innbucks.loans.core.workflow.WorkflowPipelineReportResponse;
 import zw.co.innbucks.loans.core.workflow.WorkflowReportService;
 import zw.co.innbucks.loans.core.workflow.WorkflowStage;
+import zw.co.innbucks.loans.core.workflow.WorkflowStageResponse;
 import zw.co.innbucks.loans.core.workflow.WorkflowStageService;
 import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +58,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -65,19 +79,28 @@ class WorkflowWebContractTest {
     private WorkflowStageService stageService;
     private WorkQueueService queueService;
     private WorkflowReportService reportService;
+    private CheckpointService checkpointService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         stages = WorkflowTestSupport.seededStages();
+        // A checkpoint an administrator added: Finance works it, Credit managers only see it.
+        stages.put("HIGH_VALUE_PAYOUT_CHECK", WorkflowStage.builder().code("HIGH_VALUE_PAYOUT_CHECK")
+                .kind(StageKind.CHECKPOINT).holdPoint(HoldPoint.BEFORE_BOOKING)
+                .roles(new HashSet<>(Set.of(new StageRole(UserGroup.CREDIT_MANAGER, Entitlement.VIEW),
+                        new StageRole(UserGroup.FINANCE, Entitlement.WORK))))
+                .build());
         stageService = mock(WorkflowStageService.class);
+        checkpointService = mock(CheckpointService.class);
         queueService = mock(WorkQueueService.class);
         reportService = mock(WorkflowReportService.class);
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
         mvc = MockMvcBuilders.standaloneSetup(
                         secured(new WorkflowStageController(stageService)),
-                        secured(new WorkQueueController(queueService, reportService)))
+                        secured(new WorkQueueController(queueService, reportService)),
+                        secured(new CheckpointController(checkpointService)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setValidator(validator)
                 .build();
@@ -261,9 +284,136 @@ class WorkflowWebContractTest {
     }
 
     @Test
-    @DisplayName("the seeded-stages example is the configuration the migration seeds")
+    @DisplayName("only SUPER_ADMIN adds a checkpoint; it answers 201, and a bad code or a taken one is refused")
+    void checkpointCreated() throws Exception {
+        String payoutCheck = ApiExamples.CHECKPOINT_STAGE_REQUEST;
+        mvc.perform(post("/lending/v1/workflow-stages").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(payoutCheck))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(stageService);
+
+        WorkflowStageResponse created = new WorkflowStageResponse("HIGH_VALUE_PAYOUT_CHECK", StageKind.CHECKPOINT,
+                "High-value payout check", null, 35, HoldPoint.BEFORE_BOOKING, new BigDecimal("2000.00"), List.of(),
+                true, null, AssignmentMode.OPTIONAL, List.of(), List.of(), List.of(), 4, 8, List.of(), true, "admin",
+                null);
+        when(stageService.create(any())).thenReturn(created);
+        mvc.perform(post("/lending/v1/workflow-stages").with(as("SUPER_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(payoutCheck))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("CREATED"))
+                .andExpect(jsonPath("$.message")
+                        .value("Checkpoint stage created; it holds loans at BEFORE_BOOKING from now"))
+                .andExpect(jsonPath("$.data.kind").value("CHECKPOINT"));
+        ArgumentCaptor<CreateCheckpointStageRequest> request =
+                ArgumentCaptor.forClass(CreateCheckpointStageRequest.class);
+        verify(stageService).create(request.capture());
+        assertThat(request.getValue().getHoldPoint()).isEqualTo(HoldPoint.BEFORE_BOOKING);
+        assertThat(request.getValue().getMinimumPrincipal()).isEqualByComparingTo("2000");
+
+        mvc.perform(post("/lending/v1/workflow-stages").with(as("SUPER_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(payoutCheck.replace("HIGH_VALUE_PAYOUT_CHECK",
+                                "payout check")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.code").value(
+                        "Code must be 3 to 40 capital letters, digits or underscores, starting with a letter"));
+        when(stageService.create(any())).thenThrow(
+                new ConflictException("Workflow stage HIGH_VALUE_PAYOUT_CHECK already exists"));
+        mvc.perform(post("/lending/v1/workflow-stages").with(as("SUPER_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(payoutCheck))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Workflow stage HIGH_VALUE_PAYOUT_CHECK already exists"));
+    }
+
+    @Test
+    @DisplayName("a checkpoint is decided by whoever works it; seeing it is not enough, and agents are refused")
+    void checkpointDecidedByItsWorkers() throws Exception {
+        String clear = ApiExamples.CHECKPOINT_CLEAR_REQUEST;
+        when(checkpointService.decide(eq("HIGH_VALUE_PAYOUT_CHECK"), eq(61L), any())).thenReturn(
+                new CheckpointDecisionResponse("HIGH_VALUE_PAYOUT_CHECK", "High-value payout check",
+                        HoldPoint.BEFORE_BOOKING, 61L, "000000061", null, CheckpointOutcome.CLEARED, null,
+                        "Payout wallet confirmed with the applicant by phone", "finance1", null));
+
+        for (String role : List.of("CREDIT_MANAGER", "AGENTS")) {
+            mvc.perform(post("/lending/v1/loans/61/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(clear))
+                    .andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(checkpointService);
+        mvc.perform(post("/lending/v1/loans/61/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON).content(clear))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Cleared; the loan carries on"))
+                .andExpect(jsonPath("$.data.outcome").value("CLEARED"));
+        ArgumentCaptor<CheckpointDecisionRequest> request = ArgumentCaptor.forClass(CheckpointDecisionRequest.class);
+        verify(checkpointService).decide(eq("HIGH_VALUE_PAYOUT_CHECK"), eq(61L), request.capture());
+        assertThat(request.getValue().getOutcome()).isEqualTo(CheckpointOutcome.CLEARED);
+
+        stages.get("HIGH_VALUE_PAYOUT_CHECK").getRoles().add(new StageRole(UserGroup.CREDIT_MANAGER, Entitlement.WORK));
+        mvc.perform(post("/lending/v1/loans/61/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(clear))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/lending/v1/loans/61/checkpoints/NOPE").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON).content(clear))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("a checkpoint decision without a comment, not held, or by the originator is refused in the"
+            + " service's words")
+    void checkpointDecisionRefusals() throws Exception {
+        mvc.perform(post("/lending/v1/loans/61/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"outcome\": \"CLEARED\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.comment").value("Comment is required"));
+
+        when(checkpointService.decide(eq("HIGH_VALUE_PAYOUT_CHECK"), eq(62L), any())).thenThrow(
+                new ConflictException("Loan 000000062 is not waiting at High-value payout check"));
+        mvc.perform(post("/lending/v1/loans/62/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.CHECKPOINT_CLEAR_REQUEST))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Loan 000000062 is not waiting at High-value payout check"));
+        when(checkpointService.decide(eq("HIGH_VALUE_PAYOUT_CHECK"), eq(63L), any())).thenThrow(
+                new AccessDeniedException("Loan 000000063 was originated by someone, who cannot also decide its"
+                        + " High-value payout check; someone else must"));
+        mvc.perform(post("/lending/v1/loans/63/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.CHECKPOINT_DECLINE_REQUEST))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Loan 000000063 was originated by someone, who cannot also"
+                        + " decide its High-value payout check; someone else must"));
+        when(checkpointService.decide(eq("HIGH_VALUE_PAYOUT_CHECK"), eq(64L), any())).thenThrow(
+                new IllegalArgumentException("A reason code is required to decline"));
+        mvc.perform(post("/lending/v1/loans/64/checkpoints/HIGH_VALUE_PAYOUT_CHECK").with(as("FINANCE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"outcome\": \"DECLINED\", \"comment\": \"No\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("A reason code is required to decline"));
+    }
+
+    @Test
+    @DisplayName("a loan's checkpoints are staff's; agents are refused")
+    void loanCheckpointsAreStaffs() throws Exception {
+        when(checkpointService.forLoan(61L)).thenReturn(List.of());
+
+        mvc.perform(get("/lending/v1/loans/61/checkpoints").with(as("AGENTS"))).andExpect(status().isForbidden());
+        for (String role : List.of("CREDIT_MANAGER", "FINANCE", "SUPER_ADMIN")) {
+            mvc.perform(get("/lending/v1/loans/61/checkpoints").with(as(role))).andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    @DisplayName("the stages example lists the seeded configuration, and the checkpoint example the stage it creates")
     void seededExampleMatchesTheSeeds() {
-        JsonNode examples = JsonMapper.builder().build().readTree(ApiExamples.WORKFLOW_STAGES).path("data");
+        JsonNode listed = JsonMapper.builder().build().readTree(ApiExamples.WORKFLOW_STAGES).path("data");
+        List<JsonNode> examples = new ArrayList<>();
+        for (JsonNode example : listed) {
+            if ("SYSTEM".equals(example.path("kind").asString())) {
+                examples.add(example);
+            } else {
+                assertThat(example).isEqualTo(JsonMapper.builder().build()
+                        .readTree(ApiExamples.CHECKPOINT_STAGE_CREATED).path("data"));
+            }
+        }
         Map<String, WorkflowStage> seeded = WorkflowTestSupport.seededStages();
         assertThat(examples.size()).isEqualTo(seeded.size());
         for (JsonNode example : examples) {

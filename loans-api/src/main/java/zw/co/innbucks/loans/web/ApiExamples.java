@@ -1498,6 +1498,7 @@ public final class ApiExamples {
                   "name": "Payslip review",
                   "description": "Clear or confirm an application held for a payslip finding",
                   "displayOrder": 10,
+                  "active": true,
                   "assignment": "OPTIONAL",
                   "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
                   "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
@@ -1517,6 +1518,7 @@ public final class ApiExamples {
                   "name": "Credit decision",
                   "description": "Approve, reject or return an application SSB has accepted",
                   "displayOrder": 20,
+                  "active": true,
                   "assignment": "OPTIONAL",
                   "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
                   "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
@@ -1529,13 +1531,14 @@ public final class ApiExamples {
                   "updatedAt": "2026-09-30T12:00:00+02:00"
                 }""";
 
-    private static final String STAGE_OTHERS = """
+    private static final String STAGE_MORE_INFORMATION = """
                 {
                   "code": "MORE_INFORMATION",
                   "kind": "SYSTEM",
                   "name": "More information",
                   "description": "The originator answers a return from Credit",
                   "displayOrder": 30,
+                  "active": true,
                   "assignment": "NONE",
                   "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
                   "workRoles": [],
@@ -1546,13 +1549,41 @@ public final class ApiExamples {
                   "notifyAssignee": true,
                   "updatedBy": "system",
                   "updatedAt": "2026-09-30T12:00:00+02:00"
-                },
+                }""";
+
+    /** A checkpoint an administrator added: Finance confirms the payout of any loan of 2,000 or more first. */
+    private static final String STAGE_HIGH_VALUE_PAYOUT_CHECK = """
+                {
+                  "code": "HIGH_VALUE_PAYOUT_CHECK",
+                  "kind": "CHECKPOINT",
+                  "name": "High-value payout check",
+                  "description": "Finance confirms the payout details of a loan of 2,000 or more before it is paid",
+                  "displayOrder": 35,
+                  "holdPoint": "BEFORE_BOOKING",
+                  "minimumPrincipal": 2000.00,
+                  "channels": [],
+                  "active": true,
+                  "activeSince": "2026-10-02T09:15:04+02:00",
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
+                  "workRoles": ["SUPER_ADMIN", "FINANCE"],
+                  "assignRoles": ["SUPER_ADMIN", "FINANCE"],
+                  "targetHours": 4,
+                  "escalationHours": 8,
+                  "escalateTo": ["SUPER_ADMIN", "FINANCE"],
+                  "notifyAssignee": true,
+                  "updatedBy": "admin",
+                  "updatedAt": "2026-10-02T09:15:04+02:00"
+                }""";
+
+    private static final String STAGE_LATER = """
                 {
                   "code": "EMPLOYMENT_EVENT_REVIEW",
                   "kind": "SYSTEM",
                   "name": "Employment event review",
                   "description": "Release or decline an application held for an employment event, or review a paid loan",
                   "displayOrder": 40,
+                  "active": true,
                   "assignment": "OPTIONAL",
                   "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
                   "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
@@ -1570,6 +1601,7 @@ public final class ApiExamples {
                   "name": "Deduction cancellation",
                   "description": "Cancel the SSB deduction of a loan that will not be paid, and record it",
                   "displayOrder": 50,
+                  "active": true,
                   "assignment": "OPTIONAL",
                   "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
                   "workRoles": ["SUPER_ADMIN", "FINANCE"],
@@ -1582,7 +1614,10 @@ public final class ApiExamples {
                   "updatedAt": "2026-09-30T12:00:00+02:00"
                 }""";
 
-    /** The stages as seeded: who could do what before the workflow was configurable, and a service level each. */
+    /**
+     * The stages as seeded (who could do what before the workflow was configurable, and a service level each), with
+     * the checkpoint an administrator added, in display order.
+     */
     public static final String WORKFLOW_STAGES = """
             {
               "code": "OK",
@@ -1592,7 +1627,11 @@ public final class ApiExamples {
             ,
             """ + STAGE_CREDIT_DECISION + """
             ,
-            """ + STAGE_OTHERS + """
+            """ + STAGE_MORE_INFORMATION + """
+            ,
+            """ + STAGE_HIGH_VALUE_PAYOUT_CHECK + """
+            ,
+            """ + STAGE_LATER + """
 
               ]
             }""";
@@ -1630,6 +1669,7 @@ public final class ApiExamples {
                 "name": "Credit decision",
                 "description": "Approve, reject or return an application SSB has accepted",
                 "displayOrder": 20,
+                "active": true,
                 "assignment": "EXCLUSIVE",
                 "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
                 "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
@@ -1641,6 +1681,123 @@ public final class ApiExamples {
                 "updatedBy": "admin",
                 "updatedAt": "2026-10-02T08:50:31+02:00"
               }
+            }""";
+
+    public static final String CHECKPOINT_STAGE_REQUEST = """
+            {
+              "code": "HIGH_VALUE_PAYOUT_CHECK",
+              "holdPoint": "BEFORE_BOOKING",
+              "name": "High-value payout check",
+              "description": "Finance confirms the payout details of a loan of 2,000 or more before it is paid",
+              "minimumPrincipal": 2000.00,
+              "assignment": "OPTIONAL",
+              "viewRoles": ["CREDIT_MANAGER"],
+              "workRoles": ["FINANCE"],
+              "assignRoles": ["FINANCE"],
+              "targetHours": 4,
+              "escalationHours": 8,
+              "escalateTo": ["SUPER_ADMIN", "FINANCE"],
+              "notifyAssignee": true
+            }""";
+
+    public static final String CHECKPOINT_STAGE_CREATED = """
+            {
+              "code": "CREATED",
+              "message": "Checkpoint stage created; it holds loans at BEFORE_BOOKING from now",
+              "data": """ + STAGE_HIGH_VALUE_PAYOUT_CHECK + """
+
+            }""";
+
+    public static final String CHECKPOINT_STAGE_EXISTS = """
+            {
+              "code": "CONFLICT",
+              "message": "Workflow stage HIGH_VALUE_PAYOUT_CHECK already exists"
+            }""";
+
+    public static final String CHECKPOINT_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "No checkpoint stage CREDIT_DECISION"
+            }""";
+
+    public static final String CHECKPOINT_CLEAR_REQUEST = """
+            {
+              "outcome": "CLEARED",
+              "comment": "Payout wallet confirmed with the applicant by phone"
+            }""";
+
+    public static final String CHECKPOINT_DECLINE_REQUEST = """
+            {
+              "outcome": "DECLINED",
+              "reasonCode": "REJECT_IDENTITY",
+              "comment": "The payout wallet is registered to someone other than the applicant"
+            }""";
+
+    public static final String CHECKPOINT_CLEARED = """
+            {
+              "code": "OK",
+              "message": "Cleared; the loan carries on",
+              "data": {
+                "stage": "HIGH_VALUE_PAYOUT_CHECK",
+                "stageName": "High-value payout check",
+                "holdPoint": "BEFORE_BOOKING",
+                "loanId": 61,
+                "reference": "000000061",
+                "enteredAt": "2026-10-02T09:41:12+02:00",
+                "outcome": "CLEARED",
+                "comment": "Payout wallet confirmed with the applicant by phone",
+                "decidedBy": "finance1",
+                "decidedAt": "2026-10-02T11:02:47+02:00"
+              }
+            }""";
+
+    public static final String CHECKPOINT_DECLINED = """
+            {
+              "code": "OK",
+              "message": "The application is declined",
+              "data": {
+                "stage": "HIGH_VALUE_PAYOUT_CHECK",
+                "stageName": "High-value payout check",
+                "holdPoint": "BEFORE_BOOKING",
+                "loanId": 61,
+                "reference": "000000061",
+                "enteredAt": "2026-10-02T09:41:12+02:00",
+                "outcome": "DECLINED",
+                "reasonCode": "REJECT_IDENTITY",
+                "comment": "The payout wallet is registered to someone other than the applicant",
+                "decidedBy": "finance1",
+                "decidedAt": "2026-10-02T11:02:47+02:00"
+              }
+            }""";
+
+    /**
+     * Loan 61's checkpoints on the morning of the 2nd: waiting at the payout check with {@code finance1}, having been
+     * cleared at an agent-application review before it was lodged.
+     */
+    public static final String LOAN_61_CHECKPOINTS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "stage": "HIGH_VALUE_PAYOUT_CHECK",
+                  "name": "High-value payout check",
+                  "holdPoint": "BEFORE_BOOKING",
+                  "status": "PENDING",
+                  "enteredAt": "2026-10-02T09:41:12+02:00",
+                  "assignedTo": "finance1"
+                },
+                {
+                  "stage": "AGENT_APPLICATION_REVIEW",
+                  "name": "Agent application review",
+                  "holdPoint": "BEFORE_LODGEMENT",
+                  "status": "CLEARED",
+                  "enteredAt": "2026-09-29T14:20:05+02:00",
+                  "comment": "Identity and payslip checked against the originals",
+                  "decidedBy": "cmanager",
+                  "decidedAt": "2026-09-29T15:02:31+02:00"
+                }
+              ]
             }""";
 
     /** The queues as {@code cmanager} sees them at 11:03 on the 30th, before loan 42 is approved. */

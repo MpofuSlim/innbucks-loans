@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
-class MoreInformationQueue implements StageQueue {
+class MoreInformationQueue implements SystemStageQueue {
 
     private final LoanRepository loanRepository;
     private final CreditDecisionRepository creditDecisionRepository;
