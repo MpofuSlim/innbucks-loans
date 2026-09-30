@@ -78,8 +78,10 @@ public class LoanController {
     private final DisbursementService disbursementService;
 
     @Operation(summary = "Apply for a loan",
-            description = "Captures an application for the signed-in user's merchant, or for the channel named by"
-                    + " channelId. It is lodged with SSB for the payroll deduction, then goes to Credit. Every"
+            description = "Captures an application originated by the signed-in user (FR-SSB-017): it is theirs,"
+                    + " their merchant's and priced with their commission, whichever channel it came through;"
+                    + " channelId only records that channel. It is lodged with SSB for the payroll deduction, then"
+                    + " goes to Credit. Every"
                     + " missing field is reported in one 400. Documents are base64: the payslip and national ID a PDF,"
                     + " PNG, JPEG or GIF, each signature a PNG, JPEG or GIF, each file at most 5 MB. Each must be"
                     + " readable (FR-SSB-005): a damaged, password-protected, blank, blurred or too-small upload is"
@@ -137,6 +139,7 @@ public class LoanController {
                                       "code": "INVALID_REQUEST",
                                       "message": "Loan amount should be between 20 and 2000"
                                     }"""),
+                            @ExampleObject(name = "Unknown channel", value = ApiExamples.UNKNOWN_CHANNEL),
                             @ExampleObject(name = "Documents refused", value = ApiExamples.DOCUMENTS_REFUSED),
                             @ExampleObject(name = "Not signed", value = ApiExamples.APPLICATION_NOT_SIGNED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",

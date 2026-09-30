@@ -150,6 +150,7 @@ public class LoanServiceImpl implements LoanService {
         // refused HERE, not accepted and then failed at the InnBucks step after
         // the customer believed they had applied.
         requireCompleteApplication(loanRequest);
+        Channel channel = channelFor(loanRequest);
 
         // Zero-trust content: the attached documents are decoded and checked by their byte signature before
         // the application touches business state, so an undecodable, executable or unrecognised file is refused.
@@ -184,19 +185,13 @@ public class LoanServiceImpl implements LoanService {
             throw new PendingApplicationException(pendingLoanId.get());
         }
 
+        // The signed-in caller originated it, whatever channel it came through (FR-SSB-017).
+        User originator = authService.getLoggedInUser();
+        log.info("Application originated by {} through {}", originator.getUsername(),
+                channel == null ? "no channel" : "channel " + channel.getChannelId());
 
-        Optional<Channel> optionalChannel = resolveChannel(loanRequest);
-
-        log.info("Channel {} resolved to {}", loanRequest.getChannelId(), optionalChannel
-                .map(channel -> channel.getName() + " (system user "
-                        + (channel.getSystemUser() == null ? null : channel.getSystemUser().getUsername()) + ")")
-                .orElse("no channel"));
-
-        User loggedInUser = optionalChannel.map(Channel::getSystemUser)
-                .orElseGet(authService::getLoggedInUser);
-
-        final Loan loan = newLoan(loanRequest, formattedEcNumber, formattedIdNumber, loggedInUser,
-                optionalChannel.orElse(null), payslip == null ? null : payslip.sha256());
+        final Loan loan = newLoan(loanRequest, formattedEcNumber, formattedIdNumber, originator, channel,
+                payslip == null ? null : payslip.sha256());
 
         // Payslip fraud controls (FR-SSB-007). Two applications with one payslip must not pass each other
         // unseen, so the second waits for the first to commit before looking for it.
@@ -211,12 +206,12 @@ public class LoanServiceImpl implements LoanService {
 
         loanRepository.save(loan);
         // Version 1 of each document (FR-SSB-009), committed with the application.
-        loanDocumentService.storeApplication(loan, documents, loggedInUser.getUsername());
+        loanDocumentService.storeApplication(loan, documents, originator.getUsername());
         if (!findings.isEmpty()) {
             payslipReviewService.hold(loan, findings);
         }
         // The instruments as signed, rendered from the loan as saved, with the evidence of the signing.
-        signedInstrumentService.sign(loan, instruments, documents, signing, loggedInUser.getUsername());
+        signedInstrumentService.sign(loan, instruments, documents, signing, originator.getUsername());
         // The applicant hears it was received once it is committed (FR-SSB-016).
         loanNotificationService.notify(loan, LoanNotice.RECEIVED);
 
@@ -238,10 +233,9 @@ public class LoanServiceImpl implements LoanService {
                     .sorted()
                     .collect(Collectors.joining("; ")));
         }
-        Optional<Channel> optionalChannel = resolveChannel(loanRequest);
-        User originator = optionalChannel.map(Channel::getSystemUser).orElseGet(authService::getLoggedInUser);
+        Channel channel = channelFor(loanRequest);
         return signedInstrumentService.preview(newLoan(loanRequest, formattedEcNumber(loanRequest),
-                formattedIdNumber(loanRequest), originator, optionalChannel.orElse(null), null));
+                formattedIdNumber(loanRequest), authService.getLoggedInUser(), channel, null));
     }
 
     /**
@@ -260,10 +254,13 @@ public class LoanServiceImpl implements LoanService {
         return TextUtils.trimSpecialCharacters(loanRequest.getNationalIdNumber()).toUpperCase();
     }
 
-    /** The loan an application becomes, priced for its originator; not saved. */
+    /**
+     * The loan an application becomes, priced for its originator and attributed to them: their merchant, their
+     * commission, and the loans they can see and cannot credit-approve (FR-SSB-017). Not saved.
+     */
     private Loan newLoan(LoanApplicationRequest loanRequest, String formattedEcNumber, String formattedIdNumber,
-                         User loggedInUser, Channel channel, String payslipSha256) {
-        LoanQuote quote = calculate(loanRequest.quoteRequest(), loggedInUser);
+                         User originator, Channel channel, String payslipSha256) {
+        LoanQuote quote = calculate(loanRequest.quoteRequest(), originator);
         return Loan.builder()
                 .principal(quote.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
@@ -311,9 +308,9 @@ public class LoanServiceImpl implements LoanService {
                 .bankingDetail(loanRequest.getBankingDetail())
                 .gender(loanRequest.getGender())
                 .profession(loanRequest.getProfession())
-                .createdBy(loggedInUser.getUsername())
-                .createdByUser(loggedInUser)
-                .merchant(loggedInUser.getMerchant())
+                .createdBy(originator.getUsername())
+                .createdByUser(originator)
+                .merchant(originator.getMerchant())
                 .channel(channel)
                 .loanStartDate(quote.getStartDate())
                 .build();
@@ -495,9 +492,17 @@ public class LoanServiceImpl implements LoanService {
 
     }
 
-    private Optional<Channel> resolveChannel(LoanApplicationRequest loanRequest) {
-        return loanRequest.getChannelId() != null ?
-                channelRepository.findChannelByChannelId(loanRequest.getChannelId()) : Optional.empty();
+    /**
+     * The channel the application names, or null when it names none (captured in the portal). A channel records
+     * where the application came from, never who originated it (FR-SSB-017). One that names no registered channel
+     * is refused: taken as "no channel", its applications would be reported as captured in the portal.
+     */
+    private Channel channelFor(LoanApplicationRequest loanRequest) {
+        if (!StringUtils.hasText(loanRequest.getChannelId())) {
+            return null;
+        }
+        return channelRepository.findChannelByChannelId(loanRequest.getChannelId().trim())
+                .orElseThrow(() -> new IllegalArgumentException("No channel is registered under that channelId"));
     }
 
     private BigDecimal getCommissionAmount(BigDecimal totalCommissionAmount, boolean percentage, BigDecimal commissionAmount) {

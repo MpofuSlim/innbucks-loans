@@ -160,8 +160,10 @@ public class ReportController {
     }
 
     @Operation(summary = "Agent performance report",
-            description = "Loans, disbursed amount and agent commission per originating agent for loans disbursed in"
-                    + " the period.")
+            description = "Loans, disbursed amount and agent commission per originating officer or agent for loans"
+                    + " disbursed in the period. A loan counts for the officer or agent who originated it, whichever"
+                    + " channel it came through (FR-SSB-017); loans captured through a channel before that were"
+                    + " attributed to the channel's own account.")
     @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = @ExampleObject("""
             {
               "code": "OK",
@@ -173,6 +175,7 @@ public class ReportController {
                   {
                     "agentId": 7,
                     "agentUsername": "tmoyo",
+                    "agentName": "Tendai Moyo",
                     "loanCount": 1,
                     "totalDisbursed": 500.00,
                     "totalAgentCommission": 3.19

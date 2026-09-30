@@ -21,7 +21,18 @@ public class LoanSummaryResponse {
     private String reference;
     private String publicReference;
     private LocalDateTime createdAt;
+    /** The username of the officer or agent who originated the application (FR-SSB-017). */
+    @Schema(description = "Username of the officer or agent who originated the application", example = "tmoyo")
     private String createdBy;
+    /** Their name, for attribution and performance reporting. */
+    @Schema(description = "Name of the officer or agent who originated the application", example = "Tendai Moyo")
+    private String createdByName;
+    /** The channel the application came through; absent for one captured in the portal. */
+    @Schema(description = "The channel the application came through, as registered; absent for the portal",
+            example = "superapp")
+    private String channelId;
+    @Schema(description = "The channel's name; absent for the portal", example = "InnBucks SuperApp")
+    private String channelName;
     private String merchantCode;
     private String merchantName;
     private String firstName;

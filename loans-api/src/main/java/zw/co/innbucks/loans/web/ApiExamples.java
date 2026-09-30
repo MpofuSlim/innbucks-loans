@@ -90,6 +90,7 @@ public final class ApiExamples {
                   "reference": "000000042",
                   "createdAt": "2026-09-29T10:15:30+02:00",
                   "createdBy": "tmoyo",
+                  "createdByName": "Tendai Moyo",
                   "merchantCode": "harare-motors",
                   "merchantName": "Harare Motor Spares",
                   "firstName": "Rudo",
@@ -288,6 +289,7 @@ public final class ApiExamples {
                 "reference": "000000042",
                 "createdAt": "2026-09-29T10:15:30+02:00",
                 "createdBy": "tmoyo",
+                "createdByName": "Tendai Moyo",
                 "merchantCode": "harare-motors",
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
@@ -317,6 +319,7 @@ public final class ApiExamples {
                 "reference": "000000042",
                 "createdAt": "2026-09-29T10:15:30+02:00",
                 "createdBy": "tmoyo",
+                "createdByName": "Tendai Moyo",
                 "merchantCode": "harare-motors",
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
@@ -341,6 +344,7 @@ public final class ApiExamples {
                 "reference": "000000042",
                 "createdAt": "2026-09-29T10:15:30+02:00",
                 "createdBy": "tmoyo",
+                "createdByName": "Tendai Moyo",
                 "merchantCode": "harare-motors",
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
@@ -365,6 +369,7 @@ public final class ApiExamples {
                 "reference": "000000042",
                 "createdAt": "2026-09-29T10:15:30+02:00",
                 "createdBy": "tmoyo",
+                "createdByName": "Tendai Moyo",
                 "merchantCode": "harare-motors",
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
@@ -523,6 +528,7 @@ public final class ApiExamples {
                 "reference": "000000057",
                 "createdAt": "2026-10-01T09:20:11+02:00",
                 "createdBy": "tmoyo",
+                "createdByName": "Tendai Moyo",
                 "merchantCode": "harare-motors",
                 "merchantName": "Harare Motor Spares",
                 "firstName": "Tendai",
@@ -876,6 +882,13 @@ public final class ApiExamples {
             }""";
 
     // --- Signed instruments (FR-SSB-013): draft 7 is signed as loan 43 against loan agreement v3 and deduction authority v2 ---
+
+    /** An application naming a channel that is not registered (FR-SSB-017): refused, nothing created. */
+    public static final String UNKNOWN_CHANNEL = """
+            {
+              "code": "INVALID_REQUEST",
+              "message": "No channel is registered under that channelId"
+            }""";
 
     /** An application missing what signing needs (FR-SSB-013): every gap at once. */
     public static final String APPLICATION_NOT_SIGNED = """

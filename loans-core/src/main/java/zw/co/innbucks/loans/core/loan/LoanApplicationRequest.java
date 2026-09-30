@@ -144,7 +144,14 @@ public class LoanApplicationRequest implements Serializable {
     @ToString.Exclude
     private BankingDetail bankingDetail;
 
-    /** The channel that captured the application; absent for one captured in the portal by the signed-in user. */
+    /**
+     * The channel the application came through; absent for one captured in the portal. It records where the
+     * application came from only: the signed-in caller originates it either way (FR-SSB-017).
+     */
+    @Schema(description = "The channel integration the application came through, as registered; omitted by the"
+            + " portal. It records where the application came from, not who: the application is attributed to the"
+            + " signed-in caller either way. A channelId that names no registered channel is refused.",
+            example = "superapp")
     private String channelId;
 
     // --- Signing (FR-SSB-013): the versions of each instrument the applicant accepted ---

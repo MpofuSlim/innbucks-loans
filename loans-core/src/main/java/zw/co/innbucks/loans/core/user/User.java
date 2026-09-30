@@ -11,6 +11,8 @@ import zw.co.innbucks.loans.core.merchant.Merchant;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Entity
 @Table(name = "users")
@@ -86,6 +88,20 @@ public class User extends BaseEntity {
      */
     @Column(name = "token_version")
     private Long tokenVersion;
+
+    /** First name then last, whichever are recorded; null when neither is. */
+    public String fullName() {
+        return fullName(firstName, lastName);
+    }
+
+    /** First name then last, whichever are given and not blank; null when neither is. */
+    public static String fullName(String firstName, String lastName) {
+        String name = Stream.of(firstName, lastName)
+                .filter(part -> part != null && !part.isBlank())
+                .map(String::trim)
+                .collect(Collectors.joining(" "));
+        return name.isEmpty() ? null : name;
+    }
 
     /** Invalidates every token minted before now. Saved by the caller. */
     public void bumpTokenVersion() {

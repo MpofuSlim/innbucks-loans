@@ -225,13 +225,13 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
                                          @Param("merchantCode") String merchantCode);
 
     @Query("""
-            select u.id, u.username, count(l),
+            select u.id, u.username, u.firstName, u.lastName, count(l),
                    coalesce(sum(l.disbursedAmount), 0), coalesce(sum(l.agentCommission), 0)
             from Loan l join l.createdByUser u left join l.merchant m
             where l.disbursementStatus = zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
               and l.dateDisbursed between :startDate and :endDate
               and (cast(:merchantCode as string) is null or m.merchantCode = :merchantCode)
-            group by u.id, u.username
+            group by u.id, u.username, u.firstName, u.lastName
             order by u.username
             """)
     List<Object[]> agentPerformance(@Param("startDate") LocalDateTime startDate,

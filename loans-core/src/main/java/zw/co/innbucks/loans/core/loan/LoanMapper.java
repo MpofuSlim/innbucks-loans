@@ -2,6 +2,7 @@ package zw.co.innbucks.loans.core.loan;
 
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import zw.co.innbucks.loans.core.user.User;
 
 /**
  * Loan entity to API views. The entity keeps its storage names; the views use the names the API
@@ -30,6 +31,9 @@ public interface LoanMapper {
     @Mapping(target = "bookingStatus", source = "loanAccountStatus")
     @Mapping(target = "disbursedAt", source = "dateDisbursed")
     @Mapping(target = "stage", expression = "java(LoanStage.of(loan))")
+    @Mapping(target = "createdByName", expression = "java(originatorName(loan))")
+    @Mapping(target = "channelId", source = "channel.channelId")
+    @Mapping(target = "channelName", source = "channel.name")
     LoanResponse toResponse(Loan loan);
 
     @Mapping(target = "createdAt", source = "createdDate")
@@ -39,5 +43,14 @@ public interface LoanMapper {
     @Mapping(target = "creditApprovalStatus", source = "internalApprovalStatus")
     @Mapping(target = "bookingStatus", source = "loanAccountStatus")
     @Mapping(target = "stage", expression = "java(LoanStage.of(loan))")
+    @Mapping(target = "createdByName", expression = "java(originatorName(loan))")
+    @Mapping(target = "channelId", source = "channel.channelId")
+    @Mapping(target = "channelName", source = "channel.name")
     LoanSummaryResponse toSummary(Loan loan);
+
+    /** The originating officer or agent's name; null when the loan records no user. */
+    default String originatorName(Loan loan) {
+        User originator = loan.getCreatedByUser();
+        return originator == null ? null : originator.fullName();
+    }
 }
