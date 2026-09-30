@@ -29,6 +29,7 @@ import zw.co.innbucks.loans.core.exception.BusinessException;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.exception.DuplicateUserByUsernameException;
+import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.notifications.NotificationDeliveryException;
@@ -111,7 +112,6 @@ public class GlobalExceptionHandler {
                 "Parameter '" + ex.getParameterName() + "' is required");
     }
 
-    /** An attached document that is an executable, or not a PDF, PNG, JPEG or GIF. */
     /** Uploaded documents that were not accepted (FR-SSB-005): every one, each with its field and reason. */
     @ExceptionHandler(DocumentRejectedException.class)
     public ResponseEntity<ApiResult<Map<String, List<DocumentProblem>>>> rejectedDocuments(
@@ -120,6 +120,17 @@ public class GlobalExceptionHandler {
                 .map(problem -> problem.field() + " " + problem.reason()).toList());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResult.error("INVALID_DOCUMENT",
                 ex.getMessage(), Map.of("documents", ex.getProblems())));
+    }
+
+    /**
+     * A saved application submitted with fields still missing or invalid (FR-SSB-002): every one, keyed by
+     * its path, as a refused {@code POST /loans} body lists them.
+     */
+    @ExceptionHandler(IncompleteApplicationException.class)
+    public ResponseEntity<ApiResult<Map<String, String>>> incompleteApplication(IncompleteApplicationException ex) {
+        log.warn("Incomplete application refused: {}", ex.getFields().keySet());
+        return ResponseEntity.badRequest().body(ApiResult.error("VALIDATION_ERROR", "The application is not complete",
+                new TreeMap<>(ex.getFields())));
     }
 
     /** A username another account already holds. Checked before {@link BusinessException}, its parent. */

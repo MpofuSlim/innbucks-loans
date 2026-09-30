@@ -17,6 +17,10 @@ import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocument;
 import zw.co.innbucks.loans.core.document.LoanDocumentContent;
+import zw.co.innbucks.loans.core.draft.DraftDocumentContent;
+import zw.co.innbucks.loans.core.draft.LoanApplicationDraft;
+import zw.co.innbucks.loans.core.draft.LoanApplicationDraftDocument;
+import zw.co.innbucks.loans.core.draft.LoanApplicationDraftStatus;
 import zw.co.innbucks.loans.core.loan.BankingDetail;
 import zw.co.innbucks.loans.core.loan.Customer;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -165,6 +169,26 @@ class SensitiveToStringTest {
         assertThat(LoanDocumentContent.of(document).content()).isEqualTo(Base64.getEncoder().encodeToString(bytes));
         assertThat(LoanDocumentContent.of(document).toString()).contains("NATIONAL_ID", "version=2");
         assertThat(amendment.toString()).contains("Clearer copy");
+    }
+
+    @Test
+    @DisplayName("a saved draft, its documents and a document's content view print no KYC or content (FR-SSB-002)")
+    void draftsPrintNoKycOrContent() {
+        byte[] bytes = Base64.getDecoder().decode(IMAGE);
+        LoanApplicationDraft draft = LoanApplicationDraft.builder().id(7L).ownerUserId(5L)
+                .status(LoanApplicationDraftStatus.OPEN)
+                .application("{\"nationalIdNumber\":\"" + NATIONAL_ID + "\",\"firstName\":\"Rudo\"}").build();
+        LoanApplicationDraftDocument document = LoanApplicationDraftDocument.builder().draftId(7L)
+                .documentType(DocumentType.NATIONAL_ID).content(bytes).contentType("image/png").sizeBytes(bytes.length)
+                .sha256("ab".repeat(32)).build();
+        DraftDocumentContent content = new DraftDocumentContent(DocumentType.NATIONAL_ID, "image/png", bytes.length,
+                "ab".repeat(32), null, IMAGE);
+
+        assertNoPii(draft);
+        assertNoPii(document);
+        assertNoPii(content);
+        assertThat(draft.toString()).contains("id=7", "OPEN");
+        assertThat(content.toString()).contains("NATIONAL_ID");
     }
 
     @Test

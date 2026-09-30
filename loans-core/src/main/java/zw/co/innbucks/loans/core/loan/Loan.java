@@ -393,7 +393,12 @@ public class Loan extends BaseEntity {
     }
 
     public String getReference() {
-        return String.format("%09d", getId());
+        return referenceOf(getId());
+    }
+
+    /** The reference of the loan with this id, quoted to SSB and InnBucks and given to the applicant. */
+    public static String referenceOf(Long loanId) {
+        return String.format("%09d", loanId);
     }
 
     public Integer getNumberOfDependencies() {

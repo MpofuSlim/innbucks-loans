@@ -123,6 +123,11 @@ loans:
     max-image-pixels: "${DOCUMENT_MAX_IMAGE_PIXELS:40000000}"
     min-contrast: "${DOCUMENT_MIN_CONTRAST:5.0}"
     min-sharpness: "${DOCUMENT_MIN_SHARPNESS:20.0}"
+  # Saved applications (FR-SSB-002). An open draft holds the applicant's ID and payslip, so one not saved
+  # for expiry-days is deleted, by a daily job on the scheduled-tasks instance.
+  drafts:
+    expiry-days: "${DRAFT_EXPIRY_DAYS:30}"
+    expiry-cron: "${DRAFT_EXPIRY_CRON:0 30 1 * * *}"
 
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
