@@ -220,6 +220,31 @@ public class WorkQueueService {
     }
 
     /**
+     * Takes the loan's current item at the stage back from {@code username} if they have it, recorded as their
+     * release; nothing otherwise. For an action that hands the loan on, such as a referral to a higher credit authority
+     * (FR-PBL-028), which must not leave it assigned to someone who can no longer decide it. The caller holds the loan's
+     * lock.
+     */
+    @Transactional
+    public void releaseIfHeldBy(SystemStage stage, Loan loan, String username) {
+        String code = stage.name();
+        workflowStageRepository.findById(code)
+                .flatMap(configured -> stageQueues.of(configured).enteredAt(loan))
+                .flatMap(entered -> workItemRepository.findByStageCodeAndLoanIdAndEnteredAt(code, loan.getId(), entered))
+                .filter(item -> item.getAssignedTo() != null
+                        && StringUtils.equalsIgnoreCase(item.getAssignedTo(), username))
+                .ifPresent(item -> {
+                    String current = item.getAssignedTo();
+                    item.setAssignedTo(null);
+                    item.setAssignedAt(null);
+                    WorkItem saved = workItemRepository.save(item);
+                    record(saved, WorkItemAction.RELEASED, current, null, username, LocalDateTime.now(ZoneOffset.UTC));
+                    log.info("Loan {}'s {} item released from {} as it was handed on", loan.getReference(), code,
+                            current);
+                });
+    }
+
+    /**
      * Every assignment, reassignment, release and escalation of the loan's items, oldest first.
      *
      * @throws NotFoundException no such loan

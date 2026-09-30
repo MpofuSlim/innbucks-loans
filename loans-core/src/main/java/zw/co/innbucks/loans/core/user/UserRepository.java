@@ -28,6 +28,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByUsernameContainingIgnoreCase(String username);
 
+    /** Everyone given a credit authority level. */
+    List<User> findByCreditAuthorityLevelIsNotNull();
+
+    /** Everyone at one of these credit authority levels. */
+    List<User> findByCreditAuthorityLevelIn(Collection<String> levels);
+
+    boolean existsByCreditAuthorityLevel(String level);
+
     @Query("SELECT u FROM User u WHERE (:merchantId IS NULL OR u.merchant.id= :merchantId)")
     List<User> listAllUsersByMerchant(@Param("merchantId") Long merchantId);
 

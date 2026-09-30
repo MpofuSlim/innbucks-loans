@@ -13,6 +13,9 @@ import tools.jackson.databind.json.JsonMapper;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityLevel;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityLevelRepository;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
@@ -23,8 +26,12 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.user.UserGroup;
+import zw.co.innbucks.loans.core.user.UserRepository;
 import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.WorkQueueService;
 import zw.co.innbucks.loans.core.workflow.SystemStage;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 
@@ -35,6 +42,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -79,6 +87,10 @@ class CreditDecisionServiceImplTest {
     private User approver;
     private WorkAssignmentGuard workAssignmentGuard;
     private CheckpointGate checkpointGate;
+    private CreditAuthorityLevelRepository authorityLevelRepository;
+    private UserRepository userRepository;
+    private NotificationService notificationService;
+    private WorkQueueService workQueueService;
     private CreditDecisionServiceImpl service;
 
     private static CreditReasonCode code(String code, InternalApprovalStatus decision, String description, boolean active) {
@@ -107,12 +119,20 @@ class CreditDecisionServiceImplTest {
         loanDocumentRepository = mock(LoanDocumentRepository.class);
         workAssignmentGuard = mock(WorkAssignmentGuard.class);
         checkpointGate = mock(CheckpointGate.class);
+        // No approval limits set up unless a test sets some: every approval is unlimited, as before limits existed.
+        authorityLevelRepository = mock(CreditAuthorityLevelRepository.class);
+        userRepository = mock(UserRepository.class);
+        notificationService = mock(NotificationService.class);
+        workQueueService = mock(WorkQueueService.class);
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, loanNotificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService,
                         mock(WorkAssignmentGuard.class)), auditService,
                 creditDecisionRepository, creditReasonCodeRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
-                mock(PlatformTransactionManager.class), workAssignmentGuard, checkpointGate);
+                mock(PlatformTransactionManager.class), workAssignmentGuard, checkpointGate,
+                new CreditAuthorityService(authorityLevelRepository, userRepository, authService, auditService,
+                        notificationService),
+                workQueueService);
     }
 
     private static CreditDecisionRequest decide(InternalApprovalStatus status) {
@@ -901,5 +921,272 @@ class CreditDecisionServiceImplTest {
                         "Payslip missing, unclear or out of date"));
         assertThat(service.reasonCodes(null)).extracting(CreditReasonCodeResponse::code)
                 .containsExactly("APPROVE_WITHIN_POLICY", "RETURN_PAYSLIP");
+    }
+
+    @Nested
+    @DisplayName("approval limits and referral (FR-PBL-028)")
+    class ApprovalLimits {
+
+        private final CreditAuthorityLevel officer = level("CREDIT_OFFICER", "Credit officer", "1000.00");
+        private final CreditAuthorityLevel senior = level("SENIOR_CREDIT_OFFICER", "Senior credit officer", "3000.00");
+        private final CreditAuthorityLevel head = level("HEAD_OF_CREDIT", "Head of Credit", null);
+
+        private static CreditAuthorityLevel level(String code, String name, String maximum) {
+            return CreditAuthorityLevel.builder().code(code).name(name)
+                    .maximumPrincipal(maximum == null ? null : new BigDecimal(maximum)).build();
+        }
+
+        private void levels(CreditAuthorityLevel... levels) {
+            when(authorityLevelRepository.findAllRanked()).thenReturn(List.of(levels));
+        }
+
+        private Loan loanFor(String principal) {
+            Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+            loan.setPrincipal(new BigDecimal(principal));
+            return loan;
+        }
+
+        private CreditReferralRequest referral(InternalApprovalStatus recommendation, String reasonCode) {
+            return new CreditReferralRequest(recommendation, reasonCode, "Payslip verified; above my limit");
+        }
+
+        private User staff(String username, String email, String level, UserGroup... groups) {
+            User user = new User();
+            user.setUsername(username);
+            user.setEmail(email);
+            user.setCreditAuthorityLevel(level);
+            user.setGroups(Set.of(groups));
+            return user;
+        }
+
+        @Test
+        @DisplayName("with no level set up, any amount is approved, as before limits existed")
+        void noLevelsNoLimit() {
+            Loan loan = loanFor("250000.00");
+
+            service.decide(42L, decide(InternalApprovalStatus.APPROVED));
+
+            assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.APPROVED);
+        }
+
+        @Test
+        @DisplayName("an officer approves within their level, and is refused (403) above it, naming who may approve")
+        void officerApprovesWithinTheirLevel() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            Loan within = loanFor("1000.00");
+
+            service.decide(42L, decide(InternalApprovalStatus.APPROVED));
+            assertThat(within.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.APPROVED);
+
+            Loan above = loanFor("2659.57");
+            assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessage("Loan 000000042 is for 2659.57, above credit.manager's approval limit of 1000.00"
+                            + " (Credit officer); refer it to Senior credit officer or above");
+            assertThat(above.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+            verify(creditDecisionRepository, times(1)).save(any());
+        }
+
+        @Test
+        @DisplayName("once limits apply, an officer with no level approves nothing, and above every level only"
+                + " SUPER_ADMIN may")
+        void noLevelApprovesNothing() {
+            levels(officer, senior);
+            loanFor("531.91");
+
+            assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessage("credit.manager has no credit approval limit, so cannot approve loan 000000042;"
+                            + " refer it to Credit officer or above");
+
+            loanFor("5000.00");
+            approver.setCreditAuthorityLevel("SENIOR_CREDIT_OFFICER");
+            assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessageEndingWith("(Senior credit officer); refer it to SUPER_ADMIN");
+            verify(creditDecisionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("SUPER_ADMIN approves any amount, with or without a level")
+        void superAdminIsUnlimited() {
+            levels(officer, senior);
+            approver.setGroups(Set.of(UserGroup.SUPER_ADMIN));
+            Loan loan = loanFor("5000.00");
+
+            service.decide(42L, decide(InternalApprovalStatus.APPROVED));
+
+            assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.APPROVED);
+        }
+
+        @Test
+        @DisplayName("rejecting and returning are not limited: neither pays anything")
+        void rejectAndReturnAreNotLimited() {
+            levels(officer, senior, head);
+            Loan loan = loanFor("2659.57");
+
+            service.decide(42L, decide(InternalApprovalStatus.RETURNED));
+            assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.RETURNED);
+
+            Loan other = loanFor("2659.57");
+            service.decide(42L, decide(InternalApprovalStatus.REJECTED));
+            assertThat(other.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+        }
+
+        @Test
+        @DisplayName("a referral is logged with where it went and the recommendation, releases the referrer's item,"
+                + " emails whoever may approve, is audited, and leaves the loan undecided")
+        void referralIsLoggedAndSent() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            Loan loan = loanFor("2659.57");
+            when(creditDecisionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(userRepository.findByCreditAuthorityLevelIn(List.of("SENIOR_CREDIT_OFFICER", "HEAD_OF_CREDIT")))
+                    .thenReturn(List.of(
+                            staff("rnyathi", "rufaro.nyathi@innbucks.co.zw", "SENIOR_CREDIT_OFFICER",
+                                    UserGroup.CREDIT_MANAGER),
+                            staff("pmutasa", " PMutasa@innbucks.co.zw ", "HEAD_OF_CREDIT", UserGroup.CREDIT_MANAGER),
+                            staff("nomail", null, "HEAD_OF_CREDIT", UserGroup.CREDIT_MANAGER)));
+
+            CreditDecisionResponse referred = service.refer(42L,
+                    referral(InternalApprovalStatus.APPROVED, " approve_within_policy "));
+
+            assertThat(referred.action()).isEqualTo(CreditAction.REFERRED);
+            assertThat(referred.referredTo()).isEqualTo("SENIOR_CREDIT_OFFICER");
+            assertThat(referred.recommendation()).isEqualTo(InternalApprovalStatus.APPROVED);
+            assertThat(referred.reasonCode()).isEqualTo("APPROVE_WITHIN_POLICY");
+            assertThat(referred.reasonDescription()).isEqualTo("Meets credit policy");
+            CreditDecision entry = logged();
+            assertThat(entry.getPerformedBy()).isEqualTo("credit.manager");
+            assertThat(entry.getComment()).isEqualTo("Payslip verified; above my limit");
+            assertThat(entry.getLoanSnapshot()).contains("\"principal\":2659.57");
+
+            assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+            verify(loanRepository, never()).save(any());
+            verifyNoInteractions(loanNotificationService);
+            verify(workQueueService).releaseIfHeldBy(SystemStage.CREDIT_DECISION, loan, "credit.manager");
+
+            verify(notificationService).sendEmail(eq("rufaro.nyathi@innbucks.co.zw"),
+                    eq("Referred to you: credit decision, loan 000000042"), contains("recommending approval"));
+            verify(notificationService).sendEmail(eq("pmutasa@innbucks.co.zw"), anyString(),
+                    contains("needs Senior credit officer or above"));
+            verifyNoMoreInteractions(notificationService);
+
+            AuditLog audit = audited().stream().filter(row -> "CREDIT_REFERRED".equals(row.getEventType()))
+                    .findFirst().orElseThrow();
+            assertThat(audit.getDetail()).contains("referredTo=SENIOR_CREDIT_OFFICER", "recommendation=APPROVED",
+                    "reasonCode=APPROVE_WITHIN_POLICY", "referrerLevel=CREDIT_OFFICER");
+        }
+
+        @Test
+        @DisplayName("a loan above every level is referred to SUPER_ADMIN, who is emailed")
+        void aboveEveryLevelGoesToSuperAdmin() {
+            levels(officer, senior);
+            approver.setCreditAuthorityLevel("SENIOR_CREDIT_OFFICER");
+            loanFor("5000.00");
+            when(creditDecisionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(userRepository.findByGroupsContaining(UserGroup.SUPER_ADMIN))
+                    .thenReturn(List.of(staff("admin", "admin@innbucks.co.zw", null, UserGroup.SUPER_ADMIN)));
+
+            CreditDecisionResponse referred = service.refer(42L, referral(InternalApprovalStatus.REJECTED,
+                    "REJECT_OTHER"));
+
+            assertThat(referred.referredTo()).isEqualTo("SUPER_ADMIN");
+            assertThat(referred.recommendation()).isEqualTo(InternalApprovalStatus.REJECTED);
+            verify(notificationService).sendEmail(eq("admin@innbucks.co.zw"), anyString(),
+                    contains("recommending rejection"));
+        }
+
+        @Test
+        @DisplayName("nothing to refer to with no limits set up, or a loan within the caller's own limit (409)")
+        void nothingToReferTo() {
+            loanFor("2659.57");
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessage("No credit approval limits are set up, so loan 000000042 has no higher authority to"
+                            + " go to; decide it");
+
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("SENIOR_CREDIT_OFFICER");
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessage("Loan 000000042 is within your approval limit; decide it rather than refer it");
+            verify(creditDecisionRepository, never()).save(any());
+            verifyNoInteractions(notificationService, workQueueService);
+        }
+
+        @Test
+        @DisplayName("a referral recommends APPROVED or REJECTED, with a reason code for that decision, of a loan"
+                + " waiting for Credit")
+        void referralIsValidated() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            loanFor("2659.57");
+
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.RETURNED, "RETURN_PAYSLIP")))
+                    .isInstanceOf(LoanApprovalException.class)
+                    .hasMessage("A referral recommends APPROVED or REJECTED");
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED, "REJECT_OTHER")))
+                    .isInstanceOf(LoanApprovalException.class)
+                    .hasMessage("Reason code REJECT_OTHER is for REJECTED decisions, not APPROVED");
+
+            given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.RETURNED).setPrincipal(new BigDecimal("2659.57"));
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(LoanApprovalException.class)
+                    .hasMessage("Loan was returned for more information and has not been resubmitted; it cannot be"
+                            + " referred");
+            given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED);
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(LoanApprovalException.class)
+                    .hasMessage("Loan has already been approved");
+            given(LoanApprovalStatus.PROCESSING, InternalApprovalStatus.PENDING);
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(LoanApprovalException.class)
+                    .hasMessage("Loan with status PROCESSING cannot be referred");
+            verify(creditDecisionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("the originator may not recommend approving their loan, but may recommend rejecting it")
+        void originatorMayOnlyRecommendRejection() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            when(authService.getLoggedInUsername()).thenReturn("agent.moyo");
+            approver.setUsername("agent.moyo");
+            loanFor("2659.57");
+            when(creditDecisionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessage("Loan 000000042 was originated by agent.moyo, who cannot also recommend approving it;"
+                            + " another credit officer must");
+            verify(creditDecisionRepository, never()).save(any());
+
+            assertThat(service.refer(42L, referral(InternalApprovalStatus.REJECTED, "REJECT_OTHER")).action())
+                    .isEqualTo(CreditAction.REFERRED);
+        }
+
+        @Test
+        @DisplayName("an item someone else holds at an EXCLUSIVE credit decision is refused before the referral")
+        void someoneElsesItemIsNotReferred() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            Loan loan = loanFor("2659.57");
+            doThrow(new ConflictException("assigned to rnyathi"))
+                    .when(workAssignmentGuard).requireMayAct(SystemStage.CREDIT_DECISION, loan, "credit.manager");
+
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(ConflictException.class);
+            verify(creditDecisionRepository, never()).save(any());
+            verifyNoInteractions(notificationService, workQueueService);
+        }
     }
 }

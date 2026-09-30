@@ -1454,6 +1454,11 @@ public final class ApiExamples {
                     }
                   ]
                 },
+                "creditAuthority": {
+                  "limitsApply": false,
+                  "aboveEveryLevel": false,
+                  "withinYourLimit": true
+                },
                 "flags": [
                   {
                     "code": "DOCUMENTS_AMENDED",
@@ -2079,5 +2084,175 @@ public final class ApiExamples {
                 "overdue": 1,
                 "escalated": 0
               }
+            }""";
+
+    // ---- Credit approval limits and referral (FR-PBL-028) ----
+
+    /** Credit officers approve up to 1,000; set up by admin on 3 October, with cmanager given the level. */
+    private static final String AUTHORITY_CREDIT_OFFICER = """
+                {
+                  "code": "CREDIT_OFFICER",
+                  "name": "Credit officer",
+                  "maximumPrincipal": 1000.00,
+                  "holders": ["cmanager"],
+                  "updatedBy": "admin",
+                  "updatedAt": "2026-10-03T08:29:40+02:00"
+                }""";
+
+    /** Senior credit officers: added at 2,500, raised to 3,000 once rnyathi held it. */
+    private static final String AUTHORITY_SENIOR_CREDIT_OFFICER = """
+                {
+                  "code": "SENIOR_CREDIT_OFFICER",
+                  "name": "Senior credit officer",
+                  "maximumPrincipal": 3000.00,
+                  "holders": ["rnyathi"],
+                  "updatedBy": "admin",
+                  "updatedAt": "2026-10-03T08:41:05+02:00"
+                }""";
+
+    /** The Head of Credit approves any amount. */
+    private static final String AUTHORITY_HEAD_OF_CREDIT = """
+                {
+                  "code": "HEAD_OF_CREDIT",
+                  "name": "Head of Credit",
+                  "holders": ["pmutasa"],
+                  "updatedBy": "admin",
+                  "updatedAt": "2026-10-03T08:31:02+02:00"
+                }""";
+
+    /** The levels on 3 October, lowest limit first. */
+    public static final String CREDIT_AUTHORITY_LEVELS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + AUTHORITY_CREDIT_OFFICER + """
+            ,
+            """ + AUTHORITY_SENIOR_CREDIT_OFFICER + """
+            ,
+            """ + AUTHORITY_HEAD_OF_CREDIT + """
+
+              ]
+            }""";
+
+    public static final String CREDIT_AUTHORITY_LEVEL_REQUEST = """
+            {
+              "code": "SENIOR_CREDIT_OFFICER",
+              "name": "Senior credit officer",
+              "maximumPrincipal": 2500.00
+            }""";
+
+    public static final String CREDIT_AUTHORITY_LEVEL_CREATED = """
+            {
+              "code": "CREATED",
+              "message": "Credit authority level created; it limits approvals by whoever is given it",
+              "data": {
+                "code": "SENIOR_CREDIT_OFFICER",
+                "name": "Senior credit officer",
+                "maximumPrincipal": 2500.00,
+                "holders": [],
+                "updatedBy": "admin",
+                "updatedAt": "2026-10-03T08:30:25+02:00"
+              }
+            }""";
+
+    public static final String CREDIT_AUTHORITY_LEVEL_UPDATE_REQUEST = """
+            {
+              "name": "Senior credit officer",
+              "maximumPrincipal": 3000.00
+            }""";
+
+    public static final String CREDIT_AUTHORITY_LEVEL_UPDATED = """
+            {
+              "code": "OK",
+              "message": "Credit authority level updated; it applies to the next approval",
+              "data": """ + AUTHORITY_SENIOR_CREDIT_OFFICER + """
+
+            }""";
+
+    public static final String CREDIT_AUTHORITY_LEVEL_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "No credit authority level JUNIOR_OFFICER"
+            }""";
+
+    /** rnyathi given the senior level. */
+    public static final String USER_CREDIT_AUTHORITY_REQUEST = """
+            {
+              "level": "SENIOR_CREDIT_OFFICER"
+            }""";
+
+    public static final String USER_CREDIT_AUTHORITY_CHANGED = """
+            {
+              "code": "OK",
+              "message": "Credit authority level set to SENIOR_CREDIT_OFFICER",
+              "data": {
+                "id": 3,
+                "username": "rnyathi",
+                "firstName": "Rufaro",
+                "lastName": "Nyathi",
+                "email": "rufaro.nyathi@innbucks.co.zw",
+                "mobileNumber": "263772345111",
+                "temporaryPassword": false,
+                "groups": ["CREDIT_MANAGER"],
+                "merchantCode": "innbucks",
+                "merchantName": "InnBucks MicroBank",
+                "creditAuthorityLevel": "SENIOR_CREDIT_OFFICER"
+              }
+            }""";
+
+    /** Loan 64, for 2,659.57, as cmanager (a credit officer, limit 1,000) referred it. */
+    private static final String LOAN_64_SNAPSHOT =
+            "{\"reference\":\"000000064\",\"ecNumber\":\"2345678B\",\"firstName\":\"Farai\",\"lastName\":\"Dube\","
+            + "\"merchantCode\":\"harare-motors\",\"originator\":\"tmoyo\",\"ssbApprovalStatus\":\"APPROVED\",\"ssbDeductionId\":\"88377\","
+            + "\"batchNumber\":\"B-20261003-1\",\"principal\":2659.57,\"disbursedAmount\":2500.00,\"tenor\":12,\"interestRate\":7.00,"
+            + "\"feeRate\":6.00,\"monthlyInstallment\":256.40,\"grossedMonthlyDeduction\":264.33,"
+            + "\"employment\":{\"employerName\":\"Government of Zimbabwe\",\"ministry\":\"Ministry of Health and Child Care\","
+            + "\"station\":\"Parirenyatwa Group of Hospitals\",\"grade\":\"E1\",\"contractType\":\"PERMANENT\",\"dateOfEngagement\":\"2009-03-02\","
+            + "\"grossSalary\":1420.00,\"netSalary\":1010.00},"
+            + "\"payslipDeductions\":[{\"beneficiary\":\"ZIMRA PAYE\",\"amount\":268.00},{\"beneficiary\":\"PSMAS medical aid\",\"amount\":71.00},"
+            + "{\"beneficiary\":\"APEX pension\",\"amount\":71.00}],"
+            + "\"payoutType\":\"CUSTOMER_MOBILE_WALLET\",\"payoutAccount\":\"****8834\","
+            + "\"documents\":{\"payslipPictureSha256\":\"5b1f0e7c2a9d4f6b8e3c1a7d9f2b4e6c8a0d3f5b7e9c1a3d5f7b9e2c4a6d8f0b\","
+            + "\"nationalIdPictureSha256\":\"9e2d4b6f8a1c3e5d7b9f0a2c4e6d8b1f3a5c7e9d0b2f4a6c8e1d3b5f7a9c0e2d\","
+            + "\"signatureSha256\":\"3c5e7a9b1d2f4e6c8a0b3d5f7e9a1c2b4d6f8e0a3c5b7d9f1e2a4c6b8d0f3e5a\"}}";
+
+    public static final String CREDIT_REFERRAL_REQUEST = """
+            {
+              "recommendation": "APPROVED",
+              "reasonCode": "APPROVE_WITHIN_POLICY",
+              "comment": "Payslip and deduction capacity verified; above my limit"
+            }""";
+
+    public static final String LOAN_64_REFERRED = """
+            {
+              "code": "OK",
+              "message": "Loan referred to SENIOR_CREDIT_OFFICER",
+              "data": {
+                "id": 31,
+                "action": "REFERRED",
+                "reasonCode": "APPROVE_WITHIN_POLICY",
+                "reasonDescription": "Meets credit policy",
+                "comment": "Payslip and deduction capacity verified; above my limit",
+                "performedBy": "cmanager",
+                "performedAt": "2026-10-03T10:12:40+02:00",
+                "referredTo": "SENIOR_CREDIT_OFFICER",
+                "recommendation": "APPROVED",
+                "loanSnapshot": """ + LOAN_64_SNAPSHOT + """
+            ,
+                "snapshotSha256": "4d8c2f6a0e1b3d5c7f9a2e4b6d8f0c1a3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f"
+              }
+            }""";
+
+    public static final String APPROVAL_ABOVE_LIMIT = """
+            {
+              "code": "FORBIDDEN",
+              "message": "Loan 000000064 is for 2659.57, above cmanager's approval limit of 1000.00 (Credit officer); refer it to Senior credit officer or above"
+            }""";
+
+    public static final String APPROVAL_WITHOUT_LEVEL = """
+            {
+              "code": "FORBIDDEN",
+              "message": "gmoyo has no credit approval limit, so cannot approve loan 000000064; refer it to Senior credit officer or above"
             }""";
 }

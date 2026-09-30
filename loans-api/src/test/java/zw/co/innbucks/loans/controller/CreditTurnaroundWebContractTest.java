@@ -90,8 +90,8 @@ class CreditTurnaroundWebContractTest {
         LoanResponse loan = new LoanResponse();
         loan.setId(42L);
         when(workbenchService.workbench(42L)).thenReturn(new CreditWorkbenchResponse(loan, null,
-                new CreditWorkbenchResponse.Exposure(0, BigDecimal.ZERO, BigDecimal.ZERO, List.of()), List.of(),
-                List.of(), List.of()));
+                new CreditWorkbenchResponse.Exposure(0, BigDecimal.ZERO, BigDecimal.ZERO, List.of()), null,
+                List.of(), List.of(), List.of()));
 
         for (String role : List.of("AGENTS", "FINANCE")) {
             mvc.perform(get("/lending/v1/loans/42/credit-workbench").with(as("someone", role)))

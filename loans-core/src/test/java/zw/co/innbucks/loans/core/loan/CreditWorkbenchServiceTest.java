@@ -3,6 +3,11 @@ package zw.co.innbucks.loans.core.loan;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityLevel;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityLevelRepository;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
@@ -10,7 +15,10 @@ import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
 import zw.co.innbucks.loans.core.employment.EmploymentEventService;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.turnaround.CreditTurnaround;
+import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.user.UserRepository;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -42,6 +50,8 @@ class CreditWorkbenchServiceTest {
     private EmploymentEventService employmentEventService;
     private PayslipFraudFlagRepository payslipFraudFlagRepository;
     private CheckpointGate checkpointGate;
+    private CreditAuthorityLevelRepository authorityLevelRepository;
+    private User officer;
     private CreditWorkbenchService service;
 
     @BeforeEach
@@ -52,8 +62,17 @@ class CreditWorkbenchServiceTest {
         employmentEventService = mock(EmploymentEventService.class);
         payslipFraudFlagRepository = mock(PayslipFraudFlagRepository.class);
         checkpointGate = mock(CheckpointGate.class);
+        // No approval limits set up unless a test sets some.
+        authorityLevelRepository = mock(CreditAuthorityLevelRepository.class);
+        AuthService authService = mock(AuthService.class);
+        officer = new User();
+        officer.setUsername("cmanager");
+        when(authService.getLoggedInUser()).thenReturn(officer);
         service = new CreditWorkbenchService(loanRepository, loanService, creditDecisionService, employmentEventService,
-                payslipFraudFlagRepository, new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), checkpointGate);
+                payslipFraudFlagRepository, new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), checkpointGate,
+                new CreditAuthorityService(authorityLevelRepository, mock(UserRepository.class), authService,
+                        mock(AuditService.class), mock(NotificationService.class)),
+                authService);
     }
 
     /** Loan 42 as in the examples: a teacher earning 850 gross, 620 net, deducting 208.96 a month. */
@@ -234,7 +253,8 @@ class CreditWorkbenchServiceTest {
         LoanResponse view = viewed(loan);
         CreditDecisionResponse returned = new CreditDecisionResponse(17L, CreditAction.RETURNED, "RETURN_PAYSLIP",
                 "Payslip missing, unclear or out of date", "Payslip is for June", "cmanager",
-                LocalDateTime.of(2026, 9, 30, 7, 12, 45), "{}", "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
+                LocalDateTime.of(2026, 9, 30, 7, 12, 45), null, null, "{}",
+                "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
         when(creditDecisionService.history(42L)).thenReturn(List.of(returned));
         when(employmentEventService.forLoan(42L, LoanReadScope.platform())).thenReturn(List.of());
 
@@ -246,6 +266,45 @@ class CreditWorkbenchServiceTest {
         assertThat(workbench.exposure().loans()).isEmpty();
         assertThat(workbench.decisions()).containsExactly(returned);
         assertThat(workbench.employmentEvents()).isEmpty();
+        assertThat(workbench.creditAuthority().limitsApply()).isFalse();
+        assertThat(workbench.creditAuthority().withinYourLimit()).isTrue();
+    }
+
+    @Test
+    @DisplayName("with limits set up, the workbench says who may approve, flags a loan above the reader's limit, and"
+            + " the referral waiting on it")
+    void approvalAuthority() {
+        CreditAuthorityLevel creditOfficer = CreditAuthorityLevel.builder().code("CREDIT_OFFICER")
+                .name("Credit officer").maximumPrincipal(new BigDecimal("1000.00")).build();
+        CreditAuthorityLevel senior = CreditAuthorityLevel.builder().code("SENIOR_CREDIT_OFFICER")
+                .name("Senior credit officer").maximumPrincipal(new BigDecimal("3000.00")).build();
+        when(authorityLevelRepository.findAllRanked()).thenReturn(List.of(creditOfficer, senior));
+        officer.setCreditAuthorityLevel("CREDIT_OFFICER");
+        Loan loan = loan42();
+        loan.setPrincipal(new BigDecimal("2659.57"));
+        viewed(loan);
+        CreditDecisionResponse referral = new CreditDecisionResponse(31L, CreditAction.REFERRED,
+                "APPROVE_WITHIN_POLICY", "Meets credit policy", "Above my limit", "rnyathi",
+                LocalDateTime.of(2026, 10, 3, 8, 12, 40), "SENIOR_CREDIT_OFFICER", InternalApprovalStatus.APPROVED,
+                "{}", "4d8c");
+        when(creditDecisionService.history(42L)).thenReturn(List.of(referral));
+
+        CreditWorkbenchResponse workbench = service.workbench(42L);
+
+        assertThat(workbench.creditAuthority().limitsApply()).isTrue();
+        assertThat(workbench.creditAuthority().requiredLevel().code()).isEqualTo("SENIOR_CREDIT_OFFICER");
+        assertThat(workbench.creditAuthority().yourLevel().code()).isEqualTo("CREDIT_OFFICER");
+        assertThat(workbench.creditAuthority().withinYourLimit()).isFalse();
+        assertThat(workbench.creditAuthority().aboveEveryLevel()).isFalse();
+        assertThat(workbench.flags()).extracting(CreditWorkbenchResponse.Flag::detail).containsExactly(
+                "Above your approval limit of 1000.00 (Credit officer); it needs Senior credit officer or above,"
+                        + " so refer it",
+                "Referred by rnyathi to SENIOR_CREDIT_OFFICER, recommending approval (APPROVE_WITHIN_POLICY)");
+        assertThat(codes(workbench)).containsExactly("ABOVE_YOUR_APPROVAL_LIMIT", "REFERRED");
+
+        // Once Credit has decided it, neither is raised: there is nothing left to approve or refer.
+        loan.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
+        assertThat(codes(service.workbench(42L))).isEmpty();
     }
 
     @Test

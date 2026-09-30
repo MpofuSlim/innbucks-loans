@@ -89,6 +89,13 @@ public class User extends BaseEntity {
     @Column(name = "token_version")
     private Long tokenVersion;
 
+    /**
+     * The code of the credit authority level the user approves at (FR-PBL-028), which caps the principal they may
+     * approve once any level is set up; null for none.
+     */
+    @Column(name = "credit_authority_level", length = 40)
+    private String creditAuthorityLevel;
+
     /** First name then last, whichever are recorded; null when neither is. */
     public String fullName() {
         return fullName(firstName, lastName);

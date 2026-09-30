@@ -43,7 +43,7 @@ public class CreditDecision {
     @Column(name = "action", length = 32, nullable = false)
     private CreditAction action;
 
-    /** Null only on a resubmission, which answers a return rather than deciding. */
+    /** Null only on a resubmission, which answers a return rather than deciding; on a referral, the recommendation's. */
     @Column(name = "reason_code", length = 64)
     private String reasonCode;
 
@@ -52,6 +52,18 @@ public class CreditDecision {
 
     @Column(name = "performed_by", nullable = false)
     private String performedBy;
+
+    /**
+     * On a referral, the credit authority level it was referred to, or SUPER_ADMIN when it was above every level
+     * (FR-PBL-028); null otherwise.
+     */
+    @Column(name = "referred_to", length = 40)
+    private String referredTo;
+
+    /** On a referral, what the officer who referred it recommends: APPROVED or REJECTED; null otherwise. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recommendation", length = 16)
+    private InternalApprovalStatus recommendation;
 
     @Column(name = "performed_at", nullable = false)
     private LocalDateTime performedAt;
