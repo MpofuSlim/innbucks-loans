@@ -30,9 +30,11 @@ import java.util.List;
 
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
-@Tag(name = "Checkpoints", description = "Clearing or declining loans held at the checkpoint stages an administrator"
-        + " has added (FR-SSB-014; see POST /workflow-stages). A checkpoint's queue is GET /work-queues/{stage}/items,"
-        + " and its items are assigned like any other stage's.")
+@Tag(name = "Checkpoints", description = "Clearing or declining loans held at checkpoint stages (FR-SSB-014): the"
+        + " built-in PAYOUT_AUTHORISATION (FR-SSB-018), where a loan Credit has approved waits for its payout to be"
+        + " authorised once an administrator switches it on, and any an administrator has added (see POST"
+        + " /workflow-stages). A checkpoint's queue is GET /work-queues/{stage}/items, and its items are assigned like"
+        + " any other stage's.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -48,8 +50,10 @@ public class CheckpointController {
                     + " and paid on the next run, unless something else holds it. DECLINED declines the application"
                     + " as a credit rejection: it needs an active REJECTED reason code, goes in the credit decision"
                     + " log, flags an SSB deduction already lodged for cancellation, and the applicant is told by SMS"
-                    + " (the comment is not sent). Nobody may decide a loan they originated or are a party to. If the"
-                    + " checkpoint is EXCLUSIVE and the loan's item is assigned, only its assignee may decide it.")
+                    + " (the comment is not sent). At PAYOUT_AUTHORISATION, CLEARED authorises the payout. Nobody may"
+                    + " decide a loan they originated or are a party to, nor, at a checkpoint after Credit's approval"
+                    + " (BEFORE_BOOKING, such as PAYOUT_AUTHORISATION), a loan they approved. If the checkpoint is"
+                    + " EXCLUSIVE and the loan's item is assigned, only its assignee may decide it.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Recorded",
                     content = @Content(examples = {
@@ -79,13 +83,18 @@ public class CheckpointController {
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not entitled to work the checkpoint, or the caller"
-                    + " originated the loan or is a party to it",
+                    + " originated the loan, is a party to it, or approved it at a checkpoint after the approval",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
                             @ExampleObject(name = "Originator", value = """
                                     {
                                       "code": "FORBIDDEN",
-                                      "message": "Loan 000000061 was originated by tmoyo, who cannot also decide its High-value payout check; someone else must"
+                                      "message": "Loan 000000061 was originated by tmoyo, who cannot also decide its Payout authorisation; someone else must"
+                                    }"""),
+                            @ExampleObject(name = "Approver", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Loan 000000061 was approved by admin, who cannot also decide its Payout authorisation; someone else must"
                                     }""")})),
             @ApiResponse(responseCode = "404", description = "No such checkpoint (or a system stage), or no such loan",
                     content = @Content(examples = {
@@ -98,12 +107,12 @@ public class CheckpointController {
                             @ExampleObject(name = "Not held there", value = """
                                     {
                                       "code": "CONFLICT",
-                                      "message": "Loan 000000061 is not waiting at High-value payout check"
+                                      "message": "Loan 000000061 is not waiting at Payout authorisation"
                                     }"""),
                             @ExampleObject(name = "Assigned to someone else", value = """
                                     {
                                       "code": "CONFLICT",
-                                      "message": "Loan 000000061's High-value payout check is assigned to finance2; only they can act on it until it is released or reassigned"
+                                      "message": "Loan 000000061's Payout authorisation is assigned to finance2; only they can act on it until it is released or reassigned"
                                     }""")}))
     })
     @PostMapping("/loans/{loanId}/checkpoints/{stage}")

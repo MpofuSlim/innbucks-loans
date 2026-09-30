@@ -36,9 +36,11 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
         + " and DEDUCTION_CANCELLATION. The stages and what moves a loan through them are fixed controls; each stage's"
         + " name, who sees (VIEW), works (WORK) and assigns (ASSIGN) its queue, its service level and escalation rule,"
         + " and whether its items are assigned (NONE, OPTIONAL, or EXCLUSIVE: only the assignee acts) are changed here"
-        + " without a release. An administrator can also add checkpoint stages, which hold loans before lodgement,"
-        + " before credit approval or before booking until cleared or declined. SUPER_ADMIN holds every entitlement at"
-        + " every stage; AGENTS can hold none.")
+        + " without a release. Checkpoint stages hold loans before lodgement, before credit approval or before booking"
+        + " until cleared or declined: PAYOUT_AUTHORISATION is built in (FR-SSB-018: a loan Credit has approved is not"
+        + " paid until its payout is authorised, by someone other than its approver) and ships switched off, so it"
+        + " holds nothing until an administrator sets active true; an administrator can add others. SUPER_ADMIN holds"
+        + " every entitlement at every stage; AGENTS can hold none.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -141,10 +143,15 @@ public class WorkflowStageController {
                     + " listed but always holds every entitlement. displayOrder, when given, moves the stage. For a"
                     + " checkpoint, minimumPrincipal and channels are replaced too, and active false stops it holding"
                     + " loans at once (true starts it again; omitted leaves it as it is); a system stage takes none of"
-                    + " the three. Audited with what it was.")
+                    + " the three. Switching PAYOUT_AUTHORISATION on is this call with active true: from then no loan it"
+                    + " applies to is paid until its payout is authorised, including loans already approved and"
+                    + " waiting. Audited with what it was.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Changed",
-                    content = @Content(examples = @ExampleObject(ApiExamples.WORKFLOW_STAGE_UPDATED))),
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Credit decisions tightened", value = ApiExamples.WORKFLOW_STAGE_UPDATED),
+                            @ExampleObject(name = "Payout authorisation switched on",
+                                    value = ApiExamples.PAYOUT_AUTHORISATION_ON)})),
             @ApiResponse(responseCode = "400", description = "A missing or out-of-range field, a role AGENTS, an"
                     + " escalation point before the target, assignment on MORE_INFORMATION, an unknown channel, or"
                     + " checkpoint settings on a system stage",
@@ -189,8 +196,10 @@ public class WorkflowStageController {
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ApiResult<WorkflowStageResponse> update(
             @PathVariable String stage,
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
-                    examples = @ExampleObject(ApiExamples.WORKFLOW_STAGE_REQUEST)))
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(examples = {
+                    @ExampleObject(name = "Tighten credit decisions", value = ApiExamples.WORKFLOW_STAGE_REQUEST),
+                    @ExampleObject(name = "Switch on payout authorisation",
+                            value = ApiExamples.PAYOUT_AUTHORISATION_ON_REQUEST)}))
             @Valid @RequestBody UpdateWorkflowStageRequest request) {
         return ApiResult.ok("Workflow stage updated; it applies to items already waiting as well",
                 workflowStageService.update(stage, request));

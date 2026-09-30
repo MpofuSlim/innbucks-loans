@@ -42,4 +42,17 @@ class WorkflowStageTest {
         assertThat(deductionCancellation.rolesWith(Entitlement.WORK)).containsExactly(UserGroup.FINANCE);
         assertThat(deductionCancellation.rolesWith(Entitlement.ASSIGN)).isEmpty();
     }
+
+    @Test
+    @DisplayName("only a checkpoint a loan reaches after Credit's approval bars the approver from deciding it")
+    void barsCreditApprover() {
+        assertThat(WorkflowFixtures.checkpoint("PAYOUT_AUTHORISATION", HoldPoint.BEFORE_BOOKING).barsCreditApprover())
+                .isTrue();
+        assertThat(WorkflowFixtures.checkpoint("SECOND_OPINION", HoldPoint.BEFORE_CREDIT_APPROVAL)
+                .barsCreditApprover()).isFalse();
+        assertThat(WorkflowFixtures.checkpoint("AGENT_APPLICATION_REVIEW", HoldPoint.BEFORE_LODGEMENT)
+                .barsCreditApprover()).isFalse();
+        assertThat(WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL).barsCreditApprover()).isFalse();
+        assertThat(deductionCancellation.barsCreditApprover()).isFalse();
+    }
 }

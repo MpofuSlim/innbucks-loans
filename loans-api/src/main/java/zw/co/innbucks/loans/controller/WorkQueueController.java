@@ -112,13 +112,14 @@ public class WorkQueueController {
             description = "Gives the loan's item at the stage to the assignee, or takes it for the caller when no"
                     + " assignee is given. Taking an unassigned item needs WORK at the stage; giving one to someone"
                     + " else, or taking one someone has, needs ASSIGN. The assignee must work the stage, and is never"
-                    + " the loan's originator or a party to it where the stage decides the loan. Giving an item to"
-                    + " whoever has it changes nothing.")
+                    + " the loan's originator or a party to it where the stage decides the loan, nor whoever approved"
+                    + " it at Credit where the stage follows that approval (the payout authorisation). Giving an item"
+                    + " to whoever has it changes nothing.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Assigned",
                     content = @Content(examples = @ExampleObject(ApiExamples.WORK_ITEM_ASSIGNED))),
             @ApiResponse(responseCode = "400", description = "An assignee who does not exist, does not work the stage,"
-                    + " or originated or is a party to the loan",
+                    + " originated or is a party to the loan, or approved it where the stage follows the approval",
                     content = @Content(examples = {
                             @ExampleObject(name = "Not entitled", value = """
                                     {
@@ -129,6 +130,11 @@ public class WorkQueueController {
                                     {
                                       "code": "INVALID_REQUEST",
                                       "message": "tmoyo originated loan 000000042 or is a party to it, so cannot be given its Credit decision"
+                                    }"""),
+                            @ExampleObject(name = "Approved it", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "admin approved loan 000000061, so cannot be given its Payout authorisation"
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),

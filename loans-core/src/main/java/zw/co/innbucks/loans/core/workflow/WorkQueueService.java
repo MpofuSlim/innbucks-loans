@@ -131,8 +131,8 @@ public class WorkQueueService {
      * @throws AccessDeniedException    the caller may not give it to that person
      * @throws ConflictException        the stage's items are not assigned, the loan is not waiting there, or it is
      *                                  someone else's and the caller may not take it
-     * @throws IllegalArgumentException the assignee does not exist, does not work the stage, or originated or is a
-     *                                  party to the loan
+     * @throws IllegalArgumentException the assignee does not exist, does not work the stage, originated or is a party
+     *                                  to the loan, or approved it at Credit and the stage follows that approval
      */
     @Transactional
     public WorkItemResponse assign(String code, Long loanId, String assignee) {
@@ -169,6 +169,10 @@ public class WorkQueueService {
                 || SegregationOfDuties.isPartyTo(loan, to))) {
             throw new IllegalArgumentException(String.format("%s originated loan %s or is a party to it, so cannot"
                     + " be given its %s", to.getUsername(), loan.getReference(), stage.getName()));
+        }
+        if (stage.barsCreditApprover() && SegregationOfDuties.approved(loan, to.getUsername())) {
+            throw new IllegalArgumentException(String.format("%s approved loan %s, so cannot be given its %s",
+                    to.getUsername(), loan.getReference(), stage.getName()));
         }
 
         item.setAssignedTo(to.getUsername());
