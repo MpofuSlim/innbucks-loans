@@ -17,7 +17,7 @@ public class MsisdnUtils {
      * A Zimbabwean MOBILE number, in any of the forms people type:
      * {@code 0772123123}, {@code 772123123}, {@code 263772123123} or
      * {@code +263772123123}. Mobile prefixes only — 71 NetOne, 73 Telecel,
-     * 77/78 Econet — because these numbers receive SMS and InnBucks wallet
+     * 77/78/79 Econet (79 added 2026-09-30) — because these numbers receive SMS and InnBucks wallet
      * credits. Deliberately NOT {@link #MSISDN_REGEX_EXPRESSION}, which is
      * Eswatini's {@code 268} with an 8-digit body and matches no Zimbabwean
      * number at all.
@@ -26,7 +26,7 @@ public class MsisdnUtils {
      * nine characters ({@link #formatMsisdnMinimum}), so a typo became a wrong
      * but well-formed number on the loan and at InnBucks.
      */
-    public static final String ZIMBABWE_MOBILE_REGEX = "^(?:\\+?263|0)?7[1378]\\d{7}$";
+    public static final String ZIMBABWE_MOBILE_REGEX = "^(?:\\+?263|0)?7[13789]\\d{7}$";
     public static final String ZIMBABWE_MOBILE_MESSAGE =
             "must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123";
 

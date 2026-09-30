@@ -246,7 +246,7 @@ class LoanApplicationRequestValidationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"0772123123", "772123123", "263772123123", "+263772123123",
-            "0712345678", "0732345678", "0782345678"})
+            "0712345678", "0732345678", "0782345678", "0792345678", "+263792345678"})
     @DisplayName("Zimbabwean mobile numbers in every form people type are accepted")
     void zimbabweanMobilesAccepted(String mobile) {
         LoanApplicationRequest r = termsAndIdentity();
