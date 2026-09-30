@@ -8,6 +8,7 @@ import zw.co.innbucks.loans.core.auth.JwtProperties;
 import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
 import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
+import zw.co.innbucks.loans.core.draft.LoanApplicationDraftProperties;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
 
 
@@ -17,7 +18,8 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
         NdasendaParameters.class,
         InnbucksParameters.class,
         JwtProperties.class,
-        DocumentUploadProperties.class})
+        DocumentUploadProperties.class,
+        LoanApplicationDraftProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
 }

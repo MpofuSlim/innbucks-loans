@@ -668,4 +668,203 @@ public final class ApiExamples {
                 ]
               }
             }""";
+
+    // --- Application drafts (FR-SSB-002): draft 7 is started, saved a step at a time, then submitted as loan 43 ---
+
+    /** What draft 7 was started with: the loan terms and who the applicant is. */
+    public static final String DRAFT_7_START_REQUEST = """
+            {
+              "amount": 300.00,
+              "tenor": 6,
+              "ecNumber": "7654321B",
+              "nationalIdNumber": "63-7654321-B-42",
+              "mobileNumber": "+263772345678",
+              "firstName": "Tatenda",
+              "lastName": "Ncube"
+            }""";
+
+    /** Draft 7 as started: what was sent, and everything an application still needs. */
+    public static final String DRAFT_7_STARTED = """
+            {
+              "code": "CREATED",
+              "message": "Draft saved",
+              "data": {
+                "id": 7,
+                "status": "OPEN",
+                "application": {
+                  "amount": 300.0,
+                  "amountType": "NET_OF_FEES",
+                  "ecNumber": "7654321B",
+                  "firstName": "Tatenda",
+                  "lastName": "Ncube",
+                  "mobileNumber": "+263772345678",
+                  "nationalIdNumber": "63-7654321-B-42",
+                  "tenor": 6
+                },
+                "documents": [],
+                "validationErrors": {
+                  "address": "Address is required",
+                  "dateOfBirth": "Date of birth is required",
+                  "employmentDetail": "Employment detail is required",
+                  "lineOfBusiness": "Line of business is required",
+                  "loanPurpose": "Loan purpose is required",
+                  "maritalStatus": "Marital status is required",
+                  "nextOfKin": "Next of kin is required",
+                  "placeOfBirth": "Place of birth is required"
+                },
+                "complete": false,
+                "createdAt": "2026-09-30T09:12:04+02:00",
+                "updatedAt": "2026-09-30T09:12:04+02:00"
+              }
+            }""";
+
+    /** The next step of draft 7's form: only what it adds, with the payslip (base64, shortened here). */
+    public static final String DRAFT_7_SAVE_REQUEST = """
+            {
+              "dateOfBirth": "1990-06-18",
+              "maritalStatus": "SINGLE",
+              "placeOfBirth": "Bulawayo",
+              "address": {
+                "street": "7 Jason Moyo St",
+                "city": "Bulawayo"
+              },
+              "employmentDetail": {
+                "employerName": "Government of Zimbabwe",
+                "ministry": "Ministry of Health and Child Care",
+                "station": "Mpilo Central Hospital",
+                "contractType": "PERMANENT",
+                "employeeNumber": "7654321B",
+                "grossSalary": 780.00,
+                "netSalary": 560.00,
+                "employmentStartDate": "2015-02-02"
+              },
+              "payslipPicture": "JVBERi0xLjcKJcfsj6IKNSAwIG9iago8PC9MZW5ndGggNiAwIFI..."
+            }""";
+
+    /** Draft 7 after that step: the payslip saved, and four fields still to go. */
+    public static final String DRAFT_7_SAVED = """
+            {
+              "code": "OK",
+              "message": "Draft saved",
+              "data": {
+                "id": 7,
+                "status": "OPEN",
+                "application": {
+                  "address": {
+                    "city": "Bulawayo",
+                    "street": "7 Jason Moyo St"
+                  },
+                  "amount": 300.0,
+                  "amountType": "NET_OF_FEES",
+                  "dateOfBirth": "1990-06-18",
+                  "ecNumber": "7654321B",
+                  "employmentDetail": {
+                    "contractType": "PERMANENT",
+                    "employeeNumber": "7654321B",
+                    "employerName": "Government of Zimbabwe",
+                    "employmentStartDate": "2015-02-02",
+                    "grossSalary": 780.0,
+                    "ministry": "Ministry of Health and Child Care",
+                    "netSalary": 560.0,
+                    "station": "Mpilo Central Hospital"
+                  },
+                  "firstName": "Tatenda",
+                  "lastName": "Ncube",
+                  "maritalStatus": "SINGLE",
+                  "mobileNumber": "+263772345678",
+                  "nationalIdNumber": "63-7654321-B-42",
+                  "placeOfBirth": "Bulawayo",
+                  "tenor": 6
+                },
+                "documents": [
+                  {
+                    "documentType": "PAYSLIP",
+                    "contentType": "application/pdf",
+                    "sizeBytes": 184233,
+                    "sha256": "082705beaace48813c9d2e0d2a027952420df47faad71c246020f1231b2f970c",
+                    "uploadedAt": "2026-09-30T09:20:41+02:00"
+                  }
+                ],
+                "validationErrors": {
+                  "employmentDetail.grade": "Grade or notch is required",
+                  "lineOfBusiness": "Line of business is required",
+                  "loanPurpose": "Loan purpose is required",
+                  "nextOfKin": "Next of kin is required"
+                },
+                "complete": false,
+                "createdAt": "2026-09-30T09:12:04+02:00",
+                "updatedAt": "2026-09-30T09:20:41+02:00"
+              }
+            }""";
+
+    /** The caller's open drafts: draft 7 at that point. */
+    public static final String DRAFT_PAGE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "id": 7,
+                    "firstName": "Tatenda",
+                    "lastName": "Ncube",
+                    "ecNumber": "7654321B",
+                    "mobileNumber": "+263772345678",
+                    "amount": 300.0,
+                    "tenor": 6,
+                    "validationErrorCount": 4,
+                    "documents": ["PAYSLIP"],
+                    "createdAt": "2026-09-30T09:12:04+02:00",
+                    "updatedAt": "2026-09-30T09:20:41+02:00"
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    /** The payslip saved with draft 7, with its content (base64, shortened here). */
+    public static final String DRAFT_7_PAYSLIP = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "documentType": "PAYSLIP",
+                "contentType": "application/pdf",
+                "sizeBytes": 184233,
+                "sha256": "082705beaace48813c9d2e0d2a027952420df47faad71c246020f1231b2f970c",
+                "uploadedAt": "2026-09-30T09:20:41+02:00",
+                "content": "JVBERi0xLjcKJcfsj6IKNSAwIG9iago8PC9MZW5ndGggNiAwIFI..."
+              }
+            }""";
+
+    /** Draft 7 submitted, once complete: loan 43, whose reference is the applicant's application reference. */
+    public static final String DRAFT_7_SUBMISSION = """
+            {
+              "code": "CREATED",
+              "message": "Loan sent for approval",
+              "data": {
+                "id": 43,
+                "reference": "000000043",
+                "ssbApprovalStatus": "NEW"
+              }
+            }""";
+
+    /** Draft 7 after submission: a record of the loan it became. */
+    public static final String DRAFT_7_SUBMITTED = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "id": 7,
+                "status": "SUBMITTED",
+                "loanId": 43,
+                "loanReference": "000000043",
+                "createdAt": "2026-09-30T09:12:04+02:00",
+                "updatedAt": "2026-09-30T09:31:15+02:00",
+                "submittedAt": "2026-09-30T09:31:15+02:00"
+              }
+            }""";
 }
