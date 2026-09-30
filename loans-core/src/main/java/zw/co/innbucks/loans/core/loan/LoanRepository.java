@@ -84,8 +84,8 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     List<Loan> findByLoanApprovalStatus(LoanApprovalStatus loanApprovaStatus);
 
     /**
-     * NEW loans due for lodgement with Ndasenda: unclaimed, past any retry backoff, and not held for payslip
-     * review (FR-SSB-007). Oldest first.
+     * NEW loans due for lodgement with Ndasenda: unclaimed, past any retry backoff, not held for payslip
+     * review (FR-SSB-007) or for an employment event (FR-SSB-024), and not already declined. Oldest first.
      */
     @Query("""
             select l.id from Loan l
@@ -94,9 +94,29 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
               and (l.nextLodgementAttemptAt is null or l.nextLodgementAttemptAt <= :now)
               and (l.payslipReviewStatus is null
                    or l.payslipReviewStatus = zw.co.innbucks.loans.core.loan.PayslipReviewStatus.CLEARED)
+              and (l.internalApprovalStatus is null
+                   or l.internalApprovalStatus <> zw.co.innbucks.loans.core.loan.InternalApprovalStatus.REJECTED)
+              and not exists (select h.id from LoanEmploymentEvent h where h.loanId = l.id
+                   and h.action = zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction.HOLD
+                   and h.status = zw.co.innbucks.loans.core.employment.LoanEmploymentEventStatus.OPEN)
             order by l.id
             """)
     List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now);
+
+    /**
+     * Whether an employment event holds the loan (FR-SSB-024): it is then not lodged, credit-approved or booked
+     * until an officer releases or declines it. Read under the loan's row lock by the jobs that claim it.
+     */
+    @Query("""
+            select count(h) > 0 from LoanEmploymentEvent h
+            where h.loanId = :loanId
+              and h.action = zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction.HOLD
+              and h.status = zw.co.innbucks.loans.core.employment.LoanEmploymentEventStatus.OPEN
+            """)
+    boolean isHeldForEmploymentEvent(@Param("loanId") Long loanId);
+
+    /** Every loan under an EC number, as stored (upper case), oldest first. */
+    List<Loan> findByEcNumberOrderByIdAsc(String ecNumber);
 
     /** The applications waiting in the payslip review queue, oldest first. */
     List<Loan> findByPayslipReviewStatusOrderByIdAsc(PayslipReviewStatus payslipReviewStatus);
@@ -110,13 +130,19 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             """)
     List<Long> findIdsWithLodgementClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
 
-    /** Credit-approved loans due for booking with InnBucks: account PENDING and unclaimed. Oldest first. */
+    /**
+     * Credit-approved loans due for booking with InnBucks: account PENDING, unclaimed, and not held for an
+     * employment event (FR-SSB-024). Oldest first.
+     */
     @Query("""
             select l.id from Loan l
             where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
               and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.APPROVED
               and l.loanAccountStatus = zw.co.innbucks.loans.core.disbursements.LoanAccountStatus.PENDING
               and l.bookingClaimedAt is null
+              and not exists (select h.id from LoanEmploymentEvent h where h.loanId = l.id
+                   and h.action = zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction.HOLD
+                   and h.status = zw.co.innbucks.loans.core.employment.LoanEmploymentEventStatus.OPEN)
             order by l.id
             """)
     List<Long> findIdsDueForBooking();

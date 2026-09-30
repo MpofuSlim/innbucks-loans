@@ -183,6 +183,11 @@ public class LoanBookingJob {
             log.warn("Loan {} has a manual payout attempt; not booking it", loan.getId());
             return true;
         }
+        if (loanRepository.isHeldForEmploymentEvent(loan.getId())) {
+            // Held since the due list was read (FR-SSB-024): an officer releases or declines it first.
+            log.info("Loan {} is held for an employment event; not booking it until it is released", loan.getId());
+            return true;
+        }
         return false;
     }
 

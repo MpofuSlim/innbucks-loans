@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
+import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
@@ -192,9 +193,12 @@ public class NdasendaLodgementJob {
         // the due list was read.
         if (loan == null || loan.getLoanApprovalStatus() != LoanApprovalStatus.NEW
                 || heldForPayslipReview(loan)
+                || loan.getInternalApprovalStatus() == InternalApprovalStatus.REJECTED
+                || loanRepository.isHeldForEmploymentEvent(loanId)
                 || loan.getLodgementClaimedAt() != null
                 || (loan.getNextLodgementAttemptAt() != null && loan.getNextLodgementAttemptAt().isAfter(now))) {
-            log.info("Loan {} is no longer due for lodgement (claimed, settled or deferred since the run began); skipped",
+            log.info("Loan {} is no longer due for lodgement (claimed, settled, deferred, held or declined since the run"
+                            + " began); skipped",
                     loanId);
             return null;
         }

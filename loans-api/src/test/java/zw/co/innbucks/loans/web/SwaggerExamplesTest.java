@@ -18,6 +18,8 @@ import zw.co.innbucks.loans.controller.CurrentUserController;
 import zw.co.innbucks.loans.controller.DashboardController;
 import zw.co.innbucks.loans.controller.DeductionBatchController;
 import zw.co.innbucks.loans.controller.DeductionCancellationController;
+import zw.co.innbucks.loans.controller.EmploymentEventController;
+import zw.co.innbucks.loans.controller.EmploymentEventTreatmentController;
 import zw.co.innbucks.loans.controller.HeldBookingController;
 import zw.co.innbucks.loans.controller.InstrumentTemplateController;
 import zw.co.innbucks.loans.controller.LoanApplicationDraftController;
@@ -57,7 +59,8 @@ class SwaggerExamplesTest {
 
     private static final List<Class<?>> CONTROLLERS = List.of(AuthController.class, CommissionGroupController.class,
             CreditReasonCodeController.class, CurrentUserController.class, DashboardController.class,
-            DeductionBatchController.class, DeductionCancellationController.class, HeldBookingController.class,
+            DeductionBatchController.class, DeductionCancellationController.class, EmploymentEventController.class,
+            EmploymentEventTreatmentController.class, HeldBookingController.class,
             InstrumentTemplateController.class, LoanApplicationDraftController.class, LoanController.class,
             LoanDocumentController.class, LoanNotificationController.class, PayslipReviewController.class,
             MerchantController.class, ReportController.class, SignedInstrumentController.class, UserController.class);
