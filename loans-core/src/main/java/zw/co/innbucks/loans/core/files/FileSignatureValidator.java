@@ -1,9 +1,6 @@
 package zw.co.innbucks.loans.core.files;
 
 import org.springframework.stereotype.Component;
-import zw.co.innbucks.loans.core.audit.AuditService;
-
-import java.util.Base64;
 
 /**
  * Zero-trust content ingestion: validates uploaded documents by MAGIC-NUMBER
@@ -14,7 +11,25 @@ import java.util.Base64;
 @Component
 public class FileSignatureValidator {
 
-    public enum FileKind {PDF, PNG, JPEG, GIF, UNKNOWN, EXECUTABLE, EMPTY}
+    public enum FileKind {
+        PDF("application/pdf"),
+        PNG("image/png"),
+        JPEG("image/jpeg"),
+        GIF("image/gif"),
+        UNKNOWN("application/octet-stream"),
+        EXECUTABLE("application/octet-stream"),
+        EMPTY("application/octet-stream");
+
+        private final String contentType;
+
+        FileKind(String contentType) {
+            this.contentType = contentType;
+        }
+
+        public String contentType() {
+            return contentType;
+        }
+    }
 
     /** Classifies raw bytes by their leading signature. */
     public FileKind classify(byte[] bytes) {
@@ -49,63 +64,5 @@ public class FileSignatureValidator {
             return FileKind.GIF;
         }
         return FileKind.UNKNOWN;
-    }
-
-    /** True when the bytes are one of the accepted KYC document formats. */
-    public boolean isAcceptedDocument(byte[] bytes) {
-        return switch (classify(bytes)) {
-            case PDF, PNG, JPEG, GIF -> true;
-            default -> false;
-        };
-    }
-
-    /**
-     * Decodes a whole base64 upload (WhatsApp/Web uploads arrive as base64 data-URLs or raw base64; a
-     * {@code data:*;base64,} prefix and line breaks are tolerated) and checks it: an executable is always
-     * refused, and a KYC document must also be a PDF, PNG, JPEG or GIF. Null for an absent upload: whether
-     * one is required is the caller's decision.
-     */
-    public DecodedFile decodeBase64Document(String fieldName, String base64Payload, boolean requireDocumentType) {
-        if (base64Payload == null || base64Payload.isBlank()) {
-            return null;
-        }
-        String payload = base64Payload;
-        int comma = payload.indexOf(',');
-        if (payload.startsWith("data:") && comma > 0) {
-            payload = payload.substring(comma + 1);
-        }
-        byte[] bytes;
-        try {
-            bytes = Base64.getDecoder().decode(payload.replaceAll("\\s", ""));
-        } catch (IllegalArgumentException e) {
-            throw new UnsafeFileException(fieldName + " is not valid base64 content");
-        }
-        if (bytes.length == 0) {
-            throw new UnsafeFileException(fieldName + " is empty");
-        }
-        FileKind kind = classify(bytes);
-        if (kind == FileKind.EXECUTABLE) {
-            throw new UnsafeFileException(fieldName + " contains an executable byte signature — rejected");
-        }
-        if (requireDocumentType && !isAcceptedDocument(bytes)) {
-            throw new UnsafeFileException(fieldName + " is not a recognised document type (PDF/PNG/JPEG/GIF)");
-        }
-        return new DecodedFile(bytes, contentType(kind), AuditService.sha256Hex(bytes));
-    }
-
-    private static String contentType(FileKind kind) {
-        return switch (kind) {
-            case PDF -> "application/pdf";
-            case PNG -> "image/png";
-            case JPEG -> "image/jpeg";
-            case GIF -> "image/gif";
-            default -> "application/octet-stream";
-        };
-    }
-
-    public static class UnsafeFileException extends RuntimeException {
-        public UnsafeFileException(String message) {
-            super(message);
-        }
     }
 }

@@ -17,12 +17,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.document.AmendDocumentRequest;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.DocumentProblem;
+import zw.co.innbucks.loans.core.document.DocumentProblemReason;
+import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocumentContent;
 import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
 import zw.co.innbucks.loans.core.exception.ConflictException;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.loan.LoanReadScope;
 import zw.co.innbucks.loans.core.loan.LoanReadScopeResolver;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -168,8 +170,9 @@ class LoanDocumentWebContractTest {
     @DisplayName("an unacceptable file is a 400 INVALID_DOCUMENT and a closed loan a 409, each with its message")
     void refusalsCarryTheirMessage() throws Exception {
         when(loanDocumentService.amend(eq(42L), eq(DocumentType.NATIONAL_ID), any(), any()))
-                .thenThrow(new FileSignatureValidator.UnsafeFileException(
-                        "content is not a recognised document type (PDF/PNG/JPEG/GIF)"));
+                .thenThrow(new DocumentRejectedException(List.of(new DocumentProblem("content",
+                        DocumentType.NATIONAL_ID, DocumentProblemReason.BLURRED, "The national ID photo is too blurred"
+                        + " to read. Please hold the camera steady and retake it in good light."))));
         when(loanDocumentService.amend(eq(43L), eq(DocumentType.PAYSLIP), any(), any()))
                 .thenThrow(new ConflictException("Documents of loan 000000043 can no longer be replaced"
                         + " (SSB status APPROVED, credit status APPROVED)"));
@@ -179,7 +182,14 @@ class LoanDocumentWebContractTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_DOCUMENT"))
-                .andExpect(jsonPath("$.message").value("content is not a recognised document type (PDF/PNG/JPEG/GIF)"));
+                .andExpect(jsonPath("$.message").value("The national ID photo is too blurred to read. Please hold the"
+                        + " camera steady and retake it in good light."))
+                .andExpect(jsonPath("$.data.documents.length()").value(1))
+                .andExpect(jsonPath("$.data.documents[0].field").value("content"))
+                .andExpect(jsonPath("$.data.documents[0].documentType").value("NATIONAL_ID"))
+                .andExpect(jsonPath("$.data.documents[0].reason").value("BLURRED"))
+                .andExpect(jsonPath("$.data.documents[0].message").value("The national ID photo is too blurred to"
+                        + " read. Please hold the camera steady and retake it in good light."));
         mvc.perform(put("/lending/v1/loans/43/documents/PAYSLIP").with(as("tmoyo", "AGENTS"))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isConflict())

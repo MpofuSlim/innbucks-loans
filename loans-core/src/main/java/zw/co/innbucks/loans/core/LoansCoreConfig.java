@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import zw.co.innbucks.loans.core.auth.JwtProperties;
 import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
+import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
 
 
@@ -15,7 +16,8 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
 @EnableConfigurationProperties(value = {HttpClientConfig.class,
         NdasendaParameters.class,
         InnbucksParameters.class,
-        JwtProperties.class})
+        JwtProperties.class,
+        DocumentUploadProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
 }

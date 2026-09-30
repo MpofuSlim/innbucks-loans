@@ -21,6 +21,10 @@ import zw.co.innbucks.loans.core.document.LoanDocumentAccess;
 import zw.co.innbucks.loans.core.document.LoanDocumentAccessRepository;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.document.LoanDocumentService;
+import zw.co.innbucks.loans.core.document.DocumentInspector;
+import zw.co.innbucks.loans.core.document.DocumentRejectedException;
+import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
+import zw.co.innbucks.loans.core.document.TestDocuments;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
@@ -80,7 +84,8 @@ class LoanServiceImplApplicationTest {
         loanDocumentAccessRepository = mock(LoanDocumentAccessRepository.class);
         PayslipFraudDetector payslipFraudDetector = new PayslipFraudDetector(loanDocumentRepository);
         LoanDocumentService loanDocumentService = new LoanDocumentService(loanDocumentRepository,
-                loanDocumentAccessRepository, loanRepository, new FileSignatureValidator(), auth, payslipFraudDetector,
+                loanDocumentAccessRepository, loanRepository,
+                new DocumentInspector(new FileSignatureValidator(), new DocumentUploadProperties()), auth, payslipFraudDetector,
                 payslipReviewService);
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(),
@@ -213,14 +218,15 @@ class LoanServiceImplApplicationTest {
         withExecutable.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("MZ\u0090\u0000 payload".getBytes()));
 
         assertThatThrownBy(() -> service.requestLoan(withExecutable))
-                .isInstanceOf(FileSignatureValidator.UnsafeFileException.class)
-                .hasMessageContaining("payslipPicture contains an executable");
+                .isInstanceOf(DocumentRejectedException.class)
+                .hasMessage("The payslip was refused: it is a program, not a document or photo. Please upload a PDF,"
+                        + " PNG, JPEG or GIF file.");
         verify(loanRepository, never()).save(any());
 
         LoanApplicationRequest withUnknown = LoanApplicationRequestValidationTest.completeApplication();
         withUnknown.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString("not an image".getBytes()));
         assertThatThrownBy(() -> service.requestLoan(withUnknown))
-                .hasMessageContaining("nationalIdPicture is not a recognised document type");
+                .hasMessage("The national ID must be a PDF, PNG, JPEG or GIF file.");
         verify(loanRepository, never()).save(any());
     }
 
@@ -228,9 +234,9 @@ class LoanServiceImplApplicationTest {
     @DisplayName("a real PDF and a PNG data-URL pass the check and the application is saved")
     void recognisedDocumentsPass() {
         LoanApplicationRequest withDocuments = LoanApplicationRequestValidationTest.completeApplication();
-        withDocuments.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes()));
-        withDocuments.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder()
-                .encodeToString(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}));
+        withDocuments.setPayslipPicture(TestDocuments.base64(TestDocuments.pdf(1)));
+        withDocuments.setNationalIdPicture("data:image/png;base64,"
+                + TestDocuments.base64(TestDocuments.encode(TestDocuments.page(1200, 800), "png")));
 
         service.requestLoan(withDocuments);
 
@@ -241,8 +247,8 @@ class LoanServiceImplApplicationTest {
     @DisplayName("each document is kept as version 1, uploaded by the originator, with the upload logged (FR-SSB-009)")
     void applicationDocumentsAreStoredAsVersionOne() {
         LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
-        byte[] pdf = "%PDF-1.7 payslip".getBytes();
-        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+        byte[] pdf = TestDocuments.pdf(1);
+        byte[] png = TestDocuments.encode(TestDocuments.signature(400, 150, true), "png");
         request.setPayslipPicture(java.util.Base64.getEncoder().encodeToString(pdf));
         request.setSignature("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png));
         Witness witness = new Witness();
@@ -276,15 +282,16 @@ class LoanServiceImplApplicationTest {
         request.setSignature("signed: R. Chikwanha");
 
         assertThatThrownBy(() -> service.requestLoan(request))
-                .isInstanceOf(FileSignatureValidator.UnsafeFileException.class)
-                .hasMessage("signature is not valid base64 content");
+                .isInstanceOf(DocumentRejectedException.class)
+                .hasMessage("The signature could not be read: the upload was damaged. Please upload it again.");
         verify(loanRepository, never()).save(any());
         verify(loanDocumentRepository, never()).save(any());
     }
 
     // ── Payslip fraud controls (FR-SSB-007) ───────────────────────────────────
 
-    private static final String PAYSLIP = java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes());
+    private static final byte[] PAYSLIP_PDF = TestDocuments.pdf(1);
+    private static final String PAYSLIP = TestDocuments.base64(PAYSLIP_PDF);
 
     private Loan applyWithPayslip(LoanApplicationRequest request) {
         request.setPayslipPicture(PAYSLIP);
@@ -309,7 +316,7 @@ class LoanServiceImplApplicationTest {
 
         Loan loan = applyWithPayslip(LoanApplicationRequestValidationTest.completeApplication());
 
-        assertThat(loan.getPayslipSha256()).isEqualTo(AuditService.sha256Hex("%PDF-1.7 payslip".getBytes()));
+        assertThat(loan.getPayslipSha256()).isEqualTo(AuditService.sha256Hex(PAYSLIP_PDF));
         assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
         assertThat(held(loan)).containsExactly(new PayslipFraudDetector.Finding(
                 PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT, 17L, "Same payslip file as loan 000000017"));

@@ -76,7 +76,11 @@ public class LoanController {
     @Operation(summary = "Apply for a loan",
             description = "Captures an application for the signed-in user's merchant, or for the channel named by"
                     + " channelId. It is lodged with SSB for the payroll deduction, then goes to Credit. Every"
-                    + " missing field is reported in one 400. Documents are base64 PDF, PNG, JPEG or GIF."
+                    + " missing field is reported in one 400. Documents are base64: the payslip and national ID a PDF,"
+                    + " PNG, JPEG or GIF, each signature a PNG, JPEG or GIF, each file at most 5 MB. Each must be"
+                    + " readable (FR-SSB-005): a damaged, password-protected, blank, blurred or too-small upload is"
+                    + " refused, and every refused document is listed in one 400 with its field, reason and a message"
+                    + " for the applicant."
                     + " employmentDetail carries where the applicant works (ministry, station, grade, contract"
                     + " type) and the payslip's gross and net pay; payslipDeductions lists each deduction already"
                     + " on the payslip. walletNumber is the InnBucks wallet the loan pays, the mobile number when"
@@ -125,11 +129,7 @@ public class LoanController {
                                       "code": "INVALID_REQUEST",
                                       "message": "Loan amount should be between 20 and 2000"
                                     }"""),
-                            @ExampleObject(name = "Unsafe document", value = """
-                                    {
-                                      "code": "INVALID_DOCUMENT",
-                                      "message": "payslipPicture is not a recognised document type (PDF/PNG/JPEG/GIF)"
-                                    }""")})),
+                            @ExampleObject(name = "Documents refused", value = ApiExamples.DOCUMENTS_REFUSED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "409", description = "The applicant already has a loan in flight; nothing was created",
