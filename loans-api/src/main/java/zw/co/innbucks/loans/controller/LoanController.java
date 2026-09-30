@@ -588,9 +588,14 @@ public class LoanController {
     @Operation(summary = "Pay a loan manually (recovery)",
             description = "SUPER_ADMIN only, for recovery: pays a loan through the InnBucks deposit rail when SSB and"
                     + " Credit approved it and InnBucks definitively refused its booking (the booking is what normally"
-                    + " pays it). Every attempt for a loan carries one reference, MD-<loan reference>. An attempt"
-                    + " whose outcome is unknown (a timeout, a 5xx) is IN_DOUBT and blocks every further attempt"
-                    + " until it has been confirmed with InnBucks.")
+                    + " pays it). It waits for the same checkpoints the booking waited for (BEFORE_BOOKING, such as"
+                    + " PAYOUT_AUTHORISATION): each that was switched on, and applied to the loan, when its booking was"
+                    + " sent must have cleared it, and one that declined it refuses the payout. A checkpoint switched on"
+                    + " after the booking was sent never held the loan and does not hold its payout. The payout is a"
+                    + " second person's: whoever originated the loan, approved it at Credit or is a party to it cannot"
+                    + " make it. Every attempt for a loan carries one reference, MD-<loan reference>. An attempt whose"
+                    + " outcome is unknown (a timeout, a 5xx) is IN_DOUBT and blocks every further attempt until it"
+                    + " has been confirmed with InnBucks. Nothing is sent to InnBucks when the call is refused.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Attempted: DISBURSED, REFUSED (nothing paid; may be tried"
                     + " again) or IN_DOUBT (confirm with InnBucks using the reference)",
@@ -606,8 +611,25 @@ public class LoanController {
                             }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN",
-                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN, or originated the loan, approved"
+                    + " it at Credit or is a party to it; nothing was sent",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
+                            @ExampleObject(name = "Credit approver", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Loan 000000042 was approved by admin, who cannot also pay it out; another SUPER_ADMIN must"
+                                    }"""),
+                            @ExampleObject(name = "Originator", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Loan 000000042 was originated by admin, who cannot also pay it out; another SUPER_ADMIN must"
+                                    }"""),
+                            @ExampleObject(name = "Party to the loan", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "admin is a party to loan 000000042 and cannot pay it out; another SUPER_ADMIN must"
+                                    }""")})),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND))),
             @ApiResponse(responseCode = "409", description = "Not eligible for a manual payout; nothing was sent",
@@ -621,14 +643,25 @@ public class LoanController {
                                     {
                                       "code": "DISBURSEMENT_NOT_ALLOWED",
                                       "message": "The payroll deduction of loan 000000042 was recorded as cancelled at Ndasenda by finance2 at 2026-09-30T20:22:09+02:00; paid now, the loan would have no repayment. A manual payout is not allowed"
+                                    }"""),
+                            @ExampleObject(name = "Waiting at a checkpoint", value = """
+                                    {
+                                      "code": "DISBURSEMENT_NOT_ALLOWED",
+                                      "message": "Loan 000000042 is waiting for Payout authorisation, which was switched on before its booking was sent and has not cleared it. A manual payout is not allowed"
+                                    }"""),
+                            @ExampleObject(name = "Declined at a checkpoint", value = """
+                                    {
+                                      "code": "DISBURSEMENT_NOT_ALLOWED",
+                                      "message": "Loan 000000042 was declined at Payout authorisation. A manual payout is not allowed"
                                     }""")}))
     })
     @PostMapping("/loans/{loanId}/disbursements")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ApiResult<ManualDisbursementResponse> disburse(@PathVariable Long loanId) {
         log.info("Manual recovery payout requested for loan {}", loanId);
-        // The service refuses (409) anything the pre-approved booking may still pay, and never pays twice:
-        // one stable reference per loan, written ahead of the InnBucks call.
+        // The service refuses (409) anything the pre-approved booking may still pay or its checkpoints have not
+        // cleared, and (403) a caller who originated, approved or is a party to the loan; it never pays twice: one
+        // stable reference per loan, written ahead of the InnBucks call.
         return ApiResult.ok(disbursementService.disburse(loanId));
     }
 

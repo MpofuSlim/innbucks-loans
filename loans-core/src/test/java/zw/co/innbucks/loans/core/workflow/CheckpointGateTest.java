@@ -9,6 +9,7 @@ import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -101,5 +102,40 @@ class CheckpointGateTest {
         when(decisions.findByStageCodeInAndLoanIdIn(anyCollection(), anyCollection())).thenReturn(List.of(
                 CheckpointDecision.builder().stageCode("SECOND_LOOK").loanId(1L).build()));
         assertThat(gate.pending(loan)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("past the point: a checkpoint in force when the loan left must have cleared it; one switched on later"
+            + " never held it; a decline always counts")
+    void notCleared() {
+        WorkflowStage payout = WorkflowFixtures.checkpoint("PAYOUT_AUTHORISATION", HoldPoint.BEFORE_BOOKING);
+        WorkflowStage later = WorkflowFixtures.checkpoint("LATER", HoldPoint.BEFORE_BOOKING);
+        later.setActiveSince(WorkflowFixtures.CHECKPOINT_ACTIVE_SINCE.plusDays(5));
+        checkpoints(HoldPoint.BEFORE_BOOKING, payout, later);
+        Loan loan = loan(1, "2500");
+        LocalDateTime left = WorkflowFixtures.CHECKPOINT_ACTIVE_SINCE.plusDays(1);
+
+        assertThat(gate.notCleared(HoldPoint.BEFORE_BOOKING, loan, left))
+                .hasValueSatisfying(held -> {
+                    assertThat(held.stage()).isSameAs(payout);
+                    assertThat(held.declined()).isFalse();
+                });
+        assertThat(gate.notCleared(HoldPoint.BEFORE_BOOKING, loan, null)).as("left before any was recorded").isEmpty();
+
+        when(decisions.findByStageCodeInAndLoanIdIn(anyCollection(), anyCollection())).thenReturn(List.of(
+                CheckpointDecision.builder().stageCode("PAYOUT_AUTHORISATION").loanId(1L)
+                        .outcome(CheckpointOutcome.CLEARED).build()));
+        assertThat(gate.notCleared(HoldPoint.BEFORE_BOOKING, loan, left)).as("cleared; LATER came on after").isEmpty();
+
+        when(decisions.findByStageCodeInAndLoanIdIn(anyCollection(), anyCollection())).thenReturn(List.of(
+                CheckpointDecision.builder().stageCode("LATER").loanId(1L)
+                        .outcome(CheckpointOutcome.DECLINED).build(),
+                CheckpointDecision.builder().stageCode("PAYOUT_AUTHORISATION").loanId(1L)
+                        .outcome(CheckpointOutcome.CLEARED).build()));
+        assertThat(gate.notCleared(HoldPoint.BEFORE_BOOKING, loan, null))
+                .hasValueSatisfying(held -> {
+                    assertThat(held.stage()).isSameAs(later);
+                    assertThat(held.declined()).isTrue();
+                });
     }
 }
