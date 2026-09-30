@@ -3,9 +3,10 @@ package zw.co.innbucks.loans.core.loan;
 import java.util.List;
 
 /**
- * Credit's assessment of a loan SSB has accepted (FR-SSB-015, applying FR-PBL-027, 029 and 032):
- * approve it for booking, reject it, or return it to the originator for more information. Every
- * action is kept in the loan's credit decision log.
+ * Credit's assessment of a loan SSB has accepted (FR-SSB-015, applying FR-PBL-027, 028, 029 and 032):
+ * approve it for booking, reject it, or return it to the originator for more information; or, when it
+ * is above the officer's approval limit, refer it to a higher credit authority. Every action is kept
+ * in the loan's credit decision log.
  */
 public interface CreditDecisionService {
 
@@ -14,9 +15,24 @@ public interface CreditDecisionService {
      *
      * @throws zw.co.innbucks.loans.core.exception.NotFoundException no such loan
      * @throws org.springframework.security.access.AccessDeniedException the caller originated, resubmitted
-     *                                                                   or is a party to the loan and is approving it
+     *                                                                   or is a party to the loan and is approving it,
+     *                                                                   or it is above their approval limit
      */
     LoanResponse decide(Long loanId, CreditDecisionRequest request);
+
+    /**
+     * Refers a loan above the caller's approval limit to the credit authority that covers it, with the caller's
+     * recommendation, and emails whoever may approve it. The loan stays in the credit queue for them; the caller's
+     * assignment of it, if any, is released.
+     *
+     * @throws zw.co.innbucks.loans.core.exception.NotFoundException    no such loan
+     * @throws zw.co.innbucks.loans.core.exception.ConflictException    no approval limits are set up, the loan is
+     *                                                                  within the caller's limit, or it is assigned to
+     *                                                                  someone else at an EXCLUSIVE credit decision
+     * @throws org.springframework.security.access.AccessDeniedException the caller originated, resubmitted or is a
+     *                                                                   party to the loan and recommends approving it
+     */
+    CreditDecisionResponse refer(Long loanId, CreditReferralRequest request);
 
     /**
      * Answers a return: the loan goes back to PENDING in the credit queue, with the answer logged.

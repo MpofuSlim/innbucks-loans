@@ -22,16 +22,29 @@ public class CreditDecisionLog {
     private final CreditDecisionRepository creditDecisionRepository;
     private final LoanDocumentRepository loanDocumentRepository;
 
-    public void record(Loan loan, CreditAction action, String reasonCode, String comment, String performedBy,
-                       LocalDateTime at) {
+    public CreditDecision record(Loan loan, CreditAction action, String reasonCode, String comment, String performedBy,
+                                 LocalDateTime at) {
+        return record(loan, action, reasonCode, comment, performedBy, at, null, null);
+    }
+
+    /** A referral to a higher credit authority, with where it went and what the officer recommends. */
+    public CreditDecision recordReferral(Loan loan, String reasonCode, String comment, String performedBy,
+                                         LocalDateTime at, String referredTo, InternalApprovalStatus recommendation) {
+        return record(loan, CreditAction.REFERRED, reasonCode, comment, performedBy, at, referredTo, recommendation);
+    }
+
+    private CreditDecision record(Loan loan, CreditAction action, String reasonCode, String comment, String performedBy,
+                                  LocalDateTime at, String referredTo, InternalApprovalStatus recommendation) {
         String snapshot = CreditDecisionSnapshot.of(loan, currentFingerprints(loan.getId())).toJson();
-        creditDecisionRepository.save(CreditDecision.builder()
+        return creditDecisionRepository.save(CreditDecision.builder()
                 .loanId(loan.getId())
                 .action(action)
                 .reasonCode(reasonCode)
                 .comment(comment)
                 .performedBy(performedBy)
                 .performedAt(at)
+                .referredTo(referredTo)
+                .recommendation(recommendation)
                 .loanSnapshot(snapshot)
                 .snapshotSha256(AuditService.sha256Hex(snapshot))
                 .build());

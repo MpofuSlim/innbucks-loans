@@ -3,6 +3,9 @@ package zw.co.innbucks.loans.core.loan;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityAssessment;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
@@ -20,6 +23,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 
 /**
@@ -38,6 +42,8 @@ public class CreditWorkbenchService {
     static final String CREDIT_DECISION_OVERDUE = "CREDIT_DECISION_OVERDUE";
     static final String CREDIT_DECISION_ESCALATED = "CREDIT_DECISION_ESCALATED";
     static final String CHECKPOINT_PENDING = "CHECKPOINT_PENDING";
+    static final String ABOVE_YOUR_APPROVAL_LIMIT = "ABOVE_YOUR_APPROVAL_LIMIT";
+    static final String REFERRED = "REFERRED";
 
     public static final String AFFORDABILITY_NOT_ASSESSED = "The SSB deduction cap and minimum take-home pay are not"
             + " configured yet, so affordability is not passed or failed; the figures are for the officer to judge.";
@@ -51,9 +57,11 @@ public class CreditWorkbenchService {
     private final PayslipFraudFlagRepository payslipFraudFlagRepository;
     private final MarketTimeZone marketTimeZone;
     private final CheckpointGate checkpointGate;
+    private final CreditAuthorityService creditAuthorityService;
+    private final AuthService authService;
 
     /**
-     * The workbench for a loan, as it stands now.
+     * The workbench for a loan, as it stands now, for the officer reading it.
      *
      * @throws NotFoundException no such loan
      */
@@ -63,13 +71,17 @@ public class CreditWorkbenchService {
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
         LoanResponse view = loanService.getLoan(loanId, LoanReadScope.platform());
         CreditWorkbenchResponse.Exposure exposure = exposureOf(loan);
+        CreditAuthorityAssessment authority =
+                creditAuthorityService.assess(loan.getPrincipal(), authService.getLoggedInUser());
+        List<CreditDecisionResponse> decisions = creditDecisionService.history(loanId);
         return new CreditWorkbenchResponse(
                 view,
                 affordabilityOf(loan),
                 exposure,
-                flagsOf(loan, view, exposure),
+                authority,
+                flagsOf(loan, view, exposure, authority, decisions),
                 employmentEventService.forLoan(loanId, LoanReadScope.platform()),
-                creditDecisionService.history(loanId));
+                decisions);
     }
 
     /** The payslip's figures against the deduction SSB is instructed to take for this loan. */
@@ -139,7 +151,9 @@ public class CreditWorkbenchService {
     }
 
     private List<CreditWorkbenchResponse.Flag> flagsOf(Loan loan, LoanResponse view,
-                                                       CreditWorkbenchResponse.Exposure exposure) {
+                                                       CreditWorkbenchResponse.Exposure exposure,
+                                                       CreditAuthorityAssessment authority,
+                                                       List<CreditDecisionResponse> decisions) {
         List<CreditWorkbenchResponse.Flag> flags = new ArrayList<>();
         if (loan.getPayslipReviewStatus() == PayslipReviewStatus.PENDING) {
             flags.add(new CreditWorkbenchResponse.Flag(PAYSLIP_REVIEW_PENDING,
@@ -185,7 +199,44 @@ public class CreditWorkbenchService {
             flags.add(new CreditWorkbenchResponse.Flag(CREDIT_DECISION_ESCALATED,
                     "Escalated for waiting past the escalation point"));
         }
+        if (awaitsCredit(loan)) {
+            if (!authority.withinYourLimit()) {
+                flags.add(new CreditWorkbenchResponse.Flag(ABOVE_YOUR_APPROVAL_LIMIT, (authority.yourLevel() == null
+                        ? "You have no credit approval limit" : "Above your approval limit of "
+                        + amount(authority.yourLevel().maximumPrincipal()) + " (" + authority.yourLevel().name() + ")")
+                        + "; it needs " + authority.approversDescription() + ", so refer it"));
+            }
+            lastReferral(decisions).ifPresent(referral -> flags.add(new CreditWorkbenchResponse.Flag(REFERRED,
+                    "Referred by " + referral.performedBy() + " to " + referral.referredTo() + ", recommending "
+                            + (referral.recommendation() == InternalApprovalStatus.APPROVED ? "approval" : "rejection")
+                            + " (" + referral.reasonCode() + ")")));
+        }
         return flags;
+    }
+
+    /** Waiting for Credit to decide it: SSB has accepted it and Credit has not decided or returned it. */
+    private static boolean awaitsCredit(Loan loan) {
+        return loan.getLoanApprovalStatus() == LoanApprovalStatus.APPROVED
+                && (loan.getInternalApprovalStatus() == null
+                || loan.getInternalApprovalStatus() == InternalApprovalStatus.PENDING);
+    }
+
+    /** The latest referral, unless the loan has been resubmitted since: a resubmitted loan is assessed afresh. */
+    private static Optional<CreditDecisionResponse> lastReferral(List<CreditDecisionResponse> decisions) {
+        for (int i = decisions.size() - 1; i >= 0; i--) {
+            CreditDecisionResponse entry = decisions.get(i);
+            if (entry.action() == CreditAction.REFERRED) {
+                return Optional.of(entry);
+            }
+            if (entry.action() == CreditAction.RESUBMITTED) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String amount(BigDecimal value) {
+        return value == null ? "any amount" : value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private static BigDecimal zeroIfNull(BigDecimal value) {

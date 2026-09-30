@@ -340,6 +340,27 @@ class WorkQueueServiceTest {
         }
 
         @Test
+        @DisplayName("a loan handed on (a referral) is released from whoever handed it on, and only from them")
+        void releasedWhenHandedOn() {
+            when(stageRepository.findById("CREDIT_DECISION")).thenReturn(Optional.of(credit));
+            WorkItem held = item("cmanager");
+
+            service.releaseIfHeldBy(SystemStage.CREDIT_DECISION, loan, "CManager");
+
+            assertThat(held.getAssignedTo()).isNull();
+            assertThat(held.getAssignedAt()).isNull();
+            WorkItemEvent event = recorded();
+            assertThat(event.getAction()).isEqualTo(WorkItemAction.RELEASED);
+            assertThat(event.getFromUser()).isEqualTo("cmanager");
+            assertThat(event.getPerformedBy()).isEqualTo("CManager");
+
+            WorkItem someoneElses = item("rnyathi");
+            service.releaseIfHeldBy(SystemStage.CREDIT_DECISION, loan, "cmanager");
+            assertThat(someoneElses.getAssignedTo()).isEqualTo("rnyathi");
+            verify(itemRepository, times(1)).save(any());
+        }
+
+        @Test
         @DisplayName("a checkpoint after Credit's approval is never given to whoever approved the loan")
         void approverNotGivenACheckpointAfterTheApproval() {
             when(itemRepository.findByStageCodeAndLoanIdAndEnteredAt(any(), any(), any())).thenReturn(Optional.empty());

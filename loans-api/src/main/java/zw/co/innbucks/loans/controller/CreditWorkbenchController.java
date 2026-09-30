@@ -38,10 +38,14 @@ public class CreditWorkbenchController {
                     + " SSB is instructed to take; outcome is NOT_ASSESSED until the SSB deduction cap and minimum"
                     + " take-home pay are configured. exposure: the applicant's other loans with InnBucks, by EC number"
                     + " or national ID; open means not declined or failed, and not paid out with its last deduction"
-                    + " already past. flags: what the system has raised (PAYSLIP_REVIEW_PENDING, a payslip finding such as"
-                    + " PAYSLIP_REUSED_BY_ANOTHER_APPLICANT, DOCUMENTS_AMENDED, EMPLOYMENT_EVENT_HOLD,"
-                    + " DEDUCTION_CANCELLATION_REQUIRED, OTHER_OPEN_LOANS, CREDIT_DECISION_OVERDUE,"
-                    + " CREDIT_DECISION_ESCALATED); a flag is for the officer to weigh, never a refusal. employmentEvents"
+                    + " already past. creditAuthority: who may approve the principal (FR-PBL-028): limitsApply false while"
+                    + " no approval limits are set up; otherwise the lowest level that covers it (requiredLevel, or"
+                    + " aboveEveryLevel when only SUPER_ADMIN can), the caller's own level and withinYourLimit, which"
+                    + " says whether the caller may approve it or should refer it. flags: what the system has raised"
+                    + " (PAYSLIP_REVIEW_PENDING, a payslip finding such as PAYSLIP_REUSED_BY_ANOTHER_APPLICANT,"
+                    + " DOCUMENTS_AMENDED, EMPLOYMENT_EVENT_HOLD, CHECKPOINT_PENDING, DEDUCTION_CANCELLATION_REQUIRED,"
+                    + " OTHER_OPEN_LOANS, CREDIT_DECISION_OVERDUE, CREDIT_DECISION_ESCALATED, ABOVE_YOUR_APPROVAL_LIMIT,"
+                    + " REFERRED); a flag is for the officer to weigh, never a refusal. employmentEvents"
                     + " and decisions: what employment events did to it and every credit action so far, oldest first.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",

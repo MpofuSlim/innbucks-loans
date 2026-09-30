@@ -26,7 +26,8 @@ public record UserResponse(
         String merchantCode,
         String merchantName,
         CommissionGroupResponse commissionGroup,
-        String physicalAddress) {
+        String physicalAddress,
+        String creditAuthorityLevel) {
 
     public static UserResponse from(User user) {
         return UserResponse.builder()
@@ -43,6 +44,7 @@ public record UserResponse(
                 .merchantName(user.getMerchant() == null ? null : user.getMerchant().getCompanyName())
                 .commissionGroup(CommissionGroupResponse.from(user.getCommissionGroup()))
                 .physicalAddress(user.getPhysicalAddress())
+                .creditAuthorityLevel(user.getCreditAuthorityLevel())
                 .build();
     }
 

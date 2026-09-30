@@ -34,6 +34,7 @@ import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
 import zw.co.innbucks.loans.core.loan.CreditDecisionResponse;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
+import zw.co.innbucks.loans.core.loan.CreditReferralRequest;
 import zw.co.innbucks.loans.core.loan.CreditResubmissionRequest;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanApplicationChecks;
@@ -348,7 +349,10 @@ public class LoanController {
                     + " Every decision needs an active reason code for that decision (GET /credit-reason-codes) and a"
                     + " comment, and is kept in the loan's credit decision log with the loan data it was based on."
                     + " Nobody may approve a loan they originated, resubmitted, or are a party to (the applicant,"
-                    + " their next of kin, or the holder of the payout wallet). An approval freezes where the loan is"
+                    + " their next of kin, or the holder of the payout wallet). Once credit approval limits are set up"
+                    + " (GET /credit-authority-levels), nobody may approve a loan above their own level's limit, or"
+                    + " any loan without a level (SUPER_ADMIN aside): refer it with POST /loans/{loanId}/credit-referral"
+                    + " instead. Rejecting and returning are not limited. An approval freezes where the loan is"
                     + " paid; a rejection flags the SSB deduction for cancellation; RETURNED sends the loan back to its"
                     + " originator for more information, and while it waits it can only be rejected. The customer is"
                     + " told by SMS; the comment is not sent to them.")
@@ -397,7 +401,7 @@ public class LoanController {
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not entitled to work the CREDIT_DECISION stage"
                     + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages), or the caller may not"
-                    + " approve this loan",
+                    + " approve this loan: segregation of duties, or above their approval limit",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
                             @ExampleObject(name = "Originator", value = """
@@ -414,7 +418,9 @@ public class LoanController {
                                     {
                                       "code": "FORBIDDEN",
                                       "message": "cmanager is a party to loan 000000042 and cannot approve it; another credit officer must"
-                                    }""")})),
+                                    }"""),
+                            @ExampleObject(name = "Above the approval limit", value = ApiExamples.APPROVAL_ABOVE_LIMIT),
+                            @ExampleObject(name = "No approval limit", value = ApiExamples.APPROVAL_WITHOUT_LEVEL)})),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND))),
             @ApiResponse(responseCode = "409", description = "The stage is EXCLUSIVE and the loan's item is assigned to"
@@ -432,6 +438,86 @@ public class LoanController {
             default -> "Loan returned for more information";
         };
         return ApiResult.ok(message, loan);
+    }
+
+    @Operation(summary = "Refer a loan to a higher credit authority",
+            description = "For a loan above the caller's approval limit (FR-PBL-028): whoever may work the"
+                    + " CREDIT_DECISION stage records what they recommend (APPROVED or REJECTED, with an active reason"
+                    + " code for that decision and a comment) and refers the loan to the lowest credit authority level"
+                    + " that covers its principal, or to SUPER_ADMIN when it is above every level. The referral goes in"
+                    + " the credit decision log; everyone who may approve the loan is emailed (the loan reference and"
+                    + " amount only); the caller's assignment of the loan, if any, is released. The loan stays in the"
+                    + " credit queue, undecided, for them. Recommending approval is held to the same segregation of"
+                    + " duties as approving.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Referred; the referral as logged",
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_64_REFERRED))),
+            @ApiResponse(responseCode = "400", description = "A missing field, a reason code that does not fit the"
+                    + " recommendation, or a loan not waiting for a credit decision",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Missing fields", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "recommendation": "Recommendation is required (APPROVED or REJECTED)"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Recommendation not a decision", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "A referral recommends APPROVED or REJECTED"
+                                    }"""),
+                            @ExampleObject(name = "Reason code for another decision", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Reason code REJECT_AFFORDABILITY is for REJECTED decisions, not APPROVED"
+                                    }"""),
+                            @ExampleObject(name = "Already decided", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Loan has already been approved"
+                                    }""")})),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not entitled to work the CREDIT_DECISION stage, or"
+                    + " recommending approval of a loan the caller originated, resubmitted or is a party to",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
+                            @ExampleObject(name = "Originator", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Loan 000000064 was originated by tmoyo, who cannot also recommend approving it; another credit officer must"
+                                    }""")})),
+            @ApiResponse(responseCode = "404", description = "No such loan",
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND))),
+            @ApiResponse(responseCode = "409", description = "No approval limits are set up, the loan is within the"
+                    + " caller's limit, or the stage is EXCLUSIVE and the loan's item is assigned to someone else",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "No limits set up", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "No credit approval limits are set up, so loan 000000064 has no higher authority to go to; decide it"
+                                    }"""),
+                            @ExampleObject(name = "Within the caller's limit", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000042 is within your approval limit; decide it rather than refer it"
+                                    }"""),
+                            @ExampleObject(name = "Assigned to someone else",
+                                    value = ApiExamples.CREDIT_DECISION_ASSIGNED_ELSEWHERE)}))
+    })
+    @PostMapping("/loans/{loanId}/credit-referral")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'CREDIT_DECISION', 'WORK')")
+    public ApiResult<CreditDecisionResponse> refer(
+            @PathVariable Long loanId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+                    examples = @ExampleObject(ApiExamples.CREDIT_REFERRAL_REQUEST)))
+            @Valid @RequestBody CreditReferralRequest request) {
+        log.info("Credit referral of loan {} recommending {} ({})", loanId, request.getRecommendation(),
+                request.getReasonCode());
+        CreditDecisionResponse referral = creditDecisionService.refer(loanId, request);
+        return ApiResult.ok("Loan referred to " + referral.referredTo(), referral);
     }
 
     @Operation(summary = "Resubmit a returned loan to Credit",

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -14,11 +15,13 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
+import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.loan.CreditAction;
 import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
 import zw.co.innbucks.loans.core.loan.CreditDecisionResponse;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
 import zw.co.innbucks.loans.core.loan.CreditReasonCodeResponse;
+import zw.co.innbucks.loans.core.loan.CreditReferralRequest;
 import zw.co.innbucks.loans.core.loan.CreditResubmissionRequest;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanReadScope;
@@ -30,6 +33,7 @@ import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -188,7 +192,7 @@ class CreditDecisionWebContractTest {
     void logCarriesTheSnapshotAsJson() throws Exception {
         when(creditDecisionService.history(42L)).thenReturn(List.of(new CreditDecisionResponse(17L,
                 CreditAction.RETURNED, "RETURN_PAYSLIP", "Payslip missing, unclear or out of date", "Send August",
-                "cmanager", null, "{\"reference\":\"000000042\",\"tenor\":3}", "abc123")));
+                "cmanager", null, null, null, "{\"reference\":\"000000042\",\"tenor\":3}", "abc123")));
 
         mvc.perform(get("/lending/v1/loans/42/credit-decisions").with(as("cmanager", "CREDIT_MANAGER")))
                 .andExpect(status().isOk())
@@ -224,5 +228,72 @@ class CreditDecisionWebContractTest {
                 .andExpect(jsonPath("$.code").value("INVALID_PARAMETER"))
                 .andExpect(jsonPath("$.message").value("Invalid value for 'decision'"));
         verifyNoInteractions(creditDecisionService);
+    }
+
+    // ── POST /loans/{loanId}/credit-referral ─────────────────────────────────
+
+    private static final String REFERRAL = """
+            {"recommendation":"APPROVED","reasonCode":"APPROVE_WITHIN_POLICY","comment":"Above my limit"}""";
+
+    @Test
+    @DisplayName("a referral is for whoever works the credit decision: agents and Finance are refused (403)")
+    void referralIsForCreditDecisionWorkers() throws Exception {
+        for (String role : List.of("AGENTS", "FINANCE")) {
+            mvc.perform(post("/lending/v1/loans/64/credit-referral").with(as("someone", role))
+                            .contentType(MediaType.APPLICATION_JSON).content(REFERRAL))
+                    .andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(creditDecisionService);
+    }
+
+    @Test
+    @DisplayName("a referral names its recommendation, reason code and comment, and answers with where it went")
+    void referralIsRecordedAndAnswered() throws Exception {
+        mvc.perform(post("/lending/v1/loans/64/credit-referral").with(as("cmanager", "CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"comment\":\" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.recommendation").value("Recommendation is required (APPROVED or REJECTED)"))
+                .andExpect(jsonPath("$.data.reasonCode").value("Reason code is required"))
+                .andExpect(jsonPath("$.data.comment").value("Comment is required"));
+        verifyNoInteractions(creditDecisionService);
+
+        when(creditDecisionService.refer(eq(64L), any())).thenReturn(new CreditDecisionResponse(31L,
+                CreditAction.REFERRED, "APPROVE_WITHIN_POLICY", "Meets credit policy", "Above my limit", "cmanager",
+                null, "SENIOR_CREDIT_OFFICER", InternalApprovalStatus.APPROVED, "{}", "4d8c"));
+        mvc.perform(post("/lending/v1/loans/64/credit-referral").with(as("cmanager", "CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(REFERRAL))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Loan referred to SENIOR_CREDIT_OFFICER"))
+                .andExpect(jsonPath("$.data.action").value("REFERRED"))
+                .andExpect(jsonPath("$.data.referredTo").value("SENIOR_CREDIT_OFFICER"))
+                .andExpect(jsonPath("$.data.recommendation").value("APPROVED"));
+        org.mockito.ArgumentCaptor<CreditReferralRequest> request =
+                org.mockito.ArgumentCaptor.forClass(CreditReferralRequest.class);
+        verify(creditDecisionService).refer(eq(64L), request.capture());
+        assertThat(request.getValue().getRecommendation()).isEqualTo(InternalApprovalStatus.APPROVED);
+    }
+
+    @Test
+    @DisplayName("a referral with nowhere to go is a 409, and an approval above the limit a 403, in the service's"
+            + " words")
+    void limitRefusalsReachTheClient() throws Exception {
+        when(creditDecisionService.refer(eq(42L), any())).thenThrow(new ConflictException(
+                "Loan 000000042 is within your approval limit; decide it rather than refer it"));
+        mvc.perform(post("/lending/v1/loans/42/credit-referral").with(as("cmanager", "CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(REFERRAL))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Loan 000000042 is within your approval limit; decide it rather than refer it"));
+
+        when(creditDecisionService.decide(eq(64L), any())).thenThrow(new AccessDeniedException(
+                "Loan 000000064 is for 2659.57, above cmanager's approval limit of 1000.00 (Credit officer);"
+                        + " refer it to Senior credit officer or above"));
+        mvc.perform(post("/lending/v1/loans/64/credit-decision").with(as("cmanager", "CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"decision":"APPROVED","reasonCode":"APPROVE_WITHIN_POLICY","comment":"Fine"}"""))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Loan 000000064 is for 2659.57, above cmanager's approval"
+                        + " limit of 1000.00 (Credit officer); refer it to Senior credit officer or above"));
     }
 }

@@ -9,8 +9,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityAssessment;
+import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
+import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -20,6 +23,7 @@ import zw.co.innbucks.loans.core.workflow.SystemStage;
 import zw.co.innbucks.loans.core.workflow.CheckpointGate;
 import zw.co.innbucks.loans.core.workflow.HoldPoint;
 import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.WorkQueueService;
 import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import java.time.LocalDateTime;
@@ -38,6 +42,7 @@ import static zw.co.innbucks.loans.core.merchant.MerchantService.maskAccountNumb
 public class CreditDecisionServiceImpl implements CreditDecisionService {
 
     static final String CREDIT_APPROVED = "CREDIT_APPROVED";
+    static final String CREDIT_REFERRED = "CREDIT_REFERRED";
 
     private final LoanRepository loanRepository;
     private final AuthService authService;
@@ -52,6 +57,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final TransactionTemplate transactionTemplate;
     private final WorkAssignmentGuard workAssignmentGuard;
     private final CheckpointGate checkpointGate;
+    private final CreditAuthorityService creditAuthorityService;
+    private final WorkQueueService workQueueService;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
                                      LoanNotificationService loanNotificationService,
@@ -62,7 +69,9 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                                      LoanDocumentRepository loanDocumentRepository,
                                      PlatformTransactionManager transactionManager,
                                      WorkAssignmentGuard workAssignmentGuard,
-                                     CheckpointGate checkpointGate) {
+                                     CheckpointGate checkpointGate,
+                                     CreditAuthorityService creditAuthorityService,
+                                     WorkQueueService workQueueService) {
         this.loanRepository = loanRepository;
         this.authService = authService;
         this.loanMapper = loanMapper;
@@ -76,10 +85,16 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.workAssignmentGuard = workAssignmentGuard;
         this.checkpointGate = checkpointGate;
+        this.creditAuthorityService = creditAuthorityService;
+        this.workQueueService = workQueueService;
     }
 
     /** What a committed decision leaves for the steps that run after it. */
     private record Decided(Loan loan, LoanResponse view, PayoutDestination payee) {
+    }
+
+    /** What a committed referral leaves for the steps that run after it. */
+    private record Referred(Loan loan, CreditDecisionResponse entry, CreditAuthorityAssessment assessment) {
     }
 
     @Override
@@ -151,7 +166,9 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                         "Loan %s is held at %s and cannot be approved until it is cleared there",
                         loan.getReference(), checkpoint.get().getName()));
             }
-            requireNoConflictOfInterest(loan, username);
+            requireNoConflictOfInterest(loan, username, "approve it");
+            // Above the approver's authority, it is referred to a higher one instead (FR-PBL-028).
+            creditAuthorityService.requireWithinLimit(loan, authService.getLoggedInUser());
             payee = requirePayee(loan);
             // Frozen with the decision: booking and any recovery payout pay this, not whatever the
             // merchant row says by the time the loan is booked.
@@ -175,6 +192,81 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         creditDecisionLog.record(saved, CreditAction.valueOf(decision.name()), reason.getCode(), comment, username,
                 now);
         return new Decided(saved, loanMapper.toResponse(saved), payee);
+    }
+
+    @Override
+    public CreditDecisionResponse refer(Long id, CreditReferralRequest request) {
+        InternalApprovalStatus recommendation = request.getRecommendation();
+        if (recommendation != InternalApprovalStatus.APPROVED && recommendation != InternalApprovalStatus.REJECTED) {
+            throw new LoanApprovalException("A referral recommends APPROVED or REJECTED");
+        }
+        String username = authService.getLoggedInUsername();
+        Referred referred = Objects.requireNonNull(
+                transactionTemplate.execute(tx -> referLocked(id, request, username)));
+
+        Loan loan = referred.loan();
+        CreditAuthorityAssessment assessment = referred.assessment();
+        log.info("Loan {} referred by {} to {}, recommending {}", loan.getReference(), username,
+                assessment.referredTo(), recommendation);
+        try {
+            auditService.record(AuditLog.builder()
+                    .eventType(CREDIT_REFERRED)
+                    .entityType("LOAN").entityId(String.valueOf(loan.getId()))
+                    .actorId(username).channelUsed(DeductionCancellationService.PORTAL_CHANNEL)
+                    .detail("reference=" + loan.getReference() + " principal=" + loan.getPrincipal()
+                            + " referredTo=" + assessment.referredTo() + " recommendation=" + recommendation
+                            + " reasonCode=" + referred.entry().reasonCode()
+                            + " referrerLevel=" + (assessment.yourLevel() == null ? "none"
+                            : assessment.yourLevel().code()))
+                    .correlationId(loan.getReference()));
+        } catch (Exception ex) {
+            // As for an approval: the referral is saved and must stand.
+            log.error("Audit of loan {} ({}) failed", loan.getId(), CREDIT_REFERRED, ex);
+        }
+        creditAuthorityService.notifyReferral(loan, username, assessment, recommendation);
+        return referred.entry();
+    }
+
+    private Referred referLocked(Long id, CreditReferralRequest request, String username) {
+        Loan loan = loanRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
+        InternalApprovalStatus current = loan.getInternalApprovalStatus();
+        if (current == InternalApprovalStatus.RETURNED) {
+            throw new LoanApprovalException(
+                    "Loan was returned for more information and has not been resubmitted; it cannot be referred");
+        }
+        if (current != null && current != InternalApprovalStatus.PENDING) {
+            throw new LoanApprovalException(String.format("Loan has already been %s", current.name().toLowerCase()));
+        }
+        if (loan.getLoanApprovalStatus() != LoanApprovalStatus.APPROVED) {
+            throw new LoanApprovalException(String.format("Loan with status %s cannot be referred",
+                    loan.getLoanApprovalStatus()));
+        }
+        workAssignmentGuard.requireMayAct(SystemStage.CREDIT_DECISION, loan, username);
+        CreditAuthorityAssessment assessment =
+                creditAuthorityService.assess(loan.getPrincipal(), authService.getLoggedInUser());
+        if (!assessment.limitsApply()) {
+            throw new ConflictException(String.format(
+                    "No credit approval limits are set up, so loan %s has no higher authority to go to; decide it",
+                    loan.getReference()));
+        }
+        if (assessment.withinYourLimit()) {
+            throw new ConflictException(String.format(
+                    "Loan %s is within your approval limit; decide it rather than refer it", loan.getReference()));
+        }
+        InternalApprovalStatus recommendation = request.getRecommendation();
+        CreditReasonCode reason = requireReasonCode(request.getReasonCode(), recommendation);
+        String comment = requireComment(request.getComment());
+        if (recommendation == InternalApprovalStatus.APPROVED) {
+            // A recommendation to approve carries weight with whoever approves: held to the same rule.
+            requireNoConflictOfInterest(loan, username, "recommend approving it");
+        }
+
+        CreditDecision entry = creditDecisionLog.recordReferral(loan, reason.getCode(), comment, username,
+                LocalDateTime.now(ZoneOffset.UTC), assessment.referredTo(), recommendation);
+        // Handed on: an EXCLUSIVE assignment to the referrer would otherwise keep it from the higher authority.
+        workQueueService.releaseIfHeldBy(SystemStage.CREDIT_DECISION, loan, username);
+        return new Referred(loan, CreditDecisionResponse.of(entry, reason.getDescription()), assessment);
     }
 
     @Override
@@ -259,30 +351,34 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     /**
      * Segregation of duties (FR-PBL-029): nobody approves a loan they originated, resubmitted, replaced a
      * document of, or are a party to, since that one person would then decide both what is assessed and
-     * that it passes. A refusal or a return is not held to it: neither pays anything.
+     * that it passes; nor recommends approving it on a referral. A refusal or a return is not held to it:
+     * neither pays anything.
+     *
+     * @param action what is refused, in words: "approve it" or "recommend approving it"
      */
-    private void requireNoConflictOfInterest(Loan loan, String approver) {
+    private void requireNoConflictOfInterest(Loan loan, String approver, String action) {
         String reference = loan.getReference();
         if (SegregationOfDuties.originated(loan, approver)) {
             throw new AccessDeniedException(String.format(
-                    "Loan %s was originated by %s, who cannot also approve it; another credit officer must",
-                    reference, approver));
+                    "Loan %s was originated by %s, who cannot also %s; another credit officer must",
+                    reference, approver, action));
         }
         if (creditDecisionRepository.existsByLoanIdAndActionAndPerformedByIgnoreCase(
                 loan.getId(), CreditAction.RESUBMITTED, approver)) {
             throw new AccessDeniedException(String.format(
-                    "Loan %s was resubmitted by %s, who cannot also approve it; another credit officer must",
-                    reference, approver));
+                    "Loan %s was resubmitted by %s, who cannot also %s; another credit officer must",
+                    reference, approver, action));
         }
         if (loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
                 loan.getId(), DocumentOrigin.AMENDMENT, approver)) {
             throw new AccessDeniedException(String.format(
-                    "Loan %s has documents amended by %s, who cannot also approve it; another credit officer must",
-                    reference, approver));
+                    "Loan %s has documents amended by %s, who cannot also %s; another credit officer must",
+                    reference, approver, action));
         }
         if (SegregationOfDuties.isPartyTo(loan, authService.getLoggedInUser())) {
             throw new AccessDeniedException(String.format(
-                    "%s is a party to loan %s and cannot approve it; another credit officer must", approver, reference));
+                    "%s is a party to loan %s and cannot %s; another credit officer must", approver, reference,
+                    action));
         }
     }
 

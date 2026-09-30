@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 
 /**
  * One entry of a loan's credit decision log. {@code loanSnapshot} is the stored JSON, emitted as is, and
- * {@code snapshotSha256} its hash, so a reader can check the one against the other.
+ * {@code snapshotSha256} its hash, so a reader can check the one against the other. A referral also carries
+ * {@code referredTo} (a credit authority level's code, or SUPER_ADMIN) and the officer's {@code recommendation}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CreditDecisionResponse(
@@ -18,12 +19,14 @@ public record CreditDecisionResponse(
         String comment,
         String performedBy,
         LocalDateTime performedAt,
+        String referredTo,
+        InternalApprovalStatus recommendation,
         @JsonRawValue String loanSnapshot,
         String snapshotSha256) {
 
     public static CreditDecisionResponse of(CreditDecision entry, String reasonDescription) {
         return new CreditDecisionResponse(entry.getId(), entry.getAction(), entry.getReasonCode(), reasonDescription,
-                entry.getComment(), entry.getPerformedBy(), entry.getPerformedAt(), entry.getLoanSnapshot(),
-                entry.getSnapshotSha256());
+                entry.getComment(), entry.getPerformedBy(), entry.getPerformedAt(), entry.getReferredTo(),
+                entry.getRecommendation(), entry.getLoanSnapshot(), entry.getSnapshotSha256());
     }
 }
