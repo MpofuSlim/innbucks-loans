@@ -44,18 +44,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Load the packaged config, then override only the datasource so the app
-      # talks to the postgres service instead of localhost. (The image's
-      # default SPRING_CONFIG_LOCATION points at an empty /app/config mount.)
-      SPRING_CONFIG_LOCATION: classpath:/application.yml
+      # The image always loads the packaged config (/app/config, empty here, is
+      # only an overlay); override just the datasource so the app talks to the
+      # postgres service instead of localhost. Same variable names as the
+      # fleet cell's loans-service Deployment.
       # "local" opts this dev stack into the placeholder JWT secret and the
       # bootstrap admin's fallback password; both are refused without it.
       SPRING_PROFILES_ACTIVE: api,local
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-innbucks_loans}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-innbucks_loans}
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "8080:8080"
+      # The packaged server.port (application.yml, SERVER_PORT).
+      - "8088:8088"
 
 volumes:
   postgres_data:

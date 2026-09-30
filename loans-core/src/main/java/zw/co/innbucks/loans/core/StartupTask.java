@@ -152,8 +152,9 @@ public class StartupTask implements CommandLineRunner {
     /**
      * Read through the Environment, not System.getenv, so a mounted /app/config can
      * supply it. The BOOTSTRAP_ADMIN_PASSWORD env var reaches the same property by
-     * relaxed binding, so it works even where /app/config replaces the packaged
-     * application.yml. Returns null when no admin should be created.
+     * relaxed binding, so it works even with no packaged application.yml in play (an
+     * image from before /app/config became an additional location replaced it).
+     * Returns null when no admin should be created.
      */
     private String resolveBootstrapPassword(String username) {
         String configured = environment.getProperty("bootstrap.admin.password");

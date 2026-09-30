@@ -12,8 +12,9 @@ import org.springframework.context.annotation.Configuration;
  * The schema belongs to Flyway ({@code db/migration}); Hibernate only checks that the entities
  * match it, and names tables and columns in snake_case.
  *
- * <p>Set here rather than in application.yml because a deployment's /app/config replaces the
- * packaged file, and these are part of the code's contract with its own migrations, not a
+ * <p>Set here rather than in application.yml because a deployment's /app/config file overrides the
+ * packaged one key by key (and, before the image loaded it as an ADDITIONAL location, replaced it
+ * outright), and these are part of the code's contract with its own migrations, not a
  * per-environment choice: a config that still said {@code ddl-auto: update} or quoted identifiers
  * would have Hibernate reshape the schema, or look for camelCase columns the migrations renamed.</p>
  */
