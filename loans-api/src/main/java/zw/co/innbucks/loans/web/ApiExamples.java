@@ -1148,4 +1148,210 @@ public final class ApiExamples {
                 }
               ]
             }""";
+
+    // --- Employment events (FR-SSB-024): loan 42's borrower is suspended, loan 43's resigns ---
+
+    /** Recording loan 42's borrower's suspension. */
+    public static final String EMPLOYMENT_EVENT_5_REQUEST = """
+            {
+              "ecNumber": "1234567A",
+              "eventType": "SUSPENSION",
+              "effectiveDate": "2026-10-01",
+              "endDate": "2026-12-31",
+              "note": "Suspension letter from the Public Service Commission, ref PSC/2026/0912"
+            }""";
+
+    /** What loan 42 is shown as in the event, the queue and the loan's own list: held, waiting for an officer. */
+    private static final String LOAN_42_HELD = """
+                {
+                  "id": 11,
+                  "eventId": 5,
+                  "eventType": "SUSPENSION",
+                  "effectiveDate": "2026-10-01",
+                  "loanId": 42,
+                  "loanReference": "000000042",
+                  "applicantName": "Rudo Chikwanha",
+                  "stage": "APPROVED",
+                  "action": "HOLD",
+                  "status": "OPEN",
+                  "createdAt": "2026-10-02T09:14:05+02:00"
+                }""";
+
+    private static final String EMPLOYMENT_EVENT_5 = """
+            {
+                "id": 5,
+                "ecNumber": "1234567A",
+                "eventType": "SUSPENSION",
+                "effectiveDate": "2026-10-01",
+                "endDate": "2026-12-31",
+                "note": "Suspension letter from the Public Service Commission, ref PSC/2026/0912",
+                "recordedBy": "cmanager",
+                "recordedAt": "2026-10-02T09:14:05+02:00",
+                "loans": [
+            """ + LOAN_42_HELD + """
+
+                ]
+              }""";
+
+    /** The suspension recorded: loan 42, approved but not yet booked, is held under the default treatment. */
+    public static final String EMPLOYMENT_EVENT_5_RECORDED = """
+            {
+              "code": "CREATED",
+              "message": "Employment event recorded",
+              "data": """ + EMPLOYMENT_EVENT_5 + """
+
+            }""";
+
+    /** Loan 43's borrower resigns: the application, just received, is declined under the default treatment. */
+    public static final String EMPLOYMENT_EVENT_6_RECORDED = """
+            {
+              "code": "CREATED",
+              "message": "Employment event recorded",
+              "data": {
+                "id": 6,
+                "ecNumber": "7654321B",
+                "eventType": "RESIGNATION",
+                "effectiveDate": "2026-10-15",
+                "recordedBy": "cmanager",
+                "recordedAt": "2026-10-02T09:20:41+02:00",
+                "loans": [
+                  {
+                    "id": 12,
+                    "eventId": 6,
+                    "eventType": "RESIGNATION",
+                    "effectiveDate": "2026-10-15",
+                    "loanId": 43,
+                    "loanReference": "000000043",
+                    "applicantName": "Tatenda Ncube",
+                    "stage": "DECLINED",
+                    "action": "DECLINE",
+                    "status": "CLOSED",
+                    "outcome": "DECLINED",
+                    "comment": "Declined on the resignation effective 2026-10-15 (employment event 6)",
+                    "resolvedBy": "cmanager",
+                    "resolvedAt": "2026-10-02T09:20:41+02:00",
+                    "createdAt": "2026-10-02T09:20:41+02:00"
+                  }
+                ]
+              }
+            }""";
+
+    public static final String EMPLOYMENT_EVENT_5_FOUND = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + EMPLOYMENT_EVENT_5 + """
+
+            }""";
+
+    public static final String EMPLOYMENT_EVENT_PAGE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+            """ + EMPLOYMENT_EVENT_5 + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    /** The officers' queue: loan 42 held since the suspension. */
+    public static final String LOAN_EMPLOYMENT_EVENT_QUEUE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + LOAN_42_HELD + """
+
+              ]
+            }""";
+
+    public static final String LOAN_EMPLOYMENT_EVENT_11_RESOLUTION = """
+            {
+              "outcome": "RELEASED",
+              "comment": "Suspension lifted on appeal; salary restored from October"
+            }""";
+
+    /** Loan 42's hold released: it goes on to be booked and paid. */
+    public static final String LOAN_EMPLOYMENT_EVENT_11_RELEASED = """
+            {
+              "code": "OK",
+              "message": "Hold released; the application carries on",
+              "data": {
+                "id": 11,
+                "eventId": 5,
+                "eventType": "SUSPENSION",
+                "effectiveDate": "2026-10-01",
+                "loanId": 42,
+                "loanReference": "000000042",
+                "applicantName": "Rudo Chikwanha",
+                "stage": "APPROVED",
+                "action": "HOLD",
+                "status": "CLOSED",
+                "outcome": "RELEASED",
+                "comment": "Suspension lifted on appeal; salary restored from October",
+                "resolvedBy": "cmanager",
+                "resolvedAt": "2026-10-03T11:02:17+02:00",
+                "createdAt": "2026-10-02T09:14:05+02:00"
+              }
+            }""";
+
+    /** Loan 42's employment events, while it is held. */
+    public static final String LOAN_42_EMPLOYMENT_EVENTS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + LOAN_42_HELD + """
+
+              ]
+            }""";
+
+    private static final String TREATMENT_ROWS = """
+                {"eventType": "TRANSFER", "applicationTreatment": "CONTINUE", "loanTreatment": "NONE", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "SECONDMENT", "applicationTreatment": "HOLD", "loanTreatment": "REVIEW", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "PROMOTION", "applicationTreatment": "CONTINUE", "loanTreatment": "NONE", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "SUSPENSION", "applicationTreatment": "HOLD", "loanTreatment": "REVIEW", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "UNPAID_LEAVE", "applicationTreatment": "HOLD", "loanTreatment": "REVIEW", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "RESIGNATION", "applicationTreatment": "DECLINE", "loanTreatment": "REVIEW", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "RETIREMENT", "applicationTreatment": "HOLD", "loanTreatment": "REVIEW", "notifyOnDecline": true, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"},
+                {"eventType": "DEATH_IN_SERVICE", "applicationTreatment": "DECLINE", "loanTreatment": "REVIEW", "notifyOnDecline": false, "updatedBy": "system", "updatedAt": "2026-09-30T12:00:00+02:00"}""";
+
+    /** The treatments as seeded, in the order the event types are declared. */
+    public static final String EMPLOYMENT_EVENT_TREATMENTS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + TREATMENT_ROWS + """
+
+              ]
+            }""";
+
+    public static final String EMPLOYMENT_EVENT_TREATMENT_REQUEST = """
+            {
+              "applicationTreatment": "CONTINUE",
+              "loanTreatment": "REVIEW",
+              "notifyOnDecline": true
+            }""";
+
+    /** Secondments no longer hold applications; paid loans are still reviewed. */
+    public static final String EMPLOYMENT_EVENT_TREATMENT_UPDATED = """
+            {
+              "code": "OK",
+              "message": "Treatment updated; it applies to SECONDMENT events recorded from now on",
+              "data": {
+                "eventType": "SECONDMENT",
+                "applicationTreatment": "CONTINUE",
+                "loanTreatment": "REVIEW",
+                "notifyOnDecline": true,
+                "updatedBy": "admin",
+                "updatedAt": "2026-10-02T08:45:10+02:00"
+              }
+            }""";
 }

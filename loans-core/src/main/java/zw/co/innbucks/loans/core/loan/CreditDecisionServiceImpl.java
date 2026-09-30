@@ -124,6 +124,12 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                         "Loan %s is held for payslip review and cannot be approved until it is cleared",
                         loan.getReference()));
             }
+            if (loanRepository.isHeldForEmploymentEvent(loan.getId())) {
+                // Held by an employment event (FR-SSB-024): an officer releases or declines it first.
+                throw new LoanApprovalException(String.format(
+                        "Loan %s is held for an employment event and cannot be approved until it is released",
+                        loan.getReference()));
+            }
             requireNoConflictOfInterest(loan, username);
             payee = requirePayee(loan);
             // Frozen with the decision: booking and any recovery payout pay this, not whatever the

@@ -342,6 +342,18 @@ class LoanBookingJobTest {
     }
 
     @Test
+    @DisplayName("a loan held for an employment event since the due list was read is not booked (FR-SSB-024)")
+    void skipsALoanHeldForAnEmploymentEvent() {
+        when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
+
+        job.processLoanAccountCreation();
+
+        verify(disbursementService, never()).createLoanAccount(any());
+        verify(loanRepository, never()).save(any());
+        assertThat(loan.getBookingClaimedAt()).isNull();
+    }
+
+    @Test
     @DisplayName("a loan whose earlier booking is AMBIGUOUS is never re-booked, even if reset to PENDING")
     void skipsALoanWithAnAmbiguousBooking() {
         loan.setBookingFailureKind(BookingFailureKind.AMBIGUOUS);

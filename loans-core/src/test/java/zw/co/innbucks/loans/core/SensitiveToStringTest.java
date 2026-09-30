@@ -21,6 +21,10 @@ import zw.co.innbucks.loans.core.draft.DraftDocumentContent;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraft;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraftDocument;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraftStatus;
+import zw.co.innbucks.loans.core.employment.EmploymentEvent;
+import zw.co.innbucks.loans.core.employment.EmploymentEventType;
+import zw.co.innbucks.loans.core.employment.LoanEmploymentEvent;
+import zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SignedInstrument;
@@ -213,6 +217,20 @@ class SensitiveToStringTest {
         assertThat(instrument.toString()).doesNotContain("device-a3f1c2e4", "41.190.33.7", "InnBucksPortal")
                 .contains("loanId=43", "LOAN_AGREEMENT", "templateVersion=3");
         assertThat(template.toString()).contains("version=3");
+    }
+
+    @Test
+    @DisplayName("an employment event prints neither the EC number nor the officer's note (FR-SSB-024)")
+    void employmentEventsPrintNoEcNumberOrNote() {
+        EmploymentEvent event = EmploymentEvent.builder().id(5L).ecNumber("1234567A")
+                .eventType(EmploymentEventType.DEATH_IN_SERVICE).note("Reported by the next of kin, " + NATIONAL_ID)
+                .build();
+        LoanEmploymentEvent loanEvent = LoanEmploymentEvent.builder().id(11L).eventId(5L).loanId(42L)
+                .action(LoanEmploymentEventAction.REVIEW).comment("Claim lodged for " + NATIONAL_ID).build();
+
+        assertThat(event.toString()).doesNotContain("1234567A", NATIONAL_ID, "next of kin")
+                .contains("id=5", "DEATH_IN_SERVICE");
+        assertThat(loanEvent.toString()).doesNotContain(NATIONAL_ID).contains("loanId=42", "REVIEW");
     }
 
     @Test

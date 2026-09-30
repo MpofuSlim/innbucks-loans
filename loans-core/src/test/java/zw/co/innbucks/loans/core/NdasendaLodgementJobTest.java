@@ -36,6 +36,7 @@ import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
+import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
@@ -343,6 +344,25 @@ class NdasendaLodgementJobTest {
         verifyNoInteractions(service);
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         assertThat(loan.getLodgementClaimedAt()).isNull();
+        verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a loan held for an employment event, or declined, is never lodged, even when the due list still names it")
+    void employmentHoldOrDeclineKeepsTheLoanBack() {
+        Loan held = newLoan(42);
+        Loan declined = newLoan(43);
+        declined.setInternalApprovalStatus(InternalApprovalStatus.REJECTED);
+        // Read before the hold or the decline landed: the claim re-checks under the lock (FR-SSB-024).
+        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L, 43L));
+        when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
+        LoanApprovalService service = mock(LoanApprovalService.class);
+
+        job(service).processSsbApprovals();
+
+        verifyNoInteractions(service);
+        assertThat(held.getLodgementClaimedAt()).isNull();
+        assertThat(declined.getLodgementClaimedAt()).isNull();
         verify(loanRepository, never()).save(any());
     }
 

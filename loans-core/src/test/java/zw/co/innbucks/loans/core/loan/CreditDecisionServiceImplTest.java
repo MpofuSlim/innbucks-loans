@@ -621,6 +621,22 @@ class CreditDecisionServiceImplTest {
     }
 
     @Test
+    @DisplayName("a loan held for an employment event cannot be approved until it is released, and can be rejected")
+    void heldForAnEmploymentEventCannotBeApproved() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                .isInstanceOf(LoanApprovalException.class)
+                .hasMessage("Loan 000000042 is held for an employment event and cannot be approved until it is released");
+        verify(loanRepository, never()).save(any());
+        verify(creditDecisionRepository, never()).save(any());
+
+        service.decide(42L, decide(InternalApprovalStatus.REJECTED));
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+    }
+
+    @Test
     @DisplayName("a party to the loan cannot approve it")
     void partyCannotApprove() {
         given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
