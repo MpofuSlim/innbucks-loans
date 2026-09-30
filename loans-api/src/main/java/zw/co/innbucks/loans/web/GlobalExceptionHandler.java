@@ -22,6 +22,8 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import zw.co.innbucks.loans.core.document.DocumentProblem;
+import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.exception.BusinessException;
 import zw.co.innbucks.loans.core.exception.ConflictException;
@@ -29,13 +31,13 @@ import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.exception.DuplicateUserByUsernameException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.notifications.NotificationDeliveryException;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -110,10 +112,14 @@ public class GlobalExceptionHandler {
     }
 
     /** An attached document that is an executable, or not a PDF, PNG, JPEG or GIF. */
-    @ExceptionHandler(FileSignatureValidator.UnsafeFileException.class)
-    public ResponseEntity<ApiResult<Void>> unsafeDocument(FileSignatureValidator.UnsafeFileException ex) {
-        log.warn("Document refused: {}", ex.getMessage());
-        return error(HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT", ex.getMessage());
+    /** Uploaded documents that were not accepted (FR-SSB-005): every one, each with its field and reason. */
+    @ExceptionHandler(DocumentRejectedException.class)
+    public ResponseEntity<ApiResult<Map<String, List<DocumentProblem>>>> rejectedDocuments(
+            DocumentRejectedException ex) {
+        log.warn("Documents refused: {}", ex.getProblems().stream()
+                .map(problem -> problem.field() + " " + problem.reason()).toList());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResult.error("INVALID_DOCUMENT",
+                ex.getMessage(), Map.of("documents", ex.getProblems())));
     }
 
     /** A username another account already holds. Checked before {@link BusinessException}, its parent. */

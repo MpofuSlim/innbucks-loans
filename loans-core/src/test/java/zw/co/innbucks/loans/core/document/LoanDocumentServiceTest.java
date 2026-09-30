@@ -41,8 +41,9 @@ import static org.mockito.Mockito.*;
  */
 class LoanDocumentServiceTest {
 
-    private static final byte[] OLD_PAYSLIP = "%PDF-1.7 June payslip".getBytes();
-    private static final byte[] NEW_PAYSLIP = "%PDF-1.7 August payslip".getBytes();
+    /** Real files: a replacement is opened and checked like any upload (FR-SSB-005). */
+    private static final byte[] OLD_PAYSLIP = TestDocuments.pdf(1);
+    private static final byte[] NEW_PAYSLIP = TestDocuments.pdf(2);
     private static final LoanReadScope PLATFORM = LoanReadScope.platform();
     private static final LoanReadScope AGENT = LoanReadScope.originator("MEGA", 7L);
 
@@ -65,7 +66,8 @@ class LoanDocumentServiceTest {
         when(loanDocumentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanRepository.existsById(42L)).thenReturn(true);
         service = new LoanDocumentService(loanDocumentRepository, loanDocumentAccessRepository, loanRepository,
-                new FileSignatureValidator(), authService, payslipFraudDetector, payslipReviewService);
+                new DocumentInspector(new FileSignatureValidator(), new DocumentUploadProperties()), authService,
+                payslipFraudDetector, payslipReviewService);
     }
 
     private static LoanDocument document(long id, DocumentType type, int version, byte[] content) {
@@ -184,7 +186,7 @@ class LoanDocumentServiceTest {
     @DisplayName("a national ID replacement does not touch the payslip fingerprint or its fraud checks")
     void nationalIdAmendment() {
         Loan loan = loanOnFile(InternalApprovalStatus.PENDING, LoanApprovalStatus.NEW);
-        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+        byte[] png = TestDocuments.encode(TestDocuments.page(1200, 800), "png");
 
         LoanDocumentSummary saved = service.amend(42L, DocumentType.NATIONAL_ID, amendment(png), PLATFORM);
 
@@ -241,8 +243,14 @@ class LoanDocumentServiceTest {
 
         assertThatThrownBy(() -> service.amend(42L, DocumentType.PAYSLIP,
                 amendment(new byte[]{'M', 'Z', (byte) 0x90, 0x00}), PLATFORM))
-                .isInstanceOf(FileSignatureValidator.UnsafeFileException.class)
-                .hasMessage("content contains an executable byte signature — rejected");
+                .isInstanceOf(DocumentRejectedException.class)
+                .hasMessage("The payslip was refused: it is a program, not a document or photo. Please upload a PDF,"
+                        + " PNG, JPEG or GIF file.")
+                .satisfies(e -> assertThat(((DocumentRejectedException) e).getProblems()).singleElement()
+                        .satisfies(problem -> {
+                            assertThat(problem.field()).isEqualTo("content");
+                            assertThat(problem.reason()).isEqualTo(DocumentProblemReason.EXECUTABLE);
+                        }));
         verify(loanDocumentRepository, never()).save(any());
     }
 

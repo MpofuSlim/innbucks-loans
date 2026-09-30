@@ -127,15 +127,15 @@ public class LoanDocumentController {
     @Operation(summary = "Replace a payslip or national ID",
             description = "Uploads a new version, kept beside the earlier ones, with the reason for it. Only a PAYSLIP or"
                     + " a NATIONAL_ID, never a signature, and only while Credit has not decided the loan (or has returned"
-                    + " it for more information) and SSB has not refused it. The file must be a PDF, PNG, JPEG or GIF,"
-                    + " and not the current version again. A new payslip is checked for fraud like an application's: one"
+                    + " it for more information) and SSB has not refused it. The file must be a readable PDF, PNG, JPEG or"
+                    + " GIF of at most 5 MB (FR-SSB-005), and not the current version again. A new payslip is checked for fraud like an application's: one"
                     + " already on another loan holds this loan for payslip review. Any user who can read the loan may"
                     + " replace a document (an agent, only on their own loans); whoever does cannot then approve the loan"
                     + " or clear its payslip review.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Replaced; the new version, without content",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_42_PAYSLIP_REPLACED))),
-            @ApiResponse(responseCode = "400", description = "Missing fields, a signature, or not an accepted file",
+            @ApiResponse(responseCode = "400", description = "Missing fields, a signature, or a file that is not accepted",
                     content = @Content(examples = {
                             @ExampleObject(name = "Missing fields", value = """
                                     {
@@ -151,10 +151,20 @@ public class LoanDocumentController {
                                       "code": "INVALID_REQUEST",
                                       "message": "SIGNATURE cannot be replaced: it is part of the signed application"
                                     }"""),
-                            @ExampleObject(name = "Not a document", value = """
+                            @ExampleObject(name = "Unreadable file", value = """
                                     {
                                       "code": "INVALID_DOCUMENT",
-                                      "message": "content is not a recognised document type (PDF/PNG/JPEG/GIF)"
+                                      "message": "The payslip is a password-protected PDF. Please upload a copy without a password.",
+                                      "data": {
+                                        "documents": [
+                                          {
+                                            "field": "content",
+                                            "documentType": "PAYSLIP",
+                                            "reason": "PASSWORD_PROTECTED",
+                                            "message": "The payslip is a password-protected PDF. Please upload a copy without a password."
+                                          }
+                                        ]
+                                      }
                                     }"""),
                             @ExampleObject(name = "Not a document type", value = INVALID_DOCUMENT_TYPE)})),
             @ApiResponse(responseCode = "401", description = "No valid token",

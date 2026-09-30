@@ -111,6 +111,19 @@ http:
     connect-timeout: "${HTTP_CLIENT_CONNECT_TIMEOUT_MS:10000}"
     read-timeout: "${HTTP_CLIENT_READ_TIMEOUT_MS:60000}"
 
+# Uploaded documents (FR-SSB-005): what a payslip, national ID or signature must meet to be accepted.
+# The defaults refuse what cannot be read, not what is merely imperfect. Accepted images are logged with
+# their measured contrast and sharpness, which is what to tune these against.
+loans:
+  documents:
+    max-size-bytes: "${DOCUMENT_MAX_SIZE_BYTES:5242880}"
+    max-pdf-pages: "${DOCUMENT_MAX_PDF_PAGES:10}"
+    min-document-short-side-px: "${DOCUMENT_MIN_SHORT_SIDE_PX:600}"
+    min-signature-short-side-px: "${DOCUMENT_MIN_SIGNATURE_SHORT_SIDE_PX:30}"
+    max-image-pixels: "${DOCUMENT_MAX_IMAGE_PIXELS:40000000}"
+    min-contrast: "${DOCUMENT_MIN_CONTRAST:5.0}"
+    min-sharpness: "${DOCUMENT_MIN_SHARPNESS:20.0}"
+
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
   auth-endpoint: "${ndasenda.base-url}/connect/token"

@@ -642,4 +642,30 @@ public final class ApiExamples {
                 {"id": 2, "documentType": "PAYSLIP", "version": 1, "action": "UPLOAD", "performedBy": "tmoyo", "performedAt": "2026-09-29T10:15:30+02:00"}
               ]
             }""";
+
+    /**
+     * An application refused for two unreadable documents (FR-SSB-005), reported together: each with the field
+     * it came in, a reason a client can branch on, and a message for the applicant.
+     */
+    public static final String DOCUMENTS_REFUSED = """
+            {
+              "code": "INVALID_DOCUMENT",
+              "message": "The payslip photo is too blurred to read. Please hold the camera steady and retake it in good light. The signature is blank. Please sign again.",
+              "data": {
+                "documents": [
+                  {
+                    "field": "payslipPicture",
+                    "documentType": "PAYSLIP",
+                    "reason": "BLURRED",
+                    "message": "The payslip photo is too blurred to read. Please hold the camera steady and retake it in good light."
+                  },
+                  {
+                    "field": "signature",
+                    "documentType": "SIGNATURE",
+                    "reason": "BLANK",
+                    "message": "The signature is blank. Please sign again."
+                  }
+                ]
+              }
+            }""";
 }

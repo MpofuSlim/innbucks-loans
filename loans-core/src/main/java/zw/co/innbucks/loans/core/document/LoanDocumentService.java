@@ -8,7 +8,6 @@ import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.files.DecodedFile;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
@@ -25,7 +24,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,28 +48,31 @@ public class LoanDocumentService {
     private final LoanDocumentRepository loanDocumentRepository;
     private final LoanDocumentAccessRepository loanDocumentAccessRepository;
     private final LoanRepository loanRepository;
-    private final FileSignatureValidator fileSignatureValidator;
+    private final DocumentInspector documentInspector;
     private final AuthService authService;
     private final PayslipFraudDetector payslipFraudDetector;
     private final PayslipReviewService payslipReviewService;
 
     public LoanDocumentService(LoanDocumentRepository loanDocumentRepository,
                                LoanDocumentAccessRepository loanDocumentAccessRepository,
-                               LoanRepository loanRepository, FileSignatureValidator fileSignatureValidator,
+                               LoanRepository loanRepository, DocumentInspector documentInspector,
                                AuthService authService, PayslipFraudDetector payslipFraudDetector,
                                PayslipReviewService payslipReviewService) {
         this.loanDocumentRepository = loanDocumentRepository;
         this.loanDocumentAccessRepository = loanDocumentAccessRepository;
         this.loanRepository = loanRepository;
-        this.fileSignatureValidator = fileSignatureValidator;
+        this.documentInspector = documentInspector;
         this.authService = authService;
         this.payslipFraudDetector = payslipFraudDetector;
         this.payslipReviewService = payslipReviewService;
     }
 
     /**
-     * An application's documents, decoded and checked before anything is saved: an undecodable or
-     * executable file is refused, and a payslip or national ID must be a PDF, PNG, JPEG or GIF.
+     * An application's documents, decoded and checked before anything is saved (FR-SSB-005): each must
+     * be a readable file of an accepted format within the size limit. Every refused upload is reported
+     * together, so the applicant fixes them in one go.
+     *
+     * @throws DocumentRejectedException naming each upload that was refused
      */
     public Map<DocumentType, DecodedFile> decodeApplication(LoanApplicationRequest request) {
         Map<DocumentType, String> uploads = new LinkedHashMap<>();
@@ -80,14 +81,7 @@ public class LoanDocumentService {
         uploads.put(DocumentType.SIGNATURE, request.getSignature());
         uploads.put(DocumentType.WITNESS_SIGNATURE,
                 request.getWitness() == null ? null : request.getWitness().getSignature());
-        Map<DocumentType, DecodedFile> decoded = new EnumMap<>(DocumentType.class);
-        uploads.forEach((type, payload) -> {
-            DecodedFile file = fileSignatureValidator.decodeBase64Document(type.fieldName(), payload, type.kycDocument());
-            if (file != null) {
-                decoded.put(type, file);
-            }
-        });
-        return decoded;
+        return documentInspector.inspectAll(uploads);
     }
 
     /** Version 1 of each document, as the application's, in the caller's transaction. */
@@ -155,7 +149,7 @@ public class LoanDocumentService {
         Loan loan = loanRepository.findByIdForUpdate(loanId)
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
         requireAmendable(loan);
-        DecodedFile file = fileSignatureValidator.decodeBase64Document("content", request.getContent(), true);
+        DecodedFile file = documentInspector.inspectOne(type, "content", request.getContent());
         if (file == null) {
             throw new LoanApprovalException("Content is required");
         }
