@@ -299,7 +299,10 @@ public class LoanController {
 
     @Operation(summary = "List loans awaiting a Credit decision",
             description = "SUPER_ADMIN and CREDIT_MANAGER: the loans SSB has approved and Credit has not yet decided,"
-                    + " newest first. The same roles decide them with POST /loans/{loanId}/credit-decision.")
+                    + " newest first. Each carries creditTurnaround: when it reached Credit, when a decision is due and"
+                    + " when it escalates, how long it has waited, and whether it is overdue or escalated (see GET"
+                    + " /service-levels). GET /loans/{loanId}/credit-workbench gathers what is needed to decide one; the"
+                    + " same roles decide it with POST /loans/{loanId}/credit-decision.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_PAGE))),

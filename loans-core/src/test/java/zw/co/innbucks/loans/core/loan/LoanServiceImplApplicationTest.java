@@ -38,6 +38,7 @@ import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.turnaround.ServiceLevelService;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -107,7 +108,7 @@ class LoanServiceImplApplicationTest {
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(),
                 new MarketTimeZone("ZW"), loanDocumentService, payslipFraudDetector, payslipReviewService,
-                signedInstrumentService, loanNotificationService);
+                signedInstrumentService, loanNotificationService, mock(ServiceLevelService.class));
     }
 
     @AfterEach

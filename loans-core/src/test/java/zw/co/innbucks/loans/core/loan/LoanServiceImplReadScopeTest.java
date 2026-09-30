@@ -25,7 +25,12 @@ import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
+import zw.co.innbucks.loans.core.turnaround.ServiceLevel;
+import zw.co.innbucks.loans.core.turnaround.ServiceLevelService;
+import zw.co.innbucks.loans.core.turnaround.ServiceLevelStage;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,6 +51,7 @@ class LoanServiceImplReadScopeTest {
 
     private LoanRepository loanRepository;
     private LoanMapper loanMapper;
+    private ServiceLevelService serviceLevelService;
     private LoanServiceImpl service;
 
     private Root<Loan> root;
@@ -57,11 +63,12 @@ class LoanServiceImplReadScopeTest {
     void setUp() {
         loanRepository = mock(LoanRepository.class);
         loanMapper = mock(LoanMapper.class);
+        serviceLevelService = mock(ServiceLevelService.class);
         service = new LoanServiceImpl(loanRepository, mock(ParameterService.class), loanMapper,
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
                 mock(Validator.class), new MarketTimeZone("ZW"),
                 mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class),
-                mock(SignedInstrumentService.class), mock(LoanNotificationService.class));
+                mock(SignedInstrumentService.class), mock(LoanNotificationService.class), serviceLevelService);
 
         root = mock(Root.class, RETURNS_DEEP_STUBS);
         cb = mock(CriteriaBuilder.class);
@@ -184,6 +191,75 @@ class LoanServiceImplReadScopeTest {
         assertThatThrownBy(() -> service.getLoan(42L, LoanReadScope.platform()))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Loan 42 not found");
+    }
+
+    @Test
+    @DisplayName("staff see how long each loan on a page has waited on Credit; the service level is read once a page")
+    void staffListCarriesTheCreditTurnaround() {
+        LocalDateTime approved = LocalDateTime.now(ZoneOffset.UTC).minusHours(30);
+        Loan first = awaitingCredit(approved);
+        Loan second = awaitingCredit(approved.plusHours(20));
+        Loan decided = awaitingCredit(approved);
+        decided.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(first, second, decided)));
+        when(loanMapper.toSummary(any(Loan.class))).thenAnswer(i -> new LoanSummaryResponse());
+        when(serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION)).thenReturn(creditLevel());
+
+        List<LoanSummaryResponse> page = service.findLoans(LoanSearchCriteria.awaitingCreditDecision(),
+                LoanReadScope.platform(), PageRequest.of(0, 20)).getContent();
+
+        assertThat(page.get(0).getCreditTurnaround().queueEnteredAt()).isEqualTo(approved);
+        assertThat(page.get(0).getCreditTurnaround().dueAt()).isEqualTo(approved.plusHours(24));
+        assertThat(page.get(0).getCreditTurnaround().overdue()).isTrue();
+        assertThat(page.get(1).getCreditTurnaround().overdue()).isFalse();
+        assertThat(page.get(2).getCreditTurnaround()).isNull();
+        verify(serviceLevelService, times(1)).serviceLevel(ServiceLevelStage.CREDIT_DECISION);
+    }
+
+    @Test
+    @DisplayName("an originator sees no turnaround: the service level is the lender's measure of its own staff")
+    void originatorListCarriesNoTurnaround() {
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(awaitingCredit(LocalDateTime.now(ZoneOffset.UTC).minusHours(30)))));
+        when(loanMapper.toSummary(any(Loan.class))).thenAnswer(i -> new LoanSummaryResponse());
+
+        List<LoanSummaryResponse> page = service.findLoans(LoanSearchCriteria.builder().build(),
+                LoanReadScope.originator("M-001", 7L), PageRequest.of(0, 20)).getContent();
+
+        assertThat(page.getFirst().getCreditTurnaround()).isNull();
+        verifyNoInteractions(serviceLevelService);
+    }
+
+    @Test
+    @DisplayName("a loan's own view carries its turnaround for staff, measured from its resubmission when it had one")
+    void singleReadCarriesTheTurnaroundForStaffOnly() {
+        LocalDateTime resubmitted = LocalDateTime.now(ZoneOffset.UTC).minusHours(2);
+        Loan loan = awaitingCredit(resubmitted.minusDays(3));
+        loan.setCreditResubmittedAt(resubmitted);
+        when(loanRepository.findOne(any(Specification.class))).thenReturn(Optional.of(loan));
+        when(loanMapper.toResponse(loan)).thenAnswer(i -> new LoanResponse());
+        when(serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION)).thenReturn(creditLevel());
+
+        LoanResponse staffView = service.getLoan(42L, LoanReadScope.platform());
+        LoanResponse agentView = service.getLoan(42L, LoanReadScope.originator("M-001", 7L));
+
+        assertThat(staffView.getCreditTurnaround().queueEnteredAt()).isEqualTo(resubmitted);
+        assertThat(staffView.getCreditTurnaround().overdue()).isFalse();
+        assertThat(agentView.getCreditTurnaround()).isNull();
+    }
+
+    private static Loan awaitingCredit(LocalDateTime ssbApprovedAt) {
+        Loan loan = new Loan();
+        loan.setLoanApprovalStatus(LoanApprovalStatus.APPROVED);
+        loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
+        loan.setDateApproved(ssbApprovedAt);
+        return loan;
+    }
+
+    private static ServiceLevel creditLevel() {
+        return ServiceLevel.builder().stage(ServiceLevelStage.CREDIT_DECISION).targetHours(24).escalationHours(48)
+                .updatedBy("system").updatedAt(LocalDateTime.now(ZoneOffset.UTC)).build();
     }
 
     @SuppressWarnings("unchecked")

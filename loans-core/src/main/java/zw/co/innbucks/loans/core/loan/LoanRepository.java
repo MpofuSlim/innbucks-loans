@@ -12,6 +12,7 @@ import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -115,8 +116,43 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             """)
     boolean isHeldForEmploymentEvent(@Param("loanId") Long loanId);
 
+    /**
+     * Loans waiting on Credit whose current wait reached Credit before {@code cutoff} and has not been escalated
+     * (FR-PBL-030). Oldest first.
+     */
+    @Query("""
+            select l.id from Loan l
+            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
+              and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.PENDING
+              and l.creditEscalatedAt is null
+              and coalesce(l.creditResubmittedAt, l.dateApproved) <= :cutoff
+            order by l.id
+            """)
+    List<Long> findIdsDueForCreditEscalation(@Param("cutoff") LocalDateTime cutoff);
+
+    /**
+     * How many loans wait on Credit now; of those, how many reached it before {@code cutoff} (past the target, when the
+     * cutoff is now less the target), and how many are escalated.
+     */
+    @Query("""
+            select count(l),
+                   coalesce(sum(case when coalesce(l.creditResubmittedAt, l.dateApproved) < :cutoff then 1 else 0 end), 0),
+                   coalesce(sum(case when l.creditEscalatedAt is not null then 1 else 0 end), 0)
+            from Loan l
+            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
+              and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.PENDING
+            """)
+    List<Object[]> countAwaitingCredit(@Param("cutoff") LocalDateTime cutoff);
+
+    /** Each loan's id and SSB approval time. */
+    @Query("select l.id, l.dateApproved from Loan l where l.id in :ids")
+    List<Object[]> findDateApprovedByIdIn(@Param("ids") Collection<Long> ids);
+
     /** Every loan under an EC number, as stored (upper case), oldest first. */
     List<Loan> findByEcNumberOrderByIdAsc(String ecNumber);
+
+    /** Every loan under a national ID, as stored, oldest first. */
+    List<Loan> findByNationalIdNumberOrderByIdAsc(String nationalIdNumber);
 
     /** The applications waiting in the payslip review queue, oldest first. */
     List<Loan> findByPayslipReviewStatusOrderByIdAsc(PayslipReviewStatus payslipReviewStatus);

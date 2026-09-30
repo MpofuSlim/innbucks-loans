@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.innbucks.loans.core.turnaround.CreditTurnaround;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -47,6 +48,11 @@ public class LoanSummaryResponse {
     @Schema(description = "Where the application stands: RECEIVED, WITH_SSB, WITH_CREDIT, MORE_INFORMATION_NEEDED,"
             + " APPROVED, PAID, DECLINED, PAYOUT_DELAYED or NOT_COMPLETED", example = "WITH_CREDIT")
     private LoanStage stage;
+    /**
+     * How long it has waited for a credit decision, against the service level (FR-PBL-030): only while waiting on
+     * Credit, and only to staff who read every loan.
+     */
+    private CreditTurnaround creditTurnaround;
     private LoanApprovalStatus ssbApprovalStatus;
     private InternalApprovalStatus creditApprovalStatus;
     private LoanAccountStatus bookingStatus;

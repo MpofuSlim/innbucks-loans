@@ -304,6 +304,28 @@ public class Loan extends BaseEntity {
     private String internalApprovalReasonCode;
 
     /**
+     * When the originator last answered a return for more information, sending the loan back to Credit: its wait
+     * for a decision is measured from then, or from SSB's approval ({@link #dateApproved}) if it was never returned
+     * (FR-PBL-030).
+     */
+    @Column(name = "credit_resubmitted_at")
+    private LocalDateTime creditResubmittedAt;
+
+    /** When the current wait for a credit decision passed the escalation point and was escalated; null if not. */
+    @Column(name = "credit_escalated_at")
+    private LocalDateTime creditEscalatedAt;
+
+    /** The last payroll deduction: SSB's own end date for it when SSB gave one, else the loan's end date. */
+    public LocalDate finalDeductionDate() {
+        return repaymentEndDate != null ? repaymentEndDate : loanEndDate;
+    }
+
+    /** When the loan reached Credit for its current wait: its last resubmission, else SSB's approval. */
+    public LocalDateTime creditQueueEnteredAt() {
+        return creditResubmittedAt != null ? creditResubmittedAt : dateApproved;
+    }
+
+    /**
      * Where credit approved the money to go, frozen at approval: see {@link PayoutDestination}. Null on
      * a loan approved before the freeze existed, which still pays per the merchant's live settings.
      */

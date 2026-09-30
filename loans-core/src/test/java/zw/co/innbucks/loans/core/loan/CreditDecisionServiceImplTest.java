@@ -27,6 +27,7 @@ import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -479,12 +480,17 @@ class CreditDecisionServiceImplTest {
             loan.setInternalApprovalReasonCode("RETURN_PAYSLIP");
             loan.setInternalApprovalComment("Send the August payslip");
             loan.setInternalApprovalBy("credit.manager");
+            // The earlier wait was escalated; the answer starts a new wait, not yet escalated (FR-PBL-030).
+            loan.setCreditEscalatedAt(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
             when(authService.getLoggedInUsername()).thenReturn("agent.moyo");
             when(loanRepository.exists(any(Specification.class))).thenReturn(true);
 
             service.resubmit(42L, new CreditResubmissionRequest("  August payslip checked with the bursar "), agentScope);
 
             assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+            assertThat(loan.getCreditEscalatedAt()).isNull();
+            assertThat(loan.getCreditResubmittedAt()).isNotNull();
+            assertThat(loan.creditQueueEnteredAt()).isEqualTo(loan.getCreditResubmittedAt());
             assertThat(loan.getInternalApprovalReasonCode()).isNull();
             assertThat(loan.getInternalApprovalComment()).isNull();
             assertThat(loan.getInternalApprovalBy()).isNull();
@@ -494,6 +500,7 @@ class CreditDecisionServiceImplTest {
             assertThat(entry.getReasonCode()).isNull();
             assertThat(entry.getComment()).isEqualTo("August payslip checked with the bursar");
             assertThat(entry.getPerformedBy()).isEqualTo("agent.moyo");
+            assertThat(entry.getPerformedAt()).isEqualTo(loan.getCreditResubmittedAt());
             verify(loanNotificationService).notify(loan, LoanNotice.RESUBMITTED);
         }
 

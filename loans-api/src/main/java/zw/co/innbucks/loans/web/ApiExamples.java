@@ -83,6 +83,19 @@ public final class ApiExamples {
                 "physicalAddress": "12 Samora Machel Ave, Harare"
               }""";
 
+    /**
+     * Loan 42's wait for its first credit decision, seen at 09:03 on the 30th: it reached Credit when SSB approved it at
+     * 08:05, against the seeded 24-hour target and 48-hour escalation point.
+     */
+    private static final String LOAN_42_TURNAROUND_BEFORE_RETURN = """
+            {
+                    "queueEnteredAt": "2026-09-30T08:05:12+02:00",
+                    "dueAt": "2026-10-01T08:05:12+02:00",
+                    "escalatesAt": "2026-10-02T08:05:12+02:00",
+                    "waitingHours": 1.0,
+                    "overdue": false
+                  }""";
+
     /** Loan 42 as a list row, once SSB has approved the deduction and before Credit decides. */
     public static final String LOAN_SUMMARY = """
             {
@@ -102,6 +115,8 @@ public final class ApiExamples {
                   "tenor": 3,
                   "monthlyInstallment": 202.69,
                   "stage": "WITH_CREDIT",
+                  "creditTurnaround": """ + LOAN_42_TURNAROUND_BEFORE_RETURN + """
+            ,
                   "ssbApprovalStatus": "APPROVED",
                   "creditApprovalStatus": "PENDING",
                   "bookingStatus": "PENDING",
@@ -295,6 +310,8 @@ public final class ApiExamples {
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
                 "stage": "WITH_CREDIT",
+                "creditTurnaround": """ + LOAN_42_TURNAROUND_BEFORE_RETURN + """
+            ,
                 "creditApprovalStatus": "PENDING",
                 "bookingStatus": "PENDING",
                 "disbursementStatus": "PENDING",
@@ -415,15 +432,8 @@ public final class ApiExamples {
     private static final String LOAN_42_SNAPSHOT_AUGUST_PAYSLIP_FIELDS = "\"loanSnapshot\": " + LOAN_42_SNAPSHOT_AUGUST_PAYSLIP
             + ",\n      \"snapshotSha256\": \"ecd24a74a3694e201e6774f92e46887d98adc875f9f3b6a6f3253a04702ddf8e\"";
 
-    /**
-     * Loan 42's credit decision log: returned on the June payslip, answered with the August one, then approved by
-     * someone other than the answerer. Each entry pins the payslip it was taken on by its fingerprint.
-     */
-    public static final String CREDIT_DECISION_LOG = """
-            {
-              "code": "OK",
-              "message": "Success",
-              "data": [
+    /** Loan 42 returned on the June payslip. */
+    private static final String CREDIT_DECISION_17 = """
                 {
                   "id": 17,
                   "action": "RETURNED",
@@ -434,7 +444,10 @@ public final class ApiExamples {
                   "performedAt": "2026-09-30T09:12:45+02:00",
                   """ + LOAN_42_SNAPSHOT_JUNE_PAYSLIP_FIELDS + """
 
-                },
+                }""";
+
+    /** Loan 42's return answered with the August payslip. */
+    private static final String CREDIT_DECISION_18 = """
                 {
                   "id": 18,
                   "action": "RESUBMITTED",
@@ -443,7 +456,21 @@ public final class ApiExamples {
                   "performedAt": "2026-09-30T10:03:10+02:00",
                   """ + LOAN_42_SNAPSHOT_AUGUST_PAYSLIP_FIELDS + """
 
-                },
+                }""";
+
+    /**
+     * Loan 42's credit decision log: returned on the June payslip, answered with the August one, then approved by
+     * someone other than the answerer. Each entry pins the payslip it was taken on by its fingerprint.
+     */
+    public static final String CREDIT_DECISION_LOG = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + CREDIT_DECISION_17 + """
+            ,
+            """ + CREDIT_DECISION_18 + """
+            ,
                 {
                   "id": 19,
                   "action": "APPROVED",
@@ -1352,6 +1379,163 @@ public final class ApiExamples {
                 "notifyOnDecline": true,
                 "updatedBy": "admin",
                 "updatedAt": "2026-10-02T08:45:10+02:00"
+              }
+            }""";
+
+    // --- Credit workbench and turnaround (FR-SSB-015 / FR-PBL-026, FR-PBL-030) ---
+
+    /**
+     * Loan 42's workbench at 11:03 on the 30th: resubmitted with the August payslip at 10:03, so its second wait for a
+     * decision started then. The applicant's earlier loan, repaid by June, is listed but not open.
+     */
+    public static final String LOAN_42_CREDIT_WORKBENCH = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loan": {
+                  "id": 42,
+                  "reference": "000000042",
+                  "createdAt": "2026-09-29T10:15:30+02:00",
+                  "createdBy": "tmoyo",
+                  "createdByName": "Tendai Moyo",
+                  "merchantCode": "harare-motors",
+                  "merchantName": "Harare Motor Spares",
+            """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
+
+                  "stage": "WITH_CREDIT",
+                  "creditTurnaround": {
+                    "queueEnteredAt": "2026-09-30T10:03:10+02:00",
+                    "dueAt": "2026-10-01T10:03:10+02:00",
+                    "escalatesAt": "2026-10-02T10:03:10+02:00",
+                    "waitingHours": 1.0,
+                    "overdue": false
+                  },
+                  "creditApprovalStatus": "PENDING",
+                  "bookingStatus": "PENDING",
+                  "disbursementStatus": "PENDING",
+                  "documents": [
+                  {
+            """ + PAYSLIP_V2 + """
+
+                  },
+            """ + LOAN_42_OTHER_DOCUMENTS + """
+
+                  ]
+                },
+                "affordability": {
+                  "grossSalary": 850.00,
+                  "netSalary": 620.00,
+                  "payslipDeductions": 230.00,
+                  "monthlyDeduction": 208.96,
+                  "netAfterDeduction": 411.04,
+                  "deductionToNetPercent": 33.7,
+                  "outcome": "NOT_ASSESSED",
+                  "note": "The SSB deduction cap and minimum take-home pay are not configured yet, so affordability is not passed or failed; the figures are for the officer to judge."
+                },
+                "exposure": {
+                  "openLoans": 0,
+                  "openPrincipal": 0,
+                  "openMonthlyDeduction": 0,
+                  "loans": [
+                    {
+                      "id": 12,
+                      "reference": "000000012",
+                      "stage": "PAID",
+                      "open": false,
+                      "principal": 319.15,
+                      "monthlyDeduction": 125.38,
+                      "tenor": 3,
+                      "createdAt": "2026-03-02T09:41:07+02:00",
+                      "disbursedAt": "2026-03-04T14:22:51+02:00",
+                      "repaymentEndDate": "2026-06-30"
+                    }
+                  ]
+                },
+                "flags": [
+                  {
+                    "code": "DOCUMENTS_AMENDED",
+                    "detail": "PAYSLIP replaced after the application (version 2) by tmoyo"
+                  }
+                ],
+                "employmentEvents": [],
+                "decisions": [
+            """ + CREDIT_DECISION_17 + """
+            ,
+            """ + CREDIT_DECISION_18 + """
+
+                ]
+              }
+            }""";
+
+    private static final String CREDIT_DECISION_SERVICE_LEVEL_AS_SEEDED = """
+                {
+                  "stage": "CREDIT_DECISION",
+                  "targetHours": 24,
+                  "escalationHours": 48,
+                  "updatedBy": "system",
+                  "updatedAt": "2026-09-30T12:00:00+02:00"
+                }""";
+
+    /** The service levels as seeded: a credit decision within a day, escalated after two. */
+    public static final String SERVICE_LEVELS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + CREDIT_DECISION_SERVICE_LEVEL_AS_SEEDED + """
+
+              ]
+            }""";
+
+    public static final String SERVICE_LEVEL_REQUEST = """
+            {
+              "targetHours": 8,
+              "escalationHours": 16
+            }""";
+
+    /** Credit decisions tightened to a working day, escalated after two. */
+    public static final String SERVICE_LEVEL_UPDATED = """
+            {
+              "code": "OK",
+              "message": "Service level updated; it applies to loans already waiting as well",
+              "data": {
+                "stage": "CREDIT_DECISION",
+                "targetHours": 8,
+                "escalationHours": 16,
+                "updatedBy": "admin",
+                "updatedAt": "2026-10-02T08:50:31+02:00"
+              }
+            }""";
+
+    /**
+     * Credit's turnaround for September against the seeded service level: loan 42's return took 1.1 hours and its
+     * approval 1.6, among fourteen decisions.
+     */
+    public static final String CREDIT_TURNAROUND_REPORT = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "fromDate": "2026-09-01",
+                "toDate": "2026-09-30",
+                "targetHours": 24,
+                "escalationHours": 48,
+                "decisions": 14,
+                "withinTarget": 12,
+                "adherencePercent": 85.7,
+                "averageHours": 13.4,
+                "medianHours": 6.2,
+                "longestHours": 52.3,
+                "unmeasured": 0,
+                "byAction": [
+                  { "action": "APPROVED", "decisions": 9, "withinTarget": 8, "averageHours": 11.9 },
+                  { "action": "REJECTED", "decisions": 3, "withinTarget": 2, "averageHours": 22.6 },
+                  { "action": "RETURNED", "decisions": 2, "withinTarget": 2, "averageHours": 6.3 }
+                ],
+                "awaiting": 3,
+                "overdue": 1,
+                "escalated": 0
               }
             }""";
 }
