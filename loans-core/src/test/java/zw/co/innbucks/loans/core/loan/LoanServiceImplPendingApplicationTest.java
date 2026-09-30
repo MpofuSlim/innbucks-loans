@@ -9,15 +9,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.data.jpa.repository.Query;
-import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
-import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.innbucks.loans.core.document.LoanDocumentService;
+import zw.co.innbucks.loans.core.exception.PendingApplicationException;
+import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
@@ -42,6 +44,10 @@ import static zw.co.innbucks.loans.core.loan.LoanParameterNames.*;
  * pinned by {@link LoanStatusSnapshotTest}; these pin how the service applies it.
  */
 class LoanServiceImplPendingApplicationTest {
+
+    /** Where the application is signed, as the web layer reads it off the request. */
+    private static final SigningContext SIGNING = new SigningContext("device-7f3a", "196.4.80.12", null,
+            "InnBucksPortal/2.4", "pwd", null);
 
     private static final String EC_NUMBER = "1234567A";
     // completeApplication()'s "63-1234567A63", normalised.
@@ -73,7 +79,8 @@ class LoanServiceImplPendingApplicationTest {
 
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"),
-                mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
+                mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class),
+                mock(SignedInstrumentService.class));
     }
 
     @AfterEach
@@ -99,7 +106,7 @@ class LoanServiceImplPendingApplicationTest {
 
     /** Refused as a conflict, not answered as a rejected loan: nothing was created. */
     private void assertRefusedAsPending(LoanApplicationRequest request) {
-        assertThatThrownBy(() -> service.requestLoan(request))
+        assertThatThrownBy(() -> service.requestLoan(request, SIGNING))
                 .isInstanceOf(PendingApplicationException.class)
                 .hasMessage("You have a pending loan application.");
         verify(loanRepository, never()).save(any());
@@ -113,7 +120,7 @@ class LoanServiceImplPendingApplicationTest {
     @Test
     @DisplayName("the EC number is stored upper-cased")
     void storedEcNumberIsUpperCased() {
-        service.requestLoan(application("1234567a"));
+        service.requestLoan(application("1234567a"), SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
@@ -175,7 +182,7 @@ class LoanServiceImplPendingApplicationTest {
                 loan(LoanApprovalStatus.APPROVED, InternalApprovalStatus.APPROVED,
                         LoanAccountStatus.CREATED, LoanDisbursementStatus.SUCCESS)));
 
-        assertAccepted(service.requestLoan(application(EC_NUMBER)));
+        assertAccepted(service.requestLoan(application(EC_NUMBER), SIGNING));
     }
 
     @Test
@@ -192,7 +199,7 @@ class LoanServiceImplPendingApplicationTest {
     @Test
     @DisplayName("the applicant is locked before the pending check, and the check runs before the insert")
     void lockIsTakenBeforeTheCheck() {
-        service.requestLoan(application("1234567a"));
+        service.requestLoan(application("1234567a"), SIGNING);
 
         InOrder order = inOrder(loanRepository);
         order.verify(loanRepository).lockApplicant("loan-application:ec:" + EC_NUMBER);
@@ -208,7 +215,7 @@ class LoanServiceImplPendingApplicationTest {
         LoanApplicationRequest request = application(EC_NUMBER);
         request.setNationalIdNumber("--");
 
-        assertAccepted(service.requestLoan(request));
+        assertAccepted(service.requestLoan(request, SIGNING));
         verify(loanRepository).lockApplicant("loan-application:ec:" + EC_NUMBER);
         verify(loanRepository, never()).lockApplicant(startsWith("loan-application:nid:"));
         verify(loanRepository, never()).findStatusesByNationalId(any());

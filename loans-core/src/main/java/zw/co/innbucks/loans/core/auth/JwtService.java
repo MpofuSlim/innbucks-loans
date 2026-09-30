@@ -25,6 +25,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JwtService {
 
+    /** The sign-in methods a token was issued for (RFC 8176 {@code amr}). */
+    public static final String AUTHENTICATION_METHODS_CLAIM = "amr";
+    /** Signed in with a username and password: the only way to get a token here. */
+    public static final String PASSWORD_AUTHENTICATION = "pwd";
+
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwtProperties;
 
@@ -42,6 +47,8 @@ public class JwtService {
                 .claim("realm_access", Map.of("roles", roles))
                 // Checked on every request by TokenVersionValidator: a password change bumps it.
                 .claim(TokenVersionValidator.CLAIM, user.currentTokenVersion())
+                // How the session signed in (RFC 8176), recorded with anything it signs (FR-SSB-013).
+                .claim(AUTHENTICATION_METHODS_CLAIM, List.of(PASSWORD_AUTHENTICATION))
                 .build();
 
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();

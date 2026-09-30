@@ -19,12 +19,14 @@ import zw.co.innbucks.loans.controller.DashboardController;
 import zw.co.innbucks.loans.controller.DeductionBatchController;
 import zw.co.innbucks.loans.controller.DeductionCancellationController;
 import zw.co.innbucks.loans.controller.HeldBookingController;
+import zw.co.innbucks.loans.controller.InstrumentTemplateController;
 import zw.co.innbucks.loans.controller.LoanApplicationDraftController;
 import zw.co.innbucks.loans.controller.LoanController;
 import zw.co.innbucks.loans.controller.LoanDocumentController;
 import zw.co.innbucks.loans.controller.MerchantController;
 import zw.co.innbucks.loans.controller.PayslipReviewController;
 import zw.co.innbucks.loans.controller.ReportController;
+import zw.co.innbucks.loans.controller.SignedInstrumentController;
 import zw.co.innbucks.loans.controller.UserController;
 import zw.co.innbucks.loans.core.audit.AuditService;
 
@@ -52,9 +54,9 @@ class SwaggerExamplesTest {
     private static final List<Class<?>> CONTROLLERS = List.of(AuthController.class, CommissionGroupController.class,
             CreditReasonCodeController.class, CurrentUserController.class, DashboardController.class,
             DeductionBatchController.class, DeductionCancellationController.class, HeldBookingController.class,
-            LoanApplicationDraftController.class, LoanController.class, LoanDocumentController.class,
-            PayslipReviewController.class,
-            MerchantController.class, ReportController.class, UserController.class);
+            InstrumentTemplateController.class, LoanApplicationDraftController.class, LoanController.class,
+            LoanDocumentController.class, PayslipReviewController.class, MerchantController.class,
+            ReportController.class, SignedInstrumentController.class, UserController.class);
 
     record Example(String where, String json) {
         @Override
@@ -135,6 +137,19 @@ class SwaggerExamplesTest {
             from = end;
         }
         assertThat(entries.size()).isEqualTo(3);
+    }
+
+    @Test
+    void theInstrumentExamplesCarryTheRealHashOfTheirText() {
+        // A client can re-hash what it was shown or what was signed; the examples must hold up too.
+        for (String example : List.of(ApiExamples.INSTRUMENT_PREVIEW, ApiExamples.LOAN_43_SIGNED_INSTRUMENTS)) {
+            JsonNode instruments = JSON.readTree(example).path("data");
+            assertThat(instruments.size()).isEqualTo(2);
+            for (JsonNode instrument : instruments) {
+                assertThat(AuditService.sha256Hex(instrument.path("content").asString()))
+                        .isEqualTo(instrument.path("contentSha256").asString());
+            }
+        }
     }
 
     static Stream<Class<?>> controllers() {

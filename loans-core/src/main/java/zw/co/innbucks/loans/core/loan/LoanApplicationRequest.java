@@ -147,6 +147,20 @@ public class LoanApplicationRequest implements Serializable {
     /** The channel that captured the application; absent for one captured in the portal by the signed-in user. */
     private String channelId;
 
+    // --- Signing (FR-SSB-013): the versions of each instrument the applicant accepted ---
+
+    /** The loan agreement version the applicant read and accepted; required once one is published. */
+    @Positive(message = "Loan agreement version must be greater than zero")
+    @Schema(description = "The loan agreement version the applicant accepted, from POST /loans/instruments/preview;"
+            + " required once one is published", example = "3")
+    private Integer loanAgreementVersion;
+
+    /** The SSB deduction authority version the applicant read and accepted; required once one is published. */
+    @Positive(message = "Deduction authority version must be greater than zero")
+    @Schema(description = "The SSB deduction authority version the applicant accepted, from POST"
+            + " /loans/instruments/preview; required once one is published", example = "2")
+    private Integer deductionAuthorityVersion;
+
     // --- Documents, base64 ---
 
     @ToString.Exclude

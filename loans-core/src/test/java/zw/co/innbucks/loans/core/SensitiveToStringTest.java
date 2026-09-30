@@ -21,6 +21,9 @@ import zw.co.innbucks.loans.core.draft.DraftDocumentContent;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraft;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraftDocument;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraftStatus;
+import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
+import zw.co.innbucks.loans.core.instrument.InstrumentType;
+import zw.co.innbucks.loans.core.instrument.SignedInstrument;
 import zw.co.innbucks.loans.core.loan.BankingDetail;
 import zw.co.innbucks.loans.core.loan.Customer;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -189,6 +192,24 @@ class SensitiveToStringTest {
         assertNoPii(content);
         assertThat(draft.toString()).contains("id=7", "OPEN");
         assertThat(content.toString()).contains("NATIONAL_ID");
+    }
+
+    @Test
+    @DisplayName("a signed instrument and its wording print neither the signed text nor where it was signed (FR-SSB-013)")
+    void signedInstrumentsPrintNoTextOrDevice() {
+        SignedInstrument instrument = SignedInstrument.builder().id(1L).loanId(43L)
+                .instrumentType(InstrumentType.LOAN_AGREEMENT).templateVersion(3)
+                .content("Tatenda Ncube, national ID " + NATIONAL_ID + ", borrows USD 319.15")
+                .deviceId("device-a3f1c2e4").ipAddress("41.190.33.7").forwardedFor("41.190.33.7")
+                .userAgent("InnBucksPortal/2.4").signedBy("tmoyo").build();
+        InstrumentTemplate template = InstrumentTemplate.builder().instrumentType(InstrumentType.LOAN_AGREEMENT)
+                .version(3).title("SSB Loan Agreement").body("Borrower " + NATIONAL_ID).build();
+
+        assertNoPii(instrument);
+        assertNoPii(template);
+        assertThat(instrument.toString()).doesNotContain("device-a3f1c2e4", "41.190.33.7", "InnBucksPortal")
+                .contains("loanId=43", "LOAN_AGREEMENT", "templateVersion=3");
+        assertThat(template.toString()).contains("version=3");
     }
 
     @Test

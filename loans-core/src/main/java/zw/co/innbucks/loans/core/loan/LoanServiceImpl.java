@@ -28,6 +28,10 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.files.DecodedFile;
+import zw.co.innbucks.loans.core.instrument.InstrumentPreview;
+import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
+import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
@@ -69,6 +73,7 @@ public class LoanServiceImpl implements LoanService {
     private final LoanDocumentService loanDocumentService;
     private final PayslipFraudDetector payslipFraudDetector;
     private final PayslipReviewService payslipReviewService;
+    private final SignedInstrumentService signedInstrumentService;
 
     /** Newest first, id as the tie-break: a sort on a non-unique column alone would let pages repeat or skip rows. */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id"));
@@ -130,7 +135,7 @@ public class LoanServiceImpl implements LoanService {
      */
     @Override
     @Transactional
-    public LoanApplicationResponse requestLoan(LoanApplicationRequest loanRequest) {
+    public LoanApplicationResponse requestLoan(LoanApplicationRequest loanRequest, SigningContext signing) {
 
         // Identifiers only: the request carries the applicant's KYC and base64 documents.
         log.info("Requesting loan approval: channel {}, ec {}, amount {}, tenor {}", loanRequest.getChannelId(),
@@ -148,18 +153,16 @@ public class LoanServiceImpl implements LoanService {
         Map<DocumentType, DecodedFile> documents = loanDocumentService.decodeApplication(loanRequest);
         DecodedFile payslip = documents.get(DocumentType.PAYSLIP);
 
+        // Electronic signature (FR-SSB-013): each published instrument accepted at the version in force, with a
+        // signature to sign it and the device it is signed on. Checked before any business state is touched.
+        List<InstrumentTemplate> instruments = signedInstrumentService.requireAccepted(loanRequest, documents, signing);
+
         // Presence of the required fields is enforced declaratively by bean validation
         // (@Valid on the controller). What remains here are the business rules that need
         // runtime context: EC-number format, the 18+ age rule, and (in calculate) the
         // DB-driven amount/tenor ranges and the pending-loan check.
 
-        // Stored upper-cased, as the national ID already is, so the pending check
-        // compares like with like ("1234567a" and "1234567A" are one person).
-        final String formattedEcNumber = TextUtils.trimSpecialCharacters(loanRequest.getEcNumber()).toUpperCase();
-
-        if (!formattedEcNumber.matches(EC_NUMBER_REGEX_FORMAT)) {
-            throw new IllegalArgumentException("EC Number is not valid");
-        }
+        final String formattedEcNumber = formattedEcNumber(loanRequest);
 
         requireNetWithinGross(loanRequest.getEmploymentDetail());
 
@@ -168,7 +171,7 @@ public class LoanServiceImpl implements LoanService {
             throw new IllegalArgumentException("Must be 18+ years");
         }
 
-        final String formattedIdNumber = TextUtils.trimSpecialCharacters(loanRequest.getNationalIdNumber()).toUpperCase();
+        final String formattedIdNumber = formattedIdNumber(loanRequest);
 
         lockApplicant(formattedEcNumber, formattedIdNumber);
         Optional<Long> pendingLoanId = findPendingLoan(formattedEcNumber, formattedIdNumber);
@@ -189,9 +192,74 @@ public class LoanServiceImpl implements LoanService {
         User loggedInUser = optionalChannel.map(Channel::getSystemUser)
                 .orElseGet(authService::getLoggedInUser);
 
-        LoanQuote quote = calculate(loanRequest.quoteRequest(), loggedInUser);
+        final Loan loan = newLoan(loanRequest, formattedEcNumber, formattedIdNumber, loggedInUser,
+                optionalChannel.orElse(null), payslip == null ? null : payslip.sha256());
 
-        final Loan loan = Loan.builder()
+        // Payslip fraud controls (FR-SSB-007). Two applications with one payslip must not pass each other
+        // unseen, so the second waits for the first to commit before looking for it.
+        if (loan.getPayslipSha256() != null) {
+            loanRepository.lockApplicant("loan-application:payslip:" + loan.getPayslipSha256());
+        }
+        List<PayslipFraudDetector.Finding> findings = payslipFraudDetector.findingsFor(loan);
+        if (!findings.isEmpty()) {
+            // Held back from SSB lodgement until a credit officer decides; the caller is not told.
+            loan.setPayslipReviewStatus(PayslipReviewStatus.PENDING);
+        }
+
+        loanRepository.save(loan);
+        // Version 1 of each document (FR-SSB-009), committed with the application.
+        loanDocumentService.storeApplication(loan, documents, loggedInUser.getUsername());
+        if (!findings.isEmpty()) {
+            payslipReviewService.hold(loan, findings);
+        }
+        // The instruments as signed, rendered from the loan as saved, with the evidence of the signing.
+        signedInstrumentService.sign(loan, instruments, documents, signing, loggedInUser.getUsername());
+
+        return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
+    }
+
+    /**
+     * The loan agreement and deduction authority as this application would sign them today, for the applicant to
+     * read before accepting (FR-SSB-013). Built exactly as {@link #requestLoan} builds the loan, so the text is the
+     * text that will be signed; nothing is saved, and only the terms and identity need be present.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<InstrumentPreview> previewInstruments(LoanApplicationRequest loanRequest) {
+        Set<ConstraintViolation<LoanApplicationRequest>> violations = validator.validate(loanRequest, Default.class);
+        if (!violations.isEmpty()) {
+            throw new IllegalArgumentException(violations.stream()
+                    .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                    .sorted()
+                    .collect(Collectors.joining("; ")));
+        }
+        Optional<Channel> optionalChannel = resolveChannel(loanRequest);
+        User originator = optionalChannel.map(Channel::getSystemUser).orElseGet(authService::getLoggedInUser);
+        return signedInstrumentService.preview(newLoan(loanRequest, formattedEcNumber(loanRequest),
+                formattedIdNumber(loanRequest), originator, optionalChannel.orElse(null), null));
+    }
+
+    /**
+     * Stored upper-cased, as the national ID already is, so the pending check compares like with like
+     * ("1234567a" and "1234567A" are one person).
+     */
+    private static String formattedEcNumber(LoanApplicationRequest loanRequest) {
+        String formatted = TextUtils.trimSpecialCharacters(loanRequest.getEcNumber()).toUpperCase();
+        if (!formatted.matches(EC_NUMBER_REGEX_FORMAT)) {
+            throw new IllegalArgumentException("EC Number is not valid");
+        }
+        return formatted;
+    }
+
+    private static String formattedIdNumber(LoanApplicationRequest loanRequest) {
+        return TextUtils.trimSpecialCharacters(loanRequest.getNationalIdNumber()).toUpperCase();
+    }
+
+    /** The loan an application becomes, priced for its originator; not saved. */
+    private Loan newLoan(LoanApplicationRequest loanRequest, String formattedEcNumber, String formattedIdNumber,
+                         User loggedInUser, Channel channel, String payslipSha256) {
+        LoanQuote quote = calculate(loanRequest.quoteRequest(), loggedInUser);
+        return Loan.builder()
                 .principal(quote.getPrincipal())
                 .disbursementStatus(LoanDisbursementStatus.PENDING)
                 .loanApprovalStatus(LoanApprovalStatus.NEW)
@@ -202,7 +270,7 @@ public class LoanServiceImpl implements LoanService {
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
                 .walletNumber(formatMsisdnInternational(StringUtils.hasText(loanRequest.getWalletNumber())
                         ? loanRequest.getWalletNumber() : loanRequest.getMobileNumber()))
-                .payslipSha256(payslip == null ? null : payslip.sha256())
+                .payslipSha256(payslipSha256)
                 .feeAmount(quote.getFeeAmount())
                 .feeRate(quote.getFeeRate())
                 .interestRate(quote.getInterestRate())
@@ -214,7 +282,7 @@ public class LoanServiceImpl implements LoanService {
                 .tenor(quote.getTenor())
                 .firstName(loanRequest.getFirstName())
                 .lastName(loanRequest.getLastName())
-                .dateOfBirth(dateOfBirth)
+                .dateOfBirth(loanRequest.getDateOfBirth())
                 .agentCommission(quote.getAgentCommission())
                 .agentCommissionRate(quote.getAgentCommissionRate())
                 .providerCommissionRate(quote.getProviderCommissionRate())
@@ -241,29 +309,9 @@ public class LoanServiceImpl implements LoanService {
                 .createdBy(loggedInUser.getUsername())
                 .createdByUser(loggedInUser)
                 .merchant(loggedInUser.getMerchant())
-                .channel(optionalChannel.orElse(null))
+                .channel(channel)
                 .loanStartDate(quote.getStartDate())
                 .build();
-
-        // Payslip fraud controls (FR-SSB-007). Two applications with one payslip must not pass each other
-        // unseen, so the second waits for the first to commit before looking for it.
-        if (loan.getPayslipSha256() != null) {
-            loanRepository.lockApplicant("loan-application:payslip:" + loan.getPayslipSha256());
-        }
-        List<PayslipFraudDetector.Finding> findings = payslipFraudDetector.findingsFor(loan);
-        if (!findings.isEmpty()) {
-            // Held back from SSB lodgement until a credit officer decides; the caller is not told.
-            loan.setPayslipReviewStatus(PayslipReviewStatus.PENDING);
-        }
-
-        loanRepository.save(loan);
-        // Version 1 of each document (FR-SSB-009), committed with the application.
-        loanDocumentService.storeApplication(loan, documents, loggedInUser.getUsername());
-        if (!findings.isEmpty()) {
-            payslipReviewService.hold(loan, findings);
-        }
-
-        return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
     }
 
     /** A payslip cannot take home more than it earns: that would be a mistyped figure, not a payslip. */

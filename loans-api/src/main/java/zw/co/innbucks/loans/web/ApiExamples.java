@@ -867,4 +867,220 @@ public final class ApiExamples {
                 "submittedAt": "2026-09-30T09:31:15+02:00"
               }
             }""";
+
+    // --- Signed instruments (FR-SSB-013): draft 7 is signed as loan 43 against loan agreement v3 and deduction authority v2 ---
+
+    /** An application missing what signing needs (FR-SSB-013): every gap at once. */
+    public static final String APPLICATION_NOT_SIGNED = """
+            {
+              "code": "VALIDATION_ERROR",
+              "message": "The application is not complete",
+              "data": {
+                "X-Device-Id": "The signing device is required to sign the loan agreement and SSB deduction authority: send it in the X-Device-Id header",
+                "deductionAuthorityVersion": "The applicant must accept the SSB deduction authority: version 2 is in force",
+                "loanAgreementVersion": "The applicant must accept the loan agreement: version 3 is in force",
+                "signature": "The applicant's signature is required to sign the loan agreement and SSB deduction authority"
+              }
+            }""";
+
+    /** The applicant accepted wording that has since been replaced. */
+    public static final String INSTRUMENT_CHANGED = """
+            {
+              "code": "CONFLICT",
+              "message": "The loan agreement has changed since the applicant accepted version 2: version 3 is in force. Show them version 3 and ask them to accept it."
+            }""";
+
+    /** The wording in force: loan agreement version 3 and deduction authority version 2. */
+    public static final String INSTRUMENT_TEMPLATES_IN_FORCE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "version": 3,
+                  "title": "SSB Loan Agreement",
+                  "body": "SSB LOAN AGREEMENT\\n\\nMade on {{signedDate}} between InnBucks and {{applicantName}} (EC number {{ecNumber}}, national ID {{nationalIdNumber}}), of {{ministry}}, {{station}}.\\n\\n1. InnBucks lends the Borrower USD {{principal}}. USD {{amount}} is paid to InnBucks wallet {{walletNumber}} after an admin fee of USD {{adminFee}}.\\n2. Interest is {{interestRate}}% a month: USD {{interestAmount}} over the loan.\\n3. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months by deduction from salary.",
+                  "publishedBy": "admin",
+                  "publishedAt": "2026-09-28T14:05:12+02:00"
+                },
+                {
+                  "instrumentType": "SSB_DEDUCTION_AUTHORITY",
+                  "version": 2,
+                  "title": "SSB Deduction Authority",
+                  "body": "SSB DEDUCTION AUTHORITY\\n\\nI, {{applicantName}}, EC number {{ecNumber}}, employee number {{employeeNumber}}, of {{ministry}}, authorise the Salary Service Bureau to deduct USD {{monthlyDeduction}} from my salary every month for {{tenor}} months and pay it to InnBucks.\\n\\nSigned on {{signedDate}}.",
+                  "publishedBy": "admin",
+                  "publishedAt": "2026-09-28T14:06:30+02:00"
+                }
+              ]
+            }""";
+
+    /** Loan agreement version 3, as published. */
+    public static final String INSTRUMENT_TEMPLATE_PUBLISHED = """
+            {
+              "code": "CREATED",
+              "message": "LOAN_AGREEMENT version 3 published and in force",
+              "data": {
+                "instrumentType": "LOAN_AGREEMENT",
+                "version": 3,
+                "title": "SSB Loan Agreement",
+                "body": "SSB LOAN AGREEMENT\\n\\nMade on {{signedDate}} between InnBucks and {{applicantName}} (EC number {{ecNumber}}, national ID {{nationalIdNumber}}), of {{ministry}}, {{station}}.\\n\\n1. InnBucks lends the Borrower USD {{principal}}. USD {{amount}} is paid to InnBucks wallet {{walletNumber}} after an admin fee of USD {{adminFee}}.\\n2. Interest is {{interestRate}}% a month: USD {{interestAmount}} over the loan.\\n3. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months by deduction from salary.",
+                "publishedBy": "admin",
+                "publishedAt": "2026-09-28T14:05:12+02:00"
+              }
+            }""";
+
+    /** The wording of loan agreement version 3, as sent to publish it. */
+    public static final String INSTRUMENT_TEMPLATE_PUBLISH_REQUEST = """
+            {
+              "instrumentType": "LOAN_AGREEMENT",
+              "title": "SSB Loan Agreement",
+              "body": "SSB LOAN AGREEMENT\\n\\nMade on {{signedDate}} between InnBucks and {{applicantName}} (EC number {{ecNumber}}, national ID {{nationalIdNumber}}), of {{ministry}}, {{station}}.\\n\\n1. InnBucks lends the Borrower USD {{principal}}. USD {{amount}} is paid to InnBucks wallet {{walletNumber}} after an admin fee of USD {{adminFee}}.\\n2. Interest is {{interestRate}}% a month: USD {{interestAmount}} over the loan.\\n3. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months by deduction from salary."
+            }""";
+
+    /** Every placeholder instrument wording may use. */
+    public static final String INSTRUMENT_PLACEHOLDERS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "applicantName": "First and last name",
+                "firstName": "First name",
+                "lastName": "Last name",
+                "ecNumber": "EC number",
+                "nationalIdNumber": "National ID number",
+                "mobileNumber": "Mobile number",
+                "walletNumber": "InnBucks wallet the loan is paid into",
+                "employerName": "Employer",
+                "ministry": "Ministry or department",
+                "station": "Station",
+                "employeeNumber": "Employee number",
+                "amount": "Amount paid to the applicant",
+                "principal": "Amount borrowed",
+                "adminFee": "Admin fee",
+                "adminFeeRate": "Admin fee rate, percent",
+                "interestRate": "Monthly interest rate, percent",
+                "interestAmount": "Interest over the loan",
+                "tenor": "Tenor, months",
+                "monthlyInstalment": "Monthly instalment",
+                "monthlyDeduction": "Monthly amount SSB is instructed to deduct",
+                "signedDate": "Date signed, yyyy-MM-dd"
+              }
+            }""";
+
+    /** Every version of the loan agreement, in force first. */
+    public static final String INSTRUMENT_TEMPLATE_VERSIONS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "version": 3,
+                  "title": "SSB Loan Agreement",
+                  "body": "SSB LOAN AGREEMENT\\n\\nMade on {{signedDate}} between InnBucks and {{applicantName}} (EC number {{ecNumber}}, national ID {{nationalIdNumber}}), of {{ministry}}, {{station}}.\\n\\n1. InnBucks lends the Borrower USD {{principal}}. USD {{amount}} is paid to InnBucks wallet {{walletNumber}} after an admin fee of USD {{adminFee}}.\\n2. Interest is {{interestRate}}% a month: USD {{interestAmount}} over the loan.\\n3. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months by deduction from salary.",
+                  "publishedBy": "admin",
+                  "publishedAt": "2026-09-28T14:05:12+02:00"
+                },
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "version": 2,
+                  "title": "SSB Loan Agreement",
+                  "body": "SSB LOAN AGREEMENT\\n\\nMade between InnBucks and {{applicantName}} (EC number {{ecNumber}}).\\n\\n1. InnBucks lends the Borrower USD {{principal}}.\\n2. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months.",
+                  "publishedBy": "admin",
+                  "publishedAt": "2026-09-14T09:40:03+02:00"
+                },
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "version": 1,
+                  "title": "SSB Loan Agreement",
+                  "body": "SSB LOAN AGREEMENT\\n\\nBetween InnBucks and {{applicantName}}: USD {{principal}} over {{tenor}} months.",
+                  "publishedBy": "admin",
+                  "publishedAt": "2026-09-01T11:02:47+02:00"
+                }
+              ]
+            }""";
+
+    /** Loan agreement version 2, no longer in force. */
+    public static final String INSTRUMENT_TEMPLATE_VERSION = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "instrumentType": "LOAN_AGREEMENT",
+                "version": 2,
+                "title": "SSB Loan Agreement",
+                "body": "SSB LOAN AGREEMENT\\n\\nMade between InnBucks and {{applicantName}} (EC number {{ecNumber}}).\\n\\n1. InnBucks lends the Borrower USD {{principal}}.\\n2. The Borrower repays USD {{monthlyInstalment}} a month for {{tenor}} months.",
+                "publishedBy": "admin",
+                "publishedAt": "2026-09-14T09:40:03+02:00"
+              }
+            }""";
+
+    /** Both instruments filled with draft 7's terms, as Tatenda Ncube will sign them. */
+    public static final String INSTRUMENT_PREVIEW = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "version": 3,
+                  "title": "SSB Loan Agreement",
+                  "content": "SSB LOAN AGREEMENT\\n\\nMade on 2026-09-30 between InnBucks and Tatenda Ncube (EC number 7654321B, national ID 637654321B42), of Ministry of Health and Child Care, Mpilo Central Hospital.\\n\\n1. InnBucks lends the Borrower USD 319.15. USD 300.00 is paid to InnBucks wallet 263772345678 after an admin fee of USD 19.15.\\n2. Interest is 7% a month: USD 82.59 over the loan.\\n3. The Borrower repays USD 66.96 a month for 6 months by deduction from salary.",
+                  "contentSha256": "fbf1705d85aeb6a08e44a6b3f6788f2990bc34b8509a0ce8ce86cca2e7097968"
+                },
+                {
+                  "instrumentType": "SSB_DEDUCTION_AUTHORITY",
+                  "version": 2,
+                  "title": "SSB Deduction Authority",
+                  "content": "SSB DEDUCTION AUTHORITY\\n\\nI, Tatenda Ncube, EC number 7654321B, employee number 7654321B, of Ministry of Health and Child Care, authorise the Salary Service Bureau to deduct USD 69.03 from my salary every month for 6 months and pay it to InnBucks.\\n\\nSigned on 2026-09-30.",
+                  "contentSha256": "47e7df8ccbc8a7aa3f92577fcdc6adfca9037747e82234d67fa8300f19e43eef"
+                }
+              ]
+            }""";
+
+    /** Loan 43's instruments as signed when draft 7 was submitted, with the evidence of the signing. */
+    public static final String LOAN_43_SIGNED_INSTRUMENTS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "instrumentType": "LOAN_AGREEMENT",
+                  "templateVersion": 3,
+                  "title": "SSB Loan Agreement",
+                  "content": "SSB LOAN AGREEMENT\\n\\nMade on 2026-09-30 between InnBucks and Tatenda Ncube (EC number 7654321B, national ID 637654321B42), of Ministry of Health and Child Care, Mpilo Central Hospital.\\n\\n1. InnBucks lends the Borrower USD 319.15. USD 300.00 is paid to InnBucks wallet 263772345678 after an admin fee of USD 19.15.\\n2. Interest is 7% a month: USD 82.59 over the loan.\\n3. The Borrower repays USD 66.96 a month for 6 months by deduction from salary.",
+                  "contentSha256": "fbf1705d85aeb6a08e44a6b3f6788f2990bc34b8509a0ce8ce86cca2e7097968",
+                  "signatureSha256": "9d41a3c7e08f5b26d1c4e87a30f9b52c6e1d8a74b3f20c95e6a1d7b48c3f0e25",
+                  "signedBy": "tmoyo",
+                  "signedAt": "2026-09-30T09:31:15+02:00",
+                  "deviceId": "a3f1c2e4-7b9d-4e21-9c55-1f0e8d6b2a77",
+                  "ipAddress": "10.0.12.34",
+                  "forwardedFor": "41.190.33.7",
+                  "userAgent": "InnBucksPortal/2.4 (Chrome 128)",
+                  "authenticationMethod": "pwd",
+                  "signerAuthentication": "IN_PERSON_ID_CHECK",
+                  "evidenceSha256": "afea90189a0286464dd951e741c58d1cdeec25da868107dce000e043aef4680b",
+                  "intact": true
+                },
+                {
+                  "instrumentType": "SSB_DEDUCTION_AUTHORITY",
+                  "templateVersion": 2,
+                  "title": "SSB Deduction Authority",
+                  "content": "SSB DEDUCTION AUTHORITY\\n\\nI, Tatenda Ncube, EC number 7654321B, employee number 7654321B, of Ministry of Health and Child Care, authorise the Salary Service Bureau to deduct USD 69.03 from my salary every month for 6 months and pay it to InnBucks.\\n\\nSigned on 2026-09-30.",
+                  "contentSha256": "47e7df8ccbc8a7aa3f92577fcdc6adfca9037747e82234d67fa8300f19e43eef",
+                  "signatureSha256": "9d41a3c7e08f5b26d1c4e87a30f9b52c6e1d8a74b3f20c95e6a1d7b48c3f0e25",
+                  "signedBy": "tmoyo",
+                  "signedAt": "2026-09-30T09:31:15+02:00",
+                  "deviceId": "a3f1c2e4-7b9d-4e21-9c55-1f0e8d6b2a77",
+                  "ipAddress": "10.0.12.34",
+                  "forwardedFor": "41.190.33.7",
+                  "userAgent": "InnBucksPortal/2.4 (Chrome 128)",
+                  "authenticationMethod": "pwd",
+                  "signerAuthentication": "IN_PERSON_ID_CHECK",
+                  "evidenceSha256": "b592bac1a1e675b664c41e26cc9b74f79359d09e919a089ca07638b9c4b4c901",
+                  "intact": true
+                }
+              ]
+            }""";
 }
