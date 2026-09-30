@@ -269,6 +269,7 @@ public class LoanApplicationDraftController {
                                       "code": "INVALID_REQUEST",
                                       "message": "Loan amount should be between 20 and 2000"
                                     }"""),
+                            @ExampleObject(name = "Unknown channel", value = ApiExamples.UNKNOWN_CHANNEL),
                             @ExampleObject(name = "Not signed", value = ApiExamples.APPLICATION_NOT_SIGNED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),

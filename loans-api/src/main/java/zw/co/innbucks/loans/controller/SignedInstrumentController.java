@@ -71,7 +71,8 @@ public class SignedInstrumentController {
                                     {
                                       "code": "INVALID_REQUEST",
                                       "message": "EC Number is not valid"
-                                    }""")})),
+                                    }"""),
+                            @ExampleObject(name = "Unknown channel", value = ApiExamples.UNKNOWN_CHANNEL)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED)))
     })

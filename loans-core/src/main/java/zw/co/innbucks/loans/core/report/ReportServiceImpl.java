@@ -17,6 +17,7 @@ import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -97,8 +98,9 @@ public class ReportServiceImpl implements ReportService {
         String code = resolveMerchantCode(merchantCode);
         List<AgentPerformance> agents = new ArrayList<>();
         for (Object[] row : loanRepository.agentPerformance(range.start(), range.end(), code)) {
-            agents.add(new AgentPerformance(asLong(row[0]), (String) row[1], asLong(row[2]),
-                    asBigDecimal(row[3]), asBigDecimal(row[4])));
+            agents.add(new AgentPerformance(asLong(row[0]), (String) row[1],
+                    User.fullName((String) row[2], (String) row[3]), asLong(row[4]), asBigDecimal(row[5]),
+                    asBigDecimal(row[6])));
         }
         return new AgentPerformanceReportResponse(range.from(), range.to(), agents);
     }
