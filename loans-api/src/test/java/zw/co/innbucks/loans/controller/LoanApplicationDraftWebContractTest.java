@@ -18,6 +18,7 @@ import zw.co.innbucks.loans.core.draft.LoanApplicationDraftStatus;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.loan.LoanApplicationResponse;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
@@ -109,21 +110,28 @@ class LoanApplicationDraftWebContractTest {
     @Test
     @DisplayName("submitting answers like POST /loans: 201 Loan sent for approval, with the loan's reference")
     void submit() throws Exception {
-        when(draftService.submit(7L)).thenReturn(new LoanApplicationResponse(43L, "000000043", LoanApprovalStatus.NEW));
+        when(draftService.submit(eq(7L), any())).thenReturn(new LoanApplicationResponse(43L, "000000043", LoanApprovalStatus.NEW));
 
-        mvc.perform(post(BASE + "/7/submission"))
+        mvc.perform(post(BASE + "/7/submission").header("X-Device-Id", "a3f1c2e4-7b9d-4e21")
+                        .header("X-Signer-Authentication", "IN_PERSON_ID_CHECK"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("CREATED"))
                 .andExpect(jsonPath("$.message").value("Loan sent for approval"))
                 .andExpect(jsonPath("$.data.id").value(43))
                 .andExpect(jsonPath("$.data.reference").value("000000043"))
                 .andExpect(jsonPath("$.data.ssbApprovalStatus").value("NEW"));
+        // Signed where it is submitted (FR-SSB-013): the evidence is this request's.
+        ArgumentCaptor<SigningContext> signing = ArgumentCaptor.forClass(SigningContext.class);
+        verify(draftService).submit(eq(7L), signing.capture());
+        assertThat(signing.getValue().deviceId()).isEqualTo("a3f1c2e4-7b9d-4e21");
+        assertThat(signing.getValue().signerAuthentication()).isEqualTo("IN_PERSON_ID_CHECK");
+        assertThat(signing.getValue().ipAddress()).isEqualTo("127.0.0.1");
     }
 
     @Test
     @DisplayName("an incomplete submission lists every field by its full path, as a refused POST /loans does")
     void incompleteSubmission() throws Exception {
-        when(draftService.submit(7L)).thenThrow(new IncompleteApplicationException(Map.of(
+        when(draftService.submit(eq(7L), any())).thenThrow(new IncompleteApplicationException(Map.of(
                 "nextOfKin", "Next of kin is required",
                 "employmentDetail.grade", "Grade or notch is required")));
 

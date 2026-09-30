@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
@@ -14,18 +15,24 @@ import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.document.DocumentAccessAction;
+import zw.co.innbucks.loans.core.document.DocumentInspector;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.document.DocumentType;
+import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
 import zw.co.innbucks.loans.core.document.LoanDocument;
 import zw.co.innbucks.loans.core.document.LoanDocumentAccess;
 import zw.co.innbucks.loans.core.document.LoanDocumentAccessRepository;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.document.LoanDocumentService;
-import zw.co.innbucks.loans.core.document.DocumentInspector;
-import zw.co.innbucks.loans.core.document.DocumentRejectedException;
-import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
 import zw.co.innbucks.loans.core.document.TestDocuments;
+import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
+import zw.co.innbucks.loans.core.files.DecodedFile;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
+import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
+import zw.co.innbucks.loans.core.instrument.InstrumentType;
+import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
@@ -39,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static zw.co.innbucks.loans.core.loan.LoanParameterNames.*;
 
@@ -51,11 +59,16 @@ import static zw.co.innbucks.loans.core.loan.LoanParameterNames.*;
  */
 class LoanServiceImplApplicationTest {
 
+    /** Where the application is signed, as the web layer reads it off the request. */
+    private static final SigningContext SIGNING = new SigningContext("device-7f3a", "196.4.80.12", null,
+            "InnBucksPortal/2.4", "pwd", null);
+
     private ValidatorFactory validatorFactory;
     private LoanRepository loanRepository;
     private LoanDocumentRepository loanDocumentRepository;
     private LoanDocumentAccessRepository loanDocumentAccessRepository;
     private PayslipReviewService payslipReviewService;
+    private SignedInstrumentService signedInstrumentService;
     private LoanServiceImpl service;
 
     @BeforeEach
@@ -79,6 +92,7 @@ class LoanServiceImplApplicationTest {
         when(auth.getLoggedInUser()).thenReturn(agent);
 
         payslipReviewService = mock(PayslipReviewService.class);
+        signedInstrumentService = mock(SignedInstrumentService.class);
         loanDocumentRepository = mock(LoanDocumentRepository.class);
         when(loanDocumentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentAccessRepository = mock(LoanDocumentAccessRepository.class);
@@ -89,7 +103,8 @@ class LoanServiceImplApplicationTest {
                 payslipReviewService);
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(),
-                new MarketTimeZone("ZW"), loanDocumentService, payslipFraudDetector, payslipReviewService);
+                new MarketTimeZone("ZW"), loanDocumentService, payslipFraudDetector, payslipReviewService,
+                signedInstrumentService);
     }
 
     @AfterEach
@@ -104,11 +119,46 @@ class LoanServiceImplApplicationTest {
         incomplete.setAddress(null);
         incomplete.setNextOfKin(null);
 
-        assertThatThrownBy(() -> service.requestLoan(incomplete))
+        assertThatThrownBy(() -> service.requestLoan(incomplete, SIGNING))
                 .isInstanceOf(IllegalArgumentException.class)
                 // Every missing field in one message: full path, sorted, "; "-joined.
                 .hasMessage("address: Address is required; nextOfKin: Next of kin is required");
         verify(loanRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("an application missing what signing needs is refused before the applicant is locked or anything saved")
+    void unsignedApplicationIsRefusedUpFront() {
+        when(signedInstrumentService.requireAccepted(any(), any(), eq(SIGNING))).thenThrow(
+                new IncompleteApplicationException(Map.of("loanAgreementVersion",
+                        "The applicant must accept the loan agreement: version 3 is in force")));
+
+        assertThatThrownBy(() -> service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING))
+                .isInstanceOf(IncompleteApplicationException.class);
+        verify(loanRepository, never()).lockApplicant(any());
+        verify(loanRepository, never()).save(any());
+        verify(signedInstrumentService, never()).sign(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("the application is signed after the loan and its documents are saved, with the request's evidence")
+    void signedAfterTheLoanIsSaved() {
+        InstrumentTemplate agreement = InstrumentTemplate.builder().instrumentType(InstrumentType.LOAN_AGREEMENT)
+                .version(3).title("SSB Loan Agreement").body("{{applicantName}}").build();
+        when(signedInstrumentService.requireAccepted(any(), any(), eq(SIGNING))).thenReturn(List.of(agreement));
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setSignature(TestDocuments.base64(TestDocuments.encode(TestDocuments.signature(400, 160, false), "png")));
+
+        service.requestLoan(request, SIGNING);
+
+        InOrder order = inOrder(loanRepository, loanDocumentRepository, signedInstrumentService);
+        ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
+        order.verify(loanRepository).save(saved.capture());
+        order.verify(loanDocumentRepository).save(any());
+        ArgumentCaptor<Map<DocumentType, DecodedFile>> documents = ArgumentCaptor.captor();
+        order.verify(signedInstrumentService).sign(eq(saved.getValue()), eq(List.of(agreement)), documents.capture(),
+                eq(SIGNING), eq("agent.jane"));
+        assertThat(documents.getValue()).containsKey(DocumentType.SIGNATURE);
     }
 
     @Test
@@ -118,7 +168,7 @@ class LoanServiceImplApplicationTest {
         request.setNumberOfDependants(3);
         request.setNumberOfChildren(2);
 
-        service.requestLoan(request);
+        service.requestLoan(request, SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
@@ -129,12 +179,12 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("with no wallet number the loan pays the mobile number; a given one is stored normalised")
     void walletNumberDefaultsToTheMobile() {
-        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING);
         LoanApplicationRequest withWallet = LoanApplicationRequestValidationTest.completeApplication();
         withWallet.setEcNumber("7654321B");
         withWallet.setNationalIdNumber("63-7654321B63");
         withWallet.setWalletNumber("0712345678");
-        service.requestLoan(withWallet);
+        service.requestLoan(withWallet, SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository, times(2)).save(saved.capture());
@@ -152,7 +202,7 @@ class LoanServiceImplApplicationTest {
                 new PayslipDeduction("  ZIMRA PAYE ", new BigDecimal("210.00")),
                 new PayslipDeduction("CBZ personal loan", new BigDecimal("150.00"))));
 
-        service.requestLoan(request);
+        service.requestLoan(request, SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
@@ -170,7 +220,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("an application with no payslip deductions stores an empty list, not null")
     void noDeductionsIsAnEmptyList() {
-        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
@@ -183,7 +233,7 @@ class LoanServiceImplApplicationTest {
         LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
         request.getEmploymentDetail().setNetSalary(new BigDecimal("1500.01"));
 
-        assertThatThrownBy(() -> service.requestLoan(request))
+        assertThatThrownBy(() -> service.requestLoan(request, SIGNING))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Net salary cannot exceed gross salary");
         verify(loanRepository, never()).save(any());
@@ -192,7 +242,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("the quoted interest is stored with the loan (the loan view shows it; it used to be left empty)")
     void interestAmountIsStored() {
-        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING);
 
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
@@ -202,7 +252,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("a complete application is saved with its line of business")
     void lineOfBusinessReachesTheLoan() {
-        LoanApplicationResponse response = service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        LoanApplicationResponse response = service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING);
 
         assertThat(response.ssbApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
@@ -217,7 +267,7 @@ class LoanServiceImplApplicationTest {
         LoanApplicationRequest withExecutable = LoanApplicationRequestValidationTest.completeApplication();
         withExecutable.setPayslipPicture(java.util.Base64.getEncoder().encodeToString("MZ\u0090\u0000 payload".getBytes()));
 
-        assertThatThrownBy(() -> service.requestLoan(withExecutable))
+        assertThatThrownBy(() -> service.requestLoan(withExecutable, SIGNING))
                 .isInstanceOf(DocumentRejectedException.class)
                 .hasMessage("The payslip was refused: it is a program, not a document or photo. Please upload a PDF,"
                         + " PNG, JPEG or GIF file.");
@@ -225,7 +275,7 @@ class LoanServiceImplApplicationTest {
 
         LoanApplicationRequest withUnknown = LoanApplicationRequestValidationTest.completeApplication();
         withUnknown.setNationalIdPicture("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString("not an image".getBytes()));
-        assertThatThrownBy(() -> service.requestLoan(withUnknown))
+        assertThatThrownBy(() -> service.requestLoan(withUnknown, SIGNING))
                 .hasMessage("The national ID must be a PDF, PNG, JPEG or GIF file.");
         verify(loanRepository, never()).save(any());
     }
@@ -238,7 +288,7 @@ class LoanServiceImplApplicationTest {
         withDocuments.setNationalIdPicture("data:image/png;base64,"
                 + TestDocuments.base64(TestDocuments.encode(TestDocuments.page(1200, 800), "png")));
 
-        service.requestLoan(withDocuments);
+        service.requestLoan(withDocuments, SIGNING);
 
         verify(loanRepository).save(any());
     }
@@ -256,7 +306,7 @@ class LoanServiceImplApplicationTest {
         witness.setSignature(java.util.Base64.getEncoder().encodeToString(png));
         request.setWitness(witness);
 
-        service.requestLoan(request);
+        service.requestLoan(request, SIGNING);
 
         ArgumentCaptor<LoanDocument> stored = ArgumentCaptor.forClass(LoanDocument.class);
         verify(loanDocumentRepository, times(3)).save(stored.capture());
@@ -281,7 +331,7 @@ class LoanServiceImplApplicationTest {
         LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
         request.setSignature("signed: R. Chikwanha");
 
-        assertThatThrownBy(() -> service.requestLoan(request))
+        assertThatThrownBy(() -> service.requestLoan(request, SIGNING))
                 .isInstanceOf(DocumentRejectedException.class)
                 .hasMessage("The signature could not be read: the upload was damaged. Please upload it again.");
         verify(loanRepository, never()).save(any());
@@ -295,7 +345,7 @@ class LoanServiceImplApplicationTest {
 
     private Loan applyWithPayslip(LoanApplicationRequest request) {
         request.setPayslipPicture(PAYSLIP);
-        service.requestLoan(request);
+        service.requestLoan(request, SIGNING);
         ArgumentCaptor<Loan> saved = ArgumentCaptor.forClass(Loan.class);
         verify(loanRepository).save(saved.capture());
         return saved.getValue();
@@ -382,7 +432,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("an application with no payslip takes no payslip lock and matches nothing")
     void noPayslipNoLock() {
-        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
+        service.requestLoan(LoanApplicationRequestValidationTest.completeApplication(), SIGNING);
 
         verify(loanRepository, never()).lockApplicant(startsWith("loan-application:payslip:"));
         verify(loanDocumentRepository, never()).findPayslipMatches(any(), any(), any());

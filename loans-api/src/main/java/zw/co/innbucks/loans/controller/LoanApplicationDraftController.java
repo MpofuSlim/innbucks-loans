@@ -2,6 +2,8 @@ package zw.co.innbucks.loans.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameters;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -9,8 +11,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -34,6 +38,7 @@ import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
 import zw.co.innbucks.loans.web.PageResponse;
 import zw.co.innbucks.loans.web.Paging;
+import zw.co.innbucks.loans.web.SigningContexts;
 
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
@@ -237,7 +242,9 @@ public class LoanApplicationDraftController {
                     + " reference. A draft with fields still missing or invalid is refused with every one listed, as POST"
                     + " /loans lists them; so is one a business rule refuses (EC number format, age, amount limits, a loan"
                     + " already in flight). Refused, the draft stays as it was, to correct and submit again. Accepted, the"
-                    + " draft is kept only as a record of the loan it became.")
+                    + " draft is kept only as a record of the loan it became. Once an instrument is published this is"
+                    + " where the application is signed (FR-SSB-013), as for POST /loans: the draft carries the"
+                    + " versions accepted and the signature, and this request the X-Device-Id header.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Sent for approval; the new loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.DRAFT_7_SUBMISSION))),
@@ -261,25 +268,38 @@ public class LoanApplicationDraftController {
                                     {
                                       "code": "INVALID_REQUEST",
                                       "message": "Loan amount should be between 20 and 2000"
-                                    }""")})),
+                                    }"""),
+                            @ExampleObject(name = "Not signed", value = ApiExamples.APPLICATION_NOT_SIGNED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "404", description = "No such draft of the caller's, or it expired",
                     content = @Content(examples = {
                             @ExampleObject(name = "No draft", value = DRAFT_NOT_FOUND),
                             @ExampleObject(name = "Expired", value = DRAFT_EXPIRED)})),
-            @ApiResponse(responseCode = "409", description = "Already submitted, or the applicant has a loan in flight",
+            @ApiResponse(responseCode = "409", description = "Already submitted, the applicant has a loan in flight, or"
+                    + " the wording accepted is no longer in force",
                     content = @Content(examples = {
                             @ExampleObject(name = "Already submitted", value = DRAFT_SUBMITTED),
+                            @ExampleObject(name = "Wording changed", value = ApiExamples.INSTRUMENT_CHANGED),
                             @ExampleObject(name = "Loan in flight", value = """
                                     {
                                       "code": "APPLICATION_PENDING",
                                       "message": "You have a pending loan application."
                                     }""")}))
     })
+    @Parameters({
+            @Parameter(in = ParameterIn.HEADER, name = SigningContexts.DEVICE_ID_HEADER,
+                    description = "The signing device, as the app or portal identifies it; required once an instrument"
+                            + " is published", example = "a3f1c2e4-7b9d-4e21-9c55-1f0e8d6b2a77"),
+            @Parameter(in = ParameterIn.HEADER, name = SigningContexts.SIGNER_AUTHENTICATION_HEADER,
+                    description = "How the channel authenticated the applicant who signed, when it did", example = "SUPERAPP_PIN")
+    })
     @PostMapping("/{draftId}/submission")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<LoanApplicationResponse> submit(@PathVariable Long draftId) {
-        return new ApiResult<>("CREATED", "Loan sent for approval", draftService.submit(draftId));
+    public ApiResult<LoanApplicationResponse> submit(@PathVariable Long draftId,
+                                                     @Parameter(hidden = true) JwtAuthenticationToken authentication,
+                                                     HttpServletRequest httpRequest) {
+        return new ApiResult<>("CREATED", "Loan sent for approval",
+                draftService.submit(draftId, SigningContexts.of(httpRequest, authentication)));
     }
 }

@@ -2,12 +2,15 @@ package zw.co.innbucks.loans.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameters;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +53,7 @@ import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
 import zw.co.innbucks.loans.web.PageResponse;
 import zw.co.innbucks.loans.web.Paging;
+import zw.co.innbucks.loans.web.SigningContexts;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -84,7 +88,11 @@ public class LoanController {
                     + " employmentDetail carries where the applicant works (ministry, station, grade, contract"
                     + " type) and the payslip's gross and net pay; payslipDeductions lists each deduction already"
                     + " on the payslip. walletNumber is the InnBucks wallet the loan pays, the mobile number when"
-                    + " omitted.")
+                    + " omitted. Signing (FR-SSB-013): once a loan agreement or SSB deduction authority is published,"
+                    + " the application signs it. Show the applicant each instrument from POST /loans/instruments/preview,"
+                    + " then send the versions they accepted (loanAgreementVersion, deductionAuthorityVersion), their"
+                    + " signature, and the device in the X-Device-Id header; the text signed is kept with the time,"
+                    + " device, address and sign-in method (GET /loans/{loanId}/signed-instruments).")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Accepted and sent for SSB approval",
                     content = @Content(examples = @ExampleObject("""
@@ -129,26 +137,39 @@ public class LoanController {
                                       "code": "INVALID_REQUEST",
                                       "message": "Loan amount should be between 20 and 2000"
                                     }"""),
-                            @ExampleObject(name = "Documents refused", value = ApiExamples.DOCUMENTS_REFUSED)})),
+                            @ExampleObject(name = "Documents refused", value = ApiExamples.DOCUMENTS_REFUSED),
+                            @ExampleObject(name = "Not signed", value = ApiExamples.APPLICATION_NOT_SIGNED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "409", description = "The applicant already has a loan in flight; nothing was created",
-                    content = @Content(examples = @ExampleObject("""
-                            {
-                              "code": "APPLICATION_PENDING",
-                              "message": "You have a pending loan application."
-                            }""")))
+            @ApiResponse(responseCode = "409", description = "The applicant already has a loan in flight, or accepted wording"
+                    + " no longer in force; nothing was created",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Loan in flight", value = """
+                                    {
+                                      "code": "APPLICATION_PENDING",
+                                      "message": "You have a pending loan application."
+                                    }"""),
+                            @ExampleObject(name = "Wording changed", value = ApiExamples.INSTRUMENT_CHANGED)}))
+    })
+    @Parameters({
+            @Parameter(in = ParameterIn.HEADER, name = SigningContexts.DEVICE_ID_HEADER,
+                    description = "The signing device, as the app or portal identifies it; required once an instrument"
+                            + " is published", example = "a3f1c2e4-7b9d-4e21-9c55-1f0e8d6b2a77"),
+            @Parameter(in = ParameterIn.HEADER, name = SigningContexts.SIGNER_AUTHENTICATION_HEADER,
+                    description = "How the channel authenticated the applicant who signed, when it did", example = "SUPERAPP_PIN")
     })
     @PostMapping("/loans")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<LoanApplicationResponse> apply(
             // Default + LoanApplicationChecks: an application must carry what the InnBucks step needs,
             // reported in ONE 400. A quote (below) takes the terms alone.
-            @Validated({Default.class, LoanApplicationChecks.class}) @RequestBody LoanApplicationRequest request) {
+            @Validated({Default.class, LoanApplicationChecks.class}) @RequestBody LoanApplicationRequest request,
+            @Parameter(hidden = true) JwtAuthenticationToken authentication, HttpServletRequest httpRequest) {
         // Identifiers only: the body carries the applicant's KYC and base64 documents.
         log.info("Loan application: channel {}, ec {}, amount {}, tenor {}", request.getChannelId(),
                 maskEcNumber(request.getEcNumber()), request.getAmount(), request.getTenor());
-        return new ApiResult<>("CREATED", "Loan sent for approval", loanService.requestLoan(request));
+        return new ApiResult<>("CREATED", "Loan sent for approval",
+                loanService.requestLoan(request, SigningContexts.of(httpRequest, authentication)));
     }
 
     @Operation(summary = "Quote a loan",

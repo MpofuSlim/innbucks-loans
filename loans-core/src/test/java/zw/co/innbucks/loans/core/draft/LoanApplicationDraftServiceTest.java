@@ -27,6 +27,7 @@ import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
 import zw.co.innbucks.loans.core.loan.LoanApplicationResponse;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
@@ -63,6 +64,10 @@ import static org.mockito.Mockito.when;
  * {@code POST /loans} runs. The repositories are in-memory stand-ins; validation and document checks are real.
  */
 class LoanApplicationDraftServiceTest {
+
+    /** Where the application is signed, as the web layer reads it off the request. */
+    private static final SigningContext SIGNING = new SigningContext("device-7f3a", "196.4.80.12", null,
+            "InnBucksPortal/2.4", "pwd", null);
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final long OWNER = 5L;
@@ -293,9 +298,9 @@ class LoanApplicationDraftServiceTest {
         assertThatThrownBy(() -> service.update(7L, json("{\"tenor\": 3}"))).hasMessage("Draft 7 not found");
         assertThatThrownBy(() -> service.document(7L, DocumentType.PAYSLIP)).hasMessage("Draft 7 not found");
         assertThatThrownBy(() -> service.discard(7L)).hasMessage("Draft 7 not found");
-        assertThatThrownBy(() -> service.submit(7L)).hasMessage("Draft 7 not found");
+        assertThatThrownBy(() -> service.submit(7L, SIGNING)).hasMessage("Draft 7 not found");
         assertThatThrownBy(() -> service.get(8L)).hasMessage("Draft 8 not found");
-        verify(loanService, never()).requestLoan(any());
+        verify(loanService, never()).requestLoan(any(), any());
         assertThat(saved().path("tenor").asInt()).isEqualTo(6);
     }
 
@@ -308,8 +313,8 @@ class LoanApplicationDraftServiceTest {
         String expired = "Draft 7 has expired: a draft is kept for 30 days after it was last saved";
         assertThatThrownBy(() -> service.get(7L)).isInstanceOf(NotFoundException.class).hasMessage(expired);
         assertThatThrownBy(() -> service.update(7L, json("{\"tenor\": 3}"))).hasMessage(expired);
-        assertThatThrownBy(() -> service.submit(7L)).hasMessage(expired);
-        verify(loanService, never()).requestLoan(any());
+        assertThatThrownBy(() -> service.submit(7L, SIGNING)).hasMessage(expired);
+        verify(loanService, never()).requestLoan(any(), any());
 
         drafts.get(7L).setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC).minusDays(29));
         assertThat(service.get(7L).status()).isEqualTo(LoanApplicationDraftStatus.OPEN);
@@ -320,11 +325,11 @@ class LoanApplicationDraftServiceTest {
     void incompleteSubmission() {
         service.create(json("{\"amount\": 300.00, \"tenor\": 6, \"mobileNumber\": \"0772\"}"));
 
-        assertThatThrownBy(() -> service.submit(7L))
+        assertThatThrownBy(() -> service.submit(7L, SIGNING))
                 .isInstanceOfSatisfying(IncompleteApplicationException.class, e -> assertThat(e.getFields())
                         .containsKeys("ecNumber", "nextOfKin", "mobileNumber")
                         .doesNotContainKeys("amount", "tenor"));
-        verify(loanService, never()).requestLoan(any());
+        verify(loanService, never()).requestLoan(any(), any());
         assertThat(drafts.get(7L).getStatus()).isEqualTo(LoanApplicationDraftStatus.OPEN);
     }
 
@@ -336,14 +341,14 @@ class LoanApplicationDraftServiceTest {
         service.create(json(COMPLETE));
         service.update(7L, json(String.format("{\"payslipPicture\": \"%s\", \"witness\": {\"signature\": \"%s\"}}",
                 payslip, witnessSignature)));
-        when(loanService.requestLoan(any())).thenReturn(new LoanApplicationResponse(43L, "000000043",
+        when(loanService.requestLoan(any(), any())).thenReturn(new LoanApplicationResponse(43L, "000000043",
                 LoanApprovalStatus.NEW));
 
-        LoanApplicationResponse loan = service.submit(7L);
+        LoanApplicationResponse loan = service.submit(7L, SIGNING);
 
         assertThat(loan.reference()).isEqualTo("000000043");
         ArgumentCaptor<LoanApplicationRequest> sent = ArgumentCaptor.forClass(LoanApplicationRequest.class);
-        verify(loanService).requestLoan(sent.capture());
+        verify(loanService).requestLoan(sent.capture(), eq(SIGNING));
         assertThat(sent.getValue().getEcNumber()).isEqualTo("7654321B");
         assertThat(sent.getValue().getAmount()).isEqualByComparingTo(new BigDecimal("300.00"));
         assertThat(sent.getValue().getEmploymentDetail().getGrade()).isEqualTo("D2");
@@ -363,7 +368,7 @@ class LoanApplicationDraftServiceTest {
         assertThat(view.application()).isNull();
         assertThat(view.validationErrors()).isNull();
         String submitted = "Draft 7 was already submitted as loan 000000043";
-        assertThatThrownBy(() -> service.submit(7L)).isInstanceOf(ConflictException.class).hasMessage(submitted);
+        assertThatThrownBy(() -> service.submit(7L, SIGNING)).isInstanceOf(ConflictException.class).hasMessage(submitted);
         assertThatThrownBy(() -> service.update(7L, json("{\"tenor\": 3}"))).hasMessage(submitted);
         assertThatThrownBy(() -> service.discard(7L)).hasMessage(submitted);
         assertThatThrownBy(() -> service.document(7L, DocumentType.PAYSLIP)).hasMessage(submitted);
@@ -375,9 +380,9 @@ class LoanApplicationDraftServiceTest {
         service.create(json(COMPLETE));
         service.update(7L, json(String.format("{\"payslipPicture\": \"%s\"}", payslip())));
         String before = drafts.get(7L).getApplication();
-        when(loanService.requestLoan(any())).thenThrow(new IllegalArgumentException("Must be 18+ years"));
+        when(loanService.requestLoan(any(), any())).thenThrow(new IllegalArgumentException("Must be 18+ years"));
 
-        assertThatThrownBy(() -> service.submit(7L)).hasMessage("Must be 18+ years");
+        assertThatThrownBy(() -> service.submit(7L, SIGNING)).hasMessage("Must be 18+ years");
 
         LoanApplicationDraft draft = drafts.get(7L);
         assertThat(draft.getStatus()).isEqualTo(LoanApplicationDraftStatus.OPEN);

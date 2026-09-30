@@ -24,6 +24,7 @@ import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.files.DecodedFile;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApplicationChecks;
 import zw.co.innbucks.loans.core.loan.LoanApplicationRequest;
@@ -162,10 +163,11 @@ public class LoanApplicationDraftService {
      * again. Accepted, the draft becomes a record of the loan it became, and the application and documents
      * it held are removed from it: the loan holds them now.
      *
+     * @param signing where and how the submission is signed (FR-SSB-013)
      * @throws IncompleteApplicationException a field is still missing or invalid
      */
     @Transactional
-    public LoanApplicationResponse submit(Long draftId) {
+    public LoanApplicationResponse submit(Long draftId, SigningContext signing) {
         LoanApplicationDraft draft = openDraftForUpdate(draftId);
         LoanApplicationRequest application = bind(JSON.readTree(draft.getApplication()));
         Map<String, String> validationErrors = validationErrors(application);
@@ -175,7 +177,7 @@ public class LoanApplicationDraftService {
         List<LoanApplicationDraftDocument> documents = documentRepository.findByDraftId(draftId);
         documents.forEach(document -> attach(application, document));
 
-        LoanApplicationResponse loan = loanService.requestLoan(application);
+        LoanApplicationResponse loan = loanService.requestLoan(application, signing);
 
         LocalDateTime now = now();
         draft.setStatus(LoanApplicationDraftStatus.SUBMITTED);

@@ -2,9 +2,12 @@ package zw.co.innbucks.loans.core.loan;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import zw.co.innbucks.loans.core.instrument.InstrumentPreview;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 public interface LoanService {
@@ -15,7 +18,10 @@ public interface LoanService {
      * @throws zw.co.innbucks.loans.core.exception.PendingApplicationException when the applicant
      *         already has a loan in flight; nothing is created
      */
-    LoanApplicationResponse requestLoan(LoanApplicationRequest request);
+    LoanApplicationResponse requestLoan(LoanApplicationRequest request, SigningContext signing);
+
+    /** The instruments the application would sign today, filled with its terms, for the applicant to read. */
+    List<InstrumentPreview> previewInstruments(LoanApplicationRequest request);
 
     /** Prices the terms; {@code originator} decides the commission split and may be null for a plain quote. */
     LoanQuote calculate(LoanQuoteRequest request, User originator);

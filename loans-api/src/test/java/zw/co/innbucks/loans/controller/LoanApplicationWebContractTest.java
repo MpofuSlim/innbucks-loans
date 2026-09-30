@@ -6,13 +6,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import zw.co.innbucks.loans.core.DisbursementService;
+import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
+import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.loan.ContractType;
 import zw.co.innbucks.loans.core.loan.CreditDecisionRequest;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
@@ -30,6 +34,8 @@ import zw.co.innbucks.loans.core.loan.PayslipDeduction;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -130,9 +136,57 @@ class LoanApplicationWebContractTest {
     }
 
     @Test
+    @DisplayName("a signed application carries the versions accepted, and the request's device, address, client and sign-in to the service")
+    void signingEvidenceReachesTheService() throws Exception {
+        when(loanService.requestLoan(any(), any()))
+                .thenReturn(new LoanApplicationResponse(43L, "000000043", LoanApprovalStatus.NEW));
+        JwtAuthenticationToken agent = new JwtAuthenticationToken(Jwt.withTokenValue("token").header("alg", "HS256")
+                .claim("preferred_username", "tmoyo").claim("amr", List.of("pwd")).build());
+        String signed = COMPLETE.replaceFirst("\\{", "{\"loanAgreementVersion\": 3, \"deductionAuthorityVersion\": 2,");
+
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(signed)
+                        .principal(agent)
+                        .header("X-Device-Id", "a3f1c2e4-7b9d-4e21")
+                        .header("X-Forwarded-For", "41.190.33.7")
+                        .header("User-Agent", "InnBucksPortal/2.4")
+                        .with(request -> {
+                            request.setRemoteAddr("10.0.12.34");
+                            return request;
+                        }))
+                .andExpect(status().isCreated());
+
+        ArgumentCaptor<LoanApplicationRequest> bound = ArgumentCaptor.forClass(LoanApplicationRequest.class);
+        verify(loanService).requestLoan(bound.capture(), eq(new SigningContext("a3f1c2e4-7b9d-4e21", "10.0.12.34",
+                "41.190.33.7", "InnBucksPortal/2.4", "pwd", null)));
+        assertThat(bound.getValue().getLoanAgreementVersion()).isEqualTo(3);
+        assertThat(bound.getValue().getDeductionAuthorityVersion()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("an accepted version of zero is a field error, and signing is refused with every gap listed")
+    void signingRefusals() throws Exception {
+        String zero = COMPLETE.replaceFirst("\\{", "{\"loanAgreementVersion\": 0,");
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(zero))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.loanAgreementVersion").value("Loan agreement version must be greater than zero"));
+        verifyNoInteractions(loanService);
+
+        when(loanService.requestLoan(any(), any())).thenThrow(new IncompleteApplicationException(Map.of(
+                "X-Device-Id", "The signing device is required to sign the loan agreement: send it in the X-Device-Id header",
+                "loanAgreementVersion", "The applicant must accept the loan agreement: version 3 is in force")));
+        mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("The application is not complete"))
+                .andExpect(jsonPath("$.data['X-Device-Id']").exists())
+                .andExpect(jsonPath("$.data.loanAgreementVersion")
+                        .value("The applicant must accept the loan agreement: version 3 is in force"));
+    }
+
+    @Test
     @DisplayName("a complete application → 201 CREATED with the new loan's id and reference; every field binds")
     void completeApplicationIsCreated() throws Exception {
-        when(loanService.requestLoan(any()))
+        when(loanService.requestLoan(any(), any()))
                 .thenReturn(new LoanApplicationResponse(42L, "000000042", LoanApprovalStatus.NEW));
 
         mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
@@ -144,7 +198,7 @@ class LoanApplicationWebContractTest {
                 .andExpect(jsonPath("$.data.ssbApprovalStatus").value("NEW"));
 
         ArgumentCaptor<LoanApplicationRequest> bound = ArgumentCaptor.forClass(LoanApplicationRequest.class);
-        verify(loanService).requestLoan(bound.capture());
+        verify(loanService).requestLoan(bound.capture(), any());
         LoanApplicationRequest request = bound.getValue();
         assertThat(request.getEcNumber()).isEqualTo("1234567A");
         assertThat(request.getNationalIdNumber()).isEqualTo("63-1234567A63");
@@ -187,7 +241,7 @@ class LoanApplicationWebContractTest {
     @Test
     @DisplayName("an applicant with a loan in flight → 409 APPLICATION_PENDING, not a 200 with a rejected status")
     void pendingApplicationIs409() throws Exception {
-        when(loanService.requestLoan(any())).thenThrow(new PendingApplicationException(17L));
+        when(loanService.requestLoan(any(), any())).thenThrow(new PendingApplicationException(17L));
 
         mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
                 .andExpect(status().isConflict())
@@ -200,7 +254,7 @@ class LoanApplicationWebContractTest {
     @Test
     @DisplayName("a rule the application breaks → 400 INVALID_REQUEST with the rule's message")
     void ruleViolationIs400() throws Exception {
-        when(loanService.requestLoan(any())).thenThrow(new IllegalArgumentException("EC Number is not valid"));
+        when(loanService.requestLoan(any(), any())).thenThrow(new IllegalArgumentException("EC Number is not valid"));
 
         mvc.perform(post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content(COMPLETE))
                 .andExpect(status().isBadRequest())
