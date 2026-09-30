@@ -7,14 +7,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.DisbursementService;
-import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -30,20 +30,20 @@ public class LoanDisbursementStatusJob {
 
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final DeductionCancellationService deductionCancellationService;
     private final AuditService auditService;
     private final DisbursementLedger disbursementLedger;
     private final TransactionTemplate transactionTemplate;
 
     public LoanDisbursementStatusJob(DisbursementService disbursementService, LoanRepository loanRepository,
-                                     NotificationService notificationService,
+                                     LoanNotificationService loanNotificationService,
                                      DeductionCancellationService deductionCancellationService,
                                      AuditService auditService, DisbursementLedger disbursementLedger,
                                      PlatformTransactionManager transactionManager) {
         this.disbursementService = disbursementService;
         this.loanRepository = loanRepository;
-        this.notificationService = notificationService;
+        this.loanNotificationService = loanNotificationService;
         this.deductionCancellationService = deductionCancellationService;
         this.auditService = auditService;
         this.disbursementLedger = disbursementLedger;
@@ -95,6 +95,11 @@ public class LoanDisbursementStatusJob {
             recordPaid(loan);
         } else {
             loanRepository.save(loan);
+            if (loan.getDisbursementStatus() == LoanDisbursementStatus.FAILED) {
+                // Only once it is saved. It may yet be paid by a recovery payout, so the applicant hears of a
+                // delay, not of a failure (FR-SSB-016).
+                loanNotificationService.notify(loan, LoanNotice.PAYOUT_DELAYED);
+            }
         }
     }
 
@@ -140,18 +145,12 @@ public class LoanDisbursementStatusJob {
         return false;
     }
 
+    /**
+     * A merchant loan paid the merchant: the customer is told where to collect the goods, not that the money
+     * reached their own wallet. The notice never throws, so it cannot touch the recorded payout.
+     */
     private void notifyCustomer(Loan loan) {
-        try {
-            // A merchant loan paid the merchant: the customer is told where to collect the goods,
-            // not that the money reached their own wallet.
-            final String message = DisbursementService.disbursementSms(loan);
-            notificationService.sendSms(loan.getMobileNumber(), message);
-            log.info("Notification sent successfully to customer: {}", MsisdnUtils.mask(loan.getMobileNumber()));
-        } catch (Exception ex) {
-            log.error("Failed to send notification to customer: {}, but loan disbursement was successful",
-                    MsisdnUtils.mask(loan.getMobileNumber()), ex);
-            // Notification failure shouldn't affect the loan disbursement status
-        }
+        loanNotificationService.notify(loan, LoanNotice.PAID, DisbursementService.disbursementSms(loan));
     }
 
     /**

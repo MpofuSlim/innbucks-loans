@@ -36,6 +36,9 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaAuthResponse;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaDeduction;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaDeductionBatch;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotification;
+import zw.co.innbucks.loans.core.notice.OutgoingNotice;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
 import zw.co.innbucks.loans.core.user.NewUser;
@@ -210,6 +213,22 @@ class SensitiveToStringTest {
         assertThat(instrument.toString()).doesNotContain("device-a3f1c2e4", "41.190.33.7", "InnBucksPortal")
                 .contains("loanId=43", "LOAN_AGREEMENT", "templateVersion=3");
         assertThat(template.toString()).contains("version=3");
+    }
+
+    @Test
+    @DisplayName("a notice to the applicant prints neither their number nor the text (FR-SSB-016)")
+    void noticesPrintNoRecipientOrText() {
+        LoanNotification notification = LoanNotification.builder().id(1L).loanId(43L).notice(LoanNotice.APPROVED)
+                .channel(LoanNotification.SMS).recipient("+263771234567")
+                .message("Your loan application with ref # 000000043 has been approved").sent(true)
+                .gatewayReference("LOANS-SMS-1").build();
+        OutgoingNotice outgoing = new OutgoingNotice(43L, LoanNotice.APPROVED, "+263771234567",
+                "Your loan application with ref # 000000043 has been approved", "LOANS-SMS-1");
+
+        for (Object notice : List.of(notification, outgoing)) {
+            assertThat(notice.toString()).doesNotContain("263771234567", "has been approved")
+                    .contains("43", "APPROVED", "LOANS-SMS-1");
+        }
     }
 
     @Test

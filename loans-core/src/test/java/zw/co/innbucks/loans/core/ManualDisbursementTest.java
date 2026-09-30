@@ -5,6 +5,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
+import zw.co.innbucks.loans.core.notice.LoanNotificationSender;
+import zw.co.innbucks.loans.core.notice.LoanNotificationRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.ManualDisbursementResponse.Outcome;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
@@ -33,7 +36,7 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursement;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -61,40 +64,20 @@ class ManualDisbursementTest {
 
     private LoanRepository loanRepository;
     private LoanDisbursementRepository attemptRepository;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private PlatformTransactionManager transactionManager;
     private AuditService auditService;
     private LedgerService ledgerService;
+    private AuthService authService;
     private final List<LoanDisbursement> attempts = new ArrayList<>();
     private final List<DisbursementRequest> sent = new ArrayList<>();
     private Function<DisbursementRequest, DisbursementResponse> rail;
     private DisbursementService service;
     private Loan loan;
 
-    @BeforeEach
-    void setUp() {
-        loanRepository = mock(LoanRepository.class);
-        attemptRepository = mock(LoanDisbursementRepository.class);
-        notificationService = mock(NotificationService.class);
-        transactionManager = mock(PlatformTransactionManager.class);
-        auditService = mock(AuditService.class);
-        ledgerService = mock(LedgerService.class);
-        AuthService authService = mock(AuthService.class);
-        when(authService.getLoggedInUsername()).thenReturn("ops.admin");
-
-        when(attemptRepository.save(any())).thenAnswer(inv -> {
-            LoanDisbursement row = inv.getArgument(0);
-            if (row.getId() == null) {
-                row.setId((long) attempts.size() + 1);
-                attempts.add(row);
-            }
-            return row;
-        });
-        when(attemptRepository.findByLoanId(anyLong())).thenAnswer(inv -> List.copyOf(attempts));
-        when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
-                .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
-
-        service = new DisbursementService(loanRepository, notificationService, attemptRepository,
+    /** The service over the stubbed rail, telling the applicant through these notifications. */
+    private DisbursementService service(LoanNotificationService notifications) {
+        return new DisbursementService(loanRepository, notifications, attemptRepository,
                 new DeductionCancellationService(loanRepository, auditService, authService),
                 new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), transactionManager) {
             @Override
@@ -113,6 +96,32 @@ class ManualDisbursementTest {
                 throw new UnsupportedOperationException();
             }
         };
+    }
+
+    @BeforeEach
+    void setUp() {
+        loanRepository = mock(LoanRepository.class);
+        attemptRepository = mock(LoanDisbursementRepository.class);
+        loanNotificationService = mock(LoanNotificationService.class);
+        transactionManager = mock(PlatformTransactionManager.class);
+        auditService = mock(AuditService.class);
+        ledgerService = mock(LedgerService.class);
+        authService = mock(AuthService.class);
+        when(authService.getLoggedInUsername()).thenReturn("ops.admin");
+
+        when(attemptRepository.save(any())).thenAnswer(inv -> {
+            LoanDisbursement row = inv.getArgument(0);
+            if (row.getId() == null) {
+                row.setId((long) attempts.size() + 1);
+                attempts.add(row);
+            }
+            return row;
+        });
+        when(attemptRepository.findByLoanId(anyLong())).thenAnswer(inv -> List.copyOf(attempts));
+        when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
+                .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
+
+        service = service(loanNotificationService);
 
         // Eligible: SSB + Credit approved, and InnBucks definitively refused the booking.
         loan = Loan.builder()
@@ -141,7 +150,7 @@ class ManualDisbursementTest {
         assertThat(sent).isEmpty();
         assertThat(attempts).isEmpty();
         verify(attemptRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -182,7 +191,7 @@ class ManualDisbursementTest {
         assertThat(loan.getDisbursementReference()).isEqualTo(STABLE_REF);
         assertThat(loan.getDateDisbursed()).isNotNull();
         assertThat(loan.getDisbursementAttempts()).isEqualTo(1);
-        verify(notificationService).sendSms(eq("0772123123"), anyString());
+        verify(loanNotificationService).notify(eq(loan), eq(LoanNotice.PAID), anyString());
     }
 
     @Test
@@ -313,7 +322,7 @@ class ManualDisbursementTest {
                 .isInstanceOf(DisbursementNotAllowedException.class)
                 .hasMessageContaining("is in doubt");
         assertThat(sent).hasSize(1);
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -418,10 +427,14 @@ class ManualDisbursementTest {
     @DisplayName("an SMS failure after the payout does not undo the recorded SUCCESS")
     void anSmsFailureDoesNotUndoThePayout() {
         rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
-        doThrow(new RuntimeException("gateway down")).when(notificationService).sendSms(anyString(), anyString());
+        // The real notification service, over a sender that fails.
+        LoanNotificationSender failing = mock(LoanNotificationSender.class);
+        doThrow(new RuntimeException("gateway down")).when(failing).deliver(any());
+        service = service(new LoanNotificationService(failing, mock(LoanNotificationRepository.class), loanRepository));
 
         ManualDisbursementResponse result = service.disburse(42L);
 
+        verify(failing).deliver(any());
         assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
     }

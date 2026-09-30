@@ -12,7 +12,7 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 
@@ -70,7 +70,7 @@ class NdasendaDeductionAmountContractTest {
 
         RestTemplate restTemplate = new RestTemplate();
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthService(restTemplate, params),
-                params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(NotificationService.class),
+                params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(LoanNotificationService.class),
                 mock(AuditService.class), mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));
     }
 

@@ -13,6 +13,7 @@ import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
 
@@ -49,7 +50,7 @@ class LoanServiceImplPricingTest {
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
                 mock(Validator.class), new MarketTimeZone("ZW"),
                 mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class),
-                mock(SignedInstrumentService.class));
+                mock(SignedInstrumentService.class), mock(LoanNotificationService.class));
     }
 
     private void rates(String monthlyInterest, String commission, String adminFee) {

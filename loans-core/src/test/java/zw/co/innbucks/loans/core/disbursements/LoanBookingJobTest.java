@@ -24,6 +24,7 @@ import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,7 @@ class LoanBookingJobTest {
     private DisbursementService disbursementService;
     private LoanRepository loanRepository;
     private AuditService auditService;
+    private LoanNotificationService loanNotificationService;
     private LoanDisbursementRepository loanDisbursementRepository;
     private PlatformTransactionManager transactionManager;
     private LoanBookingJob job;
@@ -55,6 +57,7 @@ class LoanBookingJobTest {
 
     @BeforeEach
     void setUp() {
+        loanNotificationService = mock(LoanNotificationService.class);
         disbursementService = mock(DisbursementService.class);
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
@@ -62,7 +65,7 @@ class LoanBookingJobTest {
         transactionManager = mock(PlatformTransactionManager.class);
         job = new LoanBookingJob(disbursementService, loanRepository,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)),
-                loanDisbursementRepository, auditService, transactionManager, 30);
+                loanDisbursementRepository, auditService, loanNotificationService, transactionManager, 30);
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)

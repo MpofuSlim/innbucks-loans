@@ -14,7 +14,8 @@ import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
@@ -43,7 +44,7 @@ class PayslipReviewServiceTest {
     private CreditDecisionRepository creditDecisionRepository;
     private LoanDocumentRepository loanDocumentRepository;
     private AuditService auditService;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private AuthService authService;
     private User reviewer;
     private PayslipReviewService service;
@@ -54,7 +55,7 @@ class PayslipReviewServiceTest {
         flagRepository = mock(PayslipFraudFlagRepository.class);
         creditDecisionRepository = mock(CreditDecisionRepository.class);
         auditService = mock(AuditService.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("credit.manager");
         reviewer = new User();
@@ -67,7 +68,7 @@ class PayslipReviewServiceTest {
         loanDocumentRepository = mock(LoanDocumentRepository.class);
         service = new PayslipReviewService(loanRepository, flagRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), authService, loanMapper,
-                notificationService, auditService, new DeductionCancellationService(loanRepository, auditService,
+                loanNotificationService, auditService, new DeductionCancellationService(loanRepository, auditService,
                 authService), loanDocumentRepository, mock(PlatformTransactionManager.class));
     }
 
@@ -166,7 +167,7 @@ class PayslipReviewServiceTest {
         assertThat(loan.getPayslipReviewedAt()).isNotNull();
         assertThat(loan.getPayslipReviewComment()).isEqualTo("Re-application after June failure");
         assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
-        verifyNoInteractions(creditDecisionRepository, notificationService);
+        verifyNoInteractions(creditDecisionRepository, loanNotificationService);
         assertThat(audited()).extracting(AuditLog::getEventType).containsExactly("PAYSLIP_REVIEW_CLEARED");
     }
 
@@ -189,8 +190,12 @@ class PayslipReviewServiceTest {
         assertThat(entry.getValue().getAction()).isEqualTo(CreditAction.REJECTED);
         assertThat(entry.getValue().getReasonCode()).isEqualTo("REJECT_SUSPECTED_FRAUD");
         assertThat(entry.getValue().getPerformedAt()).isEqualTo(loan.getPayslipReviewedAt());
-        verify(notificationService).sendSms(eq("263782606983"), eq("We regret to inform you that your loan application"
-                + " with ref # 000000042 has been declined. Please contact Innbucks for more information."));
+        // The same decline as any other: nothing says why.
+        ArgumentCaptor<Loan> declined = ArgumentCaptor.forClass(Loan.class);
+        verify(loanNotificationService).notify(declined.capture(), eq(LoanNotice.DECLINED));
+        assertThat(declined.getValue().getMobileNumber()).isEqualTo("263782606983");
+        assertThat(LoanNotice.DECLINED.textFor(declined.getValue())).isEqualTo("We regret to inform you that your"
+                + " loan application with ref # 000000042 has been declined. Please contact Innbucks for more information.");
         assertThat(audited()).extracting(AuditLog::getEventType).containsExactly("PAYSLIP_REVIEW_CONFIRMED");
     }
 
@@ -205,7 +210,7 @@ class PayslipReviewServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("Loan 000000042 has no payslip review pending");
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService, creditDecisionRepository);
+        verifyNoInteractions(loanNotificationService, creditDecisionRepository);
     }
 
     @Test

@@ -34,6 +34,8 @@ import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
 
@@ -74,6 +76,7 @@ public class LoanServiceImpl implements LoanService {
     private final PayslipFraudDetector payslipFraudDetector;
     private final PayslipReviewService payslipReviewService;
     private final SignedInstrumentService signedInstrumentService;
+    private final LoanNotificationService loanNotificationService;
 
     /** Newest first, id as the tie-break: a sort on a non-unique column alone would let pages repeat or skip rows. */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id"));
@@ -214,6 +217,8 @@ public class LoanServiceImpl implements LoanService {
         }
         // The instruments as signed, rendered from the loan as saved, with the evidence of the signing.
         signedInstrumentService.sign(loan, instruments, documents, signing, loggedInUser.getUsername());
+        // The applicant hears it was received once it is committed (FR-SSB-016).
+        loanNotificationService.notify(loan, LoanNotice.RECEIVED);
 
         return new LoanApplicationResponse(loan.getId(), loan.getReference(), loan.getLoanApprovalStatus());
     }

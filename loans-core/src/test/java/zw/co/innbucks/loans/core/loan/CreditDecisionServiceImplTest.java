@@ -21,7 +21,8 @@ import zw.co.innbucks.loans.core.exception.BusinessException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
@@ -39,7 +40,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -63,7 +63,7 @@ class CreditDecisionServiceImplTest {
 
     private LoanRepository loanRepository;
     private AuditService auditService;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private LoanMapper loanMapper;
     private AuthService authService;
     private CreditDecisionRepository creditDecisionRepository;
@@ -80,7 +80,7 @@ class CreditDecisionServiceImplTest {
     void setUp() {
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("credit.manager");
         approver = new User();
@@ -96,7 +96,7 @@ class CreditDecisionServiceImplTest {
                 .thenAnswer(i -> Optional.ofNullable(REASON_CODES.get(i.<String>getArgument(0))));
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentRepository = mock(LoanDocumentRepository.class);
-        service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, notificationService,
+        service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, loanNotificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService), auditService,
                 creditDecisionRepository, creditReasonCodeRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
@@ -136,10 +136,13 @@ class CreditDecisionServiceImplTest {
         return captor.getAllValues().stream().map(AuditLog.AuditLogBuilder::build).toList();
     }
 
+    /** The one message the applicant was sent, as it reads. */
     private String sentSms() {
-        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).sendSms(eq("+263782606983"), text.capture());
-        return text.getValue();
+        ArgumentCaptor<Loan> sentFor = ArgumentCaptor.forClass(Loan.class);
+        ArgumentCaptor<LoanNotice> notice = ArgumentCaptor.forClass(LoanNotice.class);
+        verify(loanNotificationService).notify(sentFor.capture(), notice.capture());
+        assertThat(sentFor.getValue().getMobileNumber()).isEqualTo("+263782606983");
+        return notice.getValue().textFor(sentFor.getValue());
     }
 
     private CreditDecision logged() {
@@ -208,7 +211,7 @@ class CreditDecisionServiceImplTest {
                     .hasMessage("Unknown reason code APPROVE_OK");
             assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
             verify(loanRepository, never()).save(any());
-            verifyNoInteractions(creditDecisionRepository, notificationService);
+            verifyNoInteractions(creditDecisionRepository, loanNotificationService);
         }
 
         @Test
@@ -491,7 +494,7 @@ class CreditDecisionServiceImplTest {
             assertThat(entry.getReasonCode()).isNull();
             assertThat(entry.getComment()).isEqualTo("August payslip checked with the bursar");
             assertThat(entry.getPerformedBy()).isEqualTo("agent.moyo");
-            verifyNoInteractions(notificationService);
+            verify(loanNotificationService).notify(loan, LoanNotice.RESUBMITTED);
         }
 
         @Test
@@ -548,7 +551,7 @@ class CreditDecisionServiceImplTest {
         assertThat(loan.getApprovedDisbursementType()).isNull();
         verify(loanRepository, never()).save(any());
         verify(creditDecisionRepository, never()).save(any());
-        verifyNoInteractions(notificationService, auditService);
+        verifyNoInteractions(loanNotificationService, auditService);
     }
 
     @Test

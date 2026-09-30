@@ -3,7 +3,6 @@ package zw.co.innbucks.loans.core.ndasenda;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -17,7 +16,8 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -42,7 +42,7 @@ class NdasendaLoanApprovalServiceImplTest {
 
     private RestTemplate restTemplate;
     private LoanRepository loanRepository;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private NdasendaLoanApprovalServiceImpl service;
     private Loan loan;
 
@@ -50,13 +50,13 @@ class NdasendaLoanApprovalServiceImplTest {
     void setUp() {
         restTemplate = mock(RestTemplate.class);
         loanRepository = mock(LoanRepository.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         AuditService auditService = mock(AuditService.class);
         NdasendaParameters props = new NdasendaParameters();
         props.setDeductionResponsesByDateRangeEndpoint(BY_DATE);
         props.setDeductionResponsesByBatchId(BY_BATCH);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
-                loanRepository, mock(LoanBatchService.class), notificationService, auditService,
+                loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
 
         loan = Loan.builder().loanApprovalStatus(LoanApprovalStatus.PROCESSING)
@@ -84,9 +84,8 @@ class NdasendaLoanApprovalServiceImplTest {
 
         service.sweepDeductionResponses(LocalDate.of(2026, 9, 23).atTime(10, 0));
 
-        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).sendSms(eq("+263782606983"), text.capture());
-        assertThat(text.getValue())
+        verify(loanNotificationService).notify(loan, LoanNotice.DECLINED);
+        assertThat(LoanNotice.DECLINED.textFor(loan))
                 .isEqualTo("We regret to inform you that your loan application with ref # 000000042 "
                         + "has been declined. Please contact Innbucks for more information.")
                 .doesNotContain("net salary");
@@ -96,13 +95,15 @@ class NdasendaLoanApprovalServiceImplTest {
     }
 
     @Test
-    @DisplayName("an SSB approval stays silent — the customer hears at credit sign-off")
-    void ssbApprovalSendsNoSms() {
+    @DisplayName("an SSB approval tells the applicant the deduction is confirmed, not that the loan is approved (FR-SSB-016)")
+    void ssbApprovalSaysTheDeductionIsConfirmed() {
         ndasendaResponds(NdasendaDeductionStatus.SUCCESS, "Accepted");
 
         service.sweepDeductionResponses(LocalDate.of(2026, 9, 23).atTime(10, 0));
 
-        verify(notificationService, never()).sendSms(anyString(), anyString());
+        verify(loanNotificationService).notify(loan, LoanNotice.SSB_CONFIRMED);
+        assertThat(LoanNotice.SSB_CONFIRMED.textFor(loan)).contains("SSB has confirmed the salary deduction",
+                "000000042", "being assessed").doesNotContain("approved");
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
         assertThat(loan.getLoanStatusMessage()).isNull();
         verify(loanRepository).save(loan);

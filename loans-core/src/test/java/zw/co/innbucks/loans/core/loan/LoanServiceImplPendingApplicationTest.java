@@ -22,6 +22,7 @@ import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
 
@@ -80,7 +81,7 @@ class LoanServiceImplPendingApplicationTest {
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"),
                 mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class),
-                mock(SignedInstrumentService.class));
+                mock(SignedInstrumentService.class), mock(LoanNotificationService.class));
     }
 
     @AfterEach

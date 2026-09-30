@@ -14,7 +14,8 @@ import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -35,7 +36,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final LoanRepository loanRepository;
     private final AuthService authService;
     private final LoanMapper loanMapper;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final DeductionCancellationService deductionCancellationService;
     private final AuditService auditService;
     private final CreditDecisionRepository creditDecisionRepository;
@@ -45,7 +46,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final TransactionTemplate transactionTemplate;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
-                                     NotificationService notificationService,
+                                     LoanNotificationService loanNotificationService,
                                      DeductionCancellationService deductionCancellationService,
                                      AuditService auditService, CreditDecisionRepository creditDecisionRepository,
                                      CreditReasonCodeRepository creditReasonCodeRepository,
@@ -55,7 +56,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.loanRepository = loanRepository;
         this.authService = authService;
         this.loanMapper = loanMapper;
-        this.notificationService = notificationService;
+        this.loanNotificationService = loanNotificationService;
         this.deductionCancellationService = deductionCancellationService;
         this.auditService = auditService;
         this.creditDecisionRepository = creditDecisionRepository;
@@ -86,13 +87,11 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             auditApproval(decided.loan(), username, decided.payee());
         }
         // Reference and amount only. The comment is the reviewer's internal note, stored for staff.
-        String template = switch (decision) {
-            case APPROVED -> SmsMessages.APPROVED_LOAN;
-            case REJECTED -> SmsMessages.REJECTED_LOAN;
-            default -> SmsMessages.RETURNED_LOAN;
-        };
-        notificationService.sendSms(decided.loan().getMobileNumber(),
-                String.format(template, decided.loan().getReference(), decided.loan().getDisbursedAmount()));
+        loanNotificationService.notify(decided.loan(), switch (decision) {
+            case APPROVED -> LoanNotice.APPROVED;
+            case REJECTED -> LoanNotice.DECLINED;
+            default -> LoanNotice.MORE_INFORMATION_NEEDED;
+        });
         return decided.view();
     }
 
@@ -175,6 +174,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             Loan saved = loanRepository.save(loan);
             creditDecisionLog.record(saved, CreditAction.RESUBMITTED, null, comment, username,
                     LocalDateTime.now(ZoneOffset.UTC));
+            // Back with Credit: the applicant is told once this commits (FR-SSB-016).
+            loanNotificationService.notify(saved, LoanNotice.RESUBMITTED);
             LoanResponse view = loanMapper.toResponse(saved);
             return scope.platformWide() ? view : view.withoutPayslipReview();
         }));

@@ -28,7 +28,7 @@ import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanPublicReferenceService;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.saga.LoanSaga;
 import zw.co.innbucks.loans.core.saga.LoanSagaRepository;
 import zw.co.innbucks.loans.core.saga.LoanSagaState;
@@ -88,7 +88,7 @@ class RevivedLodgementBookingFailureTest {
         // 1. Ndasenda accepts the lodgement we had given up on: revived, provisional flag withdrawn.
         NdasendaLoanApprovalServiceImpl ndasenda = new NdasendaLoanApprovalServiceImpl(mock(RestTemplate.class),
                 mock(NdasendaAuthService.class), mock(NdasendaParameters.class), loanRepository,
-                mock(LoanBatchService.class), mock(NotificationService.class), auditService, cancellations, new MarketTimeZone("ZW"));
+                mock(LoanBatchService.class), mock(LoanNotificationService.class), auditService, cancellations, new MarketTimeZone("ZW"));
         ndasenda.processDeductionRequestResponse("BATCH-20260901-07", NdasendaDeduction.builder()
                 .id("ND-7002").reference("000000042").status(NdasendaDeductionStatus.SUCCESS)
                 .ecNumber("1234567A").build());
@@ -105,7 +105,8 @@ class RevivedLodgementBookingFailureTest {
         when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L));
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
         new LoanBookingJob(disbursementService, loanRepository, cancellations,
-                mock(LoanDisbursementRepository.class), auditService, mock(PlatformTransactionManager.class), 30)
+                mock(LoanDisbursementRepository.class), auditService, mock(LoanNotificationService.class),
+                mock(PlatformTransactionManager.class), 30)
                 .processLoanAccountCreation();
 
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);

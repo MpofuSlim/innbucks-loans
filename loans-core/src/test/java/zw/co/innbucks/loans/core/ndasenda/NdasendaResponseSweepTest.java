@@ -30,7 +30,7 @@ import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.loan.NdasendaAwaitingLoan;
 import zw.co.innbucks.loans.core.ndasenda.jobs.NdasendaDeductionResponseJob;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.net.ConnectException;
@@ -67,7 +67,7 @@ class NdasendaResponseSweepTest {
 
     private RestTemplate restTemplate;
     private LoanRepository loanRepository;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private AuditService auditService;
     private NdasendaParameters props;
     private NdasendaLoanApprovalServiceImpl service;
@@ -86,14 +86,14 @@ class NdasendaResponseSweepTest {
     void setUp() {
         restTemplate = mock(RestTemplate.class);
         loanRepository = mock(LoanRepository.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         auditService = mock(AuditService.class);
         props = new NdasendaParameters();
         props.setDeductionResponsesByDateRangeEndpoint(BY_DATE);
         props.setDeductionResponsesByBatchId(BY_BATCH);
         props.setDeductionCode(DEDUCTION_CODE);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
-                loanRepository, mock(LoanBatchService.class), notificationService, auditService,
+                loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
 
         when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(HttpEntity.class),
@@ -375,7 +375,7 @@ class NdasendaResponseSweepTest {
                 .startsWith("NDASENDA RESPONSE OVERDUE: loan 42")
                 .contains("*****67A")
                 .doesNotContain(EC_NUMBER, NATIONAL_ID));
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         // Next run: the list now carries the mark, and the loaded loan has it too.
         when(loanRepository.findAwaitingNdasendaOutcome()).thenReturn(List.of(
