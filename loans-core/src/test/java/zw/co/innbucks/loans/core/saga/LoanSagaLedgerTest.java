@@ -19,6 +19,7 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanPublicReferenceService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -66,7 +67,8 @@ class LoanSagaLedgerTest {
         LoanPublicReferenceService publicReferences = mock(LoanPublicReferenceService.class);
         when(publicReferences.next()).thenReturn("LN-2026-00042");
         transitions = new LoanSagaTransitionService(loanRepository, sagaRepository, disbursementLedger, auditService,
-                publicReferences, new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+                publicReferences, new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class)));
 
         // 500 borrowed, 50 admin fee withheld, 450 paid out; booked and waiting on InnBucks.
         loan = Loan.builder()

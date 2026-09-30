@@ -18,6 +18,7 @@ import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -57,7 +58,8 @@ class NdasendaLoanApprovalServiceImplTest {
         props.setDeductionResponsesByBatchId(BY_BATCH);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
                 loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class)), new MarketTimeZone("ZW"));
 
         loan = Loan.builder().loanApprovalStatus(LoanApprovalStatus.PROCESSING)
                 .mobileNumber("+263782606983").build();

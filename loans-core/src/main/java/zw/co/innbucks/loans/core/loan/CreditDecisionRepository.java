@@ -19,4 +19,6 @@ public interface CreditDecisionRepository extends JpaRepository<CreditDecision, 
 
     /** One kind of entry for several loans, oldest first. */
     List<CreditDecision> findByLoanIdInAndActionOrderByPerformedAtAsc(Collection<Long> loanIds, CreditAction action);
+
+    List<CreditDecision> findByLoanIdInOrderByIdAsc(Collection<Long> loanIds);
 }

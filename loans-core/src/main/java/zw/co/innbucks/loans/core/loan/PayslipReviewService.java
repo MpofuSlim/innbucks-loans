@@ -17,6 +17,8 @@ import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -53,13 +55,15 @@ public class PayslipReviewService {
     private final DeductionCancellationService deductionCancellationService;
     private final LoanDocumentRepository loanDocumentRepository;
     private final TransactionTemplate transactionTemplate;
+    private final WorkAssignmentGuard workAssignmentGuard;
 
     public PayslipReviewService(LoanRepository loanRepository, PayslipFraudFlagRepository payslipFraudFlagRepository,
                                 CreditDecisionLog creditDecisionLog, AuthService authService, LoanMapper loanMapper,
                                 LoanNotificationService loanNotificationService, AuditService auditService,
                                 DeductionCancellationService deductionCancellationService,
                                 LoanDocumentRepository loanDocumentRepository,
-                                PlatformTransactionManager transactionManager) {
+                                PlatformTransactionManager transactionManager,
+                                WorkAssignmentGuard workAssignmentGuard) {
         this.loanRepository = loanRepository;
         this.payslipFraudFlagRepository = payslipFraudFlagRepository;
         this.creditDecisionLog = creditDecisionLog;
@@ -70,6 +74,7 @@ public class PayslipReviewService {
         this.deductionCancellationService = deductionCancellationService;
         this.loanDocumentRepository = loanDocumentRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.workAssignmentGuard = workAssignmentGuard;
     }
 
     /**
@@ -159,6 +164,8 @@ public class PayslipReviewService {
         if (loan.getPayslipReviewStatus() != PayslipReviewStatus.PENDING) {
             throw new ConflictException(String.format("Loan %s has no payslip review pending", loan.getReference()));
         }
+        // At an EXCLUSIVE stage, an assigned review is its assignee's to decide (FR-SSB-014).
+        workAssignmentGuard.requireMayAct(SystemStage.PAYSLIP_REVIEW, loan, username);
         if (outcome == PayslipReviewStatus.CLEARED) {
             // Clearing lets the loan go on to be paid, so it is held to the same rule as approving it.
             // Confirming stops it, which anyone may do.

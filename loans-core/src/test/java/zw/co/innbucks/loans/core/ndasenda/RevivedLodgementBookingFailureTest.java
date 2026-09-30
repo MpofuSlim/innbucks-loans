@@ -33,6 +33,7 @@ import zw.co.innbucks.loans.core.saga.LoanSaga;
 import zw.co.innbucks.loans.core.saga.LoanSagaRepository;
 import zw.co.innbucks.loans.core.saga.LoanSagaState;
 import zw.co.innbucks.loans.core.saga.LoanSagaTransitionService;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -60,7 +61,8 @@ class RevivedLodgementBookingFailureTest {
         LoanRepository loanRepository = mock(LoanRepository.class);
         AuditService auditService = mock(AuditService.class);
         DeductionCancellationService cancellations =
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class));
 
         Loan loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.FAILED)

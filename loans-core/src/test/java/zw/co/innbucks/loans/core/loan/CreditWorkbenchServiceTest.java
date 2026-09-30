@@ -200,7 +200,7 @@ class CreditWorkbenchServiceTest {
                         "0321", null, "tmoyo", LocalDateTime.of(2026, 9, 29, 8, 15, 30))));
         LocalDateTime reached = LocalDateTime.now(ZoneOffset.UTC).minusHours(50);
         view.setCreditTurnaround(new CreditTurnaround(reached, reached.plusHours(24), reached.plusHours(48),
-                new BigDecimal("50.0"), true, reached.plusHours(48)));
+                new BigDecimal("50.0"), true, reached.plusHours(48), null));
         when(payslipFraudFlagRepository.findByLoanIdInOrderByIdAsc(anyCollection())).thenReturn(List.of(
                 PayslipFraudFlag.builder().loanId(42L).reason(PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT)
                         .matchedLoanId(17L).detail("Same payslip file as loan 000000017").build()));

@@ -9,6 +9,8 @@ import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -33,6 +35,7 @@ class DeductionCancellationServiceTest {
     private LoanRepository loanRepository;
     private AuditService auditService;
     private AuthService authService;
+    private WorkAssignmentGuard workAssignmentGuard;
     private DeductionCancellationService service;
 
     @BeforeEach
@@ -41,7 +44,8 @@ class DeductionCancellationServiceTest {
         auditService = mock(AuditService.class);
         authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("finance.officer");
-        service = new DeductionCancellationService(loanRepository, auditService, authService);
+        workAssignmentGuard = mock(WorkAssignmentGuard.class);
+        service = new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard);
     }
 
     private static Loan lodgedLoan(long id) {
@@ -231,6 +235,22 @@ class DeductionCancellationServiceTest {
         assertThat(audit.getPayloadHash())
                 .isEqualTo(AuditService.sha256Hex("Cancelled on portal, ref NDC-551"));
         assertThat(audit.getDetail()).doesNotContain("NDC-551", EC_NUMBER);
+    }
+
+    @Test
+    @DisplayName("an assigned cancellation at an EXCLUSIVE stage is its assignee's to record; anyone else is refused")
+    void markCancelledExternallyChecksTheAssignment() {
+        Loan loan = lodgedLoan(42L);
+        service.markRequired(loan, "BOOKING_FAILED", "saga-orchestrator", "system");
+        when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
+        doThrow(new ConflictException("Loan 000000042's Deduction cancellation is assigned to fmoyo"))
+                .when(workAssignmentGuard)
+                .requireMayAct(SystemStage.DEDUCTION_CANCELLATION, loan, "finance.officer");
+
+        assertThatThrownBy(() -> service.markCancelledExternally(42L, "done"))
+                .isInstanceOf(ConflictException.class);
+        assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
+        verify(loanRepository, never()).save(any());
     }
 
     @Test

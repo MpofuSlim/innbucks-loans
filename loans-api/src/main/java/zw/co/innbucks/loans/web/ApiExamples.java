@@ -85,7 +85,7 @@ public final class ApiExamples {
 
     /**
      * Loan 42's wait for its first credit decision, seen at 09:03 on the 30th: it reached Credit when SSB approved it at
-     * 08:05, against the seeded 24-hour target and 48-hour escalation point.
+     * 08:05, and cmanager took it at 08:47; against the seeded 24-hour target and 48-hour escalation point.
      */
     private static final String LOAN_42_TURNAROUND_BEFORE_RETURN = """
             {
@@ -93,7 +93,8 @@ public final class ApiExamples {
                     "dueAt": "2026-10-01T08:05:12+02:00",
                     "escalatesAt": "2026-10-02T08:05:12+02:00",
                     "waitingHours": 1.0,
-                    "overdue": false
+                    "overdue": false,
+                    "assignedTo": "cmanager"
                   }""";
 
     /** Loan 42 as a list row, once SSB has approved the deduction and before Credit decides. */
@@ -1409,7 +1410,8 @@ public final class ApiExamples {
                     "dueAt": "2026-10-01T10:03:10+02:00",
                     "escalatesAt": "2026-10-02T10:03:10+02:00",
                     "waitingHours": 1.0,
-                    "overdue": false
+                    "overdue": false,
+                    "assignedTo": "cmanager"
                   },
                   "creditApprovalStatus": "PENDING",
                   "bookingStatus": "PENDING",
@@ -1468,43 +1470,365 @@ public final class ApiExamples {
               }
             }""";
 
-    private static final String CREDIT_DECISION_SERVICE_LEVEL_AS_SEEDED = """
+    // --- The configurable workflow (FR-SSB-014) ---
+
+    public static final String WORKFLOW_STAGE_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "No workflow stage BOOKING"
+            }""";
+
+    /** A decision refused because the loan's credit decision is assigned to someone else at an EXCLUSIVE stage. */
+    public static final String CREDIT_DECISION_ASSIGNED_ELSEWHERE = """
+            {
+              "code": "CONFLICT",
+              "message": "Loan 000000042's Credit decision is assigned to rnyathi; only they can act on it until it is released or reassigned"
+            }""";
+
+    public static final String WORK_ITEM_ASSIGN_FORBIDDEN = """
+            {
+              "code": "FORBIDDEN",
+              "message": "You may take Credit decision items for yourself, but not give them to others"
+            }""";
+
+    private static final String STAGE_PAYSLIP_REVIEW = """
                 {
-                  "stage": "CREDIT_DECISION",
+                  "code": "PAYSLIP_REVIEW",
+                  "kind": "SYSTEM",
+                  "name": "Payslip review",
+                  "description": "Clear or confirm an application held for a payslip finding",
+                  "displayOrder": 10,
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "assignRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
                   "targetHours": 24,
                   "escalationHours": 48,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
                   "updatedBy": "system",
                   "updatedAt": "2026-09-30T12:00:00+02:00"
                 }""";
 
-    /** The service levels as seeded: a credit decision within a day, escalated after two. */
-    public static final String SERVICE_LEVELS = """
+    private static final String STAGE_CREDIT_DECISION = """
+                {
+                  "code": "CREDIT_DECISION",
+                  "kind": "SYSTEM",
+                  "name": "Credit decision",
+                  "description": "Approve, reject or return an application SSB has accepted",
+                  "displayOrder": 20,
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "assignRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "targetHours": 24,
+                  "escalationHours": 48,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
+                  "updatedBy": "system",
+                  "updatedAt": "2026-09-30T12:00:00+02:00"
+                }""";
+
+    private static final String STAGE_OTHERS = """
+                {
+                  "code": "MORE_INFORMATION",
+                  "kind": "SYSTEM",
+                  "name": "More information",
+                  "description": "The originator answers a return from Credit",
+                  "displayOrder": 30,
+                  "assignment": "NONE",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "workRoles": [],
+                  "assignRoles": [],
+                  "targetHours": 48,
+                  "escalationHours": 96,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
+                  "updatedBy": "system",
+                  "updatedAt": "2026-09-30T12:00:00+02:00"
+                },
+                {
+                  "code": "EMPLOYMENT_EVENT_REVIEW",
+                  "kind": "SYSTEM",
+                  "name": "Employment event review",
+                  "description": "Release or decline an application held for an employment event, or review a paid loan",
+                  "displayOrder": 40,
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
+                  "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "assignRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                  "targetHours": 48,
+                  "escalationHours": 96,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
+                  "updatedBy": "system",
+                  "updatedAt": "2026-09-30T12:00:00+02:00"
+                },
+                {
+                  "code": "DEDUCTION_CANCELLATION",
+                  "kind": "SYSTEM",
+                  "name": "Deduction cancellation",
+                  "description": "Cancel the SSB deduction of a loan that will not be paid, and record it",
+                  "displayOrder": 50,
+                  "assignment": "OPTIONAL",
+                  "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
+                  "workRoles": ["SUPER_ADMIN", "FINANCE"],
+                  "assignRoles": ["SUPER_ADMIN", "FINANCE"],
+                  "targetHours": 24,
+                  "escalationHours": 48,
+                  "escalateTo": ["SUPER_ADMIN"],
+                  "notifyAssignee": true,
+                  "updatedBy": "system",
+                  "updatedAt": "2026-09-30T12:00:00+02:00"
+                }""";
+
+    /** The stages as seeded: who could do what before the workflow was configurable, and a service level each. */
+    public static final String WORKFLOW_STAGES = """
             {
               "code": "OK",
               "message": "Success",
               "data": [
-            """ + CREDIT_DECISION_SERVICE_LEVEL_AS_SEEDED + """
+            """ + STAGE_PAYSLIP_REVIEW + """
+            ,
+            """ + STAGE_CREDIT_DECISION + """
+            ,
+            """ + STAGE_OTHERS + """
 
               ]
             }""";
 
-    public static final String SERVICE_LEVEL_REQUEST = """
-            {
-              "targetHours": 8,
-              "escalationHours": 16
-            }""";
-
-    /** Credit decisions tightened to a working day, escalated after two. */
-    public static final String SERVICE_LEVEL_UPDATED = """
+    public static final String WORKFLOW_STAGE_CREDIT_DECISION = """
             {
               "code": "OK",
-              "message": "Service level updated; it applies to loans already waiting as well",
+              "message": "Success",
+              "data": """ + STAGE_CREDIT_DECISION + """
+
+            }""";
+
+    public static final String WORKFLOW_STAGE_REQUEST = """
+            {
+              "name": "Credit decision",
+              "description": "Approve, reject or return an application SSB has accepted",
+              "assignment": "EXCLUSIVE",
+              "viewRoles": ["CREDIT_MANAGER", "FINANCE"],
+              "workRoles": ["CREDIT_MANAGER"],
+              "assignRoles": ["CREDIT_MANAGER"],
+              "targetHours": 8,
+              "escalationHours": 16,
+              "escalateTo": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+              "notifyAssignee": true
+            }""";
+
+    /** Credit decisions tightened to a working day, made exclusive to their assignee, and visible to Finance. */
+    public static final String WORKFLOW_STAGE_UPDATED = """
+            {
+              "code": "OK",
+              "message": "Workflow stage updated; it applies to items already waiting as well",
               "data": {
-                "stage": "CREDIT_DECISION",
+                "code": "CREDIT_DECISION",
+                "kind": "SYSTEM",
+                "name": "Credit decision",
+                "description": "Approve, reject or return an application SSB has accepted",
+                "displayOrder": 20,
+                "assignment": "EXCLUSIVE",
+                "viewRoles": ["SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE"],
+                "workRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                "assignRoles": ["SUPER_ADMIN", "CREDIT_MANAGER"],
                 "targetHours": 8,
                 "escalationHours": 16,
+                "escalateTo": ["SUPER_ADMIN", "CREDIT_MANAGER"],
+                "notifyAssignee": true,
                 "updatedBy": "admin",
                 "updatedAt": "2026-10-02T08:50:31+02:00"
+              }
+            }""";
+
+    /** The queues as {@code cmanager} sees them at 11:03 on the 30th, before loan 42 is approved. */
+    public static final String WORK_QUEUES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                { "stage": "PAYSLIP_REVIEW", "name": "Payslip review", "assignment": "OPTIONAL", "targetHours": 24, "escalationHours": 48, "waiting": 1, "overdue": 0, "escalated": 0, "unassigned": 1, "assignedToMe": 0 },
+                { "stage": "CREDIT_DECISION", "name": "Credit decision", "assignment": "OPTIONAL", "targetHours": 24, "escalationHours": 48, "waiting": 2, "overdue": 1, "escalated": 1, "unassigned": 1, "assignedToMe": 1 },
+                { "stage": "MORE_INFORMATION", "name": "More information", "assignment": "NONE", "targetHours": 48, "escalationHours": 96, "waiting": 0, "overdue": 0, "escalated": 0 },
+                { "stage": "EMPLOYMENT_EVENT_REVIEW", "name": "Employment event review", "assignment": "OPTIONAL", "targetHours": 48, "escalationHours": 96, "waiting": 0, "overdue": 0, "escalated": 0, "unassigned": 0, "assignedToMe": 0 },
+                { "stage": "DEDUCTION_CANCELLATION", "name": "Deduction cancellation", "assignment": "OPTIONAL", "targetHours": 24, "escalationHours": 48, "waiting": 1, "overdue": 0, "escalated": 0, "unassigned": 1, "assignedToMe": 0 }
+              ]
+            }""";
+
+    /** Loan 42 in the credit queue after its resubmission, reassigned to cmanager at 10:31. */
+    private static final String WORK_ITEM_42 = """
+                {
+                  "stage": "CREDIT_DECISION",
+                  "loanId": 42,
+                  "reference": "000000042",
+                  "applicantName": "Rudo Chikwanha",
+                  "principal": 531.91,
+                  "originator": "tmoyo",
+                  "originatorName": "Tendai Moyo",
+                  "enteredAt": "2026-09-30T10:03:10+02:00",
+                  "dueAt": "2026-10-01T10:03:10+02:00",
+                  "escalatesAt": "2026-10-02T10:03:10+02:00",
+                  "waitingHours": 1.0,
+                  "overdue": false,
+                  "assignedTo": "cmanager",
+                  "assignedToName": "Chipo Manyika",
+                  "assignedAt": "2026-09-30T10:31:18+02:00"
+                }""";
+
+    /** The credit queue at 11:03 on the 30th: loan 44, from the SuperApp, overdue and escalated with nobody on it. */
+    public static final String WORK_QUEUE_CREDIT_DECISION = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "stage": "CREDIT_DECISION",
+                  "loanId": 44,
+                  "reference": "000000044",
+                  "applicantName": "Tafadzwa Ncube",
+                  "principal": 319.15,
+                  "channelId": "superapp",
+                  "channelName": "InnBucks SuperApp",
+                  "originator": "superapp",
+                  "enteredAt": "2026-09-28T09:10:00+02:00",
+                  "dueAt": "2026-09-29T09:10:00+02:00",
+                  "escalatesAt": "2026-09-30T09:10:00+02:00",
+                  "waitingHours": 49.9,
+                  "overdue": true,
+                  "escalatedAt": "2026-09-30T09:15:00+02:00"
+                },
+            """ + WORK_ITEM_42 + """
+
+              ]
+            }""";
+
+    /** What cmanager has, across every stage they see. */
+    public static final String MY_WORK_ITEMS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + WORK_ITEM_42 + """
+
+              ]
+            }""";
+
+    public static final String WORK_ITEM_ASSIGN_REQUEST = """
+            {
+              "assignee": "cmanager"
+            }""";
+
+    /** admin gives loan 42 to cmanager while rnyathi is on leave. */
+    public static final String WORK_ITEM_ASSIGNED = """
+            {
+              "code": "OK",
+              "message": "Assigned to cmanager",
+              "data": """ + WORK_ITEM_42 + """
+
+            }""";
+
+    /** cmanager hands loan 42 back to the queue. */
+    public static final String WORK_ITEM_RELEASED = """
+            {
+              "code": "OK",
+              "message": "Released",
+              "data": {
+                "stage": "CREDIT_DECISION",
+                "loanId": 42,
+                "reference": "000000042",
+                "applicantName": "Rudo Chikwanha",
+                "principal": 531.91,
+                "originator": "tmoyo",
+                "originatorName": "Tendai Moyo",
+                "enteredAt": "2026-09-30T10:03:10+02:00",
+                "dueAt": "2026-10-01T10:03:10+02:00",
+                "escalatesAt": "2026-10-02T10:03:10+02:00",
+                "waitingHours": 1.0,
+                "overdue": false
+              }
+            }""";
+
+    /**
+     * Loan 42's work items: cmanager took its first wait, which ended in the return; its second wait was given to
+     * rnyathi, then reassigned to cmanager, who approved it.
+     */
+    public static final String LOAN_42_WORK_HISTORY = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                { "id": 1, "stage": "CREDIT_DECISION", "loanId": 42, "enteredAt": "2026-09-30T08:05:12+02:00", "action": "ASSIGNED", "toUser": "cmanager", "performedBy": "cmanager", "performedAt": "2026-09-30T08:47:03+02:00" },
+                { "id": 2, "stage": "CREDIT_DECISION", "loanId": 42, "enteredAt": "2026-09-30T10:03:10+02:00", "action": "ASSIGNED", "toUser": "rnyathi", "performedBy": "admin", "performedAt": "2026-09-30T10:05:40+02:00" },
+                { "id": 3, "stage": "CREDIT_DECISION", "loanId": 42, "enteredAt": "2026-09-30T10:03:10+02:00", "action": "REASSIGNED", "fromUser": "rnyathi", "toUser": "cmanager", "performedBy": "admin", "performedAt": "2026-09-30T10:31:18+02:00" }
+              ]
+            }""";
+
+    /**
+     * The pipeline for September. The credit decision figures are the credit turnaround report's; the other stages
+     * are shown as they stood.
+     */
+    public static final String WORKFLOW_PIPELINE_REPORT = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "fromDate": "2026-09-01",
+                "toDate": "2026-09-30",
+                "stages": [
+                  {
+                    "stage": "PAYSLIP_REVIEW", "name": "Payslip review", "targetHours": 24, "escalationHours": 48,
+                    "waiting": 1, "overdue": 0, "escalated": 0, "unassigned": 1,
+                    "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 3.5, "medianHours": 3.5, "longestHours": 5.1, "unmeasured": 0,
+                    "byChannel": [
+                      { "key": "PORTAL", "name": "Portal", "waiting": 1, "overdue": 0, "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 3.5 }
+                    ],
+                    "byOriginator": [
+                      { "key": "tmoyo", "name": "Tendai Moyo", "waiting": 1, "overdue": 0, "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 3.5 }
+                    ]
+                  },
+                  {
+                    "stage": "CREDIT_DECISION", "name": "Credit decision", "targetHours": 24, "escalationHours": 48,
+                    "waiting": 3, "overdue": 1, "escalated": 0, "unassigned": 3,
+                    "completed": 14, "withinTarget": 12, "adherencePercent": 85.7, "averageHours": 13.4, "medianHours": 6.2, "longestHours": 52.3, "unmeasured": 0,
+                    "byChannel": [
+                      { "key": "PORTAL", "name": "Portal", "waiting": 2, "overdue": 1, "completed": 11, "withinTarget": 10, "adherencePercent": 90.9, "averageHours": 10.8 },
+                      { "key": "superapp", "name": "InnBucks SuperApp", "waiting": 1, "overdue": 0, "completed": 3, "withinTarget": 2, "adherencePercent": 66.7, "averageHours": 22.9 }
+                    ],
+                    "byOriginator": [
+                      { "key": "superapp", "waiting": 1, "overdue": 0, "completed": 3, "withinTarget": 2, "adherencePercent": 66.7, "averageHours": 22.9 },
+                      { "key": "tmoyo", "name": "Tendai Moyo", "waiting": 2, "overdue": 1, "completed": 11, "withinTarget": 10, "adherencePercent": 90.9, "averageHours": 10.8 }
+                    ]
+                  },
+                  {
+                    "stage": "MORE_INFORMATION", "name": "More information", "targetHours": 48, "escalationHours": 96,
+                    "waiting": 0, "overdue": 0, "escalated": 0,
+                    "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 0.9, "medianHours": 0.9, "longestHours": 0.9, "unmeasured": 0,
+                    "byChannel": [
+                      { "key": "PORTAL", "name": "Portal", "waiting": 0, "overdue": 0, "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 0.9 }
+                    ],
+                    "byOriginator": [
+                      { "key": "tmoyo", "name": "Tendai Moyo", "waiting": 0, "overdue": 0, "completed": 2, "withinTarget": 2, "adherencePercent": 100.0, "averageHours": 0.9 }
+                    ]
+                  },
+                  {
+                    "stage": "EMPLOYMENT_EVENT_REVIEW", "name": "Employment event review", "targetHours": 48, "escalationHours": 96,
+                    "waiting": 0, "overdue": 0, "escalated": 0, "unassigned": 0,
+                    "completed": 0, "withinTarget": 0, "unmeasured": 0, "byChannel": [], "byOriginator": []
+                  },
+                  {
+                    "stage": "DEDUCTION_CANCELLATION", "name": "Deduction cancellation", "targetHours": 24, "escalationHours": 48,
+                    "waiting": 1, "overdue": 0, "escalated": 0, "unassigned": 1,
+                    "completed": 0, "withinTarget": 0, "unmeasured": 0,
+                    "byChannel": [
+                      { "key": "PORTAL", "name": "Portal", "waiting": 1, "overdue": 0, "completed": 0, "withinTarget": 0 }
+                    ],
+                    "byOriginator": [
+                      { "key": "tmoyo", "name": "Tendai Moyo", "waiting": 1, "overdue": 0, "completed": 0, "withinTarget": 0 }
+                    ]
+                  }
+                ]
               }
             }""";
 

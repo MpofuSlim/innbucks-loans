@@ -40,8 +40,9 @@ public class DeductionCancellationController {
     private final DeductionCancellationService deductionCancellationService;
 
     @Operation(summary = "List deductions to cancel",
-            description = "SUPER_ADMIN, CREDIT_MANAGER and FINANCE: loans whose deduction was lodged but which will"
-                    + " not be paid, oldest first. Reasons: CREDIT_REJECTED, BOOKING_FAILED, BOOKING_IN_DOUBT,"
+            description = "Whoever may see the DEDUCTION_CANCELLATION stage (CREDIT_MANAGER, FINANCE and SUPER_ADMIN"
+                    + " by default): loans whose deduction was lodged but which will not be paid, oldest first."
+                    + " Reasons: CREDIT_REJECTED, BOOKING_FAILED, BOOKING_IN_DOUBT,"
                     + " LODGEMENT_FAILED, ACCEPTED_AFTER_CLOSE. BOOKING_IN_DOUBT means the InnBucks booking failed"
                     + " without a definitive answer and the customer may hold the loan: confirm with InnBucks that"
                     + " nothing was booked before cancelling (each row's action says so).")
@@ -67,19 +68,21 @@ public class DeductionCancellationController {
                     }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN, CREDIT_MANAGER or FINANCE",
+            @ApiResponse(responseCode = "403", description = "Not entitled to see the DEDUCTION_CANCELLATION stage"
+                    + " (CREDIT_MANAGER, FINANCE and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/deduction-cancellations")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER','FINANCE')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'DEDUCTION_CANCELLATION', 'VIEW')")
     public ApiResult<List<DeductionCancellationResponse>> listRequired() {
         return ApiResult.ok(deductionCancellationService.findRequired());
     }
 
     @Operation(summary = "Record a deduction cancelled",
-            description = "SUPER_ADMIN and FINANCE: records that the loan's deduction was cancelled on Ndasenda's own"
-                    + " portal, with a note of how (ideally Ndasenda's cancellation reference). Nothing is sent to"
-                    + " Ndasenda.")
+            description = "Whoever may work the DEDUCTION_CANCELLATION stage (FINANCE and SUPER_ADMIN by default):"
+                    + " records that the loan's deduction was cancelled on Ndasenda's own portal, with a note of how"
+                    + " (ideally Ndasenda's cancellation reference). Nothing is sent to Ndasenda. If the stage is"
+                    + " EXCLUSIVE and the loan's item is assigned, only its assignee may record it.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Recorded", content = @Content(examples = @ExampleObject("""
                     {
@@ -111,7 +114,8 @@ public class DeductionCancellationController {
                             }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN or FINANCE",
+            @ApiResponse(responseCode = "403", description = "Not entitled to work the DEDUCTION_CANCELLATION stage"
+                    + " (FINANCE and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject("""
@@ -119,15 +123,22 @@ public class DeductionCancellationController {
                               "code": "NOT_FOUND",
                               "message": "Loan 57 not found"
                             }"""))),
-            @ApiResponse(responseCode = "409", description = "No cancellation pending, or already recorded",
-                    content = @Content(examples = @ExampleObject("""
-                            {
-                              "code": "CONFLICT",
-                              "message": "Loan 57 has no deduction cancellation pending"
-                            }""")))
+            @ApiResponse(responseCode = "409", description = "No cancellation pending, already recorded, or the stage is"
+                    + " EXCLUSIVE and the loan's item is assigned to someone else",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Not pending", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 57 has no deduction cancellation pending"
+                                    }"""),
+                            @ExampleObject(name = "Assigned to someone else", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000057's Deduction cancellation is assigned to finance2; only they can act on it until it is released or reassigned"
+                                    }""")}))
     })
     @PutMapping("/loans/{loanId}/deduction-cancellation")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','FINANCE')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'DEDUCTION_CANCELLATION', 'WORK')")
     public ApiResult<DeductionCancellationResponse> recordCancelled(@PathVariable Long loanId,
                                                                    @Valid @RequestBody DeductionCancellationRequest request) {
         log.info("Recording deduction cancelled for loan {}", loanId);

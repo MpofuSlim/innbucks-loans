@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,6 +18,9 @@ public interface LoanEmploymentEventRepository extends JpaRepository<LoanEmploym
     List<LoanEmploymentEvent> findByEventIdInOrderByIdAsc(List<Long> eventIds);
 
     List<LoanEmploymentEvent> findByLoanIdOrderByIdAsc(Long loanId);
+
+    /** Holds and reviews resolved in the period. */
+    List<LoanEmploymentEvent> findByResolvedAtBetweenOrderByIdAsc(LocalDateTime from, LocalDateTime to);
 
     /** Locked, so two officers cannot resolve it at once. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

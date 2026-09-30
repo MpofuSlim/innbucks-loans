@@ -311,10 +311,6 @@ public class Loan extends BaseEntity {
     @Column(name = "credit_resubmitted_at")
     private LocalDateTime creditResubmittedAt;
 
-    /** When the current wait for a credit decision passed the escalation point and was escalated; null if not. */
-    @Column(name = "credit_escalated_at")
-    private LocalDateTime creditEscalatedAt;
-
     /** The last payroll deduction: SSB's own end date for it when SSB gave one, else the loan's end date. */
     public LocalDate finalDeductionDate() {
         return repaymentEndDate != null ? repaymentEndDate : loanEndDate;

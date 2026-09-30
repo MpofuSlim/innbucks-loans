@@ -5,7 +5,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
-import org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,7 +50,7 @@ class ManualDisbursementWebContractTest {
 
         ProxyFactory secured = new ProxyFactory(controller);
         secured.setProxyTargetClass(true);
-        secured.addAdvisor(AuthorizationManagerBeforeMethodInterceptor.preAuthorize());
+        secured.addAdvisor(WorkflowTestSupport.preAuthorize());
 
         mvc = MockMvcBuilders.standaloneSetup(secured.getProxy())
                 .setControllerAdvice(new GlobalExceptionHandler())

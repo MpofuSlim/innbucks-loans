@@ -19,6 +19,7 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanPublicReferenceService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -52,7 +53,8 @@ class LoanSagaCompensationDeductionTest {
         service = new LoanSagaTransitionService(loanRepository, sagaRepository,
                 new DisbursementLedger(mock(LedgerService.class), ledgerEntryRepository),
                 auditService, mock(LoanPublicReferenceService.class),
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class)));
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)

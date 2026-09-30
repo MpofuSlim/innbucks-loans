@@ -25,9 +25,13 @@ import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevel;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevelService;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevelStage;
+import zw.co.innbucks.loans.core.turnaround.CreditTurnarounds;
+import zw.co.innbucks.loans.core.workflow.AssignmentMode;
+import zw.co.innbucks.loans.core.workflow.StageKind;
+import zw.co.innbucks.loans.core.workflow.WorkItem;
+import zw.co.innbucks.loans.core.workflow.WorkItemRepository;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
+import zw.co.innbucks.loans.core.workflow.WorkflowStageRepository;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -51,7 +55,8 @@ class LoanServiceImplReadScopeTest {
 
     private LoanRepository loanRepository;
     private LoanMapper loanMapper;
-    private ServiceLevelService serviceLevelService;
+    private WorkflowStageRepository workflowStageRepository;
+    private WorkItemRepository workItemRepository;
     private LoanServiceImpl service;
 
     private Root<Loan> root;
@@ -63,12 +68,14 @@ class LoanServiceImplReadScopeTest {
     void setUp() {
         loanRepository = mock(LoanRepository.class);
         loanMapper = mock(LoanMapper.class);
-        serviceLevelService = mock(ServiceLevelService.class);
+        workflowStageRepository = mock(WorkflowStageRepository.class);
+        workItemRepository = mock(WorkItemRepository.class);
         service = new LoanServiceImpl(loanRepository, mock(ParameterService.class), loanMapper,
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
                 mock(Validator.class), new MarketTimeZone("ZW"),
                 mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class),
-                mock(SignedInstrumentService.class), mock(LoanNotificationService.class), serviceLevelService);
+                mock(SignedInstrumentService.class), mock(LoanNotificationService.class),
+                new CreditTurnarounds(workflowStageRepository, workItemRepository));
 
         root = mock(Root.class, RETURNS_DEEP_STUBS);
         cb = mock(CriteriaBuilder.class);
@@ -194,72 +201,89 @@ class LoanServiceImplReadScopeTest {
     }
 
     @Test
-    @DisplayName("staff see how long each loan on a page has waited on Credit; the service level is read once a page")
+    @DisplayName("staff see how long each loan on a page has waited on Credit, and who has it; the stage is read once a page")
     void staffListCarriesTheCreditTurnaround() {
-        LocalDateTime approved = LocalDateTime.now(ZoneOffset.UTC).minusHours(30);
-        Loan first = awaitingCredit(approved);
-        Loan second = awaitingCredit(approved.plusHours(20));
-        Loan decided = awaitingCredit(approved);
+        LocalDateTime approved = LocalDateTime.now(ZoneOffset.UTC).minusHours(50);
+        Loan first = awaitingCredit(41L, approved);
+        Loan second = awaitingCredit(42L, approved.plusHours(40));
+        Loan decided = awaitingCredit(43L, approved);
         decided.setInternalApprovalStatus(InternalApprovalStatus.APPROVED);
         when(loanRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(first, second, decided)));
         when(loanMapper.toSummary(any(Loan.class))).thenAnswer(i -> new LoanSummaryResponse());
-        when(serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION)).thenReturn(creditLevel());
+        creditStage();
+        when(workItemRepository.findByStageCodeAndLoanIdIn(eq("CREDIT_DECISION"), any())).thenReturn(List.of(
+                WorkItem.builder().stageCode("CREDIT_DECISION").loanId(41L).enteredAt(approved)
+                        .assignedTo("rnyathi").assignedAt(approved.plusHours(1)).escalatedAt(approved.plusHours(48))
+                        .build()));
 
         List<LoanSummaryResponse> page = service.findLoans(LoanSearchCriteria.awaitingCreditDecision(),
                 LoanReadScope.platform(), PageRequest.of(0, 20)).getContent();
 
         assertThat(page.get(0).getCreditTurnaround().queueEnteredAt()).isEqualTo(approved);
         assertThat(page.get(0).getCreditTurnaround().dueAt()).isEqualTo(approved.plusHours(24));
+        assertThat(page.get(0).getCreditTurnaround().escalatesAt()).isEqualTo(approved.plusHours(48));
         assertThat(page.get(0).getCreditTurnaround().overdue()).isTrue();
+        assertThat(page.get(0).getCreditTurnaround().escalatedAt()).isEqualTo(approved.plusHours(48));
+        assertThat(page.get(0).getCreditTurnaround().assignedTo()).isEqualTo("rnyathi");
         assertThat(page.get(1).getCreditTurnaround().overdue()).isFalse();
+        assertThat(page.get(1).getCreditTurnaround().assignedTo()).isNull();
         assertThat(page.get(2).getCreditTurnaround()).isNull();
-        verify(serviceLevelService, times(1)).serviceLevel(ServiceLevelStage.CREDIT_DECISION);
+        verify(workflowStageRepository, times(1)).findById("CREDIT_DECISION");
     }
 
     @Test
     @DisplayName("an originator sees no turnaround: the service level is the lender's measure of its own staff")
     void originatorListCarriesNoTurnaround() {
-        when(loanRepository.findAll(any(Specification.class), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(awaitingCredit(LocalDateTime.now(ZoneOffset.UTC).minusHours(30)))));
+        when(loanRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(
+                new PageImpl<>(List.of(awaitingCredit(41L, LocalDateTime.now(ZoneOffset.UTC).minusHours(30)))));
         when(loanMapper.toSummary(any(Loan.class))).thenAnswer(i -> new LoanSummaryResponse());
 
         List<LoanSummaryResponse> page = service.findLoans(LoanSearchCriteria.builder().build(),
                 LoanReadScope.originator("M-001", 7L), PageRequest.of(0, 20)).getContent();
 
         assertThat(page.getFirst().getCreditTurnaround()).isNull();
-        verifyNoInteractions(serviceLevelService);
+        verifyNoInteractions(workflowStageRepository, workItemRepository);
     }
 
     @Test
-    @DisplayName("a loan's own view carries its turnaround for staff, measured from its resubmission when it had one")
+    @DisplayName("a loan's own view carries its turnaround for staff, measured from its resubmission: the earlier"
+            + " wait's escalation and assignee stay with that wait")
     void singleReadCarriesTheTurnaroundForStaffOnly() {
         LocalDateTime resubmitted = LocalDateTime.now(ZoneOffset.UTC).minusHours(2);
-        Loan loan = awaitingCredit(resubmitted.minusDays(3));
+        Loan loan = awaitingCredit(42L, resubmitted.minusDays(3));
         loan.setCreditResubmittedAt(resubmitted);
         when(loanRepository.findOne(any(Specification.class))).thenReturn(Optional.of(loan));
         when(loanMapper.toResponse(loan)).thenAnswer(i -> new LoanResponse());
-        when(serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION)).thenReturn(creditLevel());
+        creditStage();
+        when(workItemRepository.findByStageCodeAndLoanIdIn(eq("CREDIT_DECISION"), any())).thenReturn(List.of(
+                WorkItem.builder().stageCode("CREDIT_DECISION").loanId(42L).enteredAt(resubmitted.minusDays(3))
+                        .assignedTo("rnyathi").escalatedAt(resubmitted.minusDays(1)).build()));
 
         LoanResponse staffView = service.getLoan(42L, LoanReadScope.platform());
         LoanResponse agentView = service.getLoan(42L, LoanReadScope.originator("M-001", 7L));
 
         assertThat(staffView.getCreditTurnaround().queueEnteredAt()).isEqualTo(resubmitted);
         assertThat(staffView.getCreditTurnaround().overdue()).isFalse();
+        assertThat(staffView.getCreditTurnaround().escalatedAt()).isNull();
+        assertThat(staffView.getCreditTurnaround().assignedTo()).isNull();
         assertThat(agentView.getCreditTurnaround()).isNull();
     }
 
-    private static Loan awaitingCredit(LocalDateTime ssbApprovedAt) {
+    private static Loan awaitingCredit(Long id, LocalDateTime ssbApprovedAt) {
         Loan loan = new Loan();
+        loan.setId(id);
         loan.setLoanApprovalStatus(LoanApprovalStatus.APPROVED);
         loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
         loan.setDateApproved(ssbApprovedAt);
         return loan;
     }
 
-    private static ServiceLevel creditLevel() {
-        return ServiceLevel.builder().stage(ServiceLevelStage.CREDIT_DECISION).targetHours(24).escalationHours(48)
-                .updatedBy("system").updatedAt(LocalDateTime.now(ZoneOffset.UTC)).build();
+    private void creditStage() {
+        when(workflowStageRepository.findById("CREDIT_DECISION")).thenReturn(Optional.of(WorkflowStage.builder()
+                .code("CREDIT_DECISION").kind(StageKind.SYSTEM).name("Credit decision").displayOrder(20)
+                .assignment(AssignmentMode.OPTIONAL).targetHours(24).escalationHours(48).notifyAssignee(true)
+                .updatedBy("system").updatedAt(LocalDateTime.now(ZoneOffset.UTC)).build()));
     }
 
     @SuppressWarnings("unchecked")
