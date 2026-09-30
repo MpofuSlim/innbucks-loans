@@ -1,20 +1,21 @@
 package zw.co.innbucks.loans.core.loan;
 
 import tools.jackson.databind.json.JsonMapper;
-import zw.co.innbucks.loans.core.files.DocumentFingerprint;
+import zw.co.innbucks.loans.core.document.DocumentType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static zw.co.innbucks.loans.core.merchant.MerchantService.maskAccountNumber;
 
 /**
  * The loan data a credit action was based on (FR-PBL-032), written into the decision log as JSON with
  * its SHA-256. It holds what Credit assesses: the terms, the employment and payslip figures, where
- * the money would go, and which document images were on file. The images are pinned by their
- * fingerprint (the SHA-256 of the decoded file, see DocumentFingerprint) rather than copied, so the log
- * can prove which payslip was reviewed without holding a second copy of it; the national ID number,
+ * the money would go, and which documents were on file. The documents are pinned by the fingerprint of
+ * their current version (the SHA-256 of the file, see LoanDocument) rather than copied, so the log can
+ * prove which payslip was reviewed without holding a second copy of it; the national ID number,
  * mobile numbers and addresses are left on the loan.
  *
  * <p>Components serialise in declaration order, so the same loan always yields the same JSON and
@@ -54,11 +55,15 @@ public record CreditDecisionSnapshot(
     public record Deduction(String beneficiary, BigDecimal amount) {
     }
 
-    /** The fingerprint of each stored document, null when none is on file. */
-    public record Documents(String payslipPictureSha256, String nationalIdPictureSha256, String signatureSha256) {
+    /** The fingerprint of the current version of each document, null when none is on file. */
+    public record Documents(String payslipPictureSha256, String nationalIdPictureSha256, String signatureSha256,
+                            String witnessSignatureSha256) {
     }
 
-    public static CreditDecisionSnapshot of(Loan loan) {
+    /**
+     * @param fingerprints the fingerprint of the current version of each of the loan's documents
+     */
+    public static CreditDecisionSnapshot of(Loan loan, Map<DocumentType, String> fingerprints) {
         EmploymentDetail employment = loan.getEmploymentDetail();
         PayoutDestination payee = PayoutDestination.of(loan);
         return new CreditDecisionSnapshot(
@@ -85,9 +90,8 @@ public record CreditDecisionSnapshot(
                         .map(d -> new Deduction(d.getBeneficiary(), d.getAmount())).toList(),
                 payee.type(),
                 maskAccountNumber(payee.paysMerchant() ? payee.merchantAccount() : loan.payoutWalletNumber()),
-                new Documents(DocumentFingerprint.of(loan.getPayslipPicture()),
-                        DocumentFingerprint.of(loan.getNationalIdPicture()),
-                        DocumentFingerprint.of(loan.getSignature())));
+                new Documents(fingerprints.get(DocumentType.PAYSLIP), fingerprints.get(DocumentType.NATIONAL_ID),
+                        fingerprints.get(DocumentType.SIGNATURE), fingerprints.get(DocumentType.WITNESS_SIGNATURE)));
     }
 
     public String toJson() {

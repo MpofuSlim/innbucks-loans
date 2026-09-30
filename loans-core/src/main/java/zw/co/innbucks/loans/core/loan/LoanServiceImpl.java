@@ -20,13 +20,14 @@ import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
-import zw.co.innbucks.loans.core.files.DocumentFingerprint;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.document.DocumentType;
+import zw.co.innbucks.loans.core.document.LoanDocumentService;
+import zw.co.innbucks.loans.core.files.DecodedFile;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
@@ -65,7 +66,7 @@ public class LoanServiceImpl implements LoanService {
     private final ChannelRepository channelRepository;
     private final Validator validator;
     private final MarketTimeZone marketTimeZone;
-    private final FileSignatureValidator fileSignatureValidator;
+    private final LoanDocumentService loanDocumentService;
     private final PayslipFraudDetector payslipFraudDetector;
     private final PayslipReviewService payslipReviewService;
 
@@ -100,10 +101,12 @@ public class LoanServiceImpl implements LoanService {
             // as a missing id, which keeps this from being an existence oracle.
             spec = spec.and(withMerchantCode(scope.merchantCode())).and(createdByUserId(scope.userId()));
         }
-        return loanRepository.findOne(spec)
+        LoanResponse view = loanRepository.findOne(spec)
                 .map(loanMapper::toResponse)
-                .map(view -> scope.platformWide() ? view : view.withoutPayslipReview())
+                .map(response -> scope.platformWide() ? response : response.withoutPayslipReview())
                 .orElseThrow(() -> new NotFoundException("Loan " + id + " not found"));
+        view.setDocuments(loanDocumentService.currentSummaries(id));
+        return view;
     }
 
 
@@ -140,10 +143,10 @@ public class LoanServiceImpl implements LoanService {
         // the customer believed they had applied.
         requireCompleteApplication(loanRequest);
 
-        // Zero-trust content: the attached documents are checked by their byte signature before the
-        // application touches business state, so an executable or unrecognised file is refused.
-        fileSignatureValidator.requireAcceptedBase64Document("nationalIdPicture", loanRequest.getNationalIdPicture());
-        fileSignatureValidator.requireAcceptedBase64Document("payslipPicture", loanRequest.getPayslipPicture());
+        // Zero-trust content: the attached documents are decoded and checked by their byte signature before
+        // the application touches business state, so an undecodable, executable or unrecognised file is refused.
+        Map<DocumentType, DecodedFile> documents = loanDocumentService.decodeApplication(loanRequest);
+        DecodedFile payslip = documents.get(DocumentType.PAYSLIP);
 
         // Presence of the required fields is enforced declaratively by bean validation
         // (@Valid on the controller). What remains here are the business rules that need
@@ -199,10 +202,7 @@ public class LoanServiceImpl implements LoanService {
                 .mobileNumber(formatMsisdnInternational(loanRequest.getMobileNumber()))
                 .walletNumber(formatMsisdnInternational(StringUtils.hasText(loanRequest.getWalletNumber())
                         ? loanRequest.getWalletNumber() : loanRequest.getMobileNumber()))
-                .signature(loanRequest.getSignature())
-                .nationalIdPicture(loanRequest.getNationalIdPicture())
-                .payslipPicture(loanRequest.getPayslipPicture())
-                .payslipSha256(DocumentFingerprint.of(loanRequest.getPayslipPicture()))
+                .payslipSha256(payslip == null ? null : payslip.sha256())
                 .feeAmount(quote.getFeeAmount())
                 .feeRate(quote.getFeeRate())
                 .interestRate(quote.getInterestRate())
@@ -257,6 +257,8 @@ public class LoanServiceImpl implements LoanService {
         }
 
         loanRepository.save(loan);
+        // Version 1 of each document (FR-SSB-009), committed with the application.
+        loanDocumentService.storeApplication(loan, documents, loggedInUser.getUsername());
         if (!findings.isEmpty()) {
             payslipReviewService.hold(loan, findings);
         }

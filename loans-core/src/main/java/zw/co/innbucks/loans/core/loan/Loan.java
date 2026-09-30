@@ -87,11 +87,6 @@ public class Loan extends BaseEntity {
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
-    @ToString.Exclude
-    @Lob
-    @Column(name = "signature", columnDefinition = "text")
-    private String signature;
-
     @Enumerated(value = EnumType.STRING)
     @Column(name = "loan_status")
     private LoanApprovalStatus loanApprovalStatus;
@@ -364,17 +359,10 @@ public class Loan extends BaseEntity {
     @JoinColumn(name = "channel_id")
     private Channel channel;
 
-    @ToString.Exclude
-    @Lob
-    @Column(name = "national_id_picture", columnDefinition = "text")
-    private String nationalIdPicture;
-
-    @ToString.Exclude
-    @Lob
-    @Column(name = "payslip_picture", columnDefinition = "text")
-    private String payslipPicture;
-
-    /** SHA-256 of the payslip's decoded bytes (see DocumentFingerprint); null when there is none. */
+    /**
+     * The fingerprint of the current payslip (the SHA-256 of its bytes, see LoanDocument); null when there is
+     * none. The payslip itself, and every earlier version, are in loan_documents.
+     */
     @Column(name = "payslip_sha256", length = 64)
     private String payslipSha256;
 

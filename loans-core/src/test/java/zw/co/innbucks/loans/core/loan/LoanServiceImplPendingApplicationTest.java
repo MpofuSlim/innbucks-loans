@@ -15,9 +15,9 @@ import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
@@ -72,8 +72,8 @@ class LoanServiceImplPendingApplicationTest {
         when(auth.getLoggedInUser()).thenReturn(agent);
 
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
-                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator(),
-                new PayslipFraudDetector(loanRepository), mock(PayslipReviewService.class));
+                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"),
+                mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
     }
 
     @AfterEach

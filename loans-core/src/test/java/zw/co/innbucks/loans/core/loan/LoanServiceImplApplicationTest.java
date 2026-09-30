@@ -7,12 +7,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.commission.CommissionGroup;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
-import zw.co.innbucks.loans.core.files.DocumentFingerprint;
+import zw.co.innbucks.loans.core.document.DocumentAccessAction;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.DocumentType;
+import zw.co.innbucks.loans.core.document.LoanDocument;
+import zw.co.innbucks.loans.core.document.LoanDocumentAccess;
+import zw.co.innbucks.loans.core.document.LoanDocumentAccessRepository;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
+import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
@@ -41,6 +49,8 @@ class LoanServiceImplApplicationTest {
 
     private ValidatorFactory validatorFactory;
     private LoanRepository loanRepository;
+    private LoanDocumentRepository loanDocumentRepository;
+    private LoanDocumentAccessRepository loanDocumentAccessRepository;
     private PayslipReviewService payslipReviewService;
     private LoanServiceImpl service;
 
@@ -65,9 +75,16 @@ class LoanServiceImplApplicationTest {
         when(auth.getLoggedInUser()).thenReturn(agent);
 
         payslipReviewService = mock(PayslipReviewService.class);
+        loanDocumentRepository = mock(LoanDocumentRepository.class);
+        when(loanDocumentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        loanDocumentAccessRepository = mock(LoanDocumentAccessRepository.class);
+        PayslipFraudDetector payslipFraudDetector = new PayslipFraudDetector(loanDocumentRepository);
+        LoanDocumentService loanDocumentService = new LoanDocumentService(loanDocumentRepository,
+                loanDocumentAccessRepository, loanRepository, new FileSignatureValidator(), auth, payslipFraudDetector,
+                payslipReviewService);
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
-                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(), new MarketTimeZone("ZW"), new FileSignatureValidator(),
-                new PayslipFraudDetector(loanRepository), payslipReviewService);
+                mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(),
+                new MarketTimeZone("ZW"), loanDocumentService, payslipFraudDetector, payslipReviewService);
     }
 
     @AfterEach
@@ -220,6 +237,51 @@ class LoanServiceImplApplicationTest {
         verify(loanRepository).save(any());
     }
 
+    @Test
+    @DisplayName("each document is kept as version 1, uploaded by the originator, with the upload logged (FR-SSB-009)")
+    void applicationDocumentsAreStoredAsVersionOne() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        byte[] pdf = "%PDF-1.7 payslip".getBytes();
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+        request.setPayslipPicture(java.util.Base64.getEncoder().encodeToString(pdf));
+        request.setSignature("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png));
+        Witness witness = new Witness();
+        witness.setFullName("Tendai Moyo");
+        witness.setSignature(java.util.Base64.getEncoder().encodeToString(png));
+        request.setWitness(witness);
+
+        service.requestLoan(request);
+
+        ArgumentCaptor<LoanDocument> stored = ArgumentCaptor.forClass(LoanDocument.class);
+        verify(loanDocumentRepository, times(3)).save(stored.capture());
+        assertThat(stored.getAllValues())
+                .extracting(LoanDocument::getDocumentType, LoanDocument::getVersion, LoanDocument::getOrigin,
+                        LoanDocument::getContentType, LoanDocument::getUploadedBy)
+                .containsExactly(
+                        tuple(DocumentType.PAYSLIP, 1, DocumentOrigin.APPLICATION, "application/pdf", "agent.jane"),
+                        tuple(DocumentType.SIGNATURE, 1, DocumentOrigin.APPLICATION, "image/png", "agent.jane"),
+                        tuple(DocumentType.WITNESS_SIGNATURE, 1, DocumentOrigin.APPLICATION, "image/png", "agent.jane"));
+        assertThat(stored.getAllValues().get(0).getContent()).isEqualTo(pdf);
+        assertThat(stored.getAllValues().get(0).getSha256()).isEqualTo(AuditService.sha256Hex(pdf));
+        ArgumentCaptor<LoanDocumentAccess> logged = ArgumentCaptor.forClass(LoanDocumentAccess.class);
+        verify(loanDocumentAccessRepository, times(3)).save(logged.capture());
+        assertThat(logged.getAllValues()).extracting(LoanDocumentAccess::getAction, LoanDocumentAccess::getPerformedBy)
+                .containsOnly(tuple(DocumentAccessAction.UPLOAD, "agent.jane"));
+    }
+
+    @Test
+    @DisplayName("a signature that is not base64 is refused before anything is saved")
+    void undecodableSignatureIsRefused() {
+        LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
+        request.setSignature("signed: R. Chikwanha");
+
+        assertThatThrownBy(() -> service.requestLoan(request))
+                .isInstanceOf(FileSignatureValidator.UnsafeFileException.class)
+                .hasMessage("signature is not valid base64 content");
+        verify(loanRepository, never()).save(any());
+        verify(loanDocumentRepository, never()).save(any());
+    }
+
     // ── Payslip fraud controls (FR-SSB-007) ───────────────────────────────────
 
     private static final String PAYSLIP = java.util.Base64.getEncoder().encodeToString("%PDF-1.7 payslip".getBytes());
@@ -242,12 +304,12 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("a payslip already on file under another identity holds the application for review")
     void payslipOfAnotherApplicantIsHeld() {
-        when(loanRepository.findPayslipMatches(any(), any()))
+        when(loanDocumentRepository.findPayslipMatches(any(), any(), any()))
                 .thenReturn(List.of(new PayslipMatch(17L, "7654321B", "637654321B42")));
 
         Loan loan = applyWithPayslip(LoanApplicationRequestValidationTest.completeApplication());
 
-        assertThat(loan.getPayslipSha256()).isEqualTo(DocumentFingerprint.of(PAYSLIP));
+        assertThat(loan.getPayslipSha256()).isEqualTo(AuditService.sha256Hex("%PDF-1.7 payslip".getBytes()));
         assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
         assertThat(held(loan)).containsExactly(new PayslipFraudDetector.Finding(
                 PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT, 17L, "Same payslip file as loan 000000017"));
@@ -258,7 +320,7 @@ class LoanServiceImplApplicationTest {
     @Test
     @DisplayName("the same payslip from the same applicant is held too; a shared EC number alone is not the same person")
     void payslipOfTheSameApplicantIsHeld() {
-        when(loanRepository.findPayslipMatches(any(), any())).thenReturn(List.of(
+        when(loanDocumentRepository.findPayslipMatches(any(), any(), any())).thenReturn(List.of(
                 new PayslipMatch(9L, "1234567a", "63-1234567-A-63"),
                 new PayslipMatch(8L, "1234567A", "639999999Z99")));
 
@@ -316,6 +378,6 @@ class LoanServiceImplApplicationTest {
         service.requestLoan(LoanApplicationRequestValidationTest.completeApplication());
 
         verify(loanRepository, never()).lockApplicant(startsWith("loan-application:payslip:"));
-        verify(loanRepository, never()).findPayslipMatches(any(), any());
+        verify(loanDocumentRepository, never()).findPayslipMatches(any(), any(), any());
     }
 }

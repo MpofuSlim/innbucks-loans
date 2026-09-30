@@ -13,6 +13,16 @@ import java.time.LocalDateTime;
 
 public class LoanSpecification {
 
+    /**
+     * This loan, if the scope may read it: a merchant-scoped caller reads only its own merchant's loans that it
+     * originated. Platform-wide staff are not narrowed.
+     */
+    public static Specification<Loan> readableBy(Long id, LoanReadScope scope) {
+        Specification<Loan> loan = withId(id);
+        return scope.platformWide() ? loan
+                : loan.and(withMerchantCode(scope.merchantCode())).and(createdByUserId(scope.userId()));
+    }
+
     public static Specification<Loan> withId(Long id) {
         return (root, query, cb) -> cb.equal(root.get("id"), id);
     }

@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.ToString;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
+import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -110,13 +111,11 @@ public class LoanResponse implements Serializable {
     private LocalDateTime disbursedAt;
     private String disbursementReference;
 
-    // --- Documents, base64 ---
-    @ToString.Exclude
-    private String signature;
-    @ToString.Exclude
-    private String nationalIdPicture;
-    @ToString.Exclude
-    private String payslipPicture;
+    /**
+     * The current version of each document, without content (FR-SSB-009): on GET /loans/{loanId}. The content,
+     * and every earlier version, come from the loan's documents endpoints, which log each view.
+     */
+    private List<LoanDocumentSummary> documents;
 
     /**
      * This view without the payslip review, for a caller outside lender-side staff: telling an originator

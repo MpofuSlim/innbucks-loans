@@ -26,6 +26,7 @@ public interface LoanMapper {
     @Mapping(target = "creditDecisionBy", source = "internalApprovalBy")
     @Mapping(target = "creditDecisionComment", source = "internalApprovalComment")
     @Mapping(target = "creditDecisionReasonCode", source = "internalApprovalReasonCode")
+    @Mapping(target = "documents", ignore = true)
     @Mapping(target = "bookingStatus", source = "loanAccountStatus")
     @Mapping(target = "disbursedAt", source = "dateDisbursed")
     LoanResponse toResponse(Loan loan);

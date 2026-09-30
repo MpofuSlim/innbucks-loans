@@ -1,12 +1,14 @@
 package zw.co.innbucks.loans.core.files;
 
 import org.junit.jupiter.api.Test;
+import zw.co.innbucks.loans.core.audit.AuditService;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static zw.co.innbucks.loans.core.files.FileSignatureValidator.FileKind;
 
@@ -40,29 +42,54 @@ class FileSignatureValidatorTest {
         // Attacker uploads an EXE renamed to .png inside a data-url — the
         // extension and MIME lie, the magic number does not.
         String disguised = "data:image/png;base64," + Base64.getEncoder().encodeToString(WINDOWS_PE);
-        assertThrows(FileSignatureValidator.UnsafeFileException.class,
-                () -> validator.requireAcceptedBase64Document("payslipPicture", disguised));
+        FileSignatureValidator.UnsafeFileException refused = assertThrows(FileSignatureValidator.UnsafeFileException.class,
+                () -> validator.decodeBase64Document("signature", disguised, false));
+        assertEquals("signature contains an executable byte signature — rejected", refused.getMessage());
     }
 
     @Test
-    void base64LegitimateDocuments_pass() {
-        assertDoesNotThrow(() -> validator.requireAcceptedBase64Document("nationalIdPicture",
-                Base64.getEncoder().encodeToString(JPEG)));
-        assertDoesNotThrow(() -> validator.requireAcceptedBase64Document("payslipPicture",
-                "data:application/pdf;base64," + Base64.getEncoder().encodeToString(PDF)));
+    void base64LegitimateDocuments_areDecodedWholeWithTypeAndFingerprint() {
+        DecodedFile jpeg = validator.decodeBase64Document("nationalIdPicture", Base64.getEncoder().encodeToString(JPEG),
+                true);
+        assertArrayEquals(JPEG, jpeg.content());
+        assertEquals("image/jpeg", jpeg.contentType());
+        assertEquals(JPEG.length, jpeg.size());
+
+        // A data-URL prefix and line breaks do not change the file, so they do not change its fingerprint.
+        String encoded = Base64.getEncoder().encodeToString(PDF);
+        DecodedFile plain = validator.decodeBase64Document("payslipPicture", encoded, true);
+        DecodedFile wrapped = validator.decodeBase64Document("payslipPicture",
+                "data:application/pdf;base64," + encoded.substring(0, 4) + "\r\n" + encoded.substring(4), true);
+        assertEquals("application/pdf", plain.contentType());
+        assertEquals(AuditService.sha256Hex(PDF), plain.sha256());
+        assertEquals(plain.sha256(), wrapped.sha256());
     }
 
     @Test
-    void unknownBinaryContent_isRejected() {
+    void unknownBinaryContent_isRejectedAsAKycDocument_butKeptAsASignature() {
         byte[] garbage = {0x00, 0x01, 0x02, 0x03, 0x04};
-        assertThrows(FileSignatureValidator.UnsafeFileException.class,
-                () -> validator.requireAcceptedBase64Document("payslipPicture",
-                        Base64.getEncoder().encodeToString(garbage)));
+        String encoded = Base64.getEncoder().encodeToString(garbage);
+        FileSignatureValidator.UnsafeFileException refused = assertThrows(FileSignatureValidator.UnsafeFileException.class,
+                () -> validator.decodeBase64Document("payslipPicture", encoded, true));
+        assertEquals("payslipPicture is not a recognised document type (PDF/PNG/JPEG/GIF)", refused.getMessage());
+
+        assertEquals("application/octet-stream",
+                validator.decodeBase64Document("signature", encoded, false).contentType());
+    }
+
+    @Test
+    void contentThatIsNotBase64_orDecodesToNothing_isRejected() {
+        FileSignatureValidator.UnsafeFileException notBase64 = assertThrows(FileSignatureValidator.UnsafeFileException.class,
+                () -> validator.decodeBase64Document("signature", "not base64 at all!", false));
+        assertEquals("signature is not valid base64 content", notBase64.getMessage());
+        FileSignatureValidator.UnsafeFileException empty = assertThrows(FileSignatureValidator.UnsafeFileException.class,
+                () -> validator.decodeBase64Document("signature", "data:image/png;base64,", false));
+        assertEquals("signature is empty", empty.getMessage());
     }
 
     @Test
     void absentPayload_isCallerPolicy_notRejectedHere() {
-        assertDoesNotThrow(() -> validator.requireAcceptedBase64Document("payslipPicture", null));
-        assertDoesNotThrow(() -> validator.requireAcceptedBase64Document("payslipPicture", " "));
+        assertNull(validator.decodeBase64Document("payslipPicture", null, true));
+        assertNull(validator.decodeBase64Document("payslipPicture", " ", true));
     }
 }

@@ -19,8 +19,8 @@ import org.springframework.data.jpa.domain.Specification;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.channel.ChannelRepository;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.document.LoanDocumentService;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
-import zw.co.innbucks.loans.core.files.FileSignatureValidator;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 
@@ -57,8 +57,8 @@ class LoanServiceImplReadScopeTest {
         loanMapper = mock(LoanMapper.class);
         service = new LoanServiceImpl(loanRepository, mock(ParameterService.class), loanMapper,
                 mock(AuthService.class), mock(MerchantRepository.class), mock(ChannelRepository.class),
-                mock(Validator.class), new MarketTimeZone("ZW"), new FileSignatureValidator(),
-                mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
+                mock(Validator.class), new MarketTimeZone("ZW"),
+                mock(LoanDocumentService.class), mock(PayslipFraudDetector.class), mock(PayslipReviewService.class));
 
         root = mock(Root.class, RETURNS_DEEP_STUBS);
         cb = mock(CriteriaBuilder.class);

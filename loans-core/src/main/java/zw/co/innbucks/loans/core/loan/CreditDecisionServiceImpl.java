@@ -2,7 +2,6 @@ package zw.co.innbucks.loans.core.loan;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -10,6 +9,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
@@ -23,9 +24,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import static zw.co.innbucks.loans.core.loan.LoanSpecification.createdByUserId;
-import static zw.co.innbucks.loans.core.loan.LoanSpecification.withId;
-import static zw.co.innbucks.loans.core.loan.LoanSpecification.withMerchantCode;
 import static zw.co.innbucks.loans.core.merchant.MerchantService.maskAccountNumber;
 
 @Slf4j
@@ -43,6 +41,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final CreditDecisionRepository creditDecisionRepository;
     private final CreditReasonCodeRepository creditReasonCodeRepository;
     private final CreditDecisionLog creditDecisionLog;
+    private final LoanDocumentRepository loanDocumentRepository;
     private final TransactionTemplate transactionTemplate;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
@@ -51,6 +50,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                                      AuditService auditService, CreditDecisionRepository creditDecisionRepository,
                                      CreditReasonCodeRepository creditReasonCodeRepository,
                                      CreditDecisionLog creditDecisionLog,
+                                     LoanDocumentRepository loanDocumentRepository,
                                      PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.authService = authService;
@@ -61,6 +61,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.creditDecisionRepository = creditDecisionRepository;
         this.creditReasonCodeRepository = creditReasonCodeRepository;
         this.creditDecisionLog = creditDecisionLog;
+        this.loanDocumentRepository = loanDocumentRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -118,6 +119,12 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
 
         PayoutDestination payee = null;
         if (decision == InternalApprovalStatus.APPROVED) {
+            if (loan.getPayslipReviewStatus() == PayslipReviewStatus.PENDING) {
+                // Held by a payslip amended after SSB accepted the loan (FR-SSB-007/009): review it first.
+                throw new LoanApprovalException(String.format(
+                        "Loan %s is held for payslip review and cannot be approved until it is cleared",
+                        loan.getReference()));
+            }
             requireNoConflictOfInterest(loan, username);
             payee = requirePayee(loan);
             // Frozen with the decision: booking and any recovery payout pay this, not whatever the
@@ -149,8 +156,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         String username = authService.getLoggedInUsername();
         String comment = requireComment(request.getComment());
         return Objects.requireNonNull(transactionTemplate.execute(tx -> {
-            if (!scope.platformWide() && !loanRepository.exists(Specification.where(withId(id))
-                    .and(withMerchantCode(scope.merchantCode())).and(createdByUserId(scope.userId())))) {
+            if (!scope.platformWide() && !loanRepository.exists(LoanSpecification.readableBy(id, scope))) {
                 // Out of scope reads as missing, as on every other loan read.
                 throw new NotFoundException("Loan " + id + " not found");
             }
@@ -221,9 +227,9 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     }
 
     /**
-     * Segregation of duties (FR-PBL-029): nobody approves a loan they originated, resubmitted or are a
-     * party to, since that one person would then decide both who is paid and that they are paid. A
-     * refusal or a return is not held to it: neither pays anything.
+     * Segregation of duties (FR-PBL-029): nobody approves a loan they originated, resubmitted, replaced a
+     * document of, or are a party to, since that one person would then decide both what is assessed and
+     * that it passes. A refusal or a return is not held to it: neither pays anything.
      */
     private void requireNoConflictOfInterest(Loan loan, String approver) {
         String reference = loan.getReference();
@@ -236,6 +242,12 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                 loan.getId(), CreditAction.RESUBMITTED, approver)) {
             throw new AccessDeniedException(String.format(
                     "Loan %s was resubmitted by %s, who cannot also approve it; another credit officer must",
+                    reference, approver));
+        }
+        if (loanDocumentRepository.existsByLoanIdAndOriginAndUploadedByIgnoreCase(
+                loan.getId(), DocumentOrigin.AMENDMENT, approver)) {
+            throw new AccessDeniedException(String.format(
+                    "Loan %s has documents amended by %s, who cannot also approve it; another credit officer must",
                     reference, approver));
         }
         if (SegregationOfDuties.isPartyTo(loan, authService.getLoggedInUser())) {

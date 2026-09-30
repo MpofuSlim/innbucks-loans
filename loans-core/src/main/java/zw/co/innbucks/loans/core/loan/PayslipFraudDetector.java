@@ -3,6 +3,7 @@ package zw.co.innbucks.loans.core.loan;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
+import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,18 +28,19 @@ public class PayslipFraudDetector {
     /** Earlier applications compared per payslip: enough to show a pattern, bounded for a much-reused file. */
     static final int MAX_MATCHES = 20;
 
-    private final LoanRepository loanRepository;
+    private final LoanDocumentRepository loanDocumentRepository;
 
     /** One reason to hold the application, and the other application it involves (if any). */
     public record Finding(PayslipFraudReason reason, Long matchedLoanId, String detail) {
     }
 
-    /** Call before the loan is saved, so it cannot match itself. */
+    /** The loan's own documents never count against it. */
     public List<Finding> findingsFor(Loan loan) {
         List<Finding> findings = new ArrayList<>();
         if (loan.getPayslipSha256() != null) {
-            for (PayslipMatch match : loanRepository.findPayslipMatches(loan.getPayslipSha256(),
-                    PageRequest.of(0, MAX_MATCHES))) {
+            // Every version of every other loan's payslip: a new, unsaved loan has no id to leave out.
+            for (PayslipMatch match : loanDocumentRepository.findPayslipMatches(loan.getPayslipSha256(),
+                    loan.getId() == null ? 0L : loan.getId(), PageRequest.of(0, MAX_MATCHES))) {
                 String detail = "Same payslip file as loan " + String.format("%09d", match.loanId());
                 findings.add(sameApplicant(loan, match)
                         ? new Finding(PayslipFraudReason.PAYSLIP_REUSED_BY_SAME_APPLICANT, match.loanId(), detail)

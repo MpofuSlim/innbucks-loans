@@ -12,6 +12,11 @@ import zw.co.innbucks.loans.core.disbursements.InnbucksAuthRequest;
 import zw.co.innbucks.loans.core.disbursements.InnbucksAuthResponse;
 import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationRequest;
+import zw.co.innbucks.loans.core.document.AmendDocumentRequest;
+import zw.co.innbucks.loans.core.document.DocumentOrigin;
+import zw.co.innbucks.loans.core.document.DocumentType;
+import zw.co.innbucks.loans.core.document.LoanDocument;
+import zw.co.innbucks.loans.core.document.LoanDocumentContent;
 import zw.co.innbucks.loans.core.loan.BankingDetail;
 import zw.co.innbucks.loans.core.loan.Customer;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -30,6 +35,7 @@ import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
+import java.util.Base64;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -122,9 +128,6 @@ class SensitiveToStringTest {
         Loan loan = new Loan();
         loan.setEcNumber("1234567A");
         loan.setNationalIdNumber(NATIONAL_ID);
-        loan.setSignature(SIGNATURE);
-        loan.setNationalIdPicture(IMAGE);
-        loan.setPayslipPicture(IMAGE);
         loan.setBankingDetail(bankingDetail());
         loan.setNextOfKin(nextOfKin());
         loan.setWitness(witness());
@@ -132,9 +135,6 @@ class SensitiveToStringTest {
 
         LoanResponse dto = new LoanResponse();
         dto.setNationalIdNumber(NATIONAL_ID);
-        dto.setSignature(SIGNATURE);
-        dto.setNationalIdPicture(IMAGE);
-        dto.setPayslipPicture(IMAGE);
         dto.setBankingDetail(bankingDetail());
         dto.setNextOfKin(nextOfKin());
         dto.setWitness(witness());
@@ -148,6 +148,23 @@ class SensitiveToStringTest {
         assertNoPii(customer);
         assertNoPii(bankingDetail());
         assertThat(loan.toString()).contains("1234567A", "creator-1");
+    }
+
+    @Test
+    @DisplayName("a stored document, its content view and an amendment print no content (FR-SSB-009)")
+    void documentsPrintNoContent() {
+        byte[] bytes = Base64.getDecoder().decode(IMAGE);
+        LoanDocument document = LoanDocument.builder().loanId(42L).documentType(DocumentType.NATIONAL_ID).version(2)
+                .origin(DocumentOrigin.AMENDMENT).content(bytes).contentType("image/png").sizeBytes(bytes.length)
+                .sha256("ab".repeat(32)).reason("Clearer copy").uploadedBy("agent.moyo").build();
+        AmendDocumentRequest amendment = new AmendDocumentRequest(SIGNATURE, "Clearer copy");
+
+        assertNoPii(document);
+        assertNoPii(LoanDocumentContent.of(document));
+        assertNoPii(amendment);
+        assertThat(LoanDocumentContent.of(document).content()).isEqualTo(Base64.getEncoder().encodeToString(bytes));
+        assertThat(LoanDocumentContent.of(document).toString()).contains("NATIONAL_ID", "version=2");
+        assertThat(amendment.toString()).contains("Clearer copy");
     }
 
     @Test
