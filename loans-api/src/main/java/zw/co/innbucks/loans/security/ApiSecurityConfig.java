@@ -3,7 +3,6 @@ package zw.co.innbucks.loans.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -14,14 +13,17 @@ import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.web.ApiPaths;
 
-import java.util.List;
-
+/**
+ * No CORS here, deliberately. Browsers reach this API through the fleet api-gateway, and CORS lives
+ * there alone (its globalcors): the gateway ADDS a backend's response headers to its own, so a CORS
+ * policy here as well would send a second Access-Control-Allow-Origin, and a browser refuses a response
+ * that carries two. Leaving out {@code .cors()} is not enough on its own: Spring Security turns CORS on
+ * for every chain by itself whenever a {@code UrlBasedCorsConfigurationSource} bean exists, so none may
+ * be declared (GatewaySurfaceTest).
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -36,7 +38,11 @@ public class ApiSecurityConfig {
             "/swagger-ui.html",
             "/spec.html",
             "/swagger-resources/**",
-            "/configuration/security"
+            "/configuration/security",
+            // The cell's probes. Only health is exposed (application.yml), and it shows no details.
+            // Named exactly, never /actuator/**: any other actuator path stays behind a token.
+            "/actuator/health",
+            "/actuator/health/**"
     };
 
     @Bean
@@ -49,7 +55,6 @@ public class ApiSecurityConfig {
     SecurityFilterChain unsecuredSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
                 .securityMatcher(UNSECURED_PATHS)
-                .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .csrf(csrf -> csrf.ignoringRequestMatchers(AUTH_PATHS))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
@@ -68,7 +73,6 @@ public class ApiSecurityConfig {
     @Order(2)
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
@@ -80,25 +84,5 @@ public class ApiSecurityConfig {
                         .accessDeniedHandler(SecurityErrorResponses::forbidden))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .build();
-    }
-
-    /**
-     * Single source of truth for CORS. Consumed by {@code .cors(withDefaults())} on
-     * both filter chains, so preflight {@code OPTIONS} requests are handled inside
-     * the security chain — before authorization — and every response (including the
-     * secured endpoints) carries the CORS headers. This replaces the
-     * previous standalone CorsFilter + SimpleCORSFilter, which ran after Spring
-     * Security and so never got to answer a preflight on an authenticated route.
-     */
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setMaxAge(3600L);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
     }
 }

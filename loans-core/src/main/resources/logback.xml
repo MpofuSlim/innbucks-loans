@@ -1,21 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <appender name="fileAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- daily rollover -->
-            <fileNamePattern>logs/app.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <!-- keep 90 days' worth of history -->
-            <maxHistory>180</maxHistory>
-        </rollingPolicy>
-        <encoder>
-            <Pattern>.%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg %n
-            </Pattern>
-        </encoder>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>TRACE</level>
-        </filter>
-    </appender>
-
+    <!-- Console only, like every fleet service: the platform collects stdout (docker logs on the box,
+         kubectl logs in the cell). There is deliberately no file appender: the cell runs the image with a
+         read-only root filesystem, where a file appender cannot create its directory and logback aborts
+         the boot, and a file inside a container is lost with it anyway. -->
     <appender name="consoleAppender" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <Pattern>.%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg %n
@@ -28,7 +16,6 @@
 
     <root level="INFO">
         <appender-ref ref="consoleAppender" />
-        <appender-ref ref="fileAppender" />
     </root>
 
     <logger name="com.cloudhopper.smpp.impl" level="ERROR" />

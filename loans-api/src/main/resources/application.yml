@@ -1,28 +1,39 @@
 server:
-  port: 8090
+  # 8088 is loans-service's port in the fleet cell too (k8s Service, containerPort, probes and every
+  # copy of the fleet's discovery map), so the packaged default and the cell agree without an override.
+  port: ${SERVER_PORT:8088}
   error:
     whitelabel:
       enabled: false
+  # Deliberately none, not left unset. Unset, Boot turns on Tomcat's forwarded-header handling by
+  # itself whenever it detects a cloud platform, and it detects Kubernetes from the pod's env. Tomcat
+  # would then take the client address out of X-Forwarded-For and rewrite that header, so the signing
+  # evidence (SigningContexts: the address "as this server saw it", the chain "as received") would mean
+  # one thing on the box and another in the cell. The Swagger server is set explicitly (OpenApiConfig)
+  # and nothing here builds a URL from the request, so nothing needs the headers.
+  forward-headers-strategy: none
 
 spring:
   profiles:
     active: api
 
-  # --- PostgreSQL (local development) ---
+  # --- PostgreSQL ---
+  # The fleet's variable names, so the cell's loans-service Deployment sets these exactly as it does for
+  # every other service. The defaults are the local development database.
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/innbucks_loans
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/innbucks_loans}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     hikari:
-      maximum-pool-size: 19
-      minimum-idle: 7
+      maximum-pool-size: ${DB_POOL_MAX:19}
+      minimum-idle: ${DB_POOL_MIN:7}
       data-source-properties:
         stringtype: unspecified
 
   # The schema is Flyway's (loans-core db/migration); Hibernate only checks it
   # matches. JpaSchemaConfig enforces validate and the naming in code, because
-  # /app/config replaces this file on the box.
+  # a file in /app/config can still override anything set here.
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
@@ -128,6 +139,12 @@ loans:
   drafts:
     expiry-days: "${DRAFT_EXPIRY_DAYS:30}"
     expiry-cron: "${DRAFT_EXPIRY_CRON:0 30 1 * * *}"
+  # In a Kubernetes pod the scheduled-tasks profile alone refuses to boot (ScheduledTasksKubernetesGuard):
+  # the fleet cell runs loans with the jobs OFF, and a Secret entry such as SPRING_PROFILES_INCLUDE could
+  # otherwise switch on InnBucks booking (which pays) without the manifest changing. Turning them on in
+  # the cell is its own go-live step, which sets this AND the profile. Outside Kubernetes it is not read.
+  scheduled-tasks:
+    allowed-on-kubernetes: "${SCHEDULED_TASKS_ALLOWED_ON_KUBERNETES:false}"
 
 ndasenda:
   base-url: https://sandbox.deductions.ndasenda.co.zw
@@ -225,8 +242,27 @@ whatsapp:
   connect-timeout-ms: "${WHATSAPP_CONNECT_TIMEOUT_MS:2000}"
   read-timeout-ms: "${WHATSAPP_READ_TIMEOUT_MS:10000}"
 
+# The spec stays at the root /v3/api-docs: the fleet gateway serves it at /loans-service/v3/api-docs
+# (StripPrefix=1) for its aggregated Swagger UI. Its single server comes from OpenApiConfig.
 springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+# --- Actuator: health only -------------------------------------------------
+# For the cell's probes: readiness on /actuator/health, liveness on /actuator/health/liveness, on the
+# app port like the other fleet services. Health is the ONLY endpoint exposed over HTTP, and it answers
+# UP or DOWN with no details, so an anonymous caller learns nothing about the database or the disk.
+# ApiSecurityConfig permits exactly /actuator/health and its subpaths; anything else under /actuator is
+# not mapped at all.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

@@ -100,7 +100,7 @@ class StartupTaskTest {
     }
 
     @Test
-    @DisplayName("deployment + only the BOOTSTRAP_ADMIN_PASSWORD env var (packaged yml replaced by /app/config) → still used")
+    @DisplayName("deployment + only the BOOTSTRAP_ADMIN_PASSWORD env var (no packaged yml in play) → still used")
     void deploymentReadsThePasswordFromTheEnvironment() throws Exception {
         MockEnvironment withoutPackagedYml = new MockEnvironment();
         withoutPackagedYml.getPropertySources().addLast(processEnv(Map.of("BOOTSTRAP_ADMIN_PASSWORD", "env-supplied-pw")));
