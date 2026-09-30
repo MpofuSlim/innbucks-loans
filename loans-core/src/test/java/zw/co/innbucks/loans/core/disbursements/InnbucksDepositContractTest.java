@@ -8,11 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.DisbursementRequest;
 import zw.co.innbucks.loans.core.DisbursementResponse;
 import zw.co.innbucks.loans.core.ManualDisbursementResponse;
+import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
@@ -26,9 +28,17 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.AssignmentMode;
+import zw.co.innbucks.loans.core.workflow.CheckpointDecisionRepository;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.StageKind;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
+import zw.co.innbucks.loans.core.workflow.WorkflowStageRepository;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -39,7 +49,9 @@ import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +78,7 @@ class InnbucksDepositContractTest {
 
     private static WireMockServer wireMock;
     private final List<LoanDisbursement> attempts = new ArrayList<>();
+    private final List<WorkflowStage> checkpoints = new ArrayList<>();
     private InnbucksDisbursementService service;
     private Loan loan;
 
@@ -95,6 +108,8 @@ class InnbucksDepositContractTest {
                 .mobileNumber("0772123123")
                 .merchant(Merchant.builder().companyName("Innbucks")
                         .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET).build())
+                .internalApprovalBy("cmanager")
+                .bookingClaimedAt(LocalDateTime.of(2026, 10, 5, 8, 0))
                 .build();
         loan.setId(42L);
 
@@ -131,10 +146,19 @@ class InnbucksDepositContractTest {
         when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
+        // The checkpoints before booking, none decided; the caller is a SUPER_ADMIN who did not approve the loan.
+        WorkflowStageRepository stages = mock(WorkflowStageRepository.class);
+        when(stages.findByKindAndHoldPointAndActiveTrueOrderByDisplayOrderAscCodeAsc(eq(StageKind.CHECKPOINT),
+                eq(HoldPoint.BEFORE_BOOKING))).thenAnswer(inv -> List.copyOf(checkpoints));
+        CheckpointDecisionRepository decisions = mock(CheckpointDecisionRepository.class);
+        when(decisions.findByStageCodeInAndLoanIdIn(anyCollection(), anyCollection())).thenReturn(List.of());
+        AuthService authService = mock(AuthService.class);
+        when(authService.getLoggedInUsername()).thenReturn("finance.admin");
+
         return new InnbucksDisbursementService(loans, mock(LoanNotificationService.class), attemptRepository,
                 mock(DeductionCancellationService.class), restTemplate, params,
                 new InnbucksAuthService(restTemplate, params), mock(DisbursementLedger.class),
-                mock(PlatformTransactionManager.class));
+                new CheckpointGate(stages, loans, decisions), authService, mock(PlatformTransactionManager.class));
     }
 
     private static DisbursementRequest customerDeposit() {
@@ -145,6 +169,35 @@ class InnbucksDepositContractTest {
                 .transactionReference(STABLE_REF)
                 .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET)
                 .build();
+    }
+
+    @Test
+    @DisplayName("waiting for payout authorisation: refused before anything reaches InnBucks, login included")
+    void waitingForPayoutAuthorisationNeverReachesInnbucks() {
+        checkpoints.add(WorkflowStage.builder().code("PAYOUT_AUTHORISATION").kind(StageKind.CHECKPOINT)
+                .name("Payout authorisation").displayOrder(35).assignment(AssignmentMode.OPTIONAL).targetHours(4)
+                .holdPoint(HoldPoint.BEFORE_BOOKING).active(true).activeSince(LocalDateTime.of(2026, 10, 2, 7, 15))
+                .updatedBy("admin").updatedAt(LocalDateTime.of(2026, 10, 2, 7, 15)).build());
+        wireMock.stubFor(post(urlEqualTo(DEPOSIT)).willReturn(okJson("{\"responseCode\":0}")));
+
+        assertThatThrownBy(() -> service.disburse(42L))
+                .isInstanceOf(DisbursementNotAllowedException.class)
+                .hasMessageContaining("is waiting for Payout authorisation");
+        wireMock.verify(0, anyRequestedFor(anyUrl()));
+        assertThat(attempts).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the loan's credit approver: refused before anything reaches InnBucks, login included")
+    void theCreditApproverNeverReachesInnbucks() {
+        loan.setInternalApprovalBy("finance.admin");
+        wireMock.stubFor(post(urlEqualTo(DEPOSIT)).willReturn(okJson("{\"responseCode\":0}")));
+
+        assertThatThrownBy(() -> service.disburse(42L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("was approved by finance.admin, who cannot also pay it out");
+        wireMock.verify(0, anyRequestedFor(anyUrl()));
+        assertThat(attempts).isEmpty();
     }
 
     @Test

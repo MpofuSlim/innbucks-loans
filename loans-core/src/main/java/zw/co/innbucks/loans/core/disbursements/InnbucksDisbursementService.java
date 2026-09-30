@@ -12,9 +12,11 @@ import zw.co.innbucks.loans.core.DisbursementRequest;
 import zw.co.innbucks.loans.core.DisbursementResponse;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.TextUtils;
+import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.*;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -45,10 +47,12 @@ public class InnbucksDisbursementService extends DisbursementService {
                                RestTemplate restTemplate, InnbucksParameters parameters,
                                InnbucksAuthService innbucksAuthService,
                                DisbursementLedger disbursementLedger,
+                               CheckpointGate checkpointGate,
+                               AuthService authService,
                                PlatformTransactionManager transactionManager
     ) {
         super(loanRepository, loanNotificationService, loanDisbursementRepository, deductionCancellationService,
-                disbursementLedger, transactionManager);
+                disbursementLedger, checkpointGate, authService, transactionManager);
         this.innbucksAuthService = innbucksAuthService;
         this.restTemplate = restTemplate;
         this.parameters = parameters;

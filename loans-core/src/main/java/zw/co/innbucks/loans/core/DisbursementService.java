@@ -1,10 +1,12 @@
 package zw.co.innbucks.loans.core;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.ManualDisbursementResponse.Outcome;
+import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.disbursements.BookingFailureKind;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationResponse;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
@@ -17,6 +19,9 @@ import zw.co.innbucks.loans.core.loan.*;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -64,18 +69,24 @@ public abstract class DisbursementService {
     private final LoanDisbursementRepository loanDisbursementRepository;
     private final DeductionCancellationService deductionCancellationService;
     private final DisbursementLedger disbursementLedger;
+    private final CheckpointGate checkpointGate;
+    private final AuthService authService;
     private final TransactionTemplate transactionTemplate;
 
     protected DisbursementService(LoanRepository loanRepository, LoanNotificationService loanNotificationService,
                                   LoanDisbursementRepository loanDisbursementRepository,
                                   DeductionCancellationService deductionCancellationService,
                                   DisbursementLedger disbursementLedger,
+                                  CheckpointGate checkpointGate,
+                                  AuthService authService,
                                   PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
         this.loanNotificationService = loanNotificationService;
         this.loanDisbursementRepository = loanDisbursementRepository;
         this.deductionCancellationService = deductionCancellationService;
         this.disbursementLedger = disbursementLedger;
+        this.checkpointGate = checkpointGate;
+        this.authService = authService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         // Always a fresh transaction: the claim must be COMMITTED before InnBucks is called,
         // even if a future caller wraps disburse() in a transaction of its own.
@@ -103,8 +114,9 @@ public abstract class DisbursementService {
      * pre-approved booking ({@code LoanBookingJob}), on which InnBucks books AND pays;
      * this pays only a loan that booking definitively did not pay, and never pays twice:
      * <ol>
-     *   <li><b>Claim</b> — under the loan's row lock, check eligibility, then COMMIT a PENDING
-     *       attempt row carrying the loan's stable reference before InnBucks is called. That
+     *   <li><b>Claim</b> — under the loan's row lock, check eligibility (the checkpoints before booking among
+     *       it, such as the payout authorisation of FR-SSB-018) and that the caller is a second person, then COMMIT
+     *       a PENDING attempt row carrying the loan's stable reference before InnBucks is called. That
      *       row is the write-ahead record: a crash or a timeout from here on leaves it PENDING,
      *       and a PENDING row blocks every further attempt. No lock is held across the call.</li>
      *   <li><b>Pay</b> — one deposit; this method never retries it.</li>
@@ -116,6 +128,8 @@ public abstract class DisbursementService {
      *
      * @throws NotFoundException               unknown loan
      * @throws DisbursementNotAllowedException the loan is not eligible; nothing was sent
+     * @throws AccessDeniedException           the caller originated the loan, approved it at Credit or is a party to
+     *                                         it; nothing was sent
      */
     public ManualDisbursementResponse disburse(Long loanId) {
         Claim claim = transactionTemplate.execute(status -> claim(loanId));
@@ -157,6 +171,7 @@ public abstract class DisbursementService {
                 .orElseThrow(() -> new NotFoundException("Loan %d not found".formatted(loanId)));
         String reference = manualReference(loan);
         requireEligible(loan, reference);
+        requireSecondPerson(loan);
 
         // Same destination the pre-approved booking would have paid, frozen at credit approval: a
         // consumer-finance loan pays the merchant's settlement account, never the customer.
@@ -236,6 +251,7 @@ public abstract class DisbursementService {
                         .formatted(loanRef, attemptRef));
             }
         }
+        requireClearedCheckpoints(loan);
 
         Merchant merchant = loan.getMerchant();
         PayoutDestination payee = PayoutDestination.of(loan);
@@ -257,6 +273,58 @@ public abstract class DisbursementService {
         BigDecimal amount = loan.getDisbursedAmount();
         if (amount == null || amount.signum() <= 0) {
             throw notAllowed("Loan %s has no disbursement amount".formatted(loanRef));
+        }
+    }
+
+    /**
+     * This pays in place of the booking, so it waits for the checkpoints the booking waited for: those before booking
+     * (FR-SSB-014), the payout authorisation of FR-SSB-018 among them. The booking job asks
+     * {@link CheckpointGate#holding} under the loan's lock when it claims the booking and books no loan one holds, so
+     * every checkpoint in force at that claim must have CLEARED the loan, and one that declined it refuses. Never
+     * looser than the booking.
+     *
+     * <p>A checkpoint switched on after the booking was claimed (and so after InnBucks refused it) does not hold this
+     * payout. {@code activeSince} means here what it means to the booking job: a loan still at the point when a
+     * checkpoint comes on waits for it from then, and a loan already past it is not held by it
+     * ({@code CheckpointQueue.atHoldPoint}: the booking has left). Had InnBucks accepted the booking, it would have
+     * paid this loan without that checkpoint; and since the loan is past its point, it can neither wait nor be cleared
+     * there, so counting it would strand the loan for good. A refused booking with no claim recorded was sent before
+     * claims were recorded, which predates checkpoints, so none was in force for it.
+     */
+    private void requireClearedCheckpoints(Loan loan) {
+        checkpointGate.notCleared(HoldPoint.BEFORE_BOOKING, loan, loan.getBookingClaimedAt()).ifPresent(held -> {
+            String loanRef = loan.getReference();
+            String stage = held.stage().getName();
+            throw notAllowed(held.declined()
+                    ? "Loan %s was declined at %s. A manual payout is not allowed".formatted(loanRef, stage)
+                    : ("Loan %s is waiting for %s, which was switched on before its booking was sent and has not"
+                    + " cleared it. A manual payout is not allowed").formatted(loanRef, stage));
+        });
+    }
+
+    /**
+     * The payout must be a second person's (FR-SSB-018). It is a decision to pay a loan Credit has approved, so it
+     * takes the bars a checkpoint before booking takes, no more and no fewer ({@code CheckpointService
+     * .requireNoConflictOfInterest}, with {@code WorkflowStage.barsCreditApprover} true at BEFORE_BOOKING): not whoever
+     * originated the loan, nor whoever approved it at Credit, nor a party to it (FR-PBL-029). In the same order, and
+     * like a checkpoint decision only once the loan is known to be payable. Assignment does not carry over: a payout
+     * has no work item.
+     */
+    private void requireSecondPerson(Loan loan) {
+        String username = authService.getLoggedInUsername();
+        String loanRef = loan.getReference();
+        if (SegregationOfDuties.originated(loan, username)) {
+            throw new AccessDeniedException(("Loan %s was originated by %s, who cannot also pay it out; another"
+                    + " SUPER_ADMIN must").formatted(loanRef, username));
+        }
+        if (SegregationOfDuties.approved(loan, username)) {
+            throw new AccessDeniedException(("Loan %s was approved by %s, who cannot also pay it out; another"
+                    + " SUPER_ADMIN must").formatted(loanRef, username));
+        }
+        User user = authService.getLoggedInUser();
+        if (SegregationOfDuties.isPartyTo(loan, user)) {
+            throw new AccessDeniedException("%s is a party to loan %s and cannot pay it out; another SUPER_ADMIN must"
+                    .formatted(username, loanRef));
         }
     }
 
