@@ -52,13 +52,15 @@ class WorkflowEscalationServiceTest {
         credit = WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL);
         moreInformation = WorkflowFixtures.moreInformation();
         WorkflowStageRepository stages = mock(WorkflowStageRepository.class);
-        when(stages.findAllByOrderByDisplayOrderAsc()).thenReturn(List.of(credit, moreInformation));
+        when(stages.findAllByOrderByDisplayOrderAscCodeAsc()).thenReturn(List.of(credit, moreInformation));
         creditQueue = mock(StageQueue.class);
         moreInformationQueue = mock(StageQueue.class);
         when(moreInformationQueue.waiting()).thenReturn(List.of());
         StageQueues queues = mock(StageQueues.class);
         when(queues.of(SystemStage.CREDIT_DECISION)).thenReturn(creditQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("CREDIT_DECISION"))).thenReturn(creditQueue);
         when(queues.of(SystemStage.MORE_INFORMATION)).thenReturn(moreInformationQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("MORE_INFORMATION"))).thenReturn(moreInformationQueue);
         itemRepository = mock(WorkItemRepository.class);
         when(itemRepository.save(any())).thenAnswer(i -> {
             WorkItem item = i.getArgument(0);

@@ -38,6 +38,9 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -75,6 +78,7 @@ class CreditDecisionServiceImplTest {
     private LoanDocumentRepository loanDocumentRepository;
     private User approver;
     private WorkAssignmentGuard workAssignmentGuard;
+    private CheckpointGate checkpointGate;
     private CreditDecisionServiceImpl service;
 
     private static CreditReasonCode code(String code, InternalApprovalStatus decision, String description, boolean active) {
@@ -102,12 +106,13 @@ class CreditDecisionServiceImplTest {
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentRepository = mock(LoanDocumentRepository.class);
         workAssignmentGuard = mock(WorkAssignmentGuard.class);
+        checkpointGate = mock(CheckpointGate.class);
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, loanNotificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService,
                         mock(WorkAssignmentGuard.class)), auditService,
                 creditDecisionRepository, creditReasonCodeRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
-                mock(PlatformTransactionManager.class), workAssignmentGuard);
+                mock(PlatformTransactionManager.class), workAssignmentGuard, checkpointGate);
     }
 
     private static CreditDecisionRequest decide(InternalApprovalStatus status) {
@@ -666,6 +671,23 @@ class CreditDecisionServiceImplTest {
         assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
                 .isInstanceOf(LoanApprovalException.class)
                 .hasMessage("Loan 000000042 is held for an employment event and cannot be approved until it is released");
+        verify(loanRepository, never()).save(any());
+        verify(creditDecisionRepository, never()).save(any());
+
+        service.decide(42L, decide(InternalApprovalStatus.REJECTED));
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.REJECTED);
+    }
+
+    @Test
+    @DisplayName("a loan held at a checkpoint cannot be approved until it is cleared there, and can be rejected")
+    void heldAtACheckpointCannotBeApproved() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        when(checkpointGate.holding(HoldPoint.BEFORE_CREDIT_APPROVAL, loan)).thenReturn(Optional.of(
+                WorkflowStage.builder().code("SECOND_LOOK").name("Second look").build()));
+
+        assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.APPROVED)))
+                .isInstanceOf(LoanApprovalException.class)
+                .hasMessage("Loan 000000042 is held at Second look and cannot be approved until it is cleared there");
         verify(loanRepository, never()).save(any());
         verify(creditDecisionRepository, never()).save(any());
 

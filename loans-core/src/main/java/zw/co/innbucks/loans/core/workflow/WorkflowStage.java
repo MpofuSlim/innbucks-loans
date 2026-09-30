@@ -16,8 +16,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.channel.Channel;
+import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.user.UserGroup;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -29,6 +32,9 @@ import java.util.stream.Collectors;
  * One stage of the workflow as an administrator has configured it (FR-SSB-014): its name, who may see, work and
  * assign its queue, its service level and escalation rule, and whether its items are assigned. SUPER_ADMIN holds
  * every entitlement at every stage whatever is stored, so no configuration can lock the platform out of its own work.
+ *
+ * <p>A {@link StageKind#CHECKPOINT} is a stage an administrator added: it holds each loan it applies to at its
+ * {@link HoldPoint} until someone who works it clears or declines the loan.
  */
 @Entity
 @Table(name = "workflow_stages")
@@ -86,11 +92,82 @@ public class WorkflowStage {
     @Column(name = "user_group", length = 32)
     private Set<UserGroup> escalationRoles = new HashSet<>();
 
+    /** Where a checkpoint holds loans; null for a system stage. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "hold_point", length = 32)
+    private HoldPoint holdPoint;
+
+    /** A checkpoint that applies only to loans of at least this principal; null for every amount. */
+    @Column(name = "minimum_principal", precision = 19, scale = 2)
+    private BigDecimal minimumPrincipal;
+
+    /**
+     * The channels a checkpoint applies to, by channel id ({@value #PORTAL} for applications with no channel); empty
+     * for every channel.
+     */
+    @Builder.Default
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "workflow_stage_channels", joinColumns = @JoinColumn(name = "stage_code"))
+    @Column(name = "channel_id")
+    private Set<String> channels = new HashSet<>();
+
+    /** Whether the stage is in use. A system stage always is; a deactivated checkpoint holds nothing. */
+    @Builder.Default
+    @Column(name = "active", nullable = false)
+    private boolean active = true;
+
+    /** When a checkpoint last became active: a loan already at its point waits from then. Null for a system stage. */
+    @Column(name = "active_since")
+    private LocalDateTime activeSince;
+
     @Column(name = "updated_by", nullable = false)
     private String updatedBy;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /** The channel key of an application captured on the portal, with no channel. */
+    public static final String PORTAL = "PORTAL";
+
+    public boolean isCheckpoint() {
+        return kind == StageKind.CHECKPOINT;
+    }
+
+    /**
+     * Whether its items can be given to a person: every checkpoint, and each system stage not worked by the originator.
+     */
+    public boolean assignable() {
+        return SystemStage.of(code).map(SystemStage::assignable).orElse(isCheckpoint());
+    }
+
+    /**
+     * Whether its decision is barred to whoever originated the loan or is a party to it (FR-PBL-029): every checkpoint,
+     * and the system stages that decide an application.
+     */
+    public boolean segregated() {
+        return SystemStage.of(code).map(SystemStage::segregated).orElse(isCheckpoint());
+    }
+
+    /**
+     * Whether this checkpoint applies to the loan, by its principal and channel; always false for a system stage.
+     * Whether the loan is at the checkpoint's point is a separate question.
+     */
+    public boolean appliesTo(Loan loan) {
+        if (!isCheckpoint()) {
+            return false;
+        }
+        if (minimumPrincipal != null
+                && (loan.getPrincipal() == null || loan.getPrincipal().compareTo(minimumPrincipal) < 0)) {
+            return false;
+        }
+        return channels.isEmpty() || channels.contains(channelOf(loan));
+    }
+
+    /** The loan's channel id, or {@value #PORTAL} when it has none. */
+    public static String channelOf(Loan loan) {
+        Channel channel = loan.getChannel();
+        return channel == null || channel.getChannelId() == null ? PORTAL : channel.getChannelId();
+    }
 
     /**
      * Whether someone holding these roles has the entitlement here. SUPER_ADMIN always does; working or assigning

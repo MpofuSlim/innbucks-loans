@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
-class PayslipReviewQueue implements StageQueue {
+class PayslipReviewQueue implements SystemStageQueue {
 
     private final LoanRepository loanRepository;
     private final PayslipFraudFlagRepository payslipFraudFlagRepository;

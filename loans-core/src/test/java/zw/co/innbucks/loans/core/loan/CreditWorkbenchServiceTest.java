@@ -20,6 +20,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,6 +41,7 @@ class CreditWorkbenchServiceTest {
     private CreditDecisionService creditDecisionService;
     private EmploymentEventService employmentEventService;
     private PayslipFraudFlagRepository payslipFraudFlagRepository;
+    private CheckpointGate checkpointGate;
     private CreditWorkbenchService service;
 
     @BeforeEach
@@ -47,8 +51,9 @@ class CreditWorkbenchServiceTest {
         creditDecisionService = mock(CreditDecisionService.class);
         employmentEventService = mock(EmploymentEventService.class);
         payslipFraudFlagRepository = mock(PayslipFraudFlagRepository.class);
+        checkpointGate = mock(CheckpointGate.class);
         service = new CreditWorkbenchService(loanRepository, loanService, creditDecisionService, employmentEventService,
-                payslipFraudFlagRepository, new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)));
+                payslipFraudFlagRepository, new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), checkpointGate);
     }
 
     /** Loan 42 as in the examples: a teacher earning 850 gross, 620 net, deducting 208.96 a month. */
@@ -205,17 +210,21 @@ class CreditWorkbenchServiceTest {
                 PayslipFraudFlag.builder().loanId(42L).reason(PayslipFraudReason.PAYSLIP_REUSED_BY_ANOTHER_APPLICANT)
                         .matchedLoanId(17L).detail("Same payslip file as loan 000000017").build()));
         when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
+        when(checkpointGate.pending(any())).thenReturn(List.of(WorkflowStage.builder().code("SECOND_LOOK")
+                .name("Second look").holdPoint(HoldPoint.BEFORE_CREDIT_APPROVAL).build()));
 
         CreditWorkbenchResponse workbench = service.workbench(42L);
 
         assertThat(codes(workbench)).containsExactly("PAYSLIP_REVIEW_PENDING", "PAYSLIP_REUSED_BY_ANOTHER_APPLICANT",
-                "DOCUMENTS_AMENDED", "EMPLOYMENT_EVENT_HOLD", "DEDUCTION_CANCELLATION_REQUIRED",
+                "DOCUMENTS_AMENDED", "EMPLOYMENT_EVENT_HOLD", "CHECKPOINT_PENDING", "DEDUCTION_CANCELLATION_REQUIRED",
                 "CREDIT_DECISION_OVERDUE", "CREDIT_DECISION_ESCALATED");
         assertThat(workbench.flags().get(1).detail()).isEqualTo("Same payslip file as loan 000000017");
         assertThat(workbench.flags().get(2).detail())
                 .isEqualTo("PAYSLIP replaced after the application (version 2) by tmoyo");
-        assertThat(workbench.flags().get(4).detail()).contains("CREDIT_REJECTED");
-        assertThat(workbench.flags().get(5).detail()).isEqualTo("Waiting 50.0 hours for a decision, past its target");
+        assertThat(workbench.flags().get(4).detail())
+                .isEqualTo("Held at Second look; it cannot be approved until it is cleared there");
+        assertThat(workbench.flags().get(5).detail()).contains("CREDIT_REJECTED");
+        assertThat(workbench.flags().get(6).detail()).isEqualTo("Waiting 50.0 hours for a decision, past its target");
     }
 
     @Test

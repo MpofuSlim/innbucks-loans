@@ -17,7 +17,10 @@ import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
 import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -25,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static zw.co.innbucks.loans.core.merchant.MerchantService.maskAccountNumber;
@@ -47,6 +51,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final LoanDocumentRepository loanDocumentRepository;
     private final TransactionTemplate transactionTemplate;
     private final WorkAssignmentGuard workAssignmentGuard;
+    private final CheckpointGate checkpointGate;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
                                      LoanNotificationService loanNotificationService,
@@ -56,7 +61,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                                      CreditDecisionLog creditDecisionLog,
                                      LoanDocumentRepository loanDocumentRepository,
                                      PlatformTransactionManager transactionManager,
-                                     WorkAssignmentGuard workAssignmentGuard) {
+                                     WorkAssignmentGuard workAssignmentGuard,
+                                     CheckpointGate checkpointGate) {
         this.loanRepository = loanRepository;
         this.authService = authService;
         this.loanMapper = loanMapper;
@@ -69,6 +75,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.loanDocumentRepository = loanDocumentRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.workAssignmentGuard = workAssignmentGuard;
+        this.checkpointGate = checkpointGate;
     }
 
     /** What a committed decision leaves for the steps that run after it. */
@@ -136,6 +143,13 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                 throw new LoanApprovalException(String.format(
                         "Loan %s is held for an employment event and cannot be approved until it is released",
                         loan.getReference()));
+            }
+            Optional<WorkflowStage> checkpoint = checkpointGate.holding(HoldPoint.BEFORE_CREDIT_APPROVAL, loan);
+            if (checkpoint.isPresent()) {
+                // Held at a checkpoint (FR-SSB-014): cleared there first. It can still be rejected or returned.
+                throw new LoanApprovalException(String.format(
+                        "Loan %s is held at %s and cannot be approved until it is cleared there",
+                        loan.getReference(), checkpoint.get().getName()));
             }
             requireNoConflictOfInterest(loan, username);
             payee = requirePayee(loan);

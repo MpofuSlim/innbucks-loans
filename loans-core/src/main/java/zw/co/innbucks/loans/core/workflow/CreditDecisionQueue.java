@@ -25,7 +25,7 @@ import java.util.Optional;
  */
 @Component
 @RequiredArgsConstructor
-class CreditDecisionQueue implements StageQueue {
+class CreditDecisionQueue implements SystemStageQueue {
 
     /** The decisions a wait ends in; a resubmission starts one. */
     static final EnumSet<CreditAction> DECISIONS =

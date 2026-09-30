@@ -64,14 +64,13 @@ public class WorkQueueService {
         User caller = authService.getLoggedInUser();
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<WorkQueueSummary> summaries = new ArrayList<>();
-        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAsc()) {
-            Optional<SystemStage> system = SystemStage.of(stage.getCode());
-            if (system.isEmpty() || !stage.grants(caller.getGroups(), Entitlement.VIEW)) {
+        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAscCodeAsc()) {
+            if (!stage.isActive() || !stage.grants(caller.getGroups(), Entitlement.VIEW)) {
                 continue;
             }
-            List<Waiting> waiting = stageQueues.of(system.get()).waiting();
+            List<Waiting> waiting = stageQueues.of(stage).waiting();
             Map<Long, WorkItem> items = currentItems(stage.getCode(), waiting);
-            boolean assigned = assigns(stage, system.get());
+            boolean assigned = assigns(stage);
             summaries.add(new WorkQueueSummary(stage.getCode(), stage.getName(), stage.getAssignment(),
                     stage.getTargetHours(), stage.getEscalationHours(), waiting.size(),
                     waiting.stream().filter(wait -> overdue(stage, wait.enteredAt(), now)).count(),
@@ -94,7 +93,7 @@ public class WorkQueueService {
     @Transactional(readOnly = true)
     public List<WorkItemResponse> items(String code, String assignedTo) {
         WorkflowStage stage = workflowStageService.stage(code);
-        List<Waiting> waiting = stageQueues.of(systemStage(code)).waiting();
+        List<Waiting> waiting = stageQueues.of(stage).waiting();
         Map<Long, WorkItem> items = currentItems(code, waiting);
         String wanted = ASSIGNED_TO_ME.equalsIgnoreCase(StringUtils.trimToEmpty(assignedTo))
                 ? authService.getLoggedInUsername() : StringUtils.trimToNull(assignedTo);
@@ -112,12 +111,11 @@ public class WorkQueueService {
         User caller = authService.getLoggedInUser();
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<WorkItemResponse> mine = new ArrayList<>();
-        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAsc()) {
-            Optional<SystemStage> system = SystemStage.of(stage.getCode());
-            if (system.isEmpty() || !system.get().assignable() || !stage.grants(caller.getGroups(), Entitlement.VIEW)) {
+        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAscCodeAsc()) {
+            if (!stage.isActive() || !stage.assignable() || !stage.grants(caller.getGroups(), Entitlement.VIEW)) {
                 continue;
             }
-            List<Waiting> waiting = stageQueues.of(system.get()).waiting();
+            List<Waiting> waiting = stageQueues.of(stage).waiting();
             Map<Long, WorkItem> items = currentItems(stage.getCode(), waiting);
             mine.addAll(responses(stage, waiting.stream()
                     .filter(wait -> StringUtils.equalsIgnoreCase(assigneeOf(items, wait), caller.getUsername()))
@@ -139,8 +137,7 @@ public class WorkQueueService {
     @Transactional
     public WorkItemResponse assign(String code, Long loanId, String assignee) {
         WorkflowStage stage = workflowStageService.stage(code);
-        SystemStage system = systemStage(code);
-        requireAssigned(stage, system);
+        requireAssigned(stage);
         User caller = authService.getLoggedInUser();
         boolean supervisor = stage.grants(caller.getGroups(), Entitlement.ASSIGN);
         String target = StringUtils.isBlank(assignee) ? caller.getUsername() : assignee.trim();
@@ -151,7 +148,7 @@ public class WorkQueueService {
         }
 
         Loan loan = lockLoan(loanId);
-        LocalDateTime entered = enteredAt(stage, system, loan);
+        LocalDateTime entered = enteredAt(stage, loan);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         WorkItem item = workItemRepository.findByStageCodeAndLoanIdAndEnteredAt(code, loanId, entered)
                 .orElseGet(() -> newItem(code, loanId, entered, now));
@@ -168,7 +165,7 @@ public class WorkQueueService {
         if (!stage.grants(to.getGroups(), Entitlement.WORK)) {
             throw new IllegalArgumentException(to.getUsername() + " does not work " + stage.getName());
         }
-        if (system.segregated() && (SegregationOfDuties.originated(loan, to.getUsername())
+        if (stage.segregated() && (SegregationOfDuties.originated(loan, to.getUsername())
                 || SegregationOfDuties.isPartyTo(loan, to))) {
             throw new IllegalArgumentException(String.format("%s originated loan %s or is a party to it, so cannot"
                     + " be given its %s", to.getUsername(), loan.getReference(), stage.getName()));
@@ -194,11 +191,10 @@ public class WorkQueueService {
     @Transactional
     public WorkItemResponse release(String code, Long loanId) {
         WorkflowStage stage = workflowStageService.stage(code);
-        SystemStage system = systemStage(code);
-        requireAssigned(stage, system);
+        requireAssigned(stage);
         User caller = authService.getLoggedInUser();
         Loan loan = lockLoan(loanId);
-        LocalDateTime entered = enteredAt(stage, system, loan);
+        LocalDateTime entered = enteredAt(stage, loan);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         Optional<WorkItem> found = workItemRepository.findByStageCodeAndLoanIdAndEnteredAt(code, loanId, entered);
         if (found.isEmpty() || found.get().getAssignedTo() == null) {
@@ -314,18 +310,14 @@ public class WorkQueueService {
         return item == null ? null : item.getAssignedTo();
     }
 
-    private static boolean assigns(WorkflowStage stage, SystemStage system) {
-        return system.assignable() && stage.getAssignment() != AssignmentMode.NONE;
+    static boolean assigns(WorkflowStage stage) {
+        return stage.assignable() && stage.getAssignment() != AssignmentMode.NONE;
     }
 
-    private static void requireAssigned(WorkflowStage stage, SystemStage system) {
-        if (!assigns(stage, system)) {
+    private static void requireAssigned(WorkflowStage stage) {
+        if (!assigns(stage)) {
             throw new ConflictException(stage.getName() + " items are not assigned");
         }
-    }
-
-    private SystemStage systemStage(String code) {
-        return SystemStage.of(code).orElseThrow(() -> new NotFoundException("No workflow stage " + code));
     }
 
     private Loan lockLoan(Long loanId) {
@@ -333,8 +325,8 @@ public class WorkQueueService {
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
     }
 
-    private LocalDateTime enteredAt(WorkflowStage stage, SystemStage system, Loan loan) {
-        return stageQueues.of(system).enteredAt(loan).orElseThrow(() -> new ConflictException(
+    private LocalDateTime enteredAt(WorkflowStage stage, Loan loan) {
+        return stageQueues.of(stage).enteredAt(loan).orElseThrow(() -> new ConflictException(
                 "Loan " + loan.getReference() + " is not waiting at " + stage.getName()));
     }
 

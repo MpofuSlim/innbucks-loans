@@ -41,6 +41,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import zw.co.innbucks.loans.core.workflow.CheckpointGates;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -108,7 +109,7 @@ class RevivedLodgementBookingFailureTest {
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
         new LoanBookingJob(disbursementService, loanRepository, cancellations,
                 mock(LoanDisbursementRepository.class), auditService, mock(LoanNotificationService.class),
-                mock(PlatformTransactionManager.class), 30)
+                CheckpointGates.none(), mock(PlatformTransactionManager.class), 30)
                 .processLoanAccountCreation();
 
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.FAILED);

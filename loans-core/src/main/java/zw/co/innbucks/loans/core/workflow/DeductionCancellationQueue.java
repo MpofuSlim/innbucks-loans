@@ -17,7 +17,7 @@ import java.util.Optional;
  */
 @Component
 @RequiredArgsConstructor
-class DeductionCancellationQueue implements StageQueue {
+class DeductionCancellationQueue implements SystemStageQueue {
 
     private final LoanRepository loanRepository;
 

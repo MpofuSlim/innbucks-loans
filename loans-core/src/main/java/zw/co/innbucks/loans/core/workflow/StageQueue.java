@@ -12,8 +12,6 @@ import java.util.Optional;
  */
 public interface StageQueue {
 
-    SystemStage stage();
-
     /** The loans waiting at the stage now, oldest wait first. */
     List<Waiting> waiting();
 

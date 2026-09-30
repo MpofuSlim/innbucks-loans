@@ -127,6 +127,52 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByInternalApprovalStatusOrderByIdAsc(InternalApprovalStatus internalApprovalStatus);
 
+    /**
+     * Loans at the point before lodgement (FR-SSB-014 checkpoints): NEW, not declined, and not being lodged right now.
+     * Mirrors {@code CheckpointQueue.atHoldPoint}.
+     */
+    @Query("""
+            select l from Loan l
+            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.NEW
+              and (l.internalApprovalStatus is null
+                   or l.internalApprovalStatus <> zw.co.innbucks.loans.core.loan.InternalApprovalStatus.REJECTED)
+              and l.lodgementClaimedAt is null
+            order by l.id
+            """)
+    List<Loan> findBeforeLodgement();
+
+    /**
+     * Loans at the point before Credit approves (FR-SSB-014 checkpoints): accepted by SSB, with Credit yet to approve
+     * or reject them. Mirrors {@code CheckpointQueue.atHoldPoint}.
+     */
+    @Query("""
+            select l from Loan l
+            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
+              and l.internalApprovalStatus in (zw.co.innbucks.loans.core.loan.InternalApprovalStatus.PENDING,
+                                               zw.co.innbucks.loans.core.loan.InternalApprovalStatus.RETURNED)
+            order by l.id
+            """)
+    List<Loan> findBeforeCreditApproval();
+
+    /**
+     * Loans at the point before booking (FR-SSB-014 checkpoints): credit-approved and waiting to be booked, not being
+     * booked right now, never paid, and with no booking of unknown outcome. Mirrors
+     * {@code CheckpointQueue.atHoldPoint}.
+     */
+    @Query("""
+            select l from Loan l
+            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
+              and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.APPROVED
+              and l.loanAccountStatus = zw.co.innbucks.loans.core.disbursements.LoanAccountStatus.PENDING
+              and l.bookingClaimedAt is null
+              and (l.disbursementStatus is null
+                   or l.disbursementStatus <> zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus.SUCCESS)
+              and (l.bookingFailureKind is null
+                   or l.bookingFailureKind <> zw.co.innbucks.loans.core.disbursements.BookingFailureKind.AMBIGUOUS)
+            order by l.id
+            """)
+    List<Loan> findBeforeBooking();
+
     /** Payslip reviews decided in the period. */
     List<Loan> findByPayslipReviewedAtBetween(LocalDateTime from, LocalDateTime to);
 

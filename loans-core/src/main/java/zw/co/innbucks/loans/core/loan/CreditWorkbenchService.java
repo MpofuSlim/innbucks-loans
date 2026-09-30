@@ -9,6 +9,8 @@ import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
 import zw.co.innbucks.loans.core.employment.EmploymentEventService;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.turnaround.CreditTurnaround;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,6 +37,7 @@ public class CreditWorkbenchService {
     static final String OTHER_OPEN_LOANS = "OTHER_OPEN_LOANS";
     static final String CREDIT_DECISION_OVERDUE = "CREDIT_DECISION_OVERDUE";
     static final String CREDIT_DECISION_ESCALATED = "CREDIT_DECISION_ESCALATED";
+    static final String CHECKPOINT_PENDING = "CHECKPOINT_PENDING";
 
     public static final String AFFORDABILITY_NOT_ASSESSED = "The SSB deduction cap and minimum take-home pay are not"
             + " configured yet, so affordability is not passed or failed; the figures are for the officer to judge.";
@@ -47,6 +50,7 @@ public class CreditWorkbenchService {
     private final EmploymentEventService employmentEventService;
     private final PayslipFraudFlagRepository payslipFraudFlagRepository;
     private final MarketTimeZone marketTimeZone;
+    private final CheckpointGate checkpointGate;
 
     /**
      * The workbench for a loan, as it stands now.
@@ -155,6 +159,14 @@ public class CreditWorkbenchService {
         if (loanRepository.isHeldForEmploymentEvent(loan.getId())) {
             flags.add(new CreditWorkbenchResponse.Flag(EMPLOYMENT_EVENT_HOLD,
                     "Held for an employment event; it cannot be approved until the event is resolved"));
+        }
+        for (WorkflowStage checkpoint : checkpointGate.pending(loan)) {
+            flags.add(new CreditWorkbenchResponse.Flag(CHECKPOINT_PENDING, "Held at " + checkpoint.getName() + "; "
+                    + switch (checkpoint.getHoldPoint()) {
+                        case BEFORE_LODGEMENT -> "it is not lodged with SSB";
+                        case BEFORE_CREDIT_APPROVAL -> "it cannot be approved";
+                        case BEFORE_BOOKING -> "it is not booked or paid";
+                    } + " until it is cleared there"));
         }
         if (loan.getDeductionCancellationStatus() == DeductionCancellationStatus.REQUIRED) {
             flags.add(new CreditWorkbenchResponse.Flag(DEDUCTION_CANCELLATION_REQUIRED,

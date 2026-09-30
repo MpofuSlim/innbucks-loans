@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -36,7 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkflowReportService {
 
-    static final String PORTAL = "PORTAL";
+    static final String PORTAL = WorkflowStage.PORTAL;
     private static final String PORTAL_NAME = "Portal";
 
     private final WorkflowStageRepository workflowStageRepository;
@@ -60,20 +59,20 @@ public class WorkflowReportService {
         }
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<StagePipeline> stages = new ArrayList<>();
-        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAsc()) {
-            Optional<SystemStage> system = SystemStage.of(stage.getCode());
-            if (system.isEmpty()) {
+        for (WorkflowStage stage : workflowStageRepository.findAllByOrderByDisplayOrderAscCodeAsc()) {
+            StageQueue queue = stageQueues.of(stage);
+            List<Visit> visits = queue.endedBetween(marketTimeZone.startOfDayUtc(from), marketTimeZone.endOfDayUtc(to));
+            if (!stage.isActive() && visits.isEmpty()) {
+                // A checkpoint no longer in use, with nothing to report for the period.
                 continue;
             }
-            StageQueue queue = stageQueues.of(system.get());
-            stages.add(stagePipeline(stage, system.get(), queue.waiting(),
-                    queue.endedBetween(marketTimeZone.startOfDayUtc(from), marketTimeZone.endOfDayUtc(to)), now));
+            stages.add(stagePipeline(stage, queue.waiting(), visits, now));
         }
         return new WorkflowPipelineReportResponse(from, to, stages);
     }
 
-    private StagePipeline stagePipeline(WorkflowStage stage, SystemStage system, List<Waiting> waiting,
-                                        List<Visit> visits, LocalDateTime now) {
+    private StagePipeline stagePipeline(WorkflowStage stage, List<Waiting> waiting, List<Visit> visits,
+                                        LocalDateTime now) {
         Map<Long, WorkItem> items = workQueueService.currentItems(stage.getCode(), waiting);
         Map<Long, Loan> visitLoans = visits.isEmpty() ? Map.of() : loanRepository
                 .findAllById(visits.stream().map(Visit::loanId).distinct().toList()).stream()
@@ -101,7 +100,7 @@ public class WorkflowReportService {
                 tally.hours.add(took);
             }
         }
-        boolean assigned = system.assignable() && stage.getAssignment() != AssignmentMode.NONE;
+        boolean assigned = WorkQueueService.assigns(stage);
         return new StagePipeline(stage.getCode(), stage.getName(), stage.getTargetHours(), stage.getEscalationHours(),
                 total.waiting, total.overdue,
                 items.values().stream().filter(item -> item.getEscalatedAt() != null).count(),

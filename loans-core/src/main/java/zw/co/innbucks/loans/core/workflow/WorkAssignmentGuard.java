@@ -23,18 +23,24 @@ public class WorkAssignmentGuard {
      * @throws ConflictException the stage is EXCLUSIVE and the loan's item is assigned to someone else
      */
     public void requireMayAct(SystemStage stage, Loan loan, String username) {
-        WorkflowStage config = workflowStageRepository.findById(stage.name()).orElse(null);
-        if (config == null || config.getAssignment() != AssignmentMode.EXCLUSIVE) {
+        workflowStageRepository.findById(stage.name()).ifPresent(config -> requireMayAct(config, loan, username));
+    }
+
+    /**
+     * @throws ConflictException the stage is EXCLUSIVE and the loan's item is assigned to someone else
+     */
+    public void requireMayAct(WorkflowStage stage, Loan loan, String username) {
+        if (stage.getAssignment() != AssignmentMode.EXCLUSIVE) {
             return;
         }
         stageQueues.of(stage).enteredAt(loan)
-                .flatMap(entered -> workItemRepository.findByStageCodeAndLoanIdAndEnteredAt(stage.name(), loan.getId(),
-                        entered))
+                .flatMap(entered -> workItemRepository.findByStageCodeAndLoanIdAndEnteredAt(stage.getCode(),
+                        loan.getId(), entered))
                 .filter(item -> item.getAssignedTo() != null
                         && !StringUtils.equalsIgnoreCase(item.getAssignedTo(), username))
                 .ifPresent(item -> {
                     throw new ConflictException(String.format("Loan %s's %s is assigned to %s; only they can act on it"
-                            + " until it is released or reassigned", loan.getReference(), config.getName(),
+                            + " until it is released or reassigned", loan.getReference(), stage.getName(),
                             item.getAssignedTo()));
                 });
     }

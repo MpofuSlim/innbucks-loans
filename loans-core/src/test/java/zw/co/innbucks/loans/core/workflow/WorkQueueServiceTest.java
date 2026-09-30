@@ -45,6 +45,7 @@ class WorkQueueServiceTest {
     private WorkflowStageRepository stageRepository;
     private StageQueue creditQueue;
     private StageQueue moreInformationQueue;
+    private StageQueue checkpointQueue;
     private WorkItemRepository itemRepository;
     private WorkItemEventRepository eventRepository;
     private LoanRepository loanRepository;
@@ -64,7 +65,7 @@ class WorkQueueServiceTest {
         credit = WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL);
         WorkflowStage moreInformation = WorkflowFixtures.moreInformation();
         stageRepository = mock(WorkflowStageRepository.class);
-        when(stageRepository.findAllByOrderByDisplayOrderAsc()).thenReturn(List.of(credit, moreInformation));
+        when(stageRepository.findAllByOrderByDisplayOrderAscCodeAsc()).thenReturn(List.of(credit, moreInformation));
         WorkflowStageService stageService = mock(WorkflowStageService.class);
         when(stageService.stage("CREDIT_DECISION")).thenReturn(credit);
         when(stageService.stage("MORE_INFORMATION")).thenReturn(moreInformation);
@@ -74,8 +75,12 @@ class WorkQueueServiceTest {
         moreInformationQueue = mock(StageQueue.class);
         StageQueues queues = mock(StageQueues.class);
         when(queues.of(SystemStage.CREDIT_DECISION)).thenReturn(creditQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("CREDIT_DECISION"))).thenReturn(creditQueue);
         when(queues.of(SystemStage.MORE_INFORMATION)).thenReturn(moreInformationQueue);
+        when(queues.of(WorkflowFixtures.stageCoded("MORE_INFORMATION"))).thenReturn(moreInformationQueue);
         when(moreInformationQueue.waiting()).thenReturn(List.of());
+        checkpointQueue = mock(StageQueue.class);
+        when(queues.of(WorkflowFixtures.stageCoded("HIGH_VALUE_PAYOUT_CHECK"))).thenReturn(checkpointQueue);
 
         loan = WorkflowFixtures.loan(42L, "tmoyo");
         loan.setPrincipal(new BigDecimal("531.91"));
@@ -162,6 +167,26 @@ class WorkQueueServiceTest {
             assertThat(summary.escalated()).isZero();
             assertThat(summary.unassigned()).isEqualTo(1);
             assertThat(summary.assignedToMe()).isZero();
+        }
+
+        @Test
+        @DisplayName("an active checkpoint has a queue like any stage; one deactivated is not listed")
+        void checkpointsListed() {
+            WorkflowStage payoutCheck =
+                    WorkflowFixtures.checkpoint("HIGH_VALUE_PAYOUT_CHECK", HoldPoint.BEFORE_BOOKING);
+            WorkflowStage retired = WorkflowFixtures.checkpoint("RETIRED_CHECK", HoldPoint.BEFORE_LODGEMENT);
+            retired.setActive(false);
+            when(stageRepository.findAllByOrderByDisplayOrderAscCodeAsc()).thenReturn(List.of(credit, payoutCheck,
+                    retired));
+            when(checkpointQueue.waiting()).thenReturn(List.of(
+                    new Waiting(WorkflowFixtures.loan(61L, "tmoyo"), now.minusHours(5))));
+
+            List<WorkQueueSummary> summaries = service.summaries();
+
+            assertThat(summaries).extracting(WorkQueueSummary::stage)
+                    .containsExactly("CREDIT_DECISION", "HIGH_VALUE_PAYOUT_CHECK");
+            assertThat(summaries.get(1)).isEqualTo(new WorkQueueSummary("HIGH_VALUE_PAYOUT_CHECK",
+                    "High-value payout check", AssignmentMode.OPTIONAL, 4, 8, 1, 1, 0, 1L, 0L));
         }
 
         @Test

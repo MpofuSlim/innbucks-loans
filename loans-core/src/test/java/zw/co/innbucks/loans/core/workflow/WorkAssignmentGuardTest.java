@@ -32,6 +32,7 @@ class WorkAssignmentGuardTest {
         queue = mock(StageQueue.class);
         StageQueues queues = mock(StageQueues.class);
         when(queues.of(SystemStage.CREDIT_DECISION)).thenReturn(queue);
+        when(queues.of(WorkflowFixtures.stageCoded("CREDIT_DECISION"))).thenReturn(queue);
         when(queue.enteredAt(loan)).thenReturn(Optional.of(ENTERED));
         guard = new WorkAssignmentGuard(stages, queues, items);
     }
