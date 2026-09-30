@@ -14,6 +14,8 @@ import tools.jackson.databind.json.JsonMapper;
 import zw.co.innbucks.loans.controller.AuthController;
 import zw.co.innbucks.loans.controller.CommissionGroupController;
 import zw.co.innbucks.loans.controller.CreditReasonCodeController;
+import zw.co.innbucks.loans.controller.CreditTurnaroundController;
+import zw.co.innbucks.loans.controller.CreditWorkbenchController;
 import zw.co.innbucks.loans.controller.CurrentUserController;
 import zw.co.innbucks.loans.controller.DashboardController;
 import zw.co.innbucks.loans.controller.DeductionBatchController;
@@ -32,12 +34,14 @@ import zw.co.innbucks.loans.controller.ReportController;
 import zw.co.innbucks.loans.controller.SignedInstrumentController;
 import zw.co.innbucks.loans.controller.UserController;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.loan.CreditWorkbenchService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -58,7 +62,8 @@ class SwaggerExamplesTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static final List<Class<?>> CONTROLLERS = List.of(AuthController.class, CommissionGroupController.class,
-            CreditReasonCodeController.class, CurrentUserController.class, DashboardController.class,
+            CreditReasonCodeController.class, CreditTurnaroundController.class, CreditWorkbenchController.class,
+            CurrentUserController.class, DashboardController.class,
             DeductionBatchController.class, DeductionCancellationController.class, EmploymentEventController.class,
             EmploymentEventTreatmentController.class, HeldBookingController.class,
             InstrumentTemplateController.class, LoanApplicationDraftController.class, LoanController.class,
@@ -171,6 +176,29 @@ class SwaggerExamplesTest {
             assertThat(notification.path("message").asString()).isEqualTo(notice.textFor(loan));
             assertThat(notification.path("stage").asString()).isEqualTo(notice.stage().name());
         }
+    }
+
+    @Test
+    void theWorkbenchExampleAddsUpAndCarriesTheRealAffordabilityNote() {
+        // The figures a credit officer reads must be the ones the service would compute from the example's own loan.
+        JsonNode data = JSON.readTree(ApiExamples.LOAN_42_CREDIT_WORKBENCH).path("data");
+        JsonNode loan = data.path("loan");
+        JsonNode affordability = data.path("affordability");
+        BigDecimal deductions = BigDecimal.ZERO;
+        for (JsonNode deduction : loan.path("payslipDeductions")) {
+            deductions = deductions.add(deduction.path("amount").decimalValue());
+        }
+        assertThat(affordability.path("payslipDeductions").decimalValue()).isEqualByComparingTo(deductions);
+        assertThat(affordability.path("grossSalary").decimalValue())
+                .isEqualByComparingTo(loan.path("employmentDetail").path("grossSalary").decimalValue());
+        BigDecimal net = loan.path("employmentDetail").path("netSalary").decimalValue();
+        BigDecimal deduction = loan.path("grossedMonthlyDeduction").decimalValue();
+        assertThat(affordability.path("monthlyDeduction").decimalValue()).isEqualByComparingTo(deduction);
+        assertThat(affordability.path("netAfterDeduction").decimalValue()).isEqualByComparingTo(net.subtract(deduction));
+        assertThat(affordability.path("deductionToNetPercent").decimalValue()).isEqualByComparingTo(
+                deduction.multiply(BigDecimal.valueOf(100)).divide(net, 1, RoundingMode.HALF_UP));
+        assertThat(affordability.path("note").asString()).isEqualTo(CreditWorkbenchService.AFFORDABILITY_NOT_ASSESSED);
+        assertThat(data.path("decisions").size()).isEqualTo(2);
     }
 
     static Stream<Class<?>> controllers() {

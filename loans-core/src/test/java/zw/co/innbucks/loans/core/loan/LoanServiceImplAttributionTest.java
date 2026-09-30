@@ -21,6 +21,7 @@ import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.turnaround.ServiceLevelService;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -78,7 +79,8 @@ class LoanServiceImplAttributionTest {
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), channelRepository, validatorFactory.getValidator(),
                 new MarketTimeZone("ZW"), documents, mock(PayslipFraudDetector.class),
-                mock(PayslipReviewService.class), signedInstrumentService, mock(LoanNotificationService.class));
+                mock(PayslipReviewService.class), signedInstrumentService, mock(LoanNotificationService.class),
+                mock(ServiceLevelService.class));
     }
 
     @AfterEach
@@ -172,7 +174,8 @@ class LoanServiceImplAttributionTest {
         LoanServiceImpl asChannel = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), channelRepository, validatorFactory.getValidator(),
                 new MarketTimeZone("ZW"), documents, mock(PayslipFraudDetector.class),
-                mock(PayslipReviewService.class), signedInstrumentService, mock(LoanNotificationService.class));
+                mock(PayslipReviewService.class), signedInstrumentService, mock(LoanNotificationService.class),
+                mock(ServiceLevelService.class));
         LoanApplicationRequest request = LoanApplicationRequestValidationTest.completeApplication();
         request.setChannelId("superapp");
 

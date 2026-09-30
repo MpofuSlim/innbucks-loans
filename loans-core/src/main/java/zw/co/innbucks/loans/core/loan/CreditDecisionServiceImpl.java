@@ -171,15 +171,18 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                 throw new LoanApprovalException(String.format(
                         "Loan is not waiting for more information (credit status %s)", loan.getInternalApprovalStatus()));
             }
-            // Back in the credit queue as an undecided loan; what was asked and answered is in the log.
+            // Back in the credit queue as an undecided loan; what was asked and answered is in the log. Its wait for
+            // a decision starts again from now (FR-PBL-030).
+            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
             loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
             loan.setInternalApprovalDate(null);
             loan.setInternalApprovalComment(null);
             loan.setInternalApprovalBy(null);
             loan.setInternalApprovalReasonCode(null);
+            loan.setCreditResubmittedAt(now);
+            loan.setCreditEscalatedAt(null);
             Loan saved = loanRepository.save(loan);
-            creditDecisionLog.record(saved, CreditAction.RESUBMITTED, null, comment, username,
-                    LocalDateTime.now(ZoneOffset.UTC));
+            creditDecisionLog.record(saved, CreditAction.RESUBMITTED, null, comment, username, now);
             // Back with Credit: the applicant is told once this commits (FR-SSB-016).
             loanNotificationService.notify(saved, LoanNotice.RESUBMITTED);
             LoanResponse view = loanMapper.toResponse(saved);

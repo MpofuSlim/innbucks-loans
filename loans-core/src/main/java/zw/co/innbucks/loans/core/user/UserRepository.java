@@ -20,6 +20,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByMerchant_MerchantCode(String merchantCode);
 
+    /** Everyone in a group, such as those an overdue credit decision is escalated to. */
+    List<User> findByGroupsContaining(UserGroup group);
+
     List<User> findByUsernameContainingIgnoreCase(String username);
 
     @Query("SELECT u FROM User u WHERE (:merchantId IS NULL OR u.merchant.id= :merchantId)")

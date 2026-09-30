@@ -120,7 +120,7 @@ public class EmploymentEventService {
                 && (loan.getLoanAccountStatus() == null || loan.getLoanAccountStatus() == LoanAccountStatus.PENDING)) {
             return Standing.APPLICATION;
         }
-        if (paidOut && loan.getLoanEndDate() != null && loan.getLoanEndDate().isBefore(effectiveDate)) {
+        if (paidOut && loan.finalDeductionDate() != null && loan.finalDeductionDate().isBefore(effectiveDate)) {
             // Its final deduction fell before the event: repaid by then, as far as this service can tell.
             return Standing.CLOSED;
         }

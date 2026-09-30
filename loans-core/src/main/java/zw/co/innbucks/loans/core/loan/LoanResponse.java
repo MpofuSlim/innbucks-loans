@@ -7,6 +7,7 @@ import lombok.ToString;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.document.LoanDocumentSummary;
+import zw.co.innbucks.loans.core.turnaround.CreditTurnaround;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -103,6 +104,11 @@ public class LoanResponse implements Serializable {
     @Schema(description = "Where the application stands: RECEIVED, WITH_SSB, WITH_CREDIT, MORE_INFORMATION_NEEDED,"
             + " APPROVED, PAID, DECLINED, PAYOUT_DELAYED or NOT_COMPLETED", example = "WITH_CREDIT")
     private LoanStage stage;
+    /**
+     * How long it has waited for a credit decision, against the service level (FR-PBL-030): only while waiting on
+     * Credit, and only to staff who read every loan.
+     */
+    private CreditTurnaround creditTurnaround;
 
     // --- SSB: the payroll deduction ---
     private LoanApprovalStatus ssbApprovalStatus;
