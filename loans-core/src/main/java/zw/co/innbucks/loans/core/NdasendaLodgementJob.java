@@ -17,12 +17,12 @@ import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.loan.PayslipReviewStatus;
-import zw.co.innbucks.loans.core.loan.SmsMessages;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalRequest;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalResponse;
 import zw.co.innbucks.loans.core.ndasenda.LoanApprovalService;
 import zw.co.innbucks.loans.core.ndasenda.LodgementException;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -74,13 +74,15 @@ public class NdasendaLodgementJob {
 
     // The same texts the Ndasenda path sends. This job used to keep its own
     // copies, which is how a gateway-refused '!' survived here.
-    static final Map<LoanApprovalStatus, String> SMS_MESSAGES = Map.of(LoanApprovalStatus.REJECTED, SmsMessages.REJECTED_LOAN,
-            LoanApprovalStatus.PROCESSING, SmsMessages.PROCESSING_LOAN
-    );
+    /** What the applicant is told when Ndasenda answers the lodgement (FR-SSB-016). */
+    static final Map<LoanApprovalStatus, LoanNotice> NOTICES = Map.of(
+            LoanApprovalStatus.PROCESSING, LoanNotice.SENT_TO_SSB,
+            LoanApprovalStatus.APPROVED, LoanNotice.SSB_CONFIRMED,
+            LoanApprovalStatus.REJECTED, LoanNotice.DECLINED);
 
     private final LoanApprovalService loanApprovalService;
     private final LoanRepository loanRepository;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final LoanBatchService loanBatchService;
     private final AuditService auditService;
     private final TransactionTemplate transactionTemplate;
@@ -93,7 +95,7 @@ public class NdasendaLodgementJob {
 
     public NdasendaLodgementJob(LoanApprovalService loanApprovalService,
                                   LoanRepository loanRepository,
-                                  NotificationService notificationService,
+                                  LoanNotificationService loanNotificationService,
                                   LoanBatchService loanBatchService,
                                   AuditService auditService,
                                   PlatformTransactionManager transactionManager,
@@ -106,7 +108,7 @@ public class NdasendaLodgementJob {
         }
         this.loanApprovalService = loanApprovalService;
         this.loanRepository = loanRepository;
-        this.notificationService = notificationService;
+        this.loanNotificationService = loanNotificationService;
         this.loanBatchService = loanBatchService;
         this.auditService = auditService;
         this.maxAttempts = maxAttempts;
@@ -237,7 +239,7 @@ public class NdasendaLodgementJob {
             case OUTCOME_UNKNOWN -> {
                 hold(loan, "Ndasenda lodgement outcome unknown; held for Ndasenda's answer, not sent again. "
                         + failure.getMessage());
-                yield new Settled(false, null, null);
+                yield new Settled(false, null);
             }
         };
     }
@@ -269,9 +271,12 @@ public class NdasendaLodgementJob {
         loan.setLoanStatusMessage(null);
         loanRepository.save(loan);
 
-        String template = SMS_MESSAGES.get(response.getStatus());
-        String sms = template == null ? null : String.format(template, String.format("%09d", loan.getId()));
-        return new Settled(true, sms == null ? null : new Sms(loan.getMobileNumber(), sms), response.getBatchNumber());
+        LoanNotice notice = NOTICES.get(response.getStatus());
+        if (notice != null) {
+            // Sent once this settle commits.
+            loanNotificationService.notify(loan, notice);
+        }
+        return new Settled(true, response.getBatchNumber());
     }
 
     /** Nothing reached Ndasenda: released for another attempt after a backoff, or FAILED once they are spent. */
@@ -282,7 +287,6 @@ public class NdasendaLodgementJob {
         loan.setLodgementClaimedAt(null);
 
         if (attempts >= maxAttempts) {
-            // As before, a FAILED lodgement sends the customer nothing.
             loan.setLoanApprovalStatus(LoanApprovalStatus.FAILED);
             loan.setNextLodgementAttemptAt(null);
             loan.setLoanStatusMessage(StringUtils.left("Not lodged: " + attempts + " attempt(s) never reached Ndasenda. Last: "
@@ -292,6 +296,8 @@ public class NdasendaLodgementJob {
                     loan.getId(), loan.getReference(), maskEcNumber(loan.getEcNumber()), attempts, failure.getMessage());
             audit(LODGEMENT_ATTEMPTS_EXHAUSTED, loan, from, LoanApprovalStatus.FAILED,
                     "reason=" + failure.getKind() + " " + failure.getMessage());
+            // The application goes no further, so the applicant is told (FR-SSB-016).
+            loanNotificationService.notify(loan, LoanNotice.NOT_COMPLETED);
         } else {
             LocalDateTime next = LocalDateTime.now(ZoneOffset.UTC).plus(backoff(attempts));
             loan.setLoanApprovalStatus(LoanApprovalStatus.NEW);
@@ -303,7 +309,7 @@ public class NdasendaLodgementJob {
                     loan.getId(), loan.getReference(), attempts, maxAttempts, failure.getMessage(), next);
         }
         loanRepository.save(loan);
-        return new Settled(failure.getKind() == LodgementException.Kind.NOT_SENT, null, null);
+        return new Settled(failure.getKind() == LodgementException.Kind.NOT_SENT, null);
     }
 
     /** Ndasenda's own refusal: nothing was lodged, and sending it again would be refused the same way. */
@@ -317,7 +323,8 @@ public class NdasendaLodgementJob {
         log.error("NDASENDA LODGEMENT REFUSED: loan {} reference {} ec {} - {}. Nothing was lodged (audited)",
                 loan.getId(), loan.getReference(), maskEcNumber(loan.getEcNumber()), failure.getMessage());
         audit(LODGEMENT_REFUSED, loan, from, LoanApprovalStatus.FAILED, "reason=" + failure.getMessage());
-        return new Settled(true, null, null);
+        loanNotificationService.notify(loan, LoanNotice.NOT_COMPLETED);
+        return new Settled(true, null);
     }
 
     /**
@@ -349,7 +356,7 @@ public class NdasendaLodgementJob {
                 loan.getLodgementClaimedAt(), outcome);
         audit(LODGEMENT_NOT_RECORDED, loan, loan.getLoanApprovalStatus(), loan.getLoanApprovalStatus(),
                 "reason=claim_superseded claimedAt=" + claim.claimedAt() + " outcome=" + outcome);
-        return new Settled(carriesOn(failure), null, null);
+        return new Settled(carriesOn(failure), null);
     }
 
     /**
@@ -401,7 +408,7 @@ public class NdasendaLodgementJob {
         }
     }
 
-    /** Best-effort, after the loan is committed: neither the batch listing nor the SMS may undo a lodgement. */
+    /** Best-effort, after the loan is committed: the batch listing may not undo a lodgement. */
     private void afterCommit(Claim claim, Settled settled) {
         if (StringUtils.isNotBlank(settled.batchNumber())) {
             try {
@@ -410,14 +417,6 @@ public class NdasendaLodgementJob {
             } catch (RuntimeException ex) {
                 log.error("Loan {} is lodged in Ndasenda batch {} but the batch could not be listed;"
                         + " the loan itself records it", claim.loanId(), settled.batchNumber(), ex);
-            }
-        }
-        if (settled.sms() != null) {
-            try {
-                log.info("Dispatching loan lodgement sms notification for loan {}", claim.loanId());
-                notificationService.sendSms(settled.sms().mobileNumber(), settled.sms().text());
-            } catch (RuntimeException ex) {
-                log.error("Loan {} was lodged but its SMS could not be sent", claim.loanId(), ex);
             }
         }
     }
@@ -463,9 +462,6 @@ public class NdasendaLodgementJob {
     private record Claim(Long loanId, LocalDateTime claimedAt, String reference, LoanApprovalRequest request) {
     }
 
-    private record Sms(String mobileNumber, String text) {
-    }
-
-    private record Settled(boolean carryOn, Sms sms, String batchNumber) {
+    private record Settled(boolean carryOn, String batchNumber) {
     }
 }

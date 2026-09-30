@@ -13,6 +13,8 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.util.Comparator;
 import java.util.List;
@@ -37,6 +39,7 @@ public class BookingResolutionService {
     private final DeductionCancellationService deductionCancellationService;
     private final AuditService auditService;
     private final AuthService authService;
+    private final LoanNotificationService loanNotificationService;
 
     /** Loans held as booked without a confirmed payout: the ones InnBucks reports missing first, then oldest. */
     @Transactional(readOnly = true)
@@ -81,6 +84,8 @@ public class BookingResolutionService {
         deductionCancellationService.markRequired(loan, DeductionCancellationService.REASON_BOOKING_FAILED,
                 username, PORTAL_CHANNEL);
         Loan saved = loanRepository.save(loan);
+        // It may yet be paid by a recovery payout: the applicant hears of a delay once this commits (FR-SSB-016).
+        loanNotificationService.notify(saved, LoanNotice.PAYOUT_DELAYED);
 
         log.warn("InnBucks booking of loan {} reference {} recorded as never landed by {} (was {}, reported"
                         + " missing since {}) - now eligible for a recovery payout (audited)",

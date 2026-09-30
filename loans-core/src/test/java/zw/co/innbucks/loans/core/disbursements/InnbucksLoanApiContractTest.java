@@ -26,7 +26,7 @@ import zw.co.innbucks.loans.core.loan.MaritalStatus;
 import zw.co.innbucks.loans.core.loan.NextOfKin;
 import zw.co.innbucks.loans.core.loan.RelationshipType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -105,7 +105,7 @@ class InnbucksLoanApiContractTest {
         RestTemplate restTemplate = new RestTemplate(factory);
 
         InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
-        return new InnbucksDisbursementService(mock(LoanRepository.class), mock(NotificationService.class),
+        return new InnbucksDisbursementService(mock(LoanRepository.class), mock(LoanNotificationService.class),
                 mock(LoanDisbursementRepository.class), mock(DeductionCancellationService.class),
                 restTemplate, params, auth, mock(DisbursementLedger.class),
                 mock(PlatformTransactionManager.class));

@@ -19,6 +19,8 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.loan.PayoutDestination;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -62,12 +64,14 @@ public class LoanBookingJob {
     private final AuditService auditService;
     private final TransactionTemplate transactionTemplate;
     private final Duration staleClaimAfter;
+    private final LoanNotificationService loanNotificationService;
 
     public LoanBookingJob(DisbursementService disbursementService,
                                   LoanRepository loanRepository,
                                   DeductionCancellationService deductionCancellationService,
                                   LoanDisbursementRepository loanDisbursementRepository,
                                   AuditService auditService,
+                                  LoanNotificationService loanNotificationService,
                                   PlatformTransactionManager transactionManager,
                                   @Value("${innbucks.booking.stale-claim-minutes:30}") long staleClaimMinutes) {
         if (staleClaimMinutes < 1) {
@@ -78,6 +82,7 @@ public class LoanBookingJob {
         this.deductionCancellationService = deductionCancellationService;
         this.loanDisbursementRepository = loanDisbursementRepository;
         this.auditService = auditService;
+        this.loanNotificationService = loanNotificationService;
         this.staleClaimAfter = Duration.ofMinutes(staleClaimMinutes);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         // Always a fresh transaction: the claim must be COMMITTED before InnBucks is called, and each
@@ -252,6 +257,7 @@ public class LoanBookingJob {
                 + (response.getMessage() == null ? "unsuccessful response" : response.getMessage())));
         // InnBucks answered and refused, so no loan was booked; the deduction Ndasenda accepted is live.
         flagDeduction(loan, DeductionCancellationService.REASON_BOOKING_FAILED);
+        notifyPayoutDelayed(loan);
     }
 
     private void handleAccountCreationException(Loan loan, Exception ex) {
@@ -265,6 +271,7 @@ public class LoanBookingJob {
             loan.setDisbursementStatusMessage(truncate("InnBucks loan application failed: " + describe(ex)));
             // InnBucks said no, so nothing was booked; the deduction Ndasenda accepted is live.
             flagDeduction(loan, DeductionCancellationService.REASON_BOOKING_FAILED);
+            notifyPayoutDelayed(loan);
             return;
         }
 
@@ -373,6 +380,14 @@ public class LoanBookingJob {
      * that Ndasenda later accepted). Every loan here was accepted by Ndasenda, so its deduction is
      * live. Saved with the loan by the caller.
      */
+    /**
+     * Sent once this settle commits. A refused booking may yet be paid by a recovery payout, so the applicant
+     * hears of a delay, not of a failure (FR-SSB-016).
+     */
+    private void notifyPayoutDelayed(Loan loan) {
+        loanNotificationService.notify(loan, LoanNotice.PAYOUT_DELAYED);
+    }
+
     private void flagDeduction(Loan loan, String reason) {
         deductionCancellationService.markRequired(loan, reason, SYSTEM_ACTOR, "system");
     }

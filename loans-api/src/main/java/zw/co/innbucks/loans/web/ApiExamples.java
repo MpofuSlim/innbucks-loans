@@ -100,6 +100,7 @@ public final class ApiExamples {
                   "disbursedAmount": 500.00,
                   "tenor": 3,
                   "monthlyInstallment": 202.69,
+                  "stage": "WITH_CREDIT",
                   "ssbApprovalStatus": "APPROVED",
                   "creditApprovalStatus": "PENDING",
                   "bookingStatus": "PENDING",
@@ -291,6 +292,7 @@ public final class ApiExamples {
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
+                "stage": "WITH_CREDIT",
                 "creditApprovalStatus": "PENDING",
                 "bookingStatus": "PENDING",
                 "disbursementStatus": "PENDING",
@@ -319,6 +321,7 @@ public final class ApiExamples {
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
+                "stage": "APPROVED",
                 "creditApprovalStatus": "APPROVED",
                 "creditDecisionAt": "2026-09-30T11:40:02+02:00",
                 "creditDecisionBy": "cmanager",
@@ -342,6 +345,7 @@ public final class ApiExamples {
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
+                "stage": "MORE_INFORMATION_NEEDED",
                 "creditApprovalStatus": "RETURNED",
                 "creditDecisionAt": "2026-09-30T09:12:45+02:00",
                 "creditDecisionBy": "cmanager",
@@ -365,6 +369,7 @@ public final class ApiExamples {
                 "merchantName": "Harare Motor Spares",
             """ + LOAN_APPLICANT + "\n" + LOAN_TERMS + """
 
+                "stage": "WITH_CREDIT",
                 "creditApprovalStatus": "PENDING",
             """ + LOAN_PAYOUT_STATUSES + """
 
@@ -540,6 +545,7 @@ public final class ApiExamples {
               "data": {
             """ + LOAN_57 + """
 
+                "stage": "RECEIVED",
                 "creditApprovalStatus": "PENDING",
                 "payslipReviewStatus": "CLEARED",
                 "payslipReviewedBy": "cmanager",
@@ -558,6 +564,7 @@ public final class ApiExamples {
               "data": {
             """ + LOAN_57 + """
 
+                "stage": "DECLINED",
                 "creditApprovalStatus": "REJECTED",
                 "creditDecisionAt": "2026-10-01T11:02:40+02:00",
                 "creditDecisionBy": "cmanager",
@@ -1080,6 +1087,51 @@ public final class ApiExamples {
                   "signerAuthentication": "IN_PERSON_ID_CHECK",
                   "evidenceSha256": "b592bac1a1e675b664c41e26cc9b74f79359d09e919a089ca07638b9c4b4c901",
                   "intact": true
+                }
+              ]
+            }""";
+
+    // --- Notifications (FR-SSB-016): what loan 43's applicant was told on the day draft 7 was submitted ---
+
+    /**
+     * What loan 43's applicant was told, oldest first: received when draft 7 was submitted, sent to SSB by the
+     * next lodgement run, and SSB's confirmation, which the gateway refused and is kept as not sent.
+     */
+    public static final String LOAN_43_NOTIFICATIONS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "notice": "RECEIVED",
+                  "stage": "RECEIVED",
+                  "channel": "SMS",
+                  "recipient": "263772345678",
+                  "message": "Your loan application with ref # 000000043 has been received. We will send it to SSB for your salary deduction and let you know the outcome. Thank you for choosing Innbucks.",
+                  "gatewayReference": "LOANS-SMS-5d0c2f7e-8a41-4c6b-9f13-2e7a6b1c9d40",
+                  "sent": true,
+                  "attemptedAt": "2026-09-30T09:31:16+02:00"
+                },
+                {
+                  "notice": "SENT_TO_SSB",
+                  "stage": "WITH_SSB",
+                  "channel": "SMS",
+                  "recipient": "263772345678",
+                  "message": "Your loan application with ref # 000000043 has been sent to SSB to confirm your salary deduction. You will be notified of the outcome shortly.",
+                  "gatewayReference": "LOANS-SMS-a2b7e914-3c05-4f8d-b6e2-71d9c4a05f18",
+                  "sent": true,
+                  "attemptedAt": "2026-09-30T10:00:04+02:00"
+                },
+                {
+                  "notice": "SSB_CONFIRMED",
+                  "stage": "WITH_CREDIT",
+                  "channel": "SMS",
+                  "recipient": "263772345678",
+                  "message": "SSB has confirmed the salary deduction for your loan application with ref # 000000043. It is now being assessed and you will be notified of the outcome.",
+                  "gatewayReference": "LOANS-SMS-e61f3a08-94d2-47c1-8b5a-0c3d9e2f7a64",
+                  "sent": false,
+                  "failureReason": "InnBucks gateway rejected SMS: HTTP 503",
+                  "attemptedAt": "2026-09-30T14:00:09+02:00"
                 }
               ]
             }""";

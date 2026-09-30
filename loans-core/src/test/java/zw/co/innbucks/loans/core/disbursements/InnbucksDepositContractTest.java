@@ -25,7 +25,7 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursement;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -131,7 +131,7 @@ class InnbucksDepositContractTest {
         when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
-        return new InnbucksDisbursementService(loans, mock(NotificationService.class), attemptRepository,
+        return new InnbucksDisbursementService(loans, mock(LoanNotificationService.class), attemptRepository,
                 mock(DeductionCancellationService.class), restTemplate, params,
                 new InnbucksAuthService(restTemplate, params), mock(DisbursementLedger.class),
                 mock(PlatformTransactionManager.class));

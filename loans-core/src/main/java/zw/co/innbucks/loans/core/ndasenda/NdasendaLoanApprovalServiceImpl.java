@@ -24,7 +24,8 @@ import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.loan.NdasendaAwaitingLoan;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -47,7 +48,6 @@ import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.HttpMethod.POST;
-import static zw.co.innbucks.loans.core.loan.SmsMessages.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -69,15 +69,15 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
     private final NdasendaParameters ndasendaProps;
     private final LoanRepository loanRepository;
     private final LoanBatchService loanBatchService;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final AuditService auditService;
     private final DeductionCancellationService deductionCancellationService;
     private final MarketTimeZone marketTimeZone;
 
-    Map<LoanApprovalStatus, String> smsMessages = Map.of(LoanApprovalStatus.APPROVED, APPROVED_LOAN,
-            LoanApprovalStatus.REJECTED, REJECTED_LOAN,
-            LoanApprovalStatus.PROCESSING, PROCESSING_LOAN
-    );
+    /** What the applicant is told of SSB's answer (FR-SSB-016). */
+    static final Map<LoanApprovalStatus, LoanNotice> NOTICES = Map.of(
+            LoanApprovalStatus.APPROVED, LoanNotice.SSB_CONFIRMED,
+            LoanApprovalStatus.REJECTED, LoanNotice.DECLINED);
 
     /**
      * Lodges ONE deduction with Ndasenda: a payroll stop order on a civil servant's salary, which
@@ -636,16 +636,15 @@ public class NdasendaLoanApprovalServiceImpl implements LoanApprovalService {
             loan.setLoanStatusMessage(StringUtils.left(response.getMessage(), 250));
         }
 
-        // Reference and amount only — upstream text never reaches the customer.
-        final String text = String.format(smsMessages.get(loan.getLoanApprovalStatus()),
-                String.format("%09d", loan.getId()), loan.getDisbursedAmount());
-
-        //Do not send notification for SSB approval. SMS will be sent on internal approval
-        if (LoanApprovalStatus.APPROVED != outcome) {
-            notificationService.sendSms(loan.getMobileNumber(), text);
-        }
-
         loanRepository.save(loan);
+
+        // Reference and amount only: Ndasenda's text never reaches the applicant. SSB's approval is a stage of
+        // its own (FR-SSB-016), told apart from Credit's: the applicant hears the deduction is confirmed and the
+        // application is being assessed, and hears the outcome of that separately.
+        LoanNotice notice = NOTICES.get(outcome);
+        if (notice != null) {
+            loanNotificationService.notify(loan, notice);
+        }
     }
 
     /**

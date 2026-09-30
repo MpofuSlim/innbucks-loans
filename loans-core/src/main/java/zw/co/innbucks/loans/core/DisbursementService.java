@@ -15,7 +15,8 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.*;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -59,19 +60,19 @@ public abstract class DisbursementService {
     }
 
     private final LoanRepository loanRepository;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final LoanDisbursementRepository loanDisbursementRepository;
     private final DeductionCancellationService deductionCancellationService;
     private final DisbursementLedger disbursementLedger;
     private final TransactionTemplate transactionTemplate;
 
-    protected DisbursementService(LoanRepository loanRepository, NotificationService notificationService,
+    protected DisbursementService(LoanRepository loanRepository, LoanNotificationService loanNotificationService,
                                   LoanDisbursementRepository loanDisbursementRepository,
                                   DeductionCancellationService deductionCancellationService,
                                   DisbursementLedger disbursementLedger,
                                   PlatformTransactionManager transactionManager) {
         this.loanRepository = loanRepository;
-        this.notificationService = notificationService;
+        this.loanNotificationService = loanNotificationService;
         this.loanDisbursementRepository = loanDisbursementRepository;
         this.deductionCancellationService = deductionCancellationService;
         this.disbursementLedger = disbursementLedger;
@@ -333,20 +334,10 @@ public abstract class DisbursementService {
         return new DisbursementNotAllowedException(message);
     }
 
-    /** The customer SMS must never undo a recorded payout, so it runs after the commit and cannot throw. */
+    /** The customer SMS must never undo a recorded payout: it runs after the commit, and the notice cannot throw. */
     private void notifyDisbursed(Loan loan) {
-        try {
-            log.info("Sending disbursement SMS notification for loan: {}", loan.getReference());
-            sendDisbursementNotification(loan);
-        } catch (RuntimeException ex) {
-            log.error("Loan {} was paid but the disbursement SMS failed", loan.getReference(), ex);
-        }
-    }
-
-    private void sendDisbursementNotification(Loan loan) {
-        String message = disbursementSms(loan);
-        log.info("Sending disbursement notification: {} -> {}", PayoutDestination.of(loan).type(), message);
-        notificationService.sendSms(loan.getMobileNumber(), message);
+        log.info("Loan {} paid to its {}: notifying the customer", loan.getReference(), PayoutDestination.of(loan).type());
+        loanNotificationService.notify(loan, LoanNotice.PAID, disbursementSms(loan));
     }
 
     private static boolean isBlank(String value) {

@@ -29,6 +29,9 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.UnknownContentTypeException;
+import zw.co.innbucks.loans.core.notice.LoanNotificationSender;
+import zw.co.innbucks.loans.core.notice.LoanNotificationRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -45,7 +48,7 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaAuthService;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaDeductionBatch;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaLoanApprovalServiceImpl;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.net.ConnectException;
@@ -65,7 +68,6 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -88,7 +90,7 @@ class NdasendaLodgementJobTest {
     private RestTemplate restTemplate;
     private NdasendaAuthService auth;
     private LoanRepository loanRepository;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private LoanBatchService loanBatchService;
     private AuditService auditService;
     private RecordingTransactions transactions;
@@ -101,7 +103,7 @@ class NdasendaLodgementJobTest {
         auth = mock(NdasendaAuthService.class);
         when(auth.getAccessToken()).thenReturn("tok-abc");
         loanRepository = mock(LoanRepository.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         loanBatchService = mock(LoanBatchService.class);
         auditService = mock(AuditService.class);
         transactions = new RecordingTransactions();
@@ -155,7 +157,11 @@ class NdasendaLodgementJobTest {
     }
 
     private NdasendaLodgementJob job(LoanApprovalService service) {
-        return new NdasendaLodgementJob(service, loanRepository, notificationService, loanBatchService,
+        return job(service, loanNotificationService);
+    }
+
+    private NdasendaLodgementJob job(LoanApprovalService service, LoanNotificationService notifications) {
+        return new NdasendaLodgementJob(service, loanRepository, notifications, loanBatchService,
                 auditService, transactions, 3, 10, 30);
     }
 
@@ -170,7 +176,7 @@ class NdasendaLodgementJobTest {
         props.setDeductionCode("DC01");
         props.setSecurityCode("SEC01");
         return new NdasendaLoanApprovalServiceImpl(restTemplate, auth, props, loanRepository, loanBatchService,
-                notificationService, auditService, mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));
+                loanNotificationService, auditService, mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));
     }
 
     /** Ndasenda's answer to each lodgement POST, chosen by the loan reference it carries. */
@@ -224,9 +230,8 @@ class NdasendaLodgementJobTest {
         assertThat(loan.getRepaymentStartDate()).isNotNull();
         assertThat(lodgementPosts()).isEqualTo(1);
         verify(loanBatchService).save("BATCH-20260929-01");
-        verify(notificationService).sendSms(eq("0772123123"), eq(String.format(
-                "Your loan application with ref # %s has been received and is being processed."
-                        + " You will be notified of the outcome shortly. Thank you for choosing Innbucks.", "000000042")));
+        // Told it is with SSB (FR-SSB-016), once the settle commits.
+        verify(loanNotificationService).notify(loan, LoanNotice.SENT_TO_SSB);
         verifyNoInteractions(auditService);
         // The claim, then the settle, each committed on its own.
         assertThat(transactions.events).containsExactly("begin", "commit", "begin", "commit");
@@ -238,10 +243,15 @@ class NdasendaLodgementJobTest {
     void smsFailureAfterLodgementKeepsItProcessing() {
         Loan loan = newLoan(42);
         ndasendaAnswers(reference -> accepted("BATCH-20260929-01"));
-        doThrow(new IllegalStateException("SMS gateway unreachable")).when(notificationService).sendSms(anyString(), anyString());
+        // The real notification service, over a sender that fails: the notice is raised inside the settle.
+        LoanNotificationSender failing = mock(LoanNotificationSender.class);
+        doThrow(new IllegalStateException("SMS gateway unreachable")).when(failing).deliver(any());
+        LoanNotificationService notifications = new LoanNotificationService(failing,
+                mock(LoanNotificationRepository.class), loanRepository);
 
-        ndasendaJob().processSsbApprovals();
+        job(ndasenda(), notifications).processSsbApprovals();
 
+        verify(failing).deliver(any());
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING);
         assertThat(loan.getBatchNumber()).isEqualTo("BATCH-20260929-01");
         assertThat(loan.getDeductionCancellationStatus()).isNull();
@@ -377,7 +387,7 @@ class NdasendaLodgementJobTest {
         assertThat(second.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
         assertThat(second.getApprovalAttempt()).isNull();
         assertThat(lodgementPosts()).isEqualTo(1);
-        verifyNoInteractions(auditService, notificationService);
+        verifyNoInteractions(auditService, loanNotificationService);
 
         // And lodging pauses: the next minute's run sends nothing.
         job.processSsbApprovals();
@@ -422,8 +432,8 @@ class NdasendaLodgementJobTest {
         assertThat(loan.getNextLodgementAttemptAt()).isNull();
         assertThat(loan.getLoanStatusMessage()).startsWith("Not lodged: 3 attempt(s) never reached Ndasenda");
         assertThat(loan.getDeductionCancellationStatus()).isNull();
-        // As before, a FAILED lodgement sends the customer nothing.
-        verifyNoInteractions(notificationService);
+        // The application goes no further, so the applicant is told (FR-SSB-016).
+        verify(loanNotificationService).notify(loan, LoanNotice.NOT_COMPLETED);
         List<AuditLog> audits = audits();
         assertThat(audits).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_ATTEMPTS_EXHAUSTED");
         assertThat(audits.get(0).getStateTransitionDelta()).isEqualTo("{\"from\":\"NEW\",\"to\":\"FAILED\"}");
@@ -489,7 +499,7 @@ class NdasendaLodgementJobTest {
                 .doesNotContain(NATIONAL_ID);
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         assertThat(lodgementPosts()).as("sent exactly once").isEqualTo(1);
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         List<AuditLog> audits = audits();
         assertThat(audits).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_UNKNOWN");
@@ -542,7 +552,7 @@ class NdasendaLodgementJobTest {
         assertThat(loan.getLoanStatusMessage()).isEqualTo("Ndasenda refused the lodgement with HTTP 422");
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         assertThat(lodgementPosts()).isEqualTo(1);
-        verifyNoInteractions(notificationService);
+        verify(loanNotificationService).notify(loan, LoanNotice.NOT_COMPLETED);
         assertThat(audits()).extracting(AuditLog::getEventType).containsExactly("NDASENDA_LODGEMENT_REFUSED");
     }
 

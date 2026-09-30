@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.loan;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.ToString;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
@@ -83,6 +84,14 @@ public class LoanResponse implements Serializable {
     private LocalDate endDate;
     private LocalDate repaymentStartDate;
     private LocalDate repaymentEndDate;
+
+    /**
+     * Where the application stands, in one word, for the applicant and the originator (FR-SSB-016); derived
+     * from the four stage statuses below.
+     */
+    @Schema(description = "Where the application stands: RECEIVED, WITH_SSB, WITH_CREDIT, MORE_INFORMATION_NEEDED,"
+            + " APPROVED, PAID, DECLINED, PAYOUT_DELAYED or NOT_COMPLETED", example = "WITH_CREDIT")
+    private LoanStage stage;
 
     // --- SSB: the payroll deduction ---
     private LoanApprovalStatus ssbApprovalStatus;

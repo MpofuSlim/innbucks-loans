@@ -13,6 +13,7 @@ import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,17 +36,20 @@ class BookingResolutionServiceTest {
 
     private LoanRepository loanRepository;
     private AuditService auditService;
+    private LoanNotificationService loanNotificationService;
     private BookingResolutionService service;
     private Loan loan;
 
     @BeforeEach
     void setUp() {
+        loanNotificationService = mock(LoanNotificationService.class);
         loanRepository = mock(LoanRepository.class);
         auditService = mock(AuditService.class);
         AuthService authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("ops.admin");
         service = new BookingResolutionService(loanRepository,
-                new DeductionCancellationService(loanRepository, auditService, authService), auditService, authService);
+                new DeductionCancellationService(loanRepository, auditService, authService), auditService, authService,
+                loanNotificationService);
 
         loan = Loan.builder()
                 .loanAccountStatus(LoanAccountStatus.CREATED)

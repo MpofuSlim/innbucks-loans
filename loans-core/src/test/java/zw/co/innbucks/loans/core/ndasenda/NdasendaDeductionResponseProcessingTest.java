@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -22,7 +23,8 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanApprovalStatus;
 import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,7 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -52,7 +53,7 @@ class NdasendaDeductionResponseProcessingTest {
     private RestTemplate restTemplate;
     private NdasendaParameters props;
     private LoanRepository loanRepository;
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
     private AuditService auditService;
     private NdasendaLoanApprovalServiceImpl service;
 
@@ -62,10 +63,10 @@ class NdasendaDeductionResponseProcessingTest {
         props = mock(NdasendaParameters.class);
         when(props.getResponses()).thenReturn(new NdasendaParameters.Responses());
         loanRepository = mock(LoanRepository.class);
-        notificationService = mock(NotificationService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         auditService = mock(AuditService.class);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
-                loanRepository, mock(LoanBatchService.class), notificationService, auditService,
+                loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
     }
 
@@ -115,7 +116,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(audit.getPayloadHash()).hasSize(64);
         verify(loanRepository, never()).findById(anyLong());
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -142,7 +143,7 @@ class NdasendaDeductionResponseProcessingTest {
                 .contains("reason=unknown_loan", "reference=000000099")
                 .doesNotContain(EC_NUMBER, NATIONAL_ID);
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -182,15 +183,16 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanAccountStatus()).isNull();
         // The customer gets the fixed decline; Ndasenda's reason stays on the loan for staff.
         assertThat(loan.getLoanStatusMessage()).isEqualTo("Insufficient net salary");
-        verify(notificationService).sendSms("0772123123",
-                "We regret to inform you that your loan application with ref # 000000042 has been declined. "
-                        + "Please contact Innbucks for more information.");
-        verify(loanRepository).save(loan);
+        InOrder saveThenTell = inOrder(loanRepository, loanNotificationService);
+        saveThenTell.verify(loanRepository).save(loan);
+        saveThenTell.verify(loanNotificationService).notify(loan, LoanNotice.DECLINED);
+        assertThat(LoanNotice.DECLINED.textFor(loan)).isEqualTo("We regret to inform you that your loan application"
+                + " with ref # 000000042 has been declined. Please contact Innbucks for more information.");
         verifyNoInteractions(auditService);
     }
 
     @Test
-    @DisplayName("matched approval: queued for disbursement with no SMS, as before — nothing audited")
+    @DisplayName("matched approval: queued for disbursement and the applicant told SSB confirmed the deduction — nothing audited")
     void matchedApprovalIsUnchanged() {
         Loan loan = loan(LoanApprovalStatus.PROCESSING);
 
@@ -202,7 +204,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDisbursementAttempts()).isZero();
         assertThat(loan.getNextDisbursementAttemptDate()).isNotNull();
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
-        verifyNoInteractions(notificationService);
+        verify(loanNotificationService).notify(loan, LoanNotice.SSB_CONFIRMED);
         verify(loanRepository).save(loan);
         verifyNoInteractions(auditService);
     }
@@ -215,7 +217,7 @@ class NdasendaDeductionResponseProcessingTest {
         service.processDeductionRequestResponse(BATCH, deduction("ND-7003", "000000042", NdasendaDeductionStatus.SUCCESS));
 
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService, auditService);
+        verifyNoInteractions(loanNotificationService, auditService);
     }
 
     // --- rewind guard ------------------------------------------------------------------------
@@ -245,7 +247,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDisbursementAttempts()).isEqualTo(1);
         assertThat(loan.getNextDisbursementAttemptDate()).isNull();
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService, auditService);
+        verifyNoInteractions(loanNotificationService, auditService);
     }
 
     @Test
@@ -262,7 +264,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDisbursementStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         AuditLog audit = auditedOnce();
         assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
@@ -291,7 +293,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         assertThat(loan.getDeductionCancellationReason()).isEqualTo("ACCEPTED_AFTER_CLOSE");
         verify(loanRepository).save(loan);
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
         verify(auditService, times(2)).record(captor.capture());
@@ -308,7 +310,7 @@ class NdasendaDeductionResponseProcessingTest {
 
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.FAILED);
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
         assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
     }
 
@@ -325,7 +327,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.REQUIRED);
         assertThat(loan.getDeductionCancellationReason()).isEqualTo("ACCEPTED_AFTER_CLOSE");
         verify(loanRepository).save(loan);
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -344,7 +346,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         assertThat(loan.getDeductionCancellationReason()).isNull();
         verify(loanRepository).save(loan);
-        verifyNoInteractions(notificationService);
+        verify(loanNotificationService).notify(loan, LoanNotice.SSB_CONFIRMED);
         AuditLog audit = auditedOnce();
         assertThat(audit.getEventType()).isEqualTo("DEDUCTION_CANCELLATION_WITHDRAWN");
         assertThat(audit.getDetail()).contains("reason=LODGEMENT_FAILED", "ndasendaOutcome=SUCCESS");
@@ -363,7 +365,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanAccountStatus()).isNull();
         assertThat(loan.getDeductionCancellationStatus()).isEqualTo(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
         assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
     }
 
@@ -379,7 +381,8 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.APPROVED);
         assertThat(loan.getApprovalReference()).isEqualTo("ND-7010");
         verify(loanRepository, times(1)).save(loan);
-        verifyNoInteractions(notificationService);
+        verify(loanNotificationService).notify(loan, LoanNotice.SSB_CONFIRMED);
+        verify(loanNotificationService, never()).notify(loan, LoanNotice.DECLINED);
         assertThat(auditedOnce().getEventType()).isEqualTo("NDASENDA_RESPONSE_CONFLICT");
     }
 
@@ -438,7 +441,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanStatusMessage()).isNull();
         verify(loanRepository, never()).findById(anyLong());
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         AuditLog audit = auditedOnce();
         assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_IGNORED");
@@ -465,7 +468,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getNextDisbursementAttemptDate()).isNull();
         assertThat(loan.getDeductionCancellationStatus()).isNull();
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
         assertThat(auditedOnce().getDetail()).contains("reason=not_a_lodgement", "type=DELETE");
     }
 
@@ -495,7 +498,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanAccountStatus()).isNull();
         assertThat(loan.getNextDisbursementAttemptDate()).isNull();
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
 
         AuditLog audit = auditedOnce();
         assertThat(audit.getEventType()).isEqualTo("NDASENDA_RESPONSE_MISMATCH");
@@ -549,7 +552,7 @@ class NdasendaDeductionResponseProcessingTest {
         assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.REJECTED);
         assertThat(loan.getApprovalReference()).isEqualTo("ND-8007");
         assertThat(loan.getLoanStatusMessage()).isEqualTo("Insufficient net salary");
-        verify(notificationService).sendSms(eq("0772123123"), anyString());
+        verify(loanNotificationService).notify(loan, LoanNotice.DECLINED);
         verify(loanRepository).save(loan);
         verifyNoInteractions(auditService);
     }

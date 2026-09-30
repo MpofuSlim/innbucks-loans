@@ -14,7 +14,7 @@ import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.TextUtils;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.*;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,7 +39,7 @@ public class InnbucksDisbursementService extends DisbursementService {
     private final RestTemplate restTemplate;
     private final InnbucksParameters parameters;
 
-    public InnbucksDisbursementService(LoanRepository loanRepository, NotificationService notificationService,
+    public InnbucksDisbursementService(LoanRepository loanRepository, LoanNotificationService loanNotificationService,
                                LoanDisbursementRepository loanDisbursementRepository,
                                DeductionCancellationService deductionCancellationService,
                                RestTemplate restTemplate, InnbucksParameters parameters,
@@ -47,7 +47,7 @@ public class InnbucksDisbursementService extends DisbursementService {
                                DisbursementLedger disbursementLedger,
                                PlatformTransactionManager transactionManager
     ) {
-        super(loanRepository, notificationService, loanDisbursementRepository, deductionCancellationService,
+        super(loanRepository, loanNotificationService, loanDisbursementRepository, deductionCancellationService,
                 disbursementLedger, transactionManager);
         this.innbucksAuthService = innbucksAuthService;
         this.restTemplate = restTemplate;

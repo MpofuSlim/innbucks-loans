@@ -29,6 +29,7 @@ public interface LoanMapper {
     @Mapping(target = "documents", ignore = true)
     @Mapping(target = "bookingStatus", source = "loanAccountStatus")
     @Mapping(target = "disbursedAt", source = "dateDisbursed")
+    @Mapping(target = "stage", expression = "java(LoanStage.of(loan))")
     LoanResponse toResponse(Loan loan);
 
     @Mapping(target = "createdAt", source = "createdDate")
@@ -37,5 +38,6 @@ public interface LoanMapper {
     @Mapping(target = "ssbApprovalStatus", source = "loanApprovalStatus")
     @Mapping(target = "creditApprovalStatus", source = "internalApprovalStatus")
     @Mapping(target = "bookingStatus", source = "loanAccountStatus")
+    @Mapping(target = "stage", expression = "java(LoanStage.of(loan))")
     LoanSummaryResponse toSummary(Loan loan);
 }

@@ -12,7 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -34,7 +34,7 @@ class InnbucksDisbursementServiceTest {
     private LoanRepository loanRepository;
 
     @Mock
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
 
     @Mock
     private LoanDisbursementRepository loanDisbursementRepository;

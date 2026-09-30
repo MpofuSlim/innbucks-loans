@@ -35,6 +35,7 @@ import zw.co.innbucks.loans.core.instrument.SignedInstrumentService;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.user.User;
 
@@ -69,6 +70,7 @@ class LoanServiceImplApplicationTest {
     private LoanDocumentAccessRepository loanDocumentAccessRepository;
     private PayslipReviewService payslipReviewService;
     private SignedInstrumentService signedInstrumentService;
+    private LoanNotificationService loanNotificationService;
     private LoanServiceImpl service;
 
     @BeforeEach
@@ -93,6 +95,7 @@ class LoanServiceImplApplicationTest {
 
         payslipReviewService = mock(PayslipReviewService.class);
         signedInstrumentService = mock(SignedInstrumentService.class);
+        loanNotificationService = mock(LoanNotificationService.class);
         loanDocumentRepository = mock(LoanDocumentRepository.class);
         when(loanDocumentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentAccessRepository = mock(LoanDocumentAccessRepository.class);
@@ -104,7 +107,7 @@ class LoanServiceImplApplicationTest {
         service = new LoanServiceImpl(loanRepository, parameters, mock(LoanMapper.class), auth,
                 mock(MerchantRepository.class), mock(ChannelRepository.class), validatorFactory.getValidator(),
                 new MarketTimeZone("ZW"), loanDocumentService, payslipFraudDetector, payslipReviewService,
-                signedInstrumentService);
+                signedInstrumentService, loanNotificationService);
     }
 
     @AfterEach

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.SmsMessages;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.user.AdminPasswordResetServiceImpl;
 import zw.co.innbucks.loans.core.user.CreateUserServiceImpl;
 
@@ -37,13 +38,12 @@ class SmsTemplatesTest {
 
     private static Map<String, String> everyRenderedSms() {
         Map<String, String> sms = new LinkedHashMap<>();
-        sms.put("APPROVED_LOAN", String.format(SmsMessages.APPROVED_LOAN, REF, AMOUNT));
-        sms.put("REJECTED_LOAN", String.format(SmsMessages.REJECTED_LOAN, REF, AMOUNT));
-        sms.put("RETURNED_LOAN", String.format(SmsMessages.RETURNED_LOAN, REF, AMOUNT));
-        sms.put("PROCESSING_LOAN", String.format(SmsMessages.PROCESSING_LOAN, REF, AMOUNT));
-        // The SSB submission job formats with the reference alone.
-        NdasendaLodgementJob.SMS_MESSAGES
-                .forEach((status, template) -> sms.put("job " + status, String.format(template, REF)));
+        // Every stage the applicant is told about (FR-SSB-016), as the notification service words it.
+        for (LoanNotice notice : LoanNotice.values()) {
+            if (notice != LoanNotice.PAID) {
+                sms.put(notice.name(), notice.textFor(disbursedLoan(MOBILE)));
+            }
+        }
         sms.put("SMS_MSG", DisbursementService.walletDisbursementSms(disbursedLoan(MOBILE)));
         sms.put("SMS_MSG_CONSUMER_FINANCE", String.format(DisbursementService.SMS_MSG_CONSUMER_FINANCE,
                 AMOUNT, REF, "Bulawayo Furnishers (Pvt) Ltd"));

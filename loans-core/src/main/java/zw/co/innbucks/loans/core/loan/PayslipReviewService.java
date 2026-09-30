@@ -15,7 +15,8 @@ import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.LoanApprovalException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -47,7 +48,7 @@ public class PayslipReviewService {
     private final CreditDecisionLog creditDecisionLog;
     private final AuthService authService;
     private final LoanMapper loanMapper;
-    private final NotificationService notificationService;
+    private final LoanNotificationService loanNotificationService;
     private final AuditService auditService;
     private final DeductionCancellationService deductionCancellationService;
     private final LoanDocumentRepository loanDocumentRepository;
@@ -55,7 +56,7 @@ public class PayslipReviewService {
 
     public PayslipReviewService(LoanRepository loanRepository, PayslipFraudFlagRepository payslipFraudFlagRepository,
                                 CreditDecisionLog creditDecisionLog, AuthService authService, LoanMapper loanMapper,
-                                NotificationService notificationService, AuditService auditService,
+                                LoanNotificationService loanNotificationService, AuditService auditService,
                                 DeductionCancellationService deductionCancellationService,
                                 LoanDocumentRepository loanDocumentRepository,
                                 PlatformTransactionManager transactionManager) {
@@ -64,7 +65,7 @@ public class PayslipReviewService {
         this.creditDecisionLog = creditDecisionLog;
         this.authService = authService;
         this.loanMapper = loanMapper;
-        this.notificationService = notificationService;
+        this.loanNotificationService = loanNotificationService;
         this.auditService = auditService;
         this.deductionCancellationService = deductionCancellationService;
         this.loanDocumentRepository = loanDocumentRepository;
@@ -147,8 +148,7 @@ public class PayslipReviewService {
                 username, "reference=" + loan.getReference() + " outcome=" + outcome);
         if (outcome == PayslipReviewStatus.CONFIRMED) {
             // The same decline as any credit rejection: nothing says why.
-            notificationService.sendSms(loan.getMobileNumber(),
-                    String.format(SmsMessages.REJECTED_LOAN, loan.getReference()));
+            loanNotificationService.notify(loan, LoanNotice.DECLINED);
         }
         return reviewed.view();
     }

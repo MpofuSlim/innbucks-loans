@@ -8,6 +8,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.audit.AuditLog;
@@ -18,7 +19,10 @@ import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.notifications.NotificationService;
+import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.notice.LoanNotificationRepository;
+import zw.co.innbucks.loans.core.notice.LoanNotificationSender;
+import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -42,7 +46,7 @@ class LoanDisbursementStatusJobTest {
     private LoanRepository loanRepository;
 
     @Mock
-    private NotificationService notificationService;
+    private LoanNotificationService loanNotificationService;
 
     @Mock
     private DeductionCancellationService deductionCancellationService;
@@ -135,7 +139,7 @@ class LoanDisbursementStatusJobTest {
                 LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING);
         verify(disbursementService).checkLoanDisbursementStatus(testLoan);
         verify(loanRepository).save(testLoan);
-        verify(notificationService).sendSms(anyString(), anyString());
+        verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), anyString());
 
         // Verify loan was updated correctly
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
@@ -153,7 +157,7 @@ class LoanDisbursementStatusJobTest {
 
         // The SMS used to print the full wallet number back to the customer.
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), text.capture());
         assertThat(text.getValue()).contains("wallet ending 7890").doesNotContain("1234567890");
     }
 
@@ -171,7 +175,7 @@ class LoanDisbursementStatusJobTest {
         // The automatic payout used to tell every customer the money reached their own wallet,
         // though a consumer-finance loan is paid to the merchant.
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), text.capture());
         assertThat(text.getValue()).contains("has been paid to Mega Furnishers", "collect goods")
                 .doesNotContain("wallet", "0771000001");
     }
@@ -188,7 +192,7 @@ class LoanDisbursementStatusJobTest {
         loanDisbursementStatusJob.processLoanDisbursementStatus();
 
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(notificationService).sendSms(eq("1234567890"), text.capture());
+        verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), text.capture());
         assertThat(text.getValue()).contains("wallet ending 7890").doesNotContain("collect goods");
     }
 
@@ -231,7 +235,7 @@ class LoanDisbursementStatusJobTest {
         // Assert
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
         verify(testLoan).setDateDisbursed(any(LocalDateTime.class));
-        verify(notificationService).sendSms(anyString(), anyString());
+        verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), anyString());
         verify(loanRepository).save(testLoan);
         verifyNoInteractions(deductionCancellationService);
     }
@@ -246,12 +250,12 @@ class LoanDisbursementStatusJobTest {
         loanDisbursementStatusJob.processLoanDisbursementStatus();
 
         // One transaction: the posting and the SUCCESS commit together, and the SMS follows the commit.
-        InOrder inOrder = inOrder(transactionManager, disbursementLedger, loanRepository, notificationService);
+        InOrder inOrder = inOrder(transactionManager, disbursementLedger, loanRepository, loanNotificationService);
         inOrder.verify(transactionManager).getTransaction(any());
         inOrder.verify(disbursementLedger).recordPayout(testLoan, LoanDisbursementStatusJob.SYSTEM_ACTOR);
         inOrder.verify(loanRepository).save(testLoan);
         inOrder.verify(transactionManager).commit(any());
-        inOrder.verify(notificationService).sendSms(anyString(), anyString());
+        inOrder.verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), anyString());
     }
 
     @Test
@@ -268,7 +272,7 @@ class LoanDisbursementStatusJobTest {
         verify(transactionManager).rollback(any());
         verify(transactionManager, never()).commit(any());
         verify(loanRepository, never()).save(any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(loanNotificationService);
     }
 
     @Test
@@ -308,7 +312,7 @@ class LoanDisbursementStatusJobTest {
         // Since we're setting PENDING in setup and the method sets it again, we verify it was called at least once
         verify(testLoan, atLeastOnce()).setDisbursementStatus(LoanDisbursementStatus.PENDING);
         verify(testLoan, never()).setDateDisbursed(any(LocalDateTime.class));
-        verify(notificationService, never()).sendSms(anyString(), anyString());
+        verifyNoInteractions(loanNotificationService);
         verify(loanRepository).save(testLoan);
     }
 
@@ -327,8 +331,12 @@ class LoanDisbursementStatusJobTest {
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.FAILED);
         verify(testLoan).setDisbursementStatusMessage(anyString());
         verify(testLoan, never()).setDateDisbursed(any(LocalDateTime.class));
-        verify(notificationService, never()).sendSms(anyString(), anyString());
-        verify(loanRepository).save(testLoan);
+        // The applicant hears of a delay, and only once the FAILED status is saved (FR-SSB-016): a recovery
+        // payout may still pay it, so nothing says it failed.
+        InOrder inOrder = inOrder(loanRepository, loanNotificationService);
+        inOrder.verify(loanRepository).save(testLoan);
+        inOrder.verify(loanNotificationService).notify(testLoan, LoanNotice.PAYOUT_DELAYED);
+        verify(loanNotificationService, never()).notify(any(), eq(LoanNotice.PAID), anyString());
         // InnBucks itself reported it FAILED: the lodged deduction is flagged, independent of the saga.
         verify(deductionCancellationService).markRequired(testLoan, "BOOKING_FAILED",
                 "loan-disbursement-status-job", "system");
@@ -351,22 +359,25 @@ class LoanDisbursementStatusJobTest {
     }
 
     @Test
-    void notifyCustomer_shouldHandleException_whenNotificationServiceThrowsException() {
-        // Arrange
+    void aPaidLoanStaysPaid_whenTheCustomerCannotBeTold() {
+        // A real notification service over a gateway that refuses the send: telling the customer is best-effort.
+        LoanNotificationSender sender = mock(LoanNotificationSender.class);
+        doThrow(new TaskRejectedException("Notification executor shut down")).when(sender).deliver(any());
+        LoanDisbursementStatusJob job = new LoanDisbursementStatusJob(disbursementService, loanRepository,
+                new LoanNotificationService(sender, mock(LoanNotificationRepository.class), loanRepository),
+                deductionCancellationService, auditService, disbursementLedger, transactionManager);
         when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
                 LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
                 .thenReturn(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
-        doThrow(new RuntimeException("Notification failed")).when(notificationService).sendSms(anyString(), anyString());
 
-        // Act
-        loanDisbursementStatusJob.processLoanDisbursementStatus();
+        job.processLoanDisbursementStatus();
 
-        // Assert
-        // Verify that the loan is still marked as SUCCESS even if notification fails
+        verify(sender).deliver(any());
         verify(testLoan).setDisbursementStatus(LoanDisbursementStatus.SUCCESS);
         verify(testLoan).setDateDisbursed(any(LocalDateTime.class));
         verify(loanRepository).save(testLoan);
+        verify(transactionManager).commit(any());
     }
 
     private static LoanDisbursementStatusResponse notFound() {
@@ -407,7 +418,7 @@ class LoanDisbursementStatusJobTest {
         assertThat(firstReported).isNotNull();
         assertThat(held.getBookingNotFoundAt()).isEqualTo(firstReported);
         assertThat(held.getDisbursementStatusMessage()).contains("InnBucks reports no loan under reference");
-        verifyNoInteractions(deductionCancellationService, notificationService);
+        verifyNoInteractions(deductionCancellationService, loanNotificationService);
         assertThat(audited()).singleElement().satisfies(row -> {
             assertThat(row.getEventType()).isEqualTo("INNBUCKS_BOOKING_NOT_FOUND");
             assertThat(row.getActorId()).isEqualTo("loan-disbursement-status-job");

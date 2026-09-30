@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.loan;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
@@ -31,6 +32,10 @@ public class LoanSummaryResponse {
     private BigDecimal disbursedAmount;
     private int tenor;
     private BigDecimal monthlyInstallment;
+    /** Where the application stands, in one word (FR-SSB-016); derived from the four statuses below. */
+    @Schema(description = "Where the application stands: RECEIVED, WITH_SSB, WITH_CREDIT, MORE_INFORMATION_NEEDED,"
+            + " APPROVED, PAID, DECLINED, PAYOUT_DELAYED or NOT_COMPLETED", example = "WITH_CREDIT")
+    private LoanStage stage;
     private LoanApprovalStatus ssbApprovalStatus;
     private InternalApprovalStatus creditApprovalStatus;
     private LoanAccountStatus bookingStatus;
