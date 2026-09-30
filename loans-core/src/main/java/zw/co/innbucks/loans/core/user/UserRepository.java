@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +23,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /** Everyone in a group, such as those an overdue credit decision is escalated to. */
     List<User> findByGroupsContaining(UserGroup group);
+
+    List<User> findByUsernameIn(Collection<String> usernames);
 
     List<User> findByUsernameContainingIgnoreCase(String username);
 

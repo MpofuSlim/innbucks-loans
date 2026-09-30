@@ -6,7 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
-import org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -69,7 +68,7 @@ class CreditDecisionWebContractTest {
     private static Object secured(Object controller) {
         ProxyFactory secured = new ProxyFactory(controller);
         secured.setProxyTargetClass(true);
-        secured.addAdvisor(AuthorizationManagerBeforeMethodInterceptor.preAuthorize());
+        secured.addAdvisor(WorkflowTestSupport.preAuthorize());
         return secured.getProxy();
     }
 

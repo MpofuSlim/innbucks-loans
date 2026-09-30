@@ -51,11 +51,12 @@ public class PayslipReviewController {
                     content = @Content(examples = @ExampleObject(ApiExamples.PAYSLIP_REVIEW_QUEUE))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN",
+            @ApiResponse(responseCode = "403", description = "Not entitled to see the PAYSLIP_REVIEW stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/payslip-reviews")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'PAYSLIP_REVIEW', 'VIEW')")
     public ApiResult<List<PayslipReviewResponse>> queue() {
         return ApiResult.ok(payslipReviewService.queue());
     }
@@ -88,7 +89,9 @@ public class PayslipReviewController {
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller may not clear this application",
+            @ApiResponse(responseCode = "403", description = "Not entitled to work the PAYSLIP_REVIEW stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages), or the caller may not"
+                    + " clear this application",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
                             @ExampleObject(name = "Originator", value = """
@@ -107,15 +110,22 @@ public class PayslipReviewController {
                               "code": "NOT_FOUND",
                               "message": "Loan 57 not found"
                             }"""))),
-            @ApiResponse(responseCode = "409", description = "The loan is not waiting for payslip review",
-                    content = @Content(examples = @ExampleObject("""
-                            {
-                              "code": "CONFLICT",
-                              "message": "Loan 000000057 has no payslip review pending"
-                            }""")))
+            @ApiResponse(responseCode = "409", description = "The loan is not waiting for payslip review, or the stage"
+                    + " is EXCLUSIVE and its item is assigned to someone else",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Not waiting", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000057 has no payslip review pending"
+                                    }"""),
+                            @ExampleObject(name = "Assigned to someone else", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000057's Payslip review is assigned to rnyathi; only they can act on it until it is released or reassigned"
+                                    }""")}))
     })
     @PostMapping("/loans/{loanId}/payslip-review")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'PAYSLIP_REVIEW', 'WORK')")
     public ApiResult<LoanResponse> review(@PathVariable Long loanId, @Valid @RequestBody PayslipReviewRequest request) {
         log.info("Payslip review {} on loan {}", request.getOutcome(), loanId);
         LoanResponse loan = payslipReviewService.review(loanId, request);

@@ -38,22 +38,19 @@ import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.parameter.ParameterService;
 import zw.co.innbucks.loans.core.turnaround.CreditTurnaround;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevel;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevelService;
-import zw.co.innbucks.loans.core.turnaround.ServiceLevelStage;
+import zw.co.innbucks.loans.core.turnaround.CreditTurnarounds;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.math.BigDecimal.ONE;
@@ -83,7 +80,7 @@ public class LoanServiceImpl implements LoanService {
     private final PayslipReviewService payslipReviewService;
     private final SignedInstrumentService signedInstrumentService;
     private final LoanNotificationService loanNotificationService;
-    private final ServiceLevelService serviceLevelService;
+    private final CreditTurnarounds creditTurnarounds;
 
     /** Newest first, id as the tie-break: a sort on a non-unique column alone would let pages repeat or skip rows. */
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("createdDate"), Sort.Order.desc("id"));
@@ -106,33 +103,15 @@ public class LoanServiceImpl implements LoanService {
         }
         Pageable newestFirst = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), NEWEST_FIRST);
         Page<Loan> loans = loanRepository.findAll(spec, newestFirst);
-        // Read once for the page, and only when a loan on it is waiting on Credit. The service level is the lender's
-        // own measure of its staff, so only staff who read every loan see it.
-        Supplier<ServiceLevel> creditLevel = memoize(
-                () -> serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION));
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        // Read once for the page. The service level is the lender's own measure of its staff, so only staff who read
+        // every loan see it.
+        Map<Long, CreditTurnaround> turnarounds = scope.platformWide()
+                ? creditTurnarounds.of(loans.getContent()) : new HashMap<>();
         return loans.map(loan -> {
             LoanSummaryResponse summary = loanMapper.toSummary(loan);
-            if (scope.platformWide() && CreditTurnaround.awaitingDecision(loan)) {
-                summary.setCreditTurnaround(CreditTurnaround.of(loan, creditLevel.get(), now));
-            }
+            summary.setCreditTurnaround(turnarounds.get(loan.getId()));
             return summary;
         });
-    }
-
-    /** Computed once, on first use. */
-    private static <T> Supplier<T> memoize(Supplier<T> supplier) {
-        return new Supplier<>() {
-            private T value;
-
-            @Override
-            public T get() {
-                if (value == null) {
-                    value = supplier.get();
-                }
-                return value;
-            }
-        };
     }
 
     @Override
@@ -146,10 +125,8 @@ public class LoanServiceImpl implements LoanService {
         LoanResponse view = loanRepository.findOne(spec)
                 .map(loan -> {
                     LoanResponse response = loanMapper.toResponse(loan);
-                    if (scope.platformWide() && CreditTurnaround.awaitingDecision(loan)) {
-                        response.setCreditTurnaround(CreditTurnaround.of(loan,
-                                serviceLevelService.serviceLevel(ServiceLevelStage.CREDIT_DECISION),
-                                LocalDateTime.now(ZoneOffset.UTC)));
+                    if (scope.platformWide()) {
+                        response.setCreditTurnaround(creditTurnarounds.of(List.of(loan)).get(loan.getId()));
                     }
                     return response;
                 })

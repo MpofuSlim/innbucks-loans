@@ -17,6 +17,8 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -47,6 +49,7 @@ class PayslipReviewServiceTest {
     private LoanNotificationService loanNotificationService;
     private AuthService authService;
     private User reviewer;
+    private WorkAssignmentGuard workAssignmentGuard;
     private PayslipReviewService service;
 
     @BeforeEach
@@ -66,10 +69,12 @@ class PayslipReviewServiceTest {
         when(loanMapper.toResponse(any())).thenReturn(new LoanResponse());
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentRepository = mock(LoanDocumentRepository.class);
+        workAssignmentGuard = mock(WorkAssignmentGuard.class);
         service = new PayslipReviewService(loanRepository, flagRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), authService, loanMapper,
-                loanNotificationService, auditService, new DeductionCancellationService(loanRepository, auditService,
-                authService), loanDocumentRepository, mock(PlatformTransactionManager.class));
+                loanNotificationService, auditService,
+                new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard),
+                loanDocumentRepository, mock(PlatformTransactionManager.class), workAssignmentGuard);
     }
 
     private static Loan loan(long id, PayslipReviewStatus review) {
@@ -169,6 +174,19 @@ class PayslipReviewServiceTest {
         assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
         verifyNoInteractions(creditDecisionRepository, loanNotificationService);
         assertThat(audited()).extracting(AuditLog::getEventType).containsExactly("PAYSLIP_REVIEW_CLEARED");
+    }
+
+    @Test
+    @DisplayName("an assigned review at an EXCLUSIVE stage is its assignee's: anyone else is refused before anything changes")
+    void assignmentCheckedBeforeReviewing() {
+        Loan loan = held(42);
+        doThrow(new ConflictException("Loan 000000042's Payslip review is assigned to rnyathi"))
+                .when(workAssignmentGuard).requireMayAct(SystemStage.PAYSLIP_REVIEW, loan, "credit.manager");
+
+        assertThatThrownBy(() -> service.review(42L, new PayslipReviewRequest(PayslipReviewStatus.CLEARED, "Fine")))
+                .isInstanceOf(ConflictException.class);
+        assertThat(loan.getPayslipReviewStatus()).isEqualTo(PayslipReviewStatus.PENDING);
+        verify(loanRepository, never()).save(any());
     }
 
     @Test

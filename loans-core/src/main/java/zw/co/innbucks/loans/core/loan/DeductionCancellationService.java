@@ -10,6 +10,8 @@ import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -59,6 +61,7 @@ public class DeductionCancellationService {
     private final LoanRepository loanRepository;
     private final AuditService auditService;
     private final AuthService authService;
+    private final WorkAssignmentGuard workAssignmentGuard;
 
     /** What the operator must do about a flag, shown in its ERROR line and in the queue. */
     public static String operatorAction(String reason) {
@@ -182,6 +185,8 @@ public class DeductionCancellationService {
         }
 
         String username = authService.getLoggedInUsername();
+        // At an EXCLUSIVE stage, an assigned cancellation is its assignee's to record (FR-SSB-014).
+        workAssignmentGuard.requireMayAct(SystemStage.DEDUCTION_CANCELLATION, loan, username);
         String cleanNote = StringUtils.strip(note);
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         loan.setDeductionCancellationNote(cleanNote);

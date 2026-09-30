@@ -116,33 +116,22 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
             """)
     boolean isHeldForEmploymentEvent(@Param("loanId") Long loanId);
 
-    /**
-     * Loans waiting on Credit whose current wait reached Credit before {@code cutoff} and has not been escalated
-     * (FR-PBL-030). Oldest first.
-     */
+    /** Loans waiting on Credit: SSB has accepted the deduction and Credit has not decided. */
     @Query("""
-            select l.id from Loan l
+            select l from Loan l
             where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
               and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.PENDING
-              and l.creditEscalatedAt is null
-              and coalesce(l.creditResubmittedAt, l.dateApproved) <= :cutoff
             order by l.id
             """)
-    List<Long> findIdsDueForCreditEscalation(@Param("cutoff") LocalDateTime cutoff);
+    List<Loan> findAwaitingCreditDecision();
 
-    /**
-     * How many loans wait on Credit now; of those, how many reached it before {@code cutoff} (past the target, when the
-     * cutoff is now less the target), and how many are escalated.
-     */
-    @Query("""
-            select count(l),
-                   coalesce(sum(case when coalesce(l.creditResubmittedAt, l.dateApproved) < :cutoff then 1 else 0 end), 0),
-                   coalesce(sum(case when l.creditEscalatedAt is not null then 1 else 0 end), 0)
-            from Loan l
-            where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.APPROVED
-              and l.internalApprovalStatus = zw.co.innbucks.loans.core.loan.InternalApprovalStatus.PENDING
-            """)
-    List<Object[]> countAwaitingCredit(@Param("cutoff") LocalDateTime cutoff);
+    List<Loan> findByInternalApprovalStatusOrderByIdAsc(InternalApprovalStatus internalApprovalStatus);
+
+    /** Payslip reviews decided in the period. */
+    List<Loan> findByPayslipReviewedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    /** Deduction cancellations recorded as done in the period. */
+    List<Loan> findByDeductionCancelledAtBetween(LocalDateTime from, LocalDateTime to);
 
     /** Each loan's id and SSB approval time. */
     @Query("select l.id, l.dateApproved from Loan l where l.id in :ids")

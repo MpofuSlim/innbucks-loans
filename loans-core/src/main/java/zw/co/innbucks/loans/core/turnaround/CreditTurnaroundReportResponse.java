@@ -24,7 +24,7 @@ public record CreditTurnaroundReportResponse(
         LocalDate fromDate,
         LocalDate toDate,
         int targetHours,
-        int escalationHours,
+        Integer escalationHours,
         long decisions,
         long withinTarget,
         BigDecimal adherencePercent,

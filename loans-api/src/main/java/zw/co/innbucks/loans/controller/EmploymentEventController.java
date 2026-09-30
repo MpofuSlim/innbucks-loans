@@ -170,11 +170,12 @@ public class EmploymentEventController {
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_EMPLOYMENT_EVENT_QUEUE))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE or SUPER_ADMIN",
+            @ApiResponse(responseCode = "403", description = "Not entitled to see the EMPLOYMENT_EVENT_REVIEW stage"
+                    + " (CREDIT_MANAGER, FINANCE and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/loan-employment-events")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'EMPLOYMENT_EVENT_REVIEW', 'VIEW')")
     public ApiResult<List<LoanEmploymentEventResponse>> queue() {
         return ApiResult.ok(employmentEventService.queue());
     }
@@ -210,7 +211,8 @@ public class EmploymentEventController {
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller may not"
+            @ApiResponse(responseCode = "403", description = "Not entitled to work the EMPLOYMENT_EVENT_REVIEW stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages), or the caller may not"
                     + " release this application",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
@@ -225,7 +227,8 @@ public class EmploymentEventController {
                               "code": "NOT_FOUND",
                               "message": "Loan employment event 99 not found"
                             }"""))),
-            @ApiResponse(responseCode = "409", description = "Already resolved, or releasing an application since declined",
+            @ApiResponse(responseCode = "409", description = "Already resolved, releasing an application since declined,"
+                    + " or the stage is EXCLUSIVE and the loan's item is assigned to someone else",
                     content = @Content(examples = {
                             @ExampleObject(name = "Already resolved", value = """
                                     {
@@ -236,10 +239,15 @@ public class EmploymentEventController {
                                     {
                                       "code": "CONFLICT",
                                       "message": "Loan 000000042 has since been declined or failed; resolve its hold as DECLINED"
+                                    }"""),
+                            @ExampleObject(name = "Assigned to someone else", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000042's Employment event review is assigned to rnyathi; only they can act on it until it is released or reassigned"
                                     }""")}))
     })
     @PostMapping("/loan-employment-events/{loanEmploymentEventId}/resolution")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'EMPLOYMENT_EVENT_REVIEW', 'WORK')")
     public ApiResult<LoanEmploymentEventResponse> resolve(
             @PathVariable Long loanEmploymentEventId,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(

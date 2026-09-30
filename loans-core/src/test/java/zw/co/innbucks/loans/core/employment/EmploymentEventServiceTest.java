@@ -28,6 +28,8 @@ import zw.co.innbucks.loans.core.loan.LoanStage;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -65,6 +67,7 @@ class EmploymentEventServiceTest {
     private LoanNotificationService loanNotificationService;
     private AuditService auditService;
     private AuthService authService;
+    private WorkAssignmentGuard workAssignmentGuard;
     private EmploymentEventService service;
     private final Map<Long, Loan> loans = new HashMap<>();
     private final List<LoanEmploymentEvent> saved = new ArrayList<>();
@@ -96,9 +99,11 @@ class EmploymentEventServiceTest {
         when(loanRepository.findAllById(anyList())).thenAnswer(i -> i.<List<Long>>getArgument(0).stream()
                 .map(loans::get).toList());
 
+        workAssignmentGuard = mock(WorkAssignmentGuard.class);
         service = new EmploymentEventService(eventRepository, loanEventRepository, treatmentService, loanRepository,
-                creditDecisionLog, new DeductionCancellationService(loanRepository, auditService, authService),
-                loanNotificationService, authService, auditService);
+                creditDecisionLog, new DeductionCancellationService(loanRepository, auditService, authService,
+                        mock(WorkAssignmentGuard.class)),
+                loanNotificationService, authService, auditService, workAssignmentGuard);
     }
 
     private static EmploymentEvent withId(EmploymentEvent event, Long id) {
@@ -420,6 +425,21 @@ class EmploymentEventServiceTest {
             assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
             verify(loanRepository, never()).save(any());
             verifyNoInteractions(creditDecisionLog, loanNotificationService);
+        }
+
+        @Test
+        @DisplayName("an assigned hold at an EXCLUSIVE stage is its assignee's to resolve; anyone else is refused")
+        void resolveChecksTheAssignment() {
+            Loan loan = application(42);
+            open(11, 42, LoanEmploymentEventAction.HOLD, true);
+            doThrow(new ConflictException("Loan 000000042's Employment event review is assigned to rnyathi"))
+                    .when(workAssignmentGuard).requireMayAct(SystemStage.EMPLOYMENT_EVENT_REVIEW, loan, "cmanager");
+
+            assertThatThrownBy(() -> service.resolve(11L, resolution(LoanEmploymentEventOutcome.DECLINED)))
+                    .isInstanceOf(ConflictException.class);
+            assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+            verify(loanEventRepository, never()).save(any());
+            verifyNoInteractions(creditDecisionLog);
         }
 
         @Test

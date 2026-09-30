@@ -25,6 +25,7 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -64,7 +65,8 @@ class LoanBookingJobTest {
         loanDisbursementRepository = mock(LoanDisbursementRepository.class);
         transactionManager = mock(PlatformTransactionManager.class);
         job = new LoanBookingJob(disbursementService, loanRepository,
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)),
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class)),
                 loanDisbursementRepository, auditService, loanNotificationService, transactionManager, 30);
 
         loan = Loan.builder()

@@ -24,6 +24,9 @@ import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.exception.ConflictException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -71,6 +74,7 @@ class CreditDecisionServiceImplTest {
     private CreditReasonCodeRepository creditReasonCodeRepository;
     private LoanDocumentRepository loanDocumentRepository;
     private User approver;
+    private WorkAssignmentGuard workAssignmentGuard;
     private CreditDecisionServiceImpl service;
 
     private static CreditReasonCode code(String code, InternalApprovalStatus decision, String description, boolean active) {
@@ -97,11 +101,13 @@ class CreditDecisionServiceImplTest {
                 .thenAnswer(i -> Optional.ofNullable(REASON_CODES.get(i.<String>getArgument(0))));
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         loanDocumentRepository = mock(LoanDocumentRepository.class);
+        workAssignmentGuard = mock(WorkAssignmentGuard.class);
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, loanNotificationService,
-                new DeductionCancellationService(loanRepository, auditService, authService), auditService,
+                new DeductionCancellationService(loanRepository, auditService, authService,
+                        mock(WorkAssignmentGuard.class)), auditService,
                 creditDecisionRepository, creditReasonCodeRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
-                mock(PlatformTransactionManager.class));
+                mock(PlatformTransactionManager.class), workAssignmentGuard);
     }
 
     private static CreditDecisionRequest decide(InternalApprovalStatus status) {
@@ -150,6 +156,31 @@ class CreditDecisionServiceImplTest {
         ArgumentCaptor<CreditDecision> entry = ArgumentCaptor.forClass(CreditDecision.class);
         verify(creditDecisionRepository).save(entry.capture());
         return entry.getValue();
+    }
+
+    @Test
+    @DisplayName("an assignment at an EXCLUSIVE stage is checked under the loan's lock, before anything changes")
+    void assignmentIsCheckedBeforeDeciding() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+
+        service.decide(42L, decide(InternalApprovalStatus.RETURNED));
+
+        verify(workAssignmentGuard).requireMayAct(SystemStage.CREDIT_DECISION, loan, "credit.manager");
+    }
+
+    @Test
+    @DisplayName("an item someone else holds at an EXCLUSIVE stage is refused (409), and nothing is decided or logged")
+    void someoneElsesItemIsRefused() {
+        Loan loan = given(LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING);
+        doThrow(new ConflictException("Loan 000000042's Credit decision is assigned to rnyathi"))
+                .when(workAssignmentGuard).requireMayAct(SystemStage.CREDIT_DECISION, loan, "credit.manager");
+
+        assertThatThrownBy(() -> service.decide(42L, decide(InternalApprovalStatus.REJECTED)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("assigned to rnyathi");
+        assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
+        verify(loanRepository, never()).save(any());
+        verify(creditDecisionRepository, never()).save(any());
     }
 
     @Test
@@ -480,16 +511,15 @@ class CreditDecisionServiceImplTest {
             loan.setInternalApprovalReasonCode("RETURN_PAYSLIP");
             loan.setInternalApprovalComment("Send the August payslip");
             loan.setInternalApprovalBy("credit.manager");
-            // The earlier wait was escalated; the answer starts a new wait, not yet escalated (FR-PBL-030).
-            loan.setCreditEscalatedAt(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+            // The earlier wait began at SSB's approval; the answer starts a new one, as a fresh work item (FR-PBL-030).
+            loan.setDateApproved(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
             when(authService.getLoggedInUsername()).thenReturn("agent.moyo");
             when(loanRepository.exists(any(Specification.class))).thenReturn(true);
 
             service.resubmit(42L, new CreditResubmissionRequest("  August payslip checked with the bursar "), agentScope);
 
             assertThat(loan.getInternalApprovalStatus()).isEqualTo(InternalApprovalStatus.PENDING);
-            assertThat(loan.getCreditEscalatedAt()).isNull();
-            assertThat(loan.getCreditResubmittedAt()).isNotNull();
+            assertThat(loan.getCreditResubmittedAt()).isAfter(loan.getDateApproved());
             assertThat(loan.creditQueueEnteredAt()).isEqualTo(loan.getCreditResubmittedAt());
             assertThat(loan.getInternalApprovalReasonCode()).isNull();
             assertThat(loan.getInternalApprovalComment()).isNull();

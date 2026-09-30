@@ -25,6 +25,7 @@ import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -67,7 +68,8 @@ class NdasendaDeductionResponseProcessingTest {
         auditService = mock(AuditService.class);
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
                 loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
-                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class)), new MarketTimeZone("ZW"));
+                new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
+                        mock(WorkAssignmentGuard.class)), new MarketTimeZone("ZW"));
     }
 
     private static NdasendaDeduction deduction(String id, String reference, NdasendaDeductionStatus status) {

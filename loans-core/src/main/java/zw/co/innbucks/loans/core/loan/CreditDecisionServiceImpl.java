@@ -16,6 +16,8 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -44,6 +46,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
     private final CreditDecisionLog creditDecisionLog;
     private final LoanDocumentRepository loanDocumentRepository;
     private final TransactionTemplate transactionTemplate;
+    private final WorkAssignmentGuard workAssignmentGuard;
 
     public CreditDecisionServiceImpl(LoanRepository loanRepository, AuthService authService, LoanMapper loanMapper,
                                      LoanNotificationService loanNotificationService,
@@ -52,7 +55,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                                      CreditReasonCodeRepository creditReasonCodeRepository,
                                      CreditDecisionLog creditDecisionLog,
                                      LoanDocumentRepository loanDocumentRepository,
-                                     PlatformTransactionManager transactionManager) {
+                                     PlatformTransactionManager transactionManager,
+                                     WorkAssignmentGuard workAssignmentGuard) {
         this.loanRepository = loanRepository;
         this.authService = authService;
         this.loanMapper = loanMapper;
@@ -64,6 +68,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         this.creditDecisionLog = creditDecisionLog;
         this.loanDocumentRepository = loanDocumentRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.workAssignmentGuard = workAssignmentGuard;
     }
 
     /** What a committed decision leaves for the steps that run after it. */
@@ -113,6 +118,8 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             throw new LoanApprovalException(String.format("Loan with status %s cannot be approved",
                     loan.getLoanApprovalStatus()));
         }
+        // At an EXCLUSIVE stage, an assigned loan is its assignee's to decide (FR-SSB-014).
+        workAssignmentGuard.requireMayAct(SystemStage.CREDIT_DECISION, loan, username);
         CreditReasonCode reason = requireReasonCode(request.getReasonCode(), decision);
         String comment = requireComment(request.getComment());
 
@@ -172,7 +179,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
                         "Loan is not waiting for more information (credit status %s)", loan.getInternalApprovalStatus()));
             }
             // Back in the credit queue as an undecided loan; what was asked and answered is in the log. Its wait for
-            // a decision starts again from now (FR-PBL-030).
+            // a decision starts again from now, as a new work item with no assignee and no escalation (FR-PBL-030).
             LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
             loan.setInternalApprovalStatus(InternalApprovalStatus.PENDING);
             loan.setInternalApprovalDate(null);
@@ -180,7 +187,6 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             loan.setInternalApprovalBy(null);
             loan.setInternalApprovalReasonCode(null);
             loan.setCreditResubmittedAt(now);
-            loan.setCreditEscalatedAt(null);
             Loan saved = loanRepository.save(loan);
             creditDecisionLog.record(saved, CreditAction.RESUBMITTED, null, comment, username, now);
             // Back with Credit: the applicant is told once this commits (FR-SSB-016).

@@ -298,21 +298,24 @@ public class LoanController {
     }
 
     @Operation(summary = "List loans awaiting a Credit decision",
-            description = "SUPER_ADMIN and CREDIT_MANAGER: the loans SSB has approved and Credit has not yet decided,"
-                    + " newest first. Each carries creditTurnaround: when it reached Credit, when a decision is due and"
-                    + " when it escalates, how long it has waited, and whether it is overdue or escalated (see GET"
-                    + " /service-levels). GET /loans/{loanId}/credit-workbench gathers what is needed to decide one; the"
-                    + " same roles decide it with POST /loans/{loanId}/credit-decision.")
+            description = "Whoever sees the CREDIT_DECISION stage (CREDIT_MANAGER and SUPER_ADMIN by default; GET"
+                    + " /workflow-stages): the loans SSB has approved and Credit has not yet decided, newest first. Each"
+                    + " carries creditTurnaround: when it reached Credit, when a decision is due and when it escalates,"
+                    + " how long it has waited, whether it is overdue or escalated, and who has it. GET"
+                    + " /work-queues/CREDIT_DECISION/items lists the same queue oldest first, for working it;"
+                    + " GET /loans/{loanId}/credit-workbench gathers what is needed to decide one; whoever works the"
+                    + " stage decides it with POST /loans/{loanId}/credit-decision.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_PAGE))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN or CREDIT_MANAGER",
+            @ApiResponse(responseCode = "403", description = "Not entitled to see the CREDIT_DECISION stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/loans/pending-credit-decision")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CREDIT_MANAGER')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'CREDIT_DECISION', 'VIEW')")
     public ApiResult<PageResponse<LoanSummaryResponse>> listAwaitingCreditDecision(
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100; 20 when omitted", example = "20")
@@ -339,7 +342,9 @@ public class LoanController {
     }
 
     @Operation(summary = "Decide a loan (Credit)",
-            description = "CREDIT_MANAGER or SUPER_ADMIN approves, rejects or returns a loan SSB has approved."
+            description = "Whoever may work the CREDIT_DECISION stage (CREDIT_MANAGER and SUPER_ADMIN by default; see"
+                    + " GET /workflow-stages) approves, rejects or returns a loan SSB has approved. If the stage is"
+                    + " EXCLUSIVE and the loan's item is assigned, only its assignee may decide it."
                     + " Every decision needs an active reason code for that decision (GET /credit-reason-codes) and a"
                     + " comment, and is kept in the loan's credit decision log with the loan data it was based on."
                     + " Nobody may approve a loan they originated, resubmitted, or are a party to (the applicant,"
@@ -390,7 +395,9 @@ public class LoanController {
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller may not approve this loan",
+            @ApiResponse(responseCode = "403", description = "Not entitled to work the CREDIT_DECISION stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages), or the caller may not"
+                    + " approve this loan",
                     content = @Content(examples = {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN),
                             @ExampleObject(name = "Originator", value = """
@@ -409,10 +416,13 @@ public class LoanController {
                                       "message": "cmanager is a party to loan 000000042 and cannot approve it; another credit officer must"
                                     }""")})),
             @ApiResponse(responseCode = "404", description = "No such loan",
-                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
+                    content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND))),
+            @ApiResponse(responseCode = "409", description = "The stage is EXCLUSIVE and the loan's item is assigned to"
+                    + " someone else",
+                    content = @Content(examples = @ExampleObject(ApiExamples.CREDIT_DECISION_ASSIGNED_ELSEWHERE)))
     })
     @PostMapping("/loans/{loanId}/credit-decision")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'CREDIT_DECISION', 'WORK')")
     public ApiResult<LoanResponse> decide(@PathVariable Long loanId, @Valid @RequestBody CreditDecisionRequest request) {
         log.info("Credit decision {} ({}) on loan {}", request.getDecision(), request.getReasonCode(), loanId);
         LoanResponse loan = creditDecisionService.decide(loanId, request);

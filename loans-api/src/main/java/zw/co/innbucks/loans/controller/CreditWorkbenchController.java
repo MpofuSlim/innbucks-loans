@@ -48,13 +48,14 @@ public class CreditWorkbenchController {
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_42_CREDIT_WORKBENCH))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN",
+            @ApiResponse(responseCode = "403", description = "Not entitled to see the CREDIT_DECISION stage"
+                    + " (CREDIT_MANAGER and SUPER_ADMIN by default; see GET /workflow-stages)",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
     })
     @GetMapping("/loans/{loanId}/credit-workbench")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated() and @workflowAccess.may(authentication, 'CREDIT_DECISION', 'VIEW')")
     public ApiResult<CreditWorkbenchResponse> workbench(@PathVariable Long loanId) {
         return ApiResult.ok(creditWorkbenchService.workbench(loanId));
     }

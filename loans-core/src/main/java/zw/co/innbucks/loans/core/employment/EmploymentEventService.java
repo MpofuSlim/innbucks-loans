@@ -32,6 +32,8 @@ import zw.co.innbucks.loans.core.loan.SegregationOfDuties;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.SystemStage;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -80,6 +82,7 @@ public class EmploymentEventService {
     private final LoanNotificationService loanNotificationService;
     private final AuthService authService;
     private final AuditService auditService;
+    private final WorkAssignmentGuard workAssignmentGuard;
 
     public EmploymentEventService(EmploymentEventRepository eventRepository,
                                   LoanEmploymentEventRepository loanEventRepository,
@@ -87,7 +90,7 @@ public class EmploymentEventService {
                                   CreditDecisionLog creditDecisionLog,
                                   DeductionCancellationService deductionCancellationService,
                                   LoanNotificationService loanNotificationService, AuthService authService,
-                                  AuditService auditService) {
+                                  AuditService auditService, WorkAssignmentGuard workAssignmentGuard) {
         this.eventRepository = eventRepository;
         this.loanEventRepository = loanEventRepository;
         this.treatmentService = treatmentService;
@@ -97,6 +100,7 @@ public class EmploymentEventService {
         this.loanNotificationService = loanNotificationService;
         this.authService = authService;
         this.auditService = auditService;
+        this.workAssignmentGuard = workAssignmentGuard;
     }
 
     /** Where a loan stands for an employment event. */
@@ -292,6 +296,8 @@ public class EmploymentEventService {
         Loan loan = loanRepository.findByIdForUpdate(loanEvent.getLoanId())
                 .orElseThrow(() -> new NotFoundException("Loan " + loanEvent.getLoanId() + " not found"));
         String username = authService.getLoggedInUsername();
+        // At an EXCLUSIVE stage, an assigned hold or review is its assignee's to resolve (FR-SSB-014).
+        workAssignmentGuard.requireMayAct(SystemStage.EMPLOYMENT_EVENT_REVIEW, loan, username);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         boolean declined = loan.getInternalApprovalStatus() == InternalApprovalStatus.REJECTED
                 || loan.getLoanApprovalStatus() == LoanApprovalStatus.REJECTED

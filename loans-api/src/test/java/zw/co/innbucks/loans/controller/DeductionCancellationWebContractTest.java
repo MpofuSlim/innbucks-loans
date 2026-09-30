@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -52,7 +51,7 @@ class DeductionCancellationWebContractTest {
         DeductionCancellationController management = new DeductionCancellationController(cancellationService);
         ProxyFactory proxy = new ProxyFactory(management);
         proxy.setProxyTargetClass(true);
-        proxy.addAdvisor(AuthorizationManagerBeforeMethodInterceptor.preAuthorize());
+        proxy.addAdvisor(WorkflowTestSupport.preAuthorize());
 
 
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();

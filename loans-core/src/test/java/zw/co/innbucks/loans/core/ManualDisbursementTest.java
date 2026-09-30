@@ -37,6 +37,7 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -78,7 +79,8 @@ class ManualDisbursementTest {
     /** The service over the stubbed rail, telling the applicant through these notifications. */
     private DisbursementService service(LoanNotificationService notifications) {
         return new DisbursementService(loanRepository, notifications, attemptRepository,
-                new DeductionCancellationService(loanRepository, auditService, authService),
+                new DeductionCancellationService(loanRepository, auditService, authService,
+                        mock(WorkAssignmentGuard.class)),
                 new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), transactionManager) {
             @Override
             public DisbursementResponse disburseFunds(DisbursementRequest request) {
