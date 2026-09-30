@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
@@ -50,7 +51,7 @@ class BookingResolutionServiceTest {
         when(authService.getLoggedInUsername()).thenReturn("ops.admin");
         service = new BookingResolutionService(loanRepository,
                 new DeductionCancellationService(loanRepository, auditService, authService,
-                        mock(WorkAssignmentGuard.class)), auditService, authService,
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")), auditService, authService,
                 loanNotificationService);
 
         loan = Loan.builder()

@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
@@ -54,7 +55,7 @@ class LoanSagaCompensationDeductionTest {
                 new DisbursementLedger(mock(LedgerService.class), ledgerEntryRepository),
                 auditService, mock(LoanPublicReferenceService.class),
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class)));
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")));
 
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)

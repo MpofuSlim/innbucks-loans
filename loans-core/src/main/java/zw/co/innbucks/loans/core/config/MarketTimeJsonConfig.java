@@ -14,9 +14,7 @@ import tools.jackson.databind.module.SimpleModule;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 
 /**
  * The wire format of every timestamp this API returns, the same rule the ticketing services follow:
@@ -35,9 +33,6 @@ import java.time.temporal.ChronoUnit;
  */
 @Configuration
 public class MarketTimeJsonConfig {
-
-    /** Whole seconds with the offset: {@code yyyy-MM-dd'T'HH:mm:ss+02:00}. */
-    private static final DateTimeFormatter MARKET_WIRE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     /** Collected by Boot's Jackson 3 auto-configuration into the mapper the HTTP converters use. */
     @Bean
@@ -58,7 +53,8 @@ public class MarketTimeJsonConfig {
 
         @Override
         public void serialize(LocalDateTime utc, JsonGenerator gen, SerializationContext ctxt) {
-            gen.writeString(MARKET_WIRE.format(marketTimeZone.atMarketFromUtc(utc.truncatedTo(ChronoUnit.SECONDS))));
+            // Whole seconds with the offset, the same rendering a message's text uses.
+            gen.writeString(marketTimeZone.render(utc));
         }
     }
 

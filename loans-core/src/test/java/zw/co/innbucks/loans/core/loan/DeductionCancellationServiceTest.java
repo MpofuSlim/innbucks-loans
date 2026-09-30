@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
@@ -45,7 +46,8 @@ class DeductionCancellationServiceTest {
         authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("finance.officer");
         workAssignmentGuard = mock(WorkAssignmentGuard.class);
-        service = new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard);
+        service = new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard,
+                new MarketTimeZone("ZW"));
     }
 
     private static Loan lodgedLoan(long id) {
@@ -267,17 +269,20 @@ class DeductionCancellationServiceTest {
     }
 
     @Test
-    @DisplayName("recording the same cancellation twice is a 409 naming who recorded it first")
+    @DisplayName("recording the same cancellation twice is a 409 naming who recorded it first, and when on the"
+            + " market's clock")
     void markCancelledExternallyTwiceConflicts() {
         Loan loan = lodgedLoan(42L);
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         loan.setDeductionCancelledBy("loans.admin");
-        loan.setDeductionCancelledAt(LocalDateTime.of(2026, 9, 21, 10, 0));
+        // Stored in UTC, with the microseconds a database timestamp carries.
+        loan.setDeductionCancelledAt(LocalDateTime.of(2026, 9, 30, 18, 22, 9, 123_456_000));
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
 
         assertThatThrownBy(() -> service.markCancelledExternally(42L, "done again"))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Loan 42's deduction was already recorded as cancelled by loans.admin at 2026-09-21T10:00");
+                .hasMessage("Loan 42's deduction was already recorded as cancelled by loans.admin at"
+                        + " 2026-09-30T20:22:09+02:00");
         verify(loanRepository, never()).save(any());
         verifyNoInteractions(auditService);
     }

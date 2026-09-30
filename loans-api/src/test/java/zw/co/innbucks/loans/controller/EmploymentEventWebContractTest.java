@@ -52,8 +52,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The employment event endpoints (FR-SSB-024): Credit records events and resolves the queue, Finance reads them, only
- * SUPER_ADMIN changes a treatment, and a loan's events are read in the caller's loan scope. Runs behind production's
- * {@code @PreAuthorize} interceptor; no database, no Spring context.
+ * SUPER_ADMIN changes a treatment, and a loan's events are read by the same staff, never by an agent. Runs behind
+ * production's {@code @PreAuthorize} interceptor; no database, no Spring context.
  */
 class EmploymentEventWebContractTest {
 
@@ -227,18 +227,27 @@ class EmploymentEventWebContractTest {
     }
 
     @Test
-    @DisplayName("a loan's employment events are read in the caller's scope: an agent's own, Credit's all")
-    void loanEventsCarryTheScope() throws Exception {
+    @DisplayName("a loan's employment events are for Credit, Finance and SUPER_ADMIN: an agent is refused (403), even"
+            + " on their own loan, and nothing is read")
+    void loanEventsAreNotForAgents() throws Exception {
         when(eventService.forLoan(any(), any())).thenReturn(List.of(held()));
 
         mvc.perform(get("/lending/v1/loans/42/employment-events").with(as("tmoyo", "AGENTS")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].action").value("HOLD"));
-        verify(eventService).forLoan(42L, LoanReadScope.originator("harare-motors", 7L));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Forbidden - insufficient role"));
+        verifyNoInteractions(eventService);
 
         mvc.perform(get("/lending/v1/loans/42/employment-events").with(as("cmanager", "CREDIT_MANAGER")))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].action").value("HOLD"));
         verify(eventService).forLoan(42L, LoanReadScope.platform());
+
+        mvc.perform(get("/lending/v1/loans/42/employment-events").with(as("finance", "FINANCE")))
+                .andExpect(status().isOk());
+        mvc.perform(get("/lending/v1/loans/42/employment-events").with(as("admin", "SUPER_ADMIN")))
+                .andExpect(status().isOk());
+        verify(eventService, times(3)).forLoan(eq(42L), any());
     }
 
     @Test

@@ -20,6 +20,9 @@ final class SecurityErrorResponses {
             "{\"code\":\"UNAUTHORIZED\",\"message\":\"Invalid or missing token\"}";
     static final String FORBIDDEN_BODY =
             "{\"code\":\"FORBIDDEN\",\"message\":\"Forbidden - insufficient role\"}";
+    /** A token minted on a temporary password, used for anything but changing it ({@link TemporaryPasswordFilter}). */
+    static final String PASSWORD_CHANGE_REQUIRED_BODY =
+            "{\"code\":\"PASSWORD_CHANGE_REQUIRED\",\"message\":\"Change your temporary password before continuing\"}";
 
     private SecurityErrorResponses() {
     }
@@ -32,6 +35,10 @@ final class SecurityErrorResponses {
     static void forbidden(HttpServletRequest request, HttpServletResponse response,
                           AccessDeniedException ex) throws IOException {
         write(response, HttpStatus.FORBIDDEN, FORBIDDEN_BODY);
+    }
+
+    static void passwordChangeRequired(HttpServletResponse response) throws IOException {
+        write(response, HttpStatus.FORBIDDEN, PASSWORD_CHANGE_REQUIRED_BODY);
     }
 
     private static void write(HttpServletResponse response, HttpStatus status, String body) throws IOException {

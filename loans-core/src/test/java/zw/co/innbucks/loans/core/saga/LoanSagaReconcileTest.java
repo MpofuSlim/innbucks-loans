@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
@@ -52,7 +53,7 @@ class LoanSagaReconcileTest {
                 new DisbursementLedger(mock(LedgerService.class), mock(LedgerEntryRepository.class)),
                 auditService, mock(LoanPublicReferenceService.class),
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class)));
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")));
         loan = Loan.builder().loanApprovalStatus(LoanApprovalStatus.PROCESSING).build();
         loan.setId(42L);
         when(loanRepository.findById(42L)).thenReturn(Optional.of(loan));

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
@@ -68,7 +69,7 @@ class LoanSagaLedgerTest {
         when(publicReferences.next()).thenReturn("LN-2026-00042");
         transitions = new LoanSagaTransitionService(loanRepository, sagaRepository, disbursementLedger, auditService,
                 publicReferences, new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class)));
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")));
 
         // 500 borrowed, 50 admin fee withheld, 450 paid out; booked and waiting on InnBucks.
         loan = Loan.builder()

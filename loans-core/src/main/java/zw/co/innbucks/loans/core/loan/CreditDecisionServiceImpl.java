@@ -254,6 +254,7 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
             throw new ConflictException(String.format(
                     "Loan %s is within your approval limit; decide it rather than refer it", loan.getReference()));
         }
+        requireNotAlreadyReferred(loan, assessment);
         InternalApprovalStatus recommendation = request.getRecommendation();
         CreditReasonCode reason = requireReasonCode(request.getReasonCode(), recommendation);
         String comment = requireComment(request.getComment());
@@ -267,6 +268,23 @@ public class CreditDecisionServiceImpl implements CreditDecisionService {
         // Handed on: an EXCLUSIVE assignment to the referrer would otherwise keep it from the higher authority.
         workQueueService.releaseIfHeldBy(SystemStage.CREDIT_DECISION, loan, username);
         return new Referred(loan, CreditDecisionResponse.of(entry, reason.getDescription()), assessment);
+    }
+
+    /**
+     * A referral goes to the lowest level that covers the principal, so referring the loan again sends it to the same
+     * people: another entry in the append-only log and another email, for nothing. Refused while its latest referral
+     * since it was last resubmitted names the same target. Levels reconfigured since then can send it somewhere new,
+     * which stays allowed, as does a referral after a return and resubmission.
+     */
+    private void requireNotAlreadyReferred(Loan loan, CreditAuthorityAssessment assessment) {
+        creditDecisionRepository.findFirstByLoanIdAndActionInOrderByIdDesc(loan.getId(),
+                        List.of(CreditAction.REFERRED, CreditAction.RESUBMITTED))
+                .filter(latest -> latest.getAction() == CreditAction.REFERRED)
+                .filter(latest -> StringUtils.equalsIgnoreCase(latest.getReferredTo(), assessment.referredTo()))
+                .ifPresent(latest -> {
+                    throw new ConflictException(String.format("Loan %s is already referred to %s",
+                            loan.getReference(), assessment.referredToName()));
+                });
     }
 
     @Override

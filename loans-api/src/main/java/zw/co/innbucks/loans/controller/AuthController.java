@@ -38,24 +38,42 @@ public class AuthController {
     private final CreateUserService createUserService;
 
     @Operation(summary = "Sign in",
-            description = "Returns a bearer token. When temporaryPassword is true the user must change their"
-                    + " password (PUT /me/password) before anything else. Seven consecutive wrong passwords lock"
-                    + " the account for 30 minutes; a super-admin password reset lifts the lock early.")
+            description = "Returns a bearer token. When temporaryPassword is true (a new user, a super-admin"
+                    + " password reset, the bootstrap admin) the token is good for one call only, PUT /me/password:"
+                    + " every other call answers 403 PASSWORD_CHANGE_REQUIRED (\"Change your temporary password"
+                    + " before continuing\") until the password is changed, and the token that change returns is"
+                    + " unrestricted. Seven consecutive wrong passwords lock the account for 30 minutes; a"
+                    + " super-admin password reset lifts the lock early.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Signed in", content = @Content(examples = @ExampleObject("""
-                    {
-                      "code": "OK",
-                      "message": "Success",
-                      "data": {
-                        "accessToken": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI3In0.c2lnbmF0dXJl",
-                        "tokenType": "Bearer",
-                        "expiresIn": 86400,
-                        "temporaryPassword": false,
-                        "groups": ["AGENTS"],
-                        "merchantCode": "harare-motors",
-                        "merchantName": "Harare Motor Spares"
-                      }
-                    }"""))),
+            @ApiResponse(responseCode = "200", description = "Signed in", content = @Content(examples = {
+                    @ExampleObject(name = "Signed in", value = """
+                            {
+                              "code": "OK",
+                              "message": "Success",
+                              "data": {
+                                "accessToken": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI3In0.c2lnbmF0dXJl",
+                                "tokenType": "Bearer",
+                                "expiresIn": 86400,
+                                "temporaryPassword": false,
+                                "groups": ["AGENTS"],
+                                "merchantCode": "harare-motors",
+                                "merchantName": "Harare Motor Spares"
+                              }
+                            }"""),
+                    @ExampleObject(name = "Temporary password: change it first", value = """
+                            {
+                              "code": "OK",
+                              "message": "Success",
+                              "data": {
+                                "accessToken": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI3In0.dGVtcG9yYXJ5",
+                                "tokenType": "Bearer",
+                                "expiresIn": 86400,
+                                "temporaryPassword": true,
+                                "groups": ["AGENTS"],
+                                "merchantCode": "harare-motors",
+                                "merchantName": "Harare Motor Spares"
+                              }
+                            }""")})),
             @ApiResponse(responseCode = "400", description = "Username or password missing",
                     content = @Content(examples = @ExampleObject("""
                             {

@@ -169,9 +169,16 @@ public class MerchantService {
         if (ObjectUtils.isEmpty(request.getCommissionGroupId())) {
             throw new ValidationException("Commission group id is required");
         }
-        return commissionGroupRepository.findById(request.getCommissionGroupId())
-                .orElseThrow(() -> new ValidationException(
-                        "Commission group " + request.getCommissionGroupId() + " not found"));
+        return requireCommissionGroup(commissionGroupRepository, request.getCommissionGroupId());
+    }
+
+    /**
+     * The commission group a request names by id. One that does not exist is the caller's mistake, answered as a 400
+     * naming the id, the same whether a merchant or a user is being created.
+     */
+    public static CommissionGroup requireCommissionGroup(CommissionGroupRepository repository, Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new ValidationException("Commission group " + id + " not found"));
     }
 
     private void validateRequest(CreateMerchantRequest request) {

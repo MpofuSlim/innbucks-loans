@@ -3,6 +3,7 @@ package zw.co.innbucks.loans.core.auth;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -29,6 +30,18 @@ public class JwtService {
     public static final String AUTHENTICATION_METHODS_CLAIM = "amr";
     /** Signed in with a username and password: the only way to get a token here. */
     public static final String PASSWORD_AUTHENTICATION = "pwd";
+    /**
+     * Present, and true, only on a token minted while the user's password was a generated one (a new user, a
+     * super-admin reset, the bootstrap admin). Such a token may do nothing but change that password; the API's
+     * security chain refuses everything else with 403 PASSWORD_CHANGE_REQUIRED.
+     *
+     * <p>The claim can be trusted to match the account for as long as the token is accepted, so it needs no
+     * database read of its own: the flag only ever changes together with the password, and every password change
+     * (the user's own, a super-admin reset, forgot-password) bumps {@code token_version}, which ends every token
+     * minted before it. Tokens minted before this claim existed carry none and stay unrestricted until they expire
+     * (24 hours) or the password changes, whichever is first.</p>
+     */
+    public static final String TEMPORARY_PASSWORD_CLAIM = "temporary_password";
 
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwtProperties;
@@ -38,7 +51,7 @@ public class JwtService {
         List<String> roles = user.getGroups() == null ? List.of()
                 : user.getGroups().stream().map(UserGroup::name).toList();
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer(jwtProperties.getIssuer())
                 .issuedAt(now)
                 .expiresAt(now.plus(jwtProperties.getExpiration(), ChronoUnit.MILLIS))
@@ -48,11 +61,18 @@ public class JwtService {
                 // Checked on every request by TokenVersionValidator: a password change bumps it.
                 .claim(TokenVersionValidator.CLAIM, user.currentTokenVersion())
                 // How the session signed in (RFC 8176), recorded with anything it signs (FR-SSB-013).
-                .claim(AUTHENTICATION_METHODS_CLAIM, List.of(PASSWORD_AUTHENTICATION))
-                .build();
+                .claim(AUTHENTICATION_METHODS_CLAIM, List.of(PASSWORD_AUTHENTICATION));
+        if (Boolean.TRUE.equals(user.getTemporaryPassword())) {
+            claims.claim(TEMPORARY_PASSWORD_CLAIM, true);
+        }
 
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
-        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
+    }
+
+    /** Whether {@code jwt} was minted on a temporary password, and so may only change it. */
+    public static boolean issuedOnTemporaryPassword(Jwt jwt) {
+        return Boolean.TRUE.equals(jwt.getClaimAsBoolean(TEMPORARY_PASSWORD_CLAIM));
     }
 
     public long getExpiresInSeconds() {

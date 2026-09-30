@@ -4,8 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.user.UserGroup;
 
 /** A user to create in a merchant: an agent, a credit manager or finance. The temporary password is sent by SMS. */
@@ -23,7 +25,12 @@ public class CreateUserRequest {
     @Email(message = "Email is not valid")
     @Schema(example = "tendai.moyo@example.co.zw")
     private String email;
+    /**
+     * Held to the rule an applicant's number is (a Zimbabwean mobile, so it can receive the temporary password by
+     * SMS): the number used to be stored as 263 + its last nine characters, whatever they were.
+     */
     @NotBlank(message = "Mobile number is required")
+    @Pattern(regexp = MsisdnUtils.ZIMBABWE_MOBILE_REGEX, message = MsisdnUtils.ZIMBABWE_MOBILE_MESSAGE)
     @Schema(example = "+263771234567")
     private String mobileNumber;
     @ToString.Exclude

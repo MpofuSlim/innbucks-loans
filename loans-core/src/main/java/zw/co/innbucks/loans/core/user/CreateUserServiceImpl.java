@@ -18,6 +18,7 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.merchant.MerchantService;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 
 import java.util.HashSet;
@@ -79,7 +80,8 @@ public class CreateUserServiceImpl implements CreateUserService {
         }
 
         if (request.getCommissionGroupId() > 0) {
-            return commissionGroupRepository.findById(request.getCommissionGroupId()).orElseThrow();
+            // A bare orElseThrow() made an unknown id a 500; merchant creation has always answered it as a 400.
+            return MerchantService.requireCommissionGroup(commissionGroupRepository, request.getCommissionGroupId());
         }
         return commissionGroupRepository.findByNameIgnoreCase(ZERO_BASED_DEFAULT).orElseThrow();
     }
@@ -164,6 +166,11 @@ public class CreateUserServiceImpl implements CreateUserService {
         }
         if (!StringUtils.hasText(createUserRequest.getMobileNumber())) {
             throw new ValidationException("User mobile number is required");
+        }
+        // The request is validated at the web edge; checked here too because what is stored below is 263 plus
+        // the LAST NINE characters, which turns any string at all into a well-formed but wrong number.
+        if (!createUserRequest.getMobileNumber().matches(MsisdnUtils.ZIMBABWE_MOBILE_REGEX)) {
+            throw new ValidationException("User mobile number " + MsisdnUtils.ZIMBABWE_MOBILE_MESSAGE);
         }
         if (!StringUtils.hasText(createUserRequest.getIdNumber())) {
             throw new ValidationException("User id number is required");

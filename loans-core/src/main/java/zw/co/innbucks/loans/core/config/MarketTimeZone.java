@@ -12,6 +12,8 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Map;
 
@@ -49,6 +51,9 @@ public class MarketTimeZone {
             Map.entry("SZ", ZoneId.of("Africa/Mbabane")),       // UTC+2
             Map.entry("NG", ZoneId.of("Africa/Lagos"))          // UTC+1
     );
+
+    /** Whole seconds with the offset, {@code 2026-09-30T20:22:09+02:00}: how every timestamp reads, in JSON or text. */
+    private static final DateTimeFormatter WIRE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
     private final ZoneId zone;
     private final Clock clock;
@@ -108,5 +113,15 @@ public class MarketTimeZone {
      */
     public OffsetDateTime atMarketFromUtc(LocalDateTime utc) {
         return utc == null ? null : utc.atOffset(ZoneOffset.UTC).atZoneSameInstant(zone).toOffsetDateTime();
+    }
+
+    /**
+     * A stored UTC timestamp written out for a person: at the market offset, to the second, exactly as the JSON
+     * fields carry it ({@link MarketTimeJsonConfig} writes through here). For a message's text, where the bare
+     * {@code LocalDateTime} would read {@code 2026-09-30T18:22:09.123456}: UTC, with no offset to say so. Null passes
+     * through.
+     */
+    public String render(LocalDateTime utc) {
+        return utc == null ? null : WIRE.format(atMarketFromUtc(utc.truncatedTo(ChronoUnit.SECONDS)));
     }
 }
