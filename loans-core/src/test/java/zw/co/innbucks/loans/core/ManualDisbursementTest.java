@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.innbucks.loans.core.notice.LoanNotificationSender;
 import zw.co.innbucks.loans.core.notice.LoanNotificationRepository;
@@ -37,18 +38,31 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.workflow.AssignmentMode;
+import zw.co.innbucks.loans.core.workflow.CheckpointDecision;
+import zw.co.innbucks.loans.core.workflow.CheckpointDecisionRepository;
+import zw.co.innbucks.loans.core.workflow.CheckpointGate;
+import zw.co.innbucks.loans.core.workflow.CheckpointOutcome;
+import zw.co.innbucks.loans.core.workflow.HoldPoint;
+import zw.co.innbucks.loans.core.workflow.StageKind;
 import zw.co.innbucks.loans.core.workflow.WorkAssignmentGuard;
+import zw.co.innbucks.loans.core.workflow.WorkflowStage;
+import zw.co.innbucks.loans.core.workflow.WorkflowStageRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -62,6 +76,14 @@ import static org.mockito.Mockito.*;
 class ManualDisbursementTest {
 
     private static final String STABLE_REF = "MD-000000042";
+    /** When the payout authorisation was switched on, and, three days later, when the loan's booking was sent. */
+    private static final LocalDateTime SWITCHED_ON = LocalDateTime.of(2026, 10, 2, 7, 15, 4);
+    private static final LocalDateTime BOOKED_AT = LocalDateTime.of(2026, 10, 5, 8, 0);
+
+    /** InnBucks' deposit endpoint as the rail reaches it: a refusal must leave it untouched. */
+    interface InnbucksDeposit {
+        DisbursementResponse deposit(DisbursementRequest request);
+    }
 
     private LoanRepository loanRepository;
     private LoanDisbursementRepository attemptRepository;
@@ -72,6 +94,10 @@ class ManualDisbursementTest {
     private AuthService authService;
     private final List<LoanDisbursement> attempts = new ArrayList<>();
     private final List<DisbursementRequest> sent = new ArrayList<>();
+    private final List<WorkflowStage> checkpoints = new ArrayList<>();
+    private final List<CheckpointDecision> checkpointDecisions = new ArrayList<>();
+    private CheckpointGate checkpointGate;
+    private InnbucksDeposit innbucks;
     private Function<DisbursementRequest, DisbursementResponse> rail;
     private DisbursementService service;
     private Loan loan;
@@ -81,11 +107,12 @@ class ManualDisbursementTest {
         return new DisbursementService(loanRepository, notifications, attemptRepository,
                 new DeductionCancellationService(loanRepository, auditService, authService,
                         mock(WorkAssignmentGuard.class)),
-                new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), transactionManager) {
+                new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), checkpointGate, authService,
+                transactionManager) {
             @Override
             public DisbursementResponse disburseFunds(DisbursementRequest request) {
                 sent.add(request);
-                return rail.apply(request);
+                return innbucks.deposit(request);
             }
 
             @Override
@@ -123,12 +150,35 @@ class ManualDisbursementTest {
         when(attemptRepository.findById(anyLong())).thenAnswer(inv -> attempts.stream()
                 .filter(a -> a.getId().equals(inv.getArgument(0))).findFirst());
 
+        // The real gate, over its two queries answered from memory the way the database answers them.
+        WorkflowStageRepository stages = mock(WorkflowStageRepository.class);
+        when(stages.findByKindAndHoldPointAndActiveTrueOrderByDisplayOrderAscCodeAsc(eq(StageKind.CHECKPOINT), any()))
+                .thenAnswer(inv -> checkpoints.stream()
+                        .filter(stage -> stage.isActive() && stage.getHoldPoint() == inv.getArgument(1))
+                        .toList());
+        CheckpointDecisionRepository decisions = mock(CheckpointDecisionRepository.class);
+        when(decisions.findByStageCodeInAndLoanIdIn(anyCollection(), anyCollection())).thenAnswer(inv -> {
+            Collection<String> codes = inv.getArgument(0);
+            Collection<Long> loanIds = inv.getArgument(1);
+            return checkpointDecisions.stream()
+                    .filter(decision -> codes.contains(decision.getStageCode())
+                            && loanIds.contains(decision.getLoanId()))
+                    .toList();
+        });
+        checkpointGate = new CheckpointGate(stages, loanRepository, decisions);
+
+        innbucks = mock(InnbucksDeposit.class);
+        when(innbucks.deposit(any())).thenAnswer(inv -> rail.apply(inv.getArgument(0)));
+
         service = service(loanNotificationService);
 
-        // Eligible: SSB + Credit approved, and InnBucks definitively refused the booking.
+        // Eligible: SSB + Credit approved (by a credit manager, not the caller), and InnBucks definitively
+        // refused the booking it was sent for.
         loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.APPROVED)
                 .internalApprovalStatus(InternalApprovalStatus.APPROVED)
+                .internalApprovalBy("cmanager")
+                .bookingClaimedAt(BOOKED_AT)
                 .loanAccountStatus(LoanAccountStatus.FAILED)
                 .disbursementStatus(LoanDisbursementStatus.FAILED)
                 .bookingFailureKind(BookingFailureKind.REFUSED)
@@ -151,6 +201,7 @@ class ManualDisbursementTest {
                 .hasMessageContaining(reason);
         assertThat(sent).isEmpty();
         assertThat(attempts).isEmpty();
+        verify(innbucks, never()).deposit(any());
         verify(attemptRepository, never()).save(any());
         verifyNoInteractions(loanNotificationService);
     }
@@ -562,5 +613,165 @@ class ManualDisbursementTest {
         service.disburse(42L);
 
         verifyNoInteractions(ledgerService);
+    }
+
+    // ── Checkpoints before booking and the second person (FR-SSB-014, FR-SSB-018) ──
+
+    /** An active checkpoint before booking, switched on at {@code activeSince}, for every loan. */
+    private WorkflowStage checkpoint(String code, String name, LocalDateTime activeSince) {
+        WorkflowStage stage = WorkflowStage.builder().code(code).kind(StageKind.CHECKPOINT).name(name)
+                .displayOrder(HoldPoint.BEFORE_BOOKING.displayOrder()).assignment(AssignmentMode.OPTIONAL)
+                .targetHours(4).escalationHours(8).holdPoint(HoldPoint.BEFORE_BOOKING)
+                .active(true).activeSince(activeSince).updatedBy("admin").updatedAt(activeSince).build();
+        checkpoints.add(stage);
+        return stage;
+    }
+
+    /** PAYOUT_AUTHORISATION as V14 seeds it, switched on before the loan's booking was sent. */
+    private WorkflowStage payoutAuthorisation() {
+        return checkpoint("PAYOUT_AUTHORISATION", "Payout authorisation", SWITCHED_ON);
+    }
+
+    private void decided(WorkflowStage stage, CheckpointOutcome outcome) {
+        checkpointDecisions.add(CheckpointDecision.builder().stageCode(stage.getCode()).loanId(42L)
+                .enteredAt(SWITCHED_ON).outcome(outcome).comment("Checked against the approval")
+                .decidedBy("finance1").decidedAt(BOOKED_AT.minusHours(1)).build());
+    }
+
+    private void assertForbiddenBeforeAnythingWasSent(String reason) {
+        assertThatThrownBy(() -> service.disburse(42L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage(reason);
+        assertThat(sent).isEmpty();
+        assertThat(attempts).isEmpty();
+        verify(innbucks, never()).deposit(any());
+        verify(attemptRepository, never()).save(any());
+        // Refused inside the claim, under the loan's lock: the claim transaction rolled back, nothing committed.
+        verify(transactionManager, never()).commit(any());
+        verifyNoInteractions(loanNotificationService);
+    }
+
+    @Test
+    @DisplayName("refused: payout authorisation was on when the booking was sent and has not cleared the loan")
+    void refusedWhileWaitingForPayoutAuthorisation() {
+        payoutAuthorisation();
+
+        assertRefusedBeforeAnythingWasSent("Loan 000000042 is waiting for Payout authorisation, which was switched on"
+                + " before its booking was sent and has not cleared it. A manual payout is not allowed");
+    }
+
+    @Test
+    @DisplayName("refused: a checkpoint before booking declined the loan, even where its credit status still says APPROVED")
+    void refusedWhenDeclinedAtPayoutAuthorisation() {
+        // A decline is a credit rejection, so this loan would normally also fail "not credit-approved"; the decline
+        // is its own refusal in case the status was ever put back by hand.
+        decided(payoutAuthorisation(), CheckpointOutcome.DECLINED);
+
+        assertRefusedBeforeAnythingWasSent("Loan 000000042 was declined at Payout authorisation."
+                + " A manual payout is not allowed");
+    }
+
+    @Test
+    @DisplayName("refused: every checkpoint before booking must have cleared it, an operator's own as well as the payout authorisation")
+    void refusedUntilEveryCheckpointHasCleared() {
+        decided(payoutAuthorisation(), CheckpointOutcome.CLEARED);
+        WorkflowStage highValue = checkpoint("HIGH_VALUE_PAYOUT", "High-value payout check", SWITCHED_ON.minusDays(30));
+
+        assertRefusedBeforeAnythingWasSent("is waiting for High-value payout check");
+
+        decided(highValue, CheckpointOutcome.CLEARED);
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+        assertThat(service.disburse(42L).getOutcome()).isEqualTo(Outcome.DISBURSED);
+        verify(innbucks).deposit(any());
+    }
+
+    @Test
+    @DisplayName("cleared at payout authorisation: paid as before")
+    void paidOncePayoutAuthorisationHasCleared() {
+        decided(payoutAuthorisation(), CheckpointOutcome.CLEARED);
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        ManualDisbursementResponse result = service.disburse(42L);
+
+        assertThat(result.getOutcome()).isEqualTo(Outcome.DISBURSED);
+        assertThat(sent).singleElement()
+                .satisfies(request -> assertThat(request.getTransactionReference()).isEqualTo(STABLE_REF));
+        verify(innbucks, times(1)).deposit(any());
+    }
+
+    @Test
+    @DisplayName("a checkpoint switched off, or one that does not apply to the loan or sits at another point, holds nothing")
+    void checkpointsThatDoNotHoldTheLoanAreIgnored() {
+        payoutAuthorisation().setActive(false);
+        WorkflowStage large = checkpoint("LARGE_PAYOUT", "Large payout check", SWITCHED_ON);
+        large.setMinimumPrincipal(new BigDecimal("2000.00"));
+        loan.setPrincipal(new BigDecimal("500.00"));
+        WorkflowStage ussd = checkpoint("USSD_PAYOUT", "USSD payout check", SWITCHED_ON);
+        ussd.setChannels(Set.of("USSD"));
+        WorkflowStage earlier = checkpoint("SECOND_LOOK", "Second look", SWITCHED_ON);
+        earlier.setHoldPoint(HoldPoint.BEFORE_CREDIT_APPROVAL);
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        assertThat(service.disburse(42L).getOutcome()).isEqualTo(Outcome.DISBURSED);
+        verify(innbucks, times(1)).deposit(any());
+    }
+
+    @Test
+    @DisplayName("a checkpoint switched on after the booking was sent never held the loan, so it does not hold its payout")
+    void aCheckpointSwitchedOnAfterTheBookingDoesNotHoldThePayout() {
+        // The loan was past the point when it came on: it cannot wait or be cleared there, and the booking would have
+        // paid it without this checkpoint had InnBucks accepted it.
+        checkpoint("PAYOUT_AUTHORISATION", "Payout authorisation", BOOKED_AT.plusSeconds(1));
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        assertThat(service.disburse(42L).getOutcome()).isEqualTo(Outcome.DISBURSED);
+        verify(innbucks, times(1)).deposit(any());
+    }
+
+    @Test
+    @DisplayName("a booking refused before claims were recorded predates every checkpoint: none holds its payout")
+    void aBookingWithNoRecordedClaimPredatesCheckpoints() {
+        loan.setBookingClaimedAt(null);
+        payoutAuthorisation();
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+
+        assertThat(service.disburse(42L).getOutcome()).isEqualTo(Outcome.DISBURSED);
+        verify(innbucks, times(1)).deposit(any());
+    }
+
+    @Test
+    @DisplayName("403: whoever approved the loan at Credit cannot pay it; another SUPER_ADMIN can")
+    void theCreditApproverCannotPayTheLoan() {
+        decided(payoutAuthorisation(), CheckpointOutcome.CLEARED);
+        loan.setInternalApprovalBy("OPS.Admin");
+
+        assertForbiddenBeforeAnythingWasSent(
+                "Loan 000000042 was approved by ops.admin, who cannot also pay it out; another SUPER_ADMIN must");
+
+        when(authService.getLoggedInUsername()).thenReturn("second.admin");
+        rail = request -> answer(DisbursementStatus.SUCCESS, "Approved");
+        assertThat(service.disburse(42L).getOutcome()).isEqualTo(Outcome.DISBURSED);
+        verify(innbucks, times(1)).deposit(any());
+    }
+
+    @Test
+    @DisplayName("403: whoever originated the loan cannot pay it, as they could not decide its payout authorisation")
+    void theOriginatorCannotPayTheLoan() {
+        loan.setCreatedBy("ops.admin");
+
+        assertForbiddenBeforeAnythingWasSent(
+                "Loan 000000042 was originated by ops.admin, who cannot also pay it out; another SUPER_ADMIN must");
+    }
+
+    @Test
+    @DisplayName("403: a party to the loan (here the holder of the wallet it pays) cannot pay it")
+    void aPartyToTheLoanCannotPayIt() {
+        User caller = new User();
+        caller.setUsername("ops.admin");
+        caller.setMobileNumber("+263 77 212 3123");
+        when(authService.getLoggedInUser()).thenReturn(caller);
+
+        assertForbiddenBeforeAnythingWasSent(
+                "ops.admin is a party to loan 000000042 and cannot pay it out; another SUPER_ADMIN must");
     }
 }

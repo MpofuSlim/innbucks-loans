@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
@@ -138,6 +139,33 @@ class ManualDisbursementWebContractTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DISBURSEMENT_NOT_ALLOWED"))
                 .andExpect(jsonPath("$.message").value("Loan 000000042 is already disbursed (reference MD-000000042)"));
+    }
+
+    @Test
+    @DisplayName("a loan its payout authorisation has not cleared → 409 naming the checkpoint")
+    void unclearedCheckpointIsConflict() throws Exception {
+        signInAs("SUPER_ADMIN");
+        String waiting = "Loan 000000042 is waiting for Payout authorisation, which was switched on before its booking"
+                + " was sent and has not cleared it. A manual payout is not allowed";
+        when(disbursementService.disburse(42L)).thenThrow(new DisbursementNotAllowedException(waiting));
+
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DISBURSEMENT_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message").value(waiting));
+    }
+
+    @Test
+    @DisplayName("a SUPER_ADMIN who approved the loan at Credit → 403 saying why: the payout is a second person's")
+    void creditApproverIsForbiddenWithTheReason() throws Exception {
+        signInAs("SUPER_ADMIN");
+        String why = "Loan 000000042 was approved by admin, who cannot also pay it out; another SUPER_ADMIN must";
+        when(disbursementService.disburse(42L)).thenThrow(new AccessDeniedException(why));
+
+        mvc.perform(post("/lending/v1/loans/42/disbursements"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value(why));
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.Address;
@@ -27,6 +28,7 @@ import zw.co.innbucks.loans.core.loan.NextOfKin;
 import zw.co.innbucks.loans.core.loan.RelationshipType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.workflow.CheckpointGates;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -107,8 +109,8 @@ class InnbucksLoanApiContractTest {
         InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
         return new InnbucksDisbursementService(mock(LoanRepository.class), mock(LoanNotificationService.class),
                 mock(LoanDisbursementRepository.class), mock(DeductionCancellationService.class),
-                restTemplate, params, auth, mock(DisbursementLedger.class),
-                mock(PlatformTransactionManager.class));
+                restTemplate, params, auth, mock(DisbursementLedger.class), CheckpointGates.none(),
+                mock(AuthService.class), mock(PlatformTransactionManager.class));
     }
 
     /** The collection's sample applicant, as a loan this system would hold. */

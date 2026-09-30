@@ -5,8 +5,10 @@ import org.springframework.stereotype.Component;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +20,8 @@ import java.util.stream.Collectors;
 /**
  * Whether a checkpoint holds a loan at a point (FR-SSB-014). Asked by what moves a loan past each point: the lodgement
  * job, a credit approval and the booking job, each under the loan's row lock, so a checkpoint added or decided while
- * the loan was on its way is honoured.
+ * the loan was on its way is honoured. The recovery payout, which pays a loan past BEFORE_BOOKING whose booking
+ * InnBucks refused, asks under the same lock whether the checkpoints that held it there cleared it.
  */
 @Component
 @RequiredArgsConstructor
@@ -40,6 +43,46 @@ public class CheckpointGate {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * For a loan that has already left the point: the first active checkpoint there that applies to it and did not
+     * clear it, either because it declined the loan or because it was in force when the loan left at {@code leftAt}
+     * and never decided it. Asked by the recovery payout, which pays in place of a booking InnBucks refused.
+     *
+     * <p>The checkpoints that count are the ones {@link #holding} asked when the loan left: active, at the point and
+     * applying to it. One still active whose {@code activeSince} is no later than {@code leftAt} has been active since
+     * before then. One switched on after the loan left never held it: the loan was past its point, where a checkpoint
+     * holds nothing ({@link CheckpointQueue#atHoldPoint}), so the loan could neither wait there nor be decided there,
+     * and counting it would hold the loan for good. A decision is only ever recorded while a checkpoint holds the
+     * loan, so one that declined it counts whenever it was switched on. {@code leftAt} null means the loan left before
+     * that was recorded; then only a decline counts.
+     */
+    public Optional<NotCleared> notCleared(HoldPoint point, Loan loan, LocalDateTime leftAt) {
+        List<WorkflowStage> checkpoints = checkpointsAt(point).stream().filter(stage -> stage.appliesTo(loan)).toList();
+        if (checkpoints.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, CheckpointOutcome> outcomes = new HashMap<>();
+        for (CheckpointDecision decision : checkpointDecisionRepository.findByStageCodeInAndLoanIdIn(
+                checkpoints.stream().map(WorkflowStage::getCode).toList(), List.of(loan.getId()))) {
+            outcomes.put(decision.getStageCode(), decision.getOutcome());
+        }
+        for (WorkflowStage stage : checkpoints) {
+            CheckpointOutcome outcome = outcomes.get(stage.getCode());
+            if (outcome == CheckpointOutcome.DECLINED) {
+                return Optional.of(new NotCleared(stage, true));
+            }
+            if (outcome == null && leftAt != null
+                    && (stage.getActiveSince() == null || !stage.getActiveSince().isAfter(leftAt))) {
+                return Optional.of(new NotCleared(stage, false));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** A checkpoint that did not clear a loan: it declined it, or the loan is still waiting there. */
+    public record NotCleared(WorkflowStage stage, boolean declined) {
     }
 
     /** The loans no checkpoint holds at the point, in the order given; one read for the lot, not one per loan. */
