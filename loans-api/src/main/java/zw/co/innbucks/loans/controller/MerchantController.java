@@ -186,7 +186,9 @@ public class MerchantController {
 
     @Operation(summary = "Create a user in a merchant",
             description = "SUPER_ADMIN only: an agent, a credit manager or finance. The user receives a temporary"
-                    + " password by SMS and must change it at first sign-in. commissionGroupId is required unless the"
+                    + " password by SMS and must change it at first sign-in: until then their session can do nothing"
+                    + " else. mobileNumber is a Zimbabwean mobile (0772123123, 772123123, 263772123123 or"
+                    + " +263772123123) and is stored as 263772123123. commissionGroupId is required unless the"
                     + " merchant's commission structure is MERCHANT_DEFINED; 0 means the default group.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Created", content = @Content(examples = @ExampleObject("""
@@ -196,16 +198,31 @@ public class MerchantController {
                       "data": """ + ApiExamples.AGENT_USER + """
 
                     }"""))),
-            @ApiResponse(responseCode = "400", description = "A missing or invalid field",
-                    content = @Content(examples = @ExampleObject("""
-                            {
-                              "code": "VALIDATION_ERROR",
-                              "message": "Request validation failed",
-                              "data": {
-                                "group": "User group is required",
-                                "mobileNumber": "Mobile number is required"
-                              }
-                            }"""))),
+            @ApiResponse(responseCode = "400", description = "A missing or invalid field, a mobile number that is"
+                    + " not a Zimbabwean mobile, or a commission group that does not exist",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Missing fields", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "group": "User group is required",
+                                        "mobileNumber": "Mobile number is required"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Not a mobile number", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "mobileNumber": "must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Unknown commission group", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "Commission group 999 not found"
+                                    }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Caller is not SUPER_ADMIN",

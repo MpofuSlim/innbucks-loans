@@ -13,6 +13,7 @@ import zw.co.innbucks.loans.core.ManualDisbursementResponse.Outcome;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.BookingFailureKind;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationResponse;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
@@ -106,7 +107,7 @@ class ManualDisbursementTest {
     private DisbursementService service(LoanNotificationService notifications) {
         return new DisbursementService(loanRepository, notifications, attemptRepository,
                 new DeductionCancellationService(loanRepository, auditService, authService,
-                        mock(WorkAssignmentGuard.class)),
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")),
                 new DisbursementLedger(ledgerService, mock(LedgerEntryRepository.class)), checkpointGate, authService,
                 transactionManager) {
             @Override
@@ -513,7 +514,11 @@ class ManualDisbursementTest {
     void refusedWhenTheDeductionWasCancelledAtNdasenda() {
         loan.setDeductionCancellationStatus(DeductionCancellationStatus.CANCELLED_EXTERNALLY);
         loan.setDeductionCancelledBy("ops.clerk");
-        assertRefusedBeforeAnythingWasSent("recorded as cancelled at Ndasenda by ops.clerk");
+        // Stored in UTC, with the microseconds a database timestamp carries; told at the market's clock, to the second.
+        loan.setDeductionCancelledAt(LocalDateTime.of(2026, 9, 30, 18, 22, 9, 123_456_000));
+        assertRefusedBeforeAnythingWasSent("The payroll deduction of loan 000000042 was recorded as cancelled at"
+                + " Ndasenda by ops.clerk at 2026-09-30T20:22:09+02:00; paid now, the loan would have no repayment."
+                + " A manual payout is not allowed");
     }
 
     @Test

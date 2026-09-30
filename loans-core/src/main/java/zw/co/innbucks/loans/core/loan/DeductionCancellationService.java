@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.workflow.SystemStage;
@@ -62,6 +63,7 @@ public class DeductionCancellationService {
     private final AuditService auditService;
     private final AuthService authService;
     private final WorkAssignmentGuard workAssignmentGuard;
+    private final MarketTimeZone marketTimeZone;
 
     /** What the operator must do about a flag, shown in its ERROR line and in the queue. */
     public static String operatorAction(String reason) {
@@ -72,6 +74,15 @@ public class DeductionCancellationService {
         }
         return "The loan will not be paid but its payroll deduction reached Ndasenda:"
                 + " cancel the deduction on Ndasenda's portal";
+    }
+
+    /**
+     * Who recorded a loan's deduction as cancelled on Ndasenda's portal, and when, for the text of a refusal:
+     * {@code by loans.admin at 2026-09-21T12:00:00+02:00}. The stored UTC time at the market offset, to the second, as
+     * the JSON fields give it; formatted directly it read {@code 2026-09-21T10:00:00.123456}, UTC with no offset.
+     */
+    public String describeRecordedCancellation(Loan loan) {
+        return "by " + loan.getDeductionCancelledBy() + " at " + marketTimeZone.render(loan.getDeductionCancelledAt());
     }
 
     /** A batch number, or Ndasenda's own id for the deduction, is the evidence a lodgement reached Ndasenda. */
@@ -177,8 +188,8 @@ public class DeductionCancellationService {
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
 
         if (loan.getDeductionCancellationStatus() == DeductionCancellationStatus.CANCELLED_EXTERNALLY) {
-            throw new ConflictException(String.format("Loan %d's deduction was already recorded as cancelled by %s at %s",
-                    loanId, loan.getDeductionCancelledBy(), loan.getDeductionCancelledAt()));
+            throw new ConflictException(String.format("Loan %d's deduction was already recorded as cancelled %s",
+                    loanId, describeRecordedCancellation(loan)));
         }
         if (loan.getDeductionCancellationStatus() != DeductionCancellationStatus.REQUIRED) {
             throw new ConflictException(String.format("Loan %d has no deduction cancellation pending", loanId));

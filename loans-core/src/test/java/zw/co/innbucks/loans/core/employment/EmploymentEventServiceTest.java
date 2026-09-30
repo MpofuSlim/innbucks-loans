@@ -11,6 +11,7 @@ import org.springframework.security.access.AccessDeniedException;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 import zw.co.innbucks.loans.core.exception.ConflictException;
@@ -102,7 +103,7 @@ class EmploymentEventServiceTest {
         workAssignmentGuard = mock(WorkAssignmentGuard.class);
         service = new EmploymentEventService(eventRepository, loanEventRepository, treatmentService, loanRepository,
                 creditDecisionLog, new DeductionCancellationService(loanRepository, auditService, authService,
-                        mock(WorkAssignmentGuard.class)),
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")),
                 loanNotificationService, authService, auditService, workAssignmentGuard);
     }
 

@@ -37,6 +37,12 @@ public record CreditAuthorityAssessment(
         return requiredLevel == null ? UserGroup.SUPER_ADMIN.name() : requiredLevel.code();
     }
 
+    /** Who a referral goes to, in words: the required level's name, "Senior credit officer", or SUPER_ADMIN. */
+    @JsonIgnore
+    public String referredToName() {
+        return requiredLevel == null ? UserGroup.SUPER_ADMIN.name() : requiredLevel.name();
+    }
+
     /** Who may approve it, in words: "Senior credit officer or above", or "SUPER_ADMIN". */
     @JsonIgnore
     public String approversDescription() {

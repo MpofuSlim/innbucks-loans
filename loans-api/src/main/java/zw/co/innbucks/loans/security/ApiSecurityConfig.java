@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.session.SessionRegistryImpl;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
@@ -67,7 +68,8 @@ public class ApiSecurityConfig {
      * that is not an explicitly public path requires a valid token. This closes the
      * gap where root-mapped controllers fell outside a path-prefix matcher and were reachable
      * with no authentication. A missing, expired or revoked token is a 401 and a role refusal a
-     * 403, both in the standard error envelope rather than an empty body.
+     * 403, both in the standard error envelope rather than an empty body; a token minted on a temporary
+     * password is a 403 PASSWORD_CHANGE_REQUIRED for anything but changing it.
      */
     @Bean
     @Order(2)
@@ -83,6 +85,9 @@ public class ApiSecurityConfig {
                         .authenticationEntryPoint(SecurityErrorResponses::unauthorized)
                         .accessDeniedHandler(SecurityErrorResponses::forbidden))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // After the token is authenticated, before any role check: a session on a temporary password
+                // is answered 403 PASSWORD_CHANGE_REQUIRED everywhere but PUT /me/password.
+                .addFilterAfter(new TemporaryPasswordFilter(), BearerTokenAuthenticationFilter.class)
                 .build();
     }
 }

@@ -217,9 +217,9 @@ public abstract class DisbursementService {
                     .formatted(loanRef, loan.getInternalApprovalStatus()));
         }
         if (loan.getDeductionCancellationStatus() == DeductionCancellationStatus.CANCELLED_EXTERNALLY) {
-            throw notAllowed(("The payroll deduction of loan %s was recorded as cancelled at Ndasenda by %s at %s;"
+            throw notAllowed(("The payroll deduction of loan %s was recorded as cancelled at Ndasenda %s;"
                     + " paid now, the loan would have no repayment. A manual payout is not allowed")
-                    .formatted(loanRef, loan.getDeductionCancelledBy(), loan.getDeductionCancelledAt()));
+                    .formatted(loanRef, deductionCancellationService.describeRecordedCancellation(loan)));
         }
         if (loan.getBookingFailureKind() == BookingFailureKind.AMBIGUOUS) {
             throw notAllowed(("The InnBucks booking of loan %s has an unknown outcome and may already have paid it."

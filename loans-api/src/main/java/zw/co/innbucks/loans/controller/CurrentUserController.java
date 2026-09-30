@@ -57,7 +57,10 @@ public class CurrentUserController {
             description = "The new password must be 8 to 72 characters, must not begin or end with a space, and"
                     + " must differ from the current one. Every token issued before the change stops working; the"
                     + " response carries a fresh one, which the caller must use from here on. A wrong current"
-                    + " password counts towards the sign-in lockout.")
+                    + " password counts towards the sign-in lockout. This is the one call a session signed in on a"
+                    + " temporary password (sign-in answered temporaryPassword: true) may make: every other call"
+                    + " answers 403 PASSWORD_CHANGE_REQUIRED until this one succeeds, and the token it returns is"
+                    + " unrestricted.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Changed; a new token",
                     content = @Content(examples = @ExampleObject("""
@@ -137,7 +140,10 @@ public class CurrentUserController {
                               "message": "Invalid value for 'fromDate'"
                             }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
-                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED)))
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Signed in on a temporary password, not yet changed"
+                    + " (PUT /me/password), as every call but that one is",
+                    content = @Content(examples = @ExampleObject(ApiExamples.PASSWORD_CHANGE_REQUIRED)))
     })
     @GetMapping("/sales")
     public ApiResult<SalesSummaryResponse> mySales(

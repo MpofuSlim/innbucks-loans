@@ -63,7 +63,7 @@ class RevivedLodgementBookingFailureTest {
         AuditService auditService = mock(AuditService.class);
         DeductionCancellationService cancellations =
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class));
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW"));
 
         Loan loan = Loan.builder()
                 .loanApprovalStatus(LoanApprovalStatus.FAILED)

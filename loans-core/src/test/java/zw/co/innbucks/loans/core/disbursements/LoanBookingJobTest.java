@@ -16,6 +16,7 @@ import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationStatus;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
@@ -75,7 +76,7 @@ class LoanBookingJobTest {
         when(checkpointGate.holding(any(), any())).thenReturn(Optional.empty());
         job = new LoanBookingJob(disbursementService, loanRepository,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class)),
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")),
                 loanDisbursementRepository, auditService, loanNotificationService, checkpointGate,
                 transactionManager, 30);
 

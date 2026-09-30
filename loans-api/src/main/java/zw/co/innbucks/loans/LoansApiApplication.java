@@ -14,7 +14,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @OpenAPIDefinition(info = @Info(title = "InnBucks Lending API", version = "v1",
         description = "Every endpoint lives under /lending/v1 and answers in the envelope"
                 + " {\"code\", \"message\", \"data\"}: code is OK or CREATED on success and an UPPER_SNAKE error"
-                + " code otherwise. Amounts are dollars; dates are yyyy-MM-dd; timestamps carry the market's offset."))
+                + " code otherwise. Amounts are dollars; dates are yyyy-MM-dd; timestamps carry the market's offset."
+                + " A session signed in on a temporary password (sign-in answers temporaryPassword: true) may only"
+                + " change it with PUT /lending/v1/me/password; every other call answers 403"
+                + " PASSWORD_CHANGE_REQUIRED."))
 
 @SecuritySchemes({
         @SecurityScheme(

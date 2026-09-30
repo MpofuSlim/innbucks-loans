@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -13,12 +14,16 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
+import zw.co.innbucks.loans.core.api.LoginRequest;
+import zw.co.innbucks.loans.core.api.LoginResponse;
+import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserGroup;
 import zw.co.innbucks.loans.core.user.UserRepository;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -151,6 +156,68 @@ class JwtConfigTest {
                 .isInstanceOf(JwtValidationException.class)
                 .hasMessageContaining("password was last changed");
         assertThat(decoder.decode(after).getClaims().get("token_version")).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("a token minted on a temporary password says so; one on a chosen password carries no such claim")
+    void temporaryPasswordClaim() {
+        JwtProperties properties = properties(randomSecret());
+        JwtConfig config = new JwtConfig(properties, environment("api"));
+        JwtService jwtService = new JwtService(config.jwtEncoder(), properties);
+        JwtDecoder decoder = config.jwtDecoder(versions);
+        User agent = agent();
+
+        agent.setTemporaryPassword(true);
+        Jwt restricted = decoder.decode(jwtService.generateToken(agent));
+        assertThat(restricted.getClaims()).containsEntry(JwtService.TEMPORARY_PASSWORD_CLAIM, true);
+        assertThat(JwtService.issuedOnTemporaryPassword(restricted)).isTrue();
+
+        for (Boolean chosen : Arrays.asList(false, null)) {
+            agent.setTemporaryPassword(chosen);
+            Jwt unrestricted = decoder.decode(jwtService.generateToken(agent));
+            assertThat(unrestricted.getClaims()).doesNotContainKey(JwtService.TEMPORARY_PASSWORD_CLAIM);
+            assertThat(JwtService.issuedOnTemporaryPassword(unrestricted)).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("changing a temporary password ends the restricted token; signing in again gives an unrestricted one")
+    void changingTheTemporaryPasswordLiftsTheRestriction() {
+        JwtProperties properties = properties(randomSecret());
+        JwtConfig config = new JwtConfig(properties, environment("api"));
+        JwtService jwtService = new JwtService(config.jwtEncoder(), properties);
+        JwtDecoder decoder = config.jwtDecoder(versions);
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
+        AuthServiceImpl auth = new AuthServiceImpl(users, encoder, jwtService, mock(AuditService.class), 7, 30);
+        User agent = agent();
+        agent.setPassword(encoder.encode("Temp#Pass42"));
+        agent.setTemporaryPassword(true);
+        when(users.findByUsername("tmoyo")).thenReturn(Optional.of(agent));
+
+        String restricted = auth.login(signIn("Temp#Pass42")).getAccessToken();
+        assertThat(JwtService.issuedOnTemporaryPassword(decoder.decode(restricted))).isTrue();
+
+        auth.resetPassword("Kariba-Sunset-2026", agent.getExternalSystemId(), "tmoyo");
+        when(users.findTokenVersionByUsername("tmoyo")).thenReturn(Optional.of(agent.currentTokenVersion()));
+        LoginResponse fresh = auth.login(signIn("Kariba-Sunset-2026"));
+
+        assertThat(fresh.getTemporaryPassword()).isFalse();
+        assertThat(JwtService.issuedOnTemporaryPassword(decoder.decode(fresh.getAccessToken()))).isFalse();
+        assertThatThrownBy(() -> decoder.decode(restricted))
+                .isInstanceOf(JwtValidationException.class)
+                .hasMessageContaining("password was last changed");
+    }
+
+    private static User agent() {
+        User agent = new User();
+        agent.setUsername("tmoyo");
+        agent.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000007");
+        agent.setGroups(Set.of(UserGroup.AGENTS));
+        return agent;
+    }
+
+    private static LoginRequest signIn(String password) {
+        return LoginRequest.builder().username("tmoyo").password(password).build();
     }
 
     @Test

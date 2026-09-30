@@ -9,6 +9,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
 import zw.co.innbucks.loans.core.exception.ConflictException;
@@ -73,7 +74,8 @@ class PayslipReviewServiceTest {
         service = new PayslipReviewService(loanRepository, flagRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), authService, loanMapper,
                 loanNotificationService, auditService,
-                new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard),
+                new DeductionCancellationService(loanRepository, auditService, authService, workAssignmentGuard,
+                        new MarketTimeZone("ZW")),
                 loanDocumentRepository, mock(PlatformTransactionManager.class), workAssignmentGuard);
     }
 

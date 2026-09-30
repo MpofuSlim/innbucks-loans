@@ -70,4 +70,16 @@ class MarketTimeZoneTest {
         assertThat(HARARE.localDay(null)).isNull();
         assertThat(HARARE.atMarketFromUtc(null)).isNull();
     }
+
+    @Test
+    @DisplayName("a stored UTC time is written for a person as the JSON carries it: market offset, whole seconds")
+    void storedUtcRenderedForAPerson() {
+        LocalDateTime utc = LocalDateTime.of(2026, 9, 30, 18, 22, 9, 999_999_000);
+
+        assertThat(HARARE.render(utc)).isEqualTo("2026-09-30T20:22:09+02:00");
+        assertThat(new MarketTimeZone("KE").render(utc)).isEqualTo("2026-09-30T21:22:09+03:00");
+        assertThat(new MarketTimeZone("NG").render(LocalDateTime.of(2026, 9, 30, 23, 30))).isEqualTo(
+                "2026-10-01T00:30:00+01:00");
+        assertThat(HARARE.render(null)).isNull();
+    }
 }

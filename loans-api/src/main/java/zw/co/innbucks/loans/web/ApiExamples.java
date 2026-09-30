@@ -26,6 +26,13 @@ public final class ApiExamples {
               "message": "Forbidden - insufficient role"
             }""";
 
+    /** Any call but PUT /me/password, by a session signed in on a temporary password. */
+    public static final String PASSWORD_CHANGE_REQUIRED = """
+            {
+              "code": "PASSWORD_CHANGE_REQUIRED",
+              "message": "Change your temporary password before continuing"
+            }""";
+
     public static final String INTERNAL_ERROR = """
             {
               "code": "INTERNAL_ERROR",

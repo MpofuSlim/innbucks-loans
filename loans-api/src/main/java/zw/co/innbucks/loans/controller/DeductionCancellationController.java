@@ -131,6 +131,11 @@ public class DeductionCancellationController {
                                       "code": "CONFLICT",
                                       "message": "Loan 57 has no deduction cancellation pending"
                                     }"""),
+                            @ExampleObject(name = "Already recorded", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 57's deduction was already recorded as cancelled by finance2 at 2026-09-30T20:22:09+02:00"
+                                    }"""),
                             @ExampleObject(name = "Assigned to someone else", value = """
                                     {
                                       "code": "CONFLICT",

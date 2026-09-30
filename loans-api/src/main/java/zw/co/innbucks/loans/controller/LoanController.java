@@ -448,7 +448,9 @@ public class LoanController {
                     + " the credit decision log; everyone who may approve the loan is emailed (the loan reference and"
                     + " amount only); the caller's assignment of the loan, if any, is released. The loan stays in the"
                     + " credit queue, undecided, for them. Recommending approval is held to the same segregation of"
-                    + " duties as approving.")
+                    + " duties as approving. A loan is referred to the same authority once: referring it there again"
+                    + " is a 409 until it is returned and resubmitted, or the levels change so that it would go"
+                    + " somewhere else.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Referred; the referral as logged",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_64_REFERRED))),
@@ -492,7 +494,9 @@ public class LoanController {
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND))),
             @ApiResponse(responseCode = "409", description = "No approval limits are set up, the loan is within the"
-                    + " caller's limit, or the stage is EXCLUSIVE and the loan's item is assigned to someone else",
+                    + " caller's limit, it is already referred to the authority this referral would go to (since it"
+                    + " was last resubmitted), or the stage is EXCLUSIVE and the loan's item is assigned to someone"
+                    + " else",
                     content = @Content(examples = {
                             @ExampleObject(name = "No limits set up", value = """
                                     {
@@ -503,6 +507,11 @@ public class LoanController {
                                     {
                                       "code": "CONFLICT",
                                       "message": "Loan 000000042 is within your approval limit; decide it rather than refer it"
+                                    }"""),
+                            @ExampleObject(name = "Already referred there", value = """
+                                    {
+                                      "code": "CONFLICT",
+                                      "message": "Loan 000000064 is already referred to Senior credit officer"
                                     }"""),
                             @ExampleObject(name = "Assigned to someone else",
                                     value = ApiExamples.CREDIT_DECISION_ASSIGNED_ELSEWHERE)}))
@@ -629,6 +638,11 @@ public class LoanController {
                                     {
                                       "code": "DISBURSEMENT_NOT_ALLOWED",
                                       "message": "Loan 000000042 is not credit-approved (status PENDING)"
+                                    }"""),
+                            @ExampleObject(name = "Deduction cancelled", value = """
+                                    {
+                                      "code": "DISBURSEMENT_NOT_ALLOWED",
+                                      "message": "The payroll deduction of loan 000000042 was recorded as cancelled at Ndasenda by finance2 at 2026-09-30T20:22:09+02:00; paid now, the loan would have no repayment. A manual payout is not allowed"
                                     }"""),
                             @ExampleObject(name = "Waiting at a checkpoint", value = """
                                     {

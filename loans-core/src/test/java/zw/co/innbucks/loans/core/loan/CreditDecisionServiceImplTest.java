@@ -16,6 +16,7 @@ import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.authority.CreditAuthorityLevel;
 import zw.co.innbucks.loans.core.authority.CreditAuthorityLevelRepository;
 import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.DocumentType;
 import zw.co.innbucks.loans.core.document.LoanDocumentRepository;
@@ -126,7 +127,7 @@ class CreditDecisionServiceImplTest {
         workQueueService = mock(WorkQueueService.class);
         service = new CreditDecisionServiceImpl(loanRepository, authService, loanMapper, loanNotificationService,
                 new DeductionCancellationService(loanRepository, auditService, authService,
-                        mock(WorkAssignmentGuard.class)), auditService,
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")), auditService,
                 creditDecisionRepository, creditReasonCodeRepository,
                 new CreditDecisionLog(creditDecisionRepository, loanDocumentRepository), loanDocumentRepository,
                 mock(PlatformTransactionManager.class), workAssignmentGuard, checkpointGate,
@@ -1096,6 +1097,64 @@ class CreditDecisionServiceImplTest {
             assertThat(referred.recommendation()).isEqualTo(InternalApprovalStatus.REJECTED);
             verify(notificationService).sendEmail(eq("admin@innbucks.co.zw"), anyString(),
                     contains("recommending rejection"));
+        }
+
+        /** The loan's latest referral or resubmission, as the log would answer it. */
+        private void lastEntry(CreditAction action, String referredTo) {
+            when(creditDecisionRepository.findFirstByLoanIdAndActionInOrderByIdDesc(42L,
+                    List.of(CreditAction.REFERRED, CreditAction.RESUBMITTED)))
+                    .thenReturn(Optional.of(CreditDecision.builder().id(30L).loanId(42L).action(action)
+                            .referredTo(referredTo).performedBy("rnyathi").build()));
+        }
+
+        @Test
+        @DisplayName("referring a loan again to where it already went → 409 naming the level; nothing logged or sent")
+        void repeatReferralIsRefused() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            loanFor("2659.57");
+            lastEntry(CreditAction.REFERRED, "SENIOR_CREDIT_OFFICER");
+
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.APPROVED,
+                    "APPROVE_WITHIN_POLICY")))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessage("Loan 000000042 is already referred to Senior credit officer");
+            verify(creditDecisionRepository, never()).save(any());
+            verifyNoInteractions(notificationService, workQueueService);
+            assertThat(audited()).noneMatch(row -> "CREDIT_REFERRED".equals(row.getEventType()));
+        }
+
+        @Test
+        @DisplayName("above every level, a repeat referral to SUPER_ADMIN is refused the same way")
+        void repeatReferralToSuperAdminIsRefused() {
+            levels(officer, senior);
+            approver.setCreditAuthorityLevel("SENIOR_CREDIT_OFFICER");
+            loanFor("5000.00");
+            lastEntry(CreditAction.REFERRED, "SUPER_ADMIN");
+
+            assertThatThrownBy(() -> service.refer(42L, referral(InternalApprovalStatus.REJECTED, "REJECT_OTHER")))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessage("Loan 000000042 is already referred to SUPER_ADMIN");
+            verify(creditDecisionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("a referral to another authority (the levels changed since) or after a resubmission is allowed")
+        void referralElsewhereOrAfterResubmissionIsAllowed() {
+            levels(officer, senior, head);
+            approver.setCreditAuthorityLevel("CREDIT_OFFICER");
+            loanFor("2659.57");
+            when(creditDecisionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            lastEntry(CreditAction.REFERRED, "HEAD_OF_CREDIT");
+            assertThat(service.refer(42L, referral(InternalApprovalStatus.APPROVED, "APPROVE_WITHIN_POLICY"))
+                    .referredTo()).isEqualTo("SENIOR_CREDIT_OFFICER");
+
+            // Returned by the senior officer and answered: the resubmission is the latest entry.
+            lastEntry(CreditAction.RESUBMITTED, null);
+            assertThat(service.refer(42L, referral(InternalApprovalStatus.APPROVED, "APPROVE_WITHIN_POLICY"))
+                    .referredTo()).isEqualTo("SENIOR_CREDIT_OFFICER");
+            verify(creditDecisionRepository, times(2)).save(any());
         }
 
         @Test

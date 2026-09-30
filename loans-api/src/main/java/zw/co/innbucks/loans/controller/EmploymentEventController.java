@@ -262,17 +262,25 @@ public class EmploymentEventController {
     }
 
     @Operation(summary = "A loan's employment events",
-            description = "What employment events did to this loan, oldest first. A loan outside the caller's scope is"
-                    + " answered exactly like one that does not exist.")
+            description = "CREDIT_MANAGER, FINANCE and SUPER_ADMIN only, like every other employment event read: what"
+                    + " employment events (a suspension, a resignation, a death in service) did to this loan, oldest"
+                    + " first. An agent is never shown why a borrower's employment changed, even on a loan they"
+                    + " originated. A loan outside the caller's scope is answered exactly like one that does not"
+                    + " exist.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success; an empty list for a loan no event touched",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_42_EMPLOYMENT_EVENTS))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE or SUPER_ADMIN",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "404", description = "No such loan, or not one the caller may read",
                     content = @Content(examples = @ExampleObject(ApiExamples.LOAN_NOT_FOUND)))
     })
     @GetMapping("/loans/{loanId}/employment-events")
+    // It had no role check at all, so an agent could read the events on their own loans, where the other
+    // employment event reads, and a loan's payslip review, are kept from agents.
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','SUPER_ADMIN')")
     public ApiResult<List<LoanEmploymentEventResponse>> forLoan(JwtAuthenticationToken authentication,
                                                                  @PathVariable Long loanId) {
         return ApiResult.ok(employmentEventService.forLoan(loanId,

@@ -69,7 +69,7 @@ class NdasendaDeductionResponseProcessingTest {
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, mock(NdasendaAuthService.class), props,
                 loanRepository, mock(LoanBatchService.class), loanNotificationService, auditService,
                 new DeductionCancellationService(loanRepository, auditService, mock(AuthService.class),
-                        mock(WorkAssignmentGuard.class)), new MarketTimeZone("ZW"));
+                        mock(WorkAssignmentGuard.class), new MarketTimeZone("ZW")), new MarketTimeZone("ZW"));
     }
 
     private static NdasendaDeduction deduction(String id, String reference, NdasendaDeductionStatus status) {
