@@ -2,9 +2,9 @@ name: Release
 
 # Builds, scans and publishes the runnable service images to GHCR.
 #
-# This does NOT deploy. Deployment stays manual via the existing
-# deploy-loans-api.yml workflow. The bare commit-SHA tag pushed here is what
-# rollback.yml pulls to redeploy a known good build.
+# This does NOT deploy. Like the rest of the fleet, deploys are manual on the
+# box: pull ghcr.io/mpofuslim/loans-api:sha-<full commit SHA> and run it. Roll
+# back by running the sha-<commit> tag of a known good build.
 on:
   push:
     branches: [main]
@@ -69,7 +69,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.module }}
           tags: |
-            type=sha,format=long,prefix=
+            type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
             type=ref,event=pr
