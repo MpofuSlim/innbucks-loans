@@ -8,7 +8,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** The checker's decision on a proposed grade limit. A rejection needs a reason. */
+/**
+ * The checker's decision on a proposed change to the matrix: a grade limit, or a grade retired or renamed. A rejection
+ * needs a reason.
+ */
 @Data
 @Builder
 @NoArgsConstructor

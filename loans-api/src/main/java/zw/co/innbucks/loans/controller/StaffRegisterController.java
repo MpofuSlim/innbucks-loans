@@ -377,7 +377,8 @@ public class StaffRegisterController {
 
     @Operation(summary = "A staff member's change history",
             description = "Every field ever changed, newest first (FR-SGL-006): previous value (absent when the record"
-                    + " was created), new value, the batch, who submitted it, who approved it, and when.")
+                    + " was created), new value, the batch, who submitted it, who approved it, and when. A grade renamed"
+                    + " in the matrix shows as a grade change with gradeChangeId instead of batchId.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_MEMBER_E1043_HISTORY))),

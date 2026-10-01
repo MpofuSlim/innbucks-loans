@@ -17,7 +17,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.staff.ProposeStaffGradeChangeRequest;
 import zw.co.innbucks.loans.core.staff.ProposeStaffGradeLimitRequest;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeAction;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeResponse;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeService;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitChangeResponse;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitChangeStatus;
@@ -58,15 +63,21 @@ class StaffGradeLimitWebContractTest {
     private static final StaffGradeLimitChangeResponse PENDING = new StaffGradeLimitChangeResponse(2L, "C4", "Band C",
             new BigDecimal("350.00"), LocalDate.of(2026, 11, 1), StaffGradeLimitChangeStatus.PENDING, "credit1",
             LocalDateTime.of(2026, 10, 1, 6, 30, 2), "Annual review approved by Credit and Human Capital", null, null,
-            null, null, C4);
+            null, null, null, C4);
+    private static final StaffGradeChangeResponse RENAMING = new StaffGradeChangeResponse(2L,
+            StaffGradeChangeAction.RENAME, "DRIVER/OFFICE ORDERLY", "DRIVER/ORDERLY", StaffGradeChangeStatus.PENDING,
+            "credit1", LocalDateTime.of(2026, 10, 1, 8, 15, 4), "Human Capital renamed the band in the 2027 grading",
+            null, null, null, 6L, null, null);
 
     private StaffGradeLimitService service;
+    private StaffGradeChangeService gradeChanges;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(StaffGradeLimitService.class);
-        ProxyFactory secured = new ProxyFactory(new StaffGradeLimitController(service));
+        gradeChanges = mock(StaffGradeChangeService.class);
+        ProxyFactory secured = new ProxyFactory(new StaffGradeLimitController(service, gradeChanges));
         secured.setProxyTargetClass(true);
         secured.addAdvisor(preAuthorize());
         mvc = MockMvcBuilders.standaloneSetup(secured.getProxy())
@@ -216,7 +227,7 @@ class StaffGradeLimitWebContractTest {
         StaffGradeLimitChangeResponse approved = new StaffGradeLimitChangeResponse(2L, "C4", "Band C",
                 new BigDecimal("350.00"), LocalDate.of(2026, 11, 1), StaffGradeLimitChangeStatus.APPROVED, "credit1",
                 LocalDateTime.of(2026, 10, 1, 6, 30, 2), null, "credit2", LocalDateTime.of(2026, 10, 1, 9, 20, 45),
-                "Approved at the annual review", null, null);
+                "Approved at the annual review", null, null, null);
         when(service.decide(eq(2L), any())).thenReturn(approved);
 
         mvc.perform(post("/lending/v1/staff-grade-limit-changes/2/decision").with(as("FINANCE"))
@@ -281,5 +292,104 @@ class StaffGradeLimitWebContractTest {
         mvc.perform(delete("/lending/v1/staff-grade-limit-changes/1").with(as("CREDIT_MANAGER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Grade limit change 1 is already approved"));
+    }
+
+    @Test
+    @DisplayName("grade changes: staff read them; credit managers and SUPER_ADMIN propose, decide and withdraw them")
+    void gradeChanges() throws Exception {
+        when(gradeChanges.changes(any(), any())).thenReturn(List.of(RENAMING));
+        when(gradeChanges.propose(any())).thenReturn(RENAMING);
+        when(gradeChanges.decide(eq(2L), any())).thenReturn(RENAMING);
+        when(gradeChanges.withdraw(2L)).thenReturn(RENAMING);
+
+        mvc.perform(get("/lending/v1/staff-grade-changes").with(as("AGENTS"))).andExpect(status().isForbidden());
+        for (String role : List.of("CREDIT_MANAGER", "FINANCE", "HUMAN_CAPITAL", "SUPER_ADMIN")) {
+            mvc.perform(get("/lending/v1/staff-grade-changes").param("grade", "driver/office orderly")
+                            .param("status", "PENDING").with(as(role)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].action").value("RENAME"))
+                    .andExpect(jsonPath("$.data[0].newGrade").value("DRIVER/ORDERLY"))
+                    .andExpect(jsonPath("$.data[0].staffMembers").value(6))
+                    .andExpect(jsonPath("$.data[0].staffMembersMoved").doesNotExist());
+        }
+        verify(gradeChanges, times(4)).changes("driver/office orderly", StaffGradeChangeStatus.PENDING);
+
+        for (String role : List.of("FINANCE", "HUMAN_CAPITAL")) {
+            mvc.perform(post("/lending/v1/staff-grade-changes").with(as(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_CHANGE_PROPOSAL))
+                    .andExpect(status().isForbidden());
+            mvc.perform(post("/lending/v1/staff-grade-changes/2/decision").with(as(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_CHANGE_APPROVAL))
+                    .andExpect(status().isForbidden());
+            mvc.perform(delete("/lending/v1/staff-grade-changes/2").with(as(role))).andExpect(status().isForbidden());
+        }
+        mvc.perform(post("/lending/v1/staff-grade-changes").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_CHANGE_PROPOSAL))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("CREATED"))
+                .andExpect(jsonPath("$.message").value("Grade change proposed; it is carried out once someone else"
+                        + " approves it"));
+        ArgumentCaptor<ProposeStaffGradeChangeRequest> sent =
+                ArgumentCaptor.forClass(ProposeStaffGradeChangeRequest.class);
+        verify(gradeChanges).propose(sent.capture());
+        assertThat(sent.getValue().getAction()).isEqualTo(StaffGradeChangeAction.RENAME);
+        assertThat(sent.getValue().getGrade()).isEqualTo("DRIVER/OFFICE ORDERLY");
+        assertThat(sent.getValue().getNewGrade()).isEqualTo("DRIVER/ORDERLY");
+        mvc.perform(post("/lending/v1/staff-grade-changes/2/decision").with(as("SUPER_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_CHANGE_APPROVAL))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Grade change approved"));
+        mvc.perform(post("/lending/v1/staff-grade-changes/2/decision").with(as("SUPER_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"decision": "REJECTED", "comment": "Not yet"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Grade change rejected"));
+        mvc.perform(delete("/lending/v1/staff-grade-changes/2").with(as("CREDIT_MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Grade change withdrawn"));
+    }
+
+    @Test
+    @DisplayName("a bad grade change is a 400 naming every field before the service is called; refusals keep their codes")
+    void badGradeChange() throws Exception {
+        mvc.perform(post("/lending/v1/staff-grade-changes").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"newGrade": "/X", "comment": ""}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.action").value("Action is required (RETIRE or RENAME)"))
+                .andExpect(jsonPath("$.data.grade").value("Grade is required"))
+                .andExpect(jsonPath("$.data.newGrade").value(zw.co.innbucks.loans.core.staff.StaffGrades.MESSAGE));
+        mvc.perform(post("/lending/v1/staff-grade-changes").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"action": "MERGE", "grade": "HOD"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+        mvc.perform(post("/lending/v1/staff-grade-changes/2/decision").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.decision").value("Decision is required (APPROVED or REJECTED)"));
+        verifyNoInteractions(gradeChanges);
+
+        when(gradeChanges.propose(any())).thenThrow(new NotFoundException("Grade OFFICER is not in the"
+                + " grade-to-limit matrix"));
+        mvc.perform(post("/lending/v1/staff-grade-changes").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"action": "RETIRE", "grade": "OFFICER"}"""))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Grade OFFICER is not in the grade-to-limit matrix"));
+        when(gradeChanges.decide(eq(2L), any())).thenThrow(new ConflictException("6 staff members still employed"
+                + " hold grade DRIVER/OFFICE ORDERLY; move them to another grade through the staff register first, or"
+                + " rename the grade"));
+        mvc.perform(post("/lending/v1/staff-grade-changes/2/decision").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_CHANGE_APPROVAL))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+        when(gradeChanges.withdraw(3L)).thenThrow(new AccessDeniedException("Only credit1, who proposed grade change"
+                + " 3, can withdraw it; anyone else approves or rejects it"));
+        mvc.perform(delete("/lending/v1/staff-grade-changes/3").with(as("CREDIT_MANAGER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Only credit1, who proposed grade change 3, can withdraw it;"
+                        + " anyone else approves or rejects it"));
     }
 }

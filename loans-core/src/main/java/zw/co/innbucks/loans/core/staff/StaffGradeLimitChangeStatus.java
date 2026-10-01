@@ -11,5 +11,7 @@ public enum StaffGradeLimitChangeStatus {
     /** Taken back by whoever proposed it, before anyone decided it. */
     WITHDRAWN,
     /** Approved, then replaced by a later approval for the same grade and date before that date arrived. */
-    SUPERSEDED
+    SUPERSEDED,
+    /** Approved, then taken out of the matrix when its grade was retired or renamed. */
+    RETIRED
 }

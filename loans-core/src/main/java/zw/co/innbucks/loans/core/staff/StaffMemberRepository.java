@@ -25,6 +25,14 @@ public interface StaffMemberRepository extends JpaRepository<StaffMember, Long>,
 
     List<StaffMember> findByMsisdnIn(Collection<String> msisdns);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from StaffMember m where m.grade = :grade order by m.id")
+    List<StaffMember> findByGradeForUpdate(@Param("grade") String grade);
+
+    long countByGrade(String grade);
+
+    long countByGradeAndEmploymentStatusIn(String grade, Collection<StaffEmploymentStatus> statuses);
+
     /**
      * Serialises every write to the register: approvals take this transaction-scoped lock first, so one approval
      * re-validates its rows against everything the previous one applied (a mobile number it gave someone, say).

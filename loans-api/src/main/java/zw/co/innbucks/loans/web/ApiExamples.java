@@ -2430,6 +2430,162 @@ public final class ApiExamples {
               "message": "credit1 proposed grade limit change 2 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
             }""";
 
+    // ---- Staff grade changes (FR-SGL-010): retiring and renaming a grade ----
+    // credit1 proposes grade change 1, retiring ANALYST once its staff were moved to OFFICER, and credit2 approves it.
+    // credit1 then proposes grade change 2, renaming DRIVER/OFFICE ORDERLY (6 staff) to DRIVER/ORDERLY; credit2 approves.
+
+    public static final String STAFF_GRADE_CHANGE_PROPOSAL = """
+            {
+              "action": "RENAME",
+              "grade": "DRIVER/OFFICE ORDERLY",
+              "newGrade": "DRIVER/ORDERLY",
+              "comment": "Human Capital renamed the band in the 2027 grading"
+            }""";
+
+    private static final String GRADE_CHANGE_2_HEAD = """
+                  "id": 2,
+                  "action": "RENAME",
+                  "grade": "DRIVER/OFFICE ORDERLY",
+                  "newGrade": "DRIVER/ORDERLY",""";
+
+    private static final String GRADE_CHANGE_2_PROPOSAL = """
+                  "proposedBy": "credit1",
+                  "proposedAt": "2026-10-01T10:15:04+02:00",
+                  "comment": "Human Capital renamed the band in the 2027 grading\"""";
+
+    private static final String GRADE_CHANGE_2_PENDING = """
+                {
+            """ + GRADE_CHANGE_2_HEAD + """
+
+                  "status": "PENDING",
+            """ + GRADE_CHANGE_2_PROPOSAL + """
+            ,
+                  "staffMembers": 6
+                }""";
+
+    public static final String STAFF_GRADE_CHANGE_PROPOSED = """
+            {
+              "code": "CREATED",
+              "message": "Grade change proposed; it is carried out once someone else approves it",
+              "data": """ + GRADE_CHANGE_2_PENDING + """
+
+            }""";
+
+    public static final String STAFF_GRADE_CHANGES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + GRADE_CHANGE_2_PENDING + """
+            ,
+                {
+                  "id": 1,
+                  "action": "RETIRE",
+                  "grade": "ANALYST",
+                  "status": "APPROVED",
+                  "proposedBy": "credit1",
+                  "proposedAt": "2026-10-01T09:02:31+02:00",
+                  "comment": "Analysts are graded OFFICER from October; register batch 14 moved them",
+                  "decidedBy": "credit2",
+                  "decidedAt": "2026-10-01T09:40:12+02:00",
+                  "decisionComment": "Checked: nobody employed is left at ANALYST"
+                }
+              ]
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_APPROVAL = """
+            {
+              "decision": "APPROVED",
+              "comment": "Matches Human Capital's 2027 grading"
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_APPROVED = """
+            {
+              "code": "OK",
+              "message": "Grade change approved",
+              "data": {
+            """ + GRADE_CHANGE_2_HEAD + """
+
+                  "status": "APPROVED",
+            """ + GRADE_CHANGE_2_PROPOSAL + """
+            ,
+                  "decidedBy": "credit2",
+                  "decidedAt": "2026-10-01T11:02:48+02:00",
+                  "decisionComment": "Matches Human Capital's 2027 grading",
+                  "staffMembersMoved": 6,
+                  "limitOverridesMoved": 0
+              }
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_WITHDRAWN = """
+            {
+              "code": "OK",
+              "message": "Grade change withdrawn",
+              "data": {
+            """ + GRADE_CHANGE_2_HEAD + """
+
+                  "status": "WITHDRAWN",
+            """ + GRADE_CHANGE_2_PROPOSAL + """
+            ,
+                  "decidedBy": "credit1",
+                  "decidedAt": "2026-10-01T10:31:09+02:00"
+              }
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Grade change 99 not found"
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_ALREADY_DECIDED = """
+            {
+              "code": "CONFLICT",
+              "message": "Grade change 2 is already approved"
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_OWN_CHANGE = """
+            {
+              "code": "FORBIDDEN",
+              "message": "credit1 proposed grade change 2 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
+            }""";
+
+    public static final String STAFF_GRADE_NOT_IN_MATRIX = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Grade DRIVER/OFFICE ORDERLY is not in the grade-to-limit matrix"
+            }""";
+
+    public static final String STAFF_GRADE_STILL_HELD = """
+            {
+              "code": "CONFLICT",
+              "message": "6 staff members still employed hold grade DRIVER/OFFICE ORDERLY; move them to another grade through the staff register first, or rename the grade"
+            }""";
+
+    public static final String STAFF_GRADE_ALREADY_IN_MATRIX = """
+            {
+              "code": "CONFLICT",
+              "message": "Grade OFFICER is already in the grade-to-limit matrix; to merge ANALYST into it, move the staff through the staff register and then retire ANALYST"
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_CHANGE_WAITING = """
+            {
+              "code": "CONFLICT",
+              "message": "A limit change to grade DRIVER/OFFICE ORDERLY is waiting for approval (change 9); approve, reject or withdraw it first"
+            }""";
+
+    public static final String STAFF_GRADE_BATCH_WAITING = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff register batch 15, waiting for approval, puts staff at grade DRIVER/OFFICE ORDERLY; approve, reject or withdraw it first"
+            }""";
+
+    public static final String STAFF_GRADE_CHANGE_WAITING = """
+            {
+              "code": "CONFLICT",
+              "message": "Grade change 2, naming grade DRIVER/OFFICE ORDERLY, is waiting for approval; approve, reject or withdraw it first"
+            }""";
+
     // ---- Staff Register (FR-SGL-001 to FR-SGL-007) ----
     // hc1 uploads staff-register-2026-10.csv as batch 12: row 2 adds E1043 Tendai Moyo, row 3 moves E1001 Nyasha Dube
     // from C3 to C4, row 4 is refused. hc2 approves it. hc1 then submits batch 13 (E1043 resigned), which hc2 approves.
