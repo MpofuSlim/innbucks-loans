@@ -35,7 +35,9 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 @Tag(name = "Staff Grocery Loans", description = "Staff Grocery Loans accepted in the SuperApp, for Credit, Finance and"
         + " Human Capital: each with the terms accepted and the agreement it was accepted under, with its evidence"
         + " (device, address, how it was authenticated). A loan awaits disbursement through the bank's system; Credit"
-        + " can cancel one until then. A borrower who stops being ACTIVE on the register has theirs cancelled at once.")
+        + " can cancel one until then. A borrower who stops being ACTIVE on the register has theirs cancelled at once;"
+        + " once it is paid out, it is flagged instead (employmentFlag) and Human Capital and Payroll, or Credit, are"
+        + " emailed.")
 @RestController
 @RequestMapping(ApiPaths.BASE + "/staff-loans")
 @RequiredArgsConstructor
@@ -50,10 +52,15 @@ public class StaffLoanController {
     @Operation(summary = "List Staff Grocery Loans",
             description = "CREDIT_MANAGER, FINANCE, HUMAN_CAPITAL or SUPER_ADMIN. Newest first. The borrower's number"
                     + " is masked; inArrears is true once a paid-out loan is past its due date and grace, or it was"
-                    + " written off.")
+                    + " written off. employmentFlag is set on a paid-out loan whose borrower is no longer ACTIVE on"
+                    + " the register: RECOVER_FROM_TERMINAL_BENEFITS when they left (RESIGNED, TERMINATED; Human"
+                    + " Capital and the Payroll mailboxes were emailed), CREDIT_TO_DECIDE when they are SUSPENDED or"
+                    + " on UNPAID_LEAVE (Credit was emailed). It clears when they are ACTIVE again. flagged=true lists"
+                    + " only those.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Success",
-                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.STAFF_LOANS))),
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "All", value = StaffLoanApiExamples.STAFF_LOANS),
+                    @ExampleObject(name = "flagged=true", value = StaffLoanApiExamples.STAFF_LOANS_FLAGGED)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not a reader of staff loans",
@@ -66,10 +73,14 @@ public class StaffLoanController {
             @RequestParam(required = false) StaffLoanStatus status,
             @Parameter(description = "Only this employee's", example = "E1012")
             @RequestParam(required = false) String employeeNumber,
+            @Parameter(description = "true: only loans flagged for a borrower no longer ACTIVE; false: only those not",
+                    example = "true")
+            @RequestParam(required = false) Boolean flagged,
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100", example = "20")
             @RequestParam(required = false) Integer size) {
-        return ApiResult.ok(PageResponse.from(loanService.loans(status, employeeNumber, Paging.of(page, size))));
+        return ApiResult.ok(PageResponse.from(loanService.loans(status, employeeNumber, flagged,
+                Paging.of(page, size))));
     }
 
     @Operation(summary = "A Staff Grocery Loan",

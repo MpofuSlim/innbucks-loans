@@ -28,7 +28,8 @@ import java.util.List;
 /**
  * Staff Grocery Loans as the bank's staff see them: Credit, Finance and Human Capital read them, with the agreement
  * each was accepted under, and Credit can stop one before it is paid out. A borrower who stops being ACTIVE before
- * their loan is paid out has it cancelled at once: the register is the product's credit control (FR-SGL-007).
+ * their loan is paid out has it cancelled at once: the register is the product's credit control (FR-SGL-007). Once it
+ * is paid out it is flagged instead, and the people who must act are told (BRD 3.8).
  */
 @Slf4j
 @Service
@@ -36,6 +37,12 @@ import java.util.List;
 public class StaffLoanService {
 
     static final String CANCELLED = "STAFF_LOAN_CANCELLED";
+    static final String EMPLOYMENT_FLAGGED = "STAFF_LOAN_EMPLOYMENT_FLAGGED";
+    static final String EMPLOYMENT_FLAG_CLEARED = "STAFF_LOAN_EMPLOYMENT_FLAG_CLEARED";
+
+    /** Paid out and not settled: what a borrower who stops being ACTIVE still owes. */
+    private static final List<StaffLoanStatus> PAID_OUT = List.of(StaffLoanStatus.DISBURSED,
+            StaffLoanStatus.WRITTEN_OFF);
 
     private final StaffLoanRepository loanRepository;
     private final StaffLoanAgreementRepository agreementRepository;
@@ -43,14 +50,23 @@ public class StaffLoanService {
     private final AuthService authService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
+    private final StaffLoanEmploymentFlagNotifier flagNotifier;
 
-    /** Loans, newest first, optionally of one status and one employee number. */
+    /**
+     * Loans, newest first, optionally of one status, one employee number, and only those flagged (true) or not (false)
+     * for a borrower no longer ACTIVE.
+     */
     @Transactional(readOnly = true)
-    public Page<StaffLoanResponse> loans(StaffLoanStatus status, String employeeNumber, Pageable pageable) {
+    public Page<StaffLoanResponse> loans(StaffLoanStatus status, String employeeNumber, Boolean flagged,
+                                         Pageable pageable) {
         Specification<StaffLoan> filter = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (flagged != null) {
+                predicates.add(flagged ? cb.isNotNull(root.get("employmentFlag"))
+                        : cb.isNull(root.get("employmentFlag")));
             }
             if (StringUtils.isNotBlank(employeeNumber)) {
                 predicates.add(cb.equal(cb.upper(root.get("employeeNumber")), employeeNumber.strip().toUpperCase()));
@@ -98,19 +114,48 @@ public class StaffLoanService {
 
     /**
      * A borrower who is no longer ACTIVE is not paid out (FR-SGL-005, FR-SGL-007): their loan awaiting disbursement is
-     * cancelled in the register approval's own transaction. A loan already paid out is left to the exit process.
+     * cancelled in the register approval's own transaction. A loan already paid out is flagged with the status they
+     * moved to, and the flag cleared when they are ACTIVE again (BRD 3.8); each change is audited and, once the
+     * approval commits, emailed to whoever it concerns.
      */
     @EventListener
     public void onEmploymentStatusChanged(StaffEmploymentStatusChanged change) {
-        if (change.to() == StaffEmploymentStatus.ACTIVE) {
+        if (change.to() != StaffEmploymentStatus.ACTIVE) {
+            loanRepository.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(change.staffMemberId(),
+                            List.of(StaffLoanStatus.AWAITING_DISBURSEMENT))
+                    .flatMap(loan -> loanRepository.lockById(loan.getId()))
+                    .filter(loan -> loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT)
+                    .ifPresent(loan -> cancel(loan, change.approvedBy(), "Employment status changed to "
+                            + change.to() + " before the loan was paid out (register batch " + change.batchId() + ")",
+                            "system"));
+        }
+        for (StaffLoan found : loanRepository.findByStaffMemberIdInAndStatusIn(List.of(change.staffMemberId()),
+                PAID_OUT)) {
+            loanRepository.lockById(found.getId())
+                    .filter(loan -> PAID_OUT.contains(loan.getStatus()))
+                    .ifPresent(loan -> flagEmployment(loan, change));
+        }
+    }
+
+    private void flagEmployment(StaffLoan loan, StaffEmploymentStatusChanged change) {
+        StaffEmploymentStatus from = loan.getEmploymentFlag();
+        StaffEmploymentStatus to = change.to() == StaffEmploymentStatus.ACTIVE ? null : change.to();
+        if (from == to) {
             return;
         }
-        loanRepository.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(change.staffMemberId(),
-                        List.of(StaffLoanStatus.AWAITING_DISBURSEMENT))
-                .flatMap(loan -> loanRepository.lockById(loan.getId()))
-                .filter(loan -> loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT)
-                .ifPresent(loan -> cancel(loan, change.approvedBy(), "Employment status changed to " + change.to()
-                        + " before the loan was paid out (register batch " + change.batchId() + ")", "system"));
+        loan.flagEmployment(change.to(), marketTimeZone.nowUtc(), change.batchId());
+        loanRepository.save(loan);
+        auditService.record(AuditLog.builder()
+                .eventType(to == null ? EMPLOYMENT_FLAG_CLEARED : EMPLOYMENT_FLAGGED)
+                .entityType("STAFF_LOAN").entityId(String.valueOf(loan.getId()))
+                .actorId(change.approvedBy()).channelUsed("system")
+                .detail("reference:" + loan.getReference() + ";from:" + (from == null ? "ACTIVE" : from) + ";to:"
+                        + change.to() + ";action:" + (to == null ? "none" : EmploymentFlagAction.of(to))
+                        + ";batch:" + change.batchId()));
+        log.info("Staff loan {} of {}: borrower {} (was {}), register batch {}", loan.getReference(),
+                loan.getEmployeeNumber(), change.to(), from == null ? "ACTIVE" : from, change.batchId());
+        flagNotifier.notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change(loan.getReference(),
+                loan.getEmployeeNumber(), loan.outstanding(), loan.getCurrency(), loan.getDueDate(), from, to));
     }
 
     private void cancel(StaffLoan loan, String by, String reason, String channel) {

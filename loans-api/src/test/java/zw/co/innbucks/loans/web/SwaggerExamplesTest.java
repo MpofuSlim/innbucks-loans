@@ -318,6 +318,41 @@ class SwaggerExamplesTest {
     }
 
     @Test
+    void theFlaggedLoanIsTheOneVoucherEightWasIssuedFor() {
+        // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151, paid out as voucher 8, then resigned: the flagged
+        // loan in the portal must be that loan, with that offer, that payout and that voucher's value.
+        JsonNode loan = JSON.readTree(StaffLoanApiExamples.STAFF_LOANS_FLAGGED).path("data").path("items").get(0);
+        JsonNode voucher = null;
+        for (JsonNode item : JSON.readTree(VoucherApiExamples.VOUCHERS).path("data").path("items")) {
+            if (item.path("id").asLong() == 8) {
+                voucher = item;
+            }
+        }
+        assertThat(voucher).isNotNull();
+        assertThat(loan.path("reference").asString()).isEqualTo(voucher.path("loanAccount").asString());
+        assertThat(loan.path("disbursementReference").asString())
+                .isEqualTo(voucher.path("disbursementReference").asString());
+        assertThat(loan.path("amount").decimalValue()).isEqualByComparingTo(voucher.path("faceValue").decimalValue());
+        assertThat(loan.path("employeeNumber").asString()).isEqualTo(voucher.path("customerReference").asString());
+        assertThat(loan.path("fullName").asString()).isEqualTo(voucher.path("customerName").asString());
+        assertThat(loan.path("msisdn").asString()).isEqualTo(voucher.path("customerMsisdn").asString());
+        assertThat(OffsetDateTime.parse(loan.path("disbursedAt").asString()))
+                .isBefore(OffsetDateTime.parse(voucher.path("issuedAt").asString()));
+
+        JsonNode offer = null;
+        for (JsonNode item : JSON.readTree(ApiExamples.STAFF_OFFERS).path("data").path("items")) {
+            if (item.path("employeeNumber").asString().equals(loan.path("employeeNumber").asString())) {
+                offer = item;
+            }
+        }
+        assertThat(offer).isNotNull();
+        assertThat(offer.path("id").asLong()).isEqualTo(loan.path("offerId").asLong());
+        assertThat(OffsetDateTime.parse(loan.path("acceptedAt").asString()))
+                .isBefore(OffsetDateTime.parse(offer.path("expiresAt").asString()));
+        assertThat(loan.path("employmentFlag").path("action").asString()).isEqualTo("RECOVER_FROM_TERMINAL_BENEFITS");
+    }
+
+    @Test
     void theStaffGroceryLoanExamplesTellOneStory() {
         // Chipo Banda (E1012) takes offer 2 up as SGL-2026-000143 and it becomes voucher 7: whichever screen a reader
         // starts from, the offer, the loan, the phone and the dates must be the same ones.
