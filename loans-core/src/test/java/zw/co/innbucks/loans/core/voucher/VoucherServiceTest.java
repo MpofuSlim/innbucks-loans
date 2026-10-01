@@ -214,4 +214,30 @@ class VoucherServiceTest {
         assertThatThrownBy(() -> service.resend(7L)).hasMessage("Voucher 7 is REDEEMED: there is nothing left to"
                 + " spend, so it is not sent");
     }
+
+    @Test
+    @DisplayName("the borrower sees their voucher with its code while it can be spent, and without it after")
+    void forBorrower() {
+        service = withClock(TestVouchers.ISSUED_AT.plusDays(2));
+        Voucher issued = TestVouchers.issued(vault).build();
+        when(vouchers.findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(12L, "SGL-2026-000143"))
+                .thenReturn(Optional.of(issued));
+
+        BorrowerVoucherResponse shown = service.forBorrower(12L, "SGL-2026-000143").orElseThrow();
+
+        assertThat(shown.status()).isEqualTo(VoucherStatus.ISSUED);
+        assertThat(shown.code()).isEqualTo("4829 1506 7331 8406");
+        assertThat(shown.scanValue()).isEqualTo(TestVouchers.CODE);
+        assertThat(shown.maskedCode()).isEqualTo("**** **** **** 8406");
+        assertThat(shown.balance()).isEqualByComparingTo(shown.faceValue());
+        assertThat(shown.toString()).doesNotContain(TestVouchers.CODE).doesNotContain("4829 1506");
+        verifyNoInteractions(audit);
+
+        service = withClock(TestVouchers.EXPIRES_AT.plusSeconds(1));
+        BorrowerVoucherResponse lapsed = service.forBorrower(12L, "SGL-2026-000143").orElseThrow();
+        assertThat(lapsed.status()).isEqualTo(VoucherStatus.EXPIRED);
+        assertThat(lapsed.code()).isNull();
+        assertThat(lapsed.scanValue()).isNull();
+        assertThat(service.forBorrower(13L, "SGL-2026-000143")).isEmpty();
+    }
 }

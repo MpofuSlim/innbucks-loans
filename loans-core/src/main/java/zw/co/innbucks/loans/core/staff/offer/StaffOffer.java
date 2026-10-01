@@ -21,9 +21,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * A pre-approved Staff Grocery Loan offer to one member of the staff register (FR-SGL-016), issued by a weekly run at
- * their grade's limit and open until it expires (FR-SGL-018). What it was based on is kept as it stood when issued, so a
- * later grade or matrix change does not alter an offer already made.
+ * A pre-approved Staff Grocery Loan offer to one member of the staff register (FR-SGL-016), issued by a weekly run, or
+ * on demand when the borrower applies (FR-SGL-025), at their grade's limit and open until it expires (FR-SGL-018).
+ * What it was based on is kept as it stood when issued, so a later grade or matrix change does not alter an offer
+ * already made.
  */
 @Entity
 @Table(name = "staff_offers")
@@ -42,11 +43,16 @@ public class StaffOffer {
     @Column(name = "staff_member_id", nullable = false)
     private Long staffMemberId;
 
-    /** The run attempt that issued it. */
-    @Column(name = "run_id", nullable = false)
+    /** The run attempt that issued it; none for an offer made on demand. */
+    @Column(name = "run_id")
     private Long runId;
 
-    /** The Monday of the market week its run belongs to; one offer per member per cycle. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origin", length = 16, nullable = false)
+    @Builder.Default
+    private StaffOfferOrigin origin = StaffOfferOrigin.RUN;
+
+    /** The Monday of the market week it was made in; one RUN offer per member per cycle. */
     @Column(name = "cycle_start", nullable = false)
     private LocalDate cycleStart;
 
@@ -96,5 +102,25 @@ public class StaffOffer {
         this.status = status;
         this.closedAt = at;
         this.closedReason = reason;
+    }
+
+    /**
+     * Whether it can be taken up at {@code now}: ACTIVE and not past its expiry, which the weekly run may not yet have
+     * closed.
+     */
+    public boolean isOpenAt(LocalDateTime now) {
+        return status == StaffOfferStatus.ACTIVE && expiresAt.isAfter(now);
+    }
+
+    /**
+     * Records that the offer became the loan {@code loanReference} at {@code at}.
+     *
+     * @throws IllegalStateException it was not open then: the caller checks {@link #isOpenAt} first
+     */
+    public void takeUp(LocalDateTime at, String loanReference) {
+        if (!isOpenAt(at)) {
+            throw new IllegalStateException("Offer " + id + " is " + status + " and cannot be taken up");
+        }
+        close(StaffOfferStatus.TAKEN_UP, at, "Taken up as " + loanReference);
     }
 }

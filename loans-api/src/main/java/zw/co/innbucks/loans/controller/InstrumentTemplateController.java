@@ -17,15 +17,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateResponse;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
-import zw.co.innbucks.loans.core.instrument.InstrumentTerms;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.PublishInstrumentTemplateRequest;
 import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
+import zw.co.innbucks.loans.web.StaffLoanApiExamples;
 
 import java.util.List;
 import java.util.Map;
@@ -37,7 +38,9 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
         + " the next version and is in force from then on. Once an instrument has a published version, every"
         + " application signs its version in force; until then applications are taken without it. The wording takes"
         + " {{placeholders}} for the loan's terms, filled when the applicant signs. instrumentType is LOAN_AGREEMENT or"
-        + " SSB_DEDUCTION_AUTHORITY.")
+        + " SSB_DEDUCTION_AUTHORITY for an SSB application, or STAFF_GROCERY_LOAN_AGREEMENT, accepted with a Staff"
+        + " Grocery Loan in the SuperApp and never with an SSB application; until it is published no staff loan can"
+        + " be accepted.")
 @RestController
 @RequestMapping(ApiPaths.BASE + "/instrument-templates")
 @RequiredArgsConstructor
@@ -108,17 +111,23 @@ public class InstrumentTemplateController {
     }
 
     @Operation(summary = "List the placeholders",
-            description = "Every {{placeholder}} the wording may use, with what it is filled with when the applicant"
-                    + " signs. Amounts are written with two decimals and no currency, which the wording supplies.")
+            description = "Every {{placeholder}} an instrument's wording may use, with what it is filled with when the"
+                    + " borrower signs. Each instrument has its own set: instrumentType names it, and left out it is"
+                    + " the SSB application's (LOAN_AGREEMENT and SSB_DEDUCTION_AUTHORITY share one). Amounts are"
+                    + " written with two decimals and no currency, which the wording supplies.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Success",
-                    content = @Content(examples = @ExampleObject(ApiExamples.INSTRUMENT_PLACEHOLDERS))),
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "An SSB application's (the default)",
+                            value = ApiExamples.INSTRUMENT_PLACEHOLDERS),
+                    @ExampleObject(name = "STAFF_GROCERY_LOAN_AGREEMENT",
+                            value = StaffLoanApiExamples.AGREEMENT_PLACEHOLDERS)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED)))
     })
     @GetMapping("/placeholders")
-    public ApiResult<Map<String, String>> placeholders() {
-        return ApiResult.ok(InstrumentTerms.placeholders());
+    public ApiResult<Map<String, String>> placeholders(
+            @RequestParam(required = false) InstrumentType instrumentType) {
+        return ApiResult.ok((instrumentType == null ? InstrumentType.LOAN_AGREEMENT : instrumentType).placeholders());
     }
 
     @Operation(summary = "List an instrument's versions",

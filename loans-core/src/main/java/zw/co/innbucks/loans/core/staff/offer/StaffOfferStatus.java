@@ -9,5 +9,7 @@ public enum StaffOfferStatus {
     /** Replaced by a later run's offer while it was still open. */
     SUPERSEDED,
     /** Taken back because its holder is no longer eligible or is excluded; the reason is kept. */
-    WITHDRAWN
+    WITHDRAWN,
+    /** Accepted in the SuperApp: it became a Staff Grocery Loan, named in the reason (FR-SGL-027). */
+    TAKEN_UP
 }

@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -200,6 +201,28 @@ public class VoucherService {
                 .detail("reason:" + reason.strip() + ";status:" + voucher.statusAt(marketTimeZone.nowUtc())));
         log.info("Voucher {} ({}) shown in full to {}", id, voucher.maskedCode(), username);
         return VoucherCodeResponse.of(id, code);
+    }
+
+    /**
+     * The voucher {@code loanAccount} was paid as, for the borrower it was issued to (FR-SGL-030, FR-SGL-037): its
+     * status and balance, and the code itself while it can still be spent, so the SuperApp can show it and its QR
+     * code whether or not the SMS arrived. Not audited like a {@link #reveal}: the holder reading their own voucher.
+     * Empty when no voucher was issued to them for that loan.
+     */
+    @Transactional(readOnly = true)
+    public Optional<BorrowerVoucherResponse> forBorrower(Long staffMemberId, String loanAccount) {
+        LocalDateTime now = marketTimeZone.nowUtc();
+        return voucherRepository.findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(staffMemberId, loanAccount)
+                .map(voucher -> {
+                    VoucherStatus status = voucher.statusAt(now);
+                    boolean spendable = (status == VoucherStatus.ISSUED || status == VoucherStatus.PARTIALLY_REDEEMED)
+                            && vault.isConfigured();
+                    String code = spendable ? vault.decrypt(voucher.getCodeCiphertext()) : null;
+                    return new BorrowerVoucherResponse(status, voucher.getFaceValue(), voucher.balance(),
+                            voucher.getCurrency(), voucher.getExpiresAt(), voucher.maskedCode(),
+                            code == null ? null : VoucherCodes.display(code),
+                            code == null ? null : VoucherCodes.scanValue(code));
+                });
     }
 
     /**
