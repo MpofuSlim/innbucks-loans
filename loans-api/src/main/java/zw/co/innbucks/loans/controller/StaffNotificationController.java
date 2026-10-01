@@ -50,12 +50,12 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff notifications", description = "What staff are told about the Staff Grocery Loan (FR-SGL-019 to"
         + " FR-SGL-024). Every member a weekly run makes an offer to, new or refreshed, gets a notification: kept here as"
-        + " their in-app inbox until the SuperApp reads it, and sent to their phone by SMS through the InnBucks"
-        + " notification API, by WhatsApp when the SMS fails. The product launch is announced once to the whole"
-        + " register. A member can opt out of the phone messages and still see and take up offers in-app, and a member"
-        + " who keeps ignoring offers is messaged less often. Every attempt on every channel is logged. A notification"
-        + " is created at most once per offer and once per member per broadcast, so running again never tells anyone"
-        + " twice.")
+        + " their in-app inbox (the SuperApp reads it at GET /borrower/notifications), and sent to their phone by SMS"
+        + " through the InnBucks notification API, by WhatsApp when the SMS fails. The product launch is announced once"
+        + " to the whole register. A member can opt out of the phone messages and still see and take up offers in-app,"
+        + " and a member who keeps ignoring offers is messaged less often. Every attempt on every channel is logged. A"
+        + " notification is created at most once per offer and once per member per broadcast, so running again never"
+        + " tells anyone twice.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -322,8 +322,9 @@ public class StaffNotificationController {
     }
 
     @Operation(summary = "Opt a member out of offer messages, or back in",
-            description = "HUMAN_CAPITAL, CREDIT_MANAGER or SUPER_ADMIN, on the member's request (FR-SGL-022), until"
-                    + " the SuperApp lets members do it themselves. Opted out, they are sent no SMS or WhatsApp about"
+            description = "HUMAN_CAPITAL, CREDIT_MANAGER or SUPER_ADMIN, on the member's request (FR-SGL-022) when"
+                    + " they ask by phone or at the desk; in the SuperApp they choose it themselves (PUT"
+                    + " /borrower/offer-messages). Opted out, they are sent no SMS or WhatsApp about"
                     + " offers or the launch, including messages already queued; offers are still made and still"
                     + " appear in-app, so they can still apply. A reason is required. Audited.")
     @ApiResponses({
