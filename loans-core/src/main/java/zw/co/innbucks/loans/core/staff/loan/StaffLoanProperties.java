@@ -2,6 +2,7 @@ package zw.co.innbucks.loans.core.staff.loan;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -13,6 +14,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The Staff Grocery Loan's terms as a borrower takes it up in the SuperApp. The partial draw (FR-SGL-012, OQ-03), the
@@ -66,6 +69,14 @@ public class StaffLoanProperties {
     /** OQ-09, until Finance and Legal decide. */
     @NotNull
     private UnredeemedVoucherTreatment unredeemedVoucherTreatment = UnredeemedVoucherTreatment.DEBT_STANDS;
+
+    /**
+     * Payroll's mailboxes (FR-SGL-007, BRD 3.8): told, with Human Capital, when a borrower leaves owing a paid-out loan,
+     * so it is recovered from their terminal benefits. Empty, Human Capital alone is told, and the boot log says so.
+     */
+    @NotNull
+    private List<@Email(message = "loans.staff-loans.payroll-emails must be email addresses") String> payrollEmails =
+            new ArrayList<>();
 
     @AssertTrue(message = "loans.staff-loans.minimum-draw must be a multiple of loans.staff-loans.draw-increment")
     public boolean isMinimumDrawAStep() {

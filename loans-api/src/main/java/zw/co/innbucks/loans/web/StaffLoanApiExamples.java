@@ -321,8 +321,61 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
-                  "cancellationReason": null
+                  "cancellationReason": null,
+                  "employmentFlag": null
                 }""";
+
+    // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151 on 8 October; it was paid out and voucher 8 issued
+    // (the voucher examples). Human Capital's register batch 21 moved her to RESIGNED on 28 October, so the loan is
+    // flagged for recovery from her terminal benefits.
+    private static final String STAFF_LOAN_151_FLAGGED = """
+            {
+                  "id": 151,
+                  "reference": "SGL-2026-000151",
+                  "offerId": 1,
+                  "staffMemberId": 1,
+                  "employeeNumber": "E1001",
+                  "fullName": "Nyasha Dube",
+                  "msisdn": "****6983",
+                  "grade": "C4",
+                  "amount": 250.00,
+                  "currency": "USD",
+                  "interestRate": 0.0000,
+                  "totalRepayable": 250.00,
+                  "dueDate": "2026-11-20",
+                  "unredeemedVoucherTreatment": "DEBT_STANDS",
+                  "status": "DISBURSED",
+                  "inArrears": false,
+                  "acceptedAt": "2026-10-08T07:58:30+02:00",
+                  "disbursedAt": "2026-10-08T08:05:38+02:00",
+                  "disbursementReference": "BRNET-20261008-0002",
+                  "settledAt": null,
+                  "cancelledAt": null,
+                  "cancelledBy": null,
+                  "cancellationReason": null,
+                  "employmentFlag": {
+                    "employmentStatus": "RESIGNED",
+                    "action": "RECOVER_FROM_TERMINAL_BENEFITS",
+                    "flaggedAt": "2026-10-28T10:14:03+02:00",
+                    "registerBatchId": 21
+                  }
+                }""";
+
+    public static final String STAFF_LOANS_FLAGGED = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  """ + STAFF_LOAN_151_FLAGGED + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
 
     public static final String STAFF_LOANS = """
             {
@@ -388,7 +441,8 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": "2026-10-06T11:02:17+02:00",
                   "cancelledBy": "cmanager",
-                  "cancellationReason": "Accepted in error: the borrower asked to cancel before payout"
+                  "cancellationReason": "Accepted in error: the borrower asked to cancel before payout",
+                  "employmentFlag": null
                 }
             }""";
 

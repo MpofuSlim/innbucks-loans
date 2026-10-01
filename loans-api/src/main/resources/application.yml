@@ -189,6 +189,9 @@ loans:
     currency: "${STAFF_LOANS_CURRENCY:USD}"
     merchant-name: "${STAFF_LOANS_MERCHANT_NAME:GetMore Groceries}"
     unredeemed-voucher-treatment: "${STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT:DEBT_STANDS}"
+    # Payroll's mailboxes, comma-separated: told, with Human Capital, when a borrower leaves owing a paid-out loan, so it
+    # is recovered from their terminal benefits (FR-SGL-007, BRD 3.8). Blank: Human Capital alone is told.
+    payroll-emails: "${STAFF_LOANS_PAYROLL_EMAILS:}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
   # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
   # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a

@@ -52,6 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -108,7 +109,7 @@ class StaffLoanWebContractTest {
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(900))
                 .build();
         when(jwtDecoder.decode("borrower-token")).thenReturn(borrower);
-        for (String role : List.of("CREDIT_MANAGER", "HUMAN_CAPITAL", "AGENTS")) {
+        for (String role : List.of("CREDIT_MANAGER", "HUMAN_CAPITAL", "FINANCE", "AGENTS")) {
             when(jwtDecoder.decode(role + "-token")).thenReturn(Jwt.withTokenValue(role + "-token")
                     .header("alg", "HS256").subject(role).claim("preferred_username", role.toLowerCase())
                     .claim("realm_access", Map.of("roles", List.of(role)))
@@ -244,10 +245,15 @@ class StaffLoanWebContractTest {
         mvc.perform(as("borrower", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
         mvc.perform(as("AGENTS", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
 
-        when(loanService.loans(any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+        when(loanService.loans(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
         mvc.perform(as("HUMAN_CAPITAL", get("/lending/v1/staff-loans").param("status", "AWAITING_DISBURSEMENT")))
                 .andExpect(status().isOk());
-        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), any());
+        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), isNull(), any());
+        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "true")))
+                .andExpect(status().isOk());
+        verify(loanService).loans(isNull(), isNull(), eq(true), any());
+        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "maybe")))
+                .andExpect(status().isBadRequest());
         mvc.perform(as("HUMAN_CAPITAL", post("/lending/v1/staff-loans/143/cancel"))
                         .contentType(MediaType.APPLICATION_JSON).content(StaffLoanApiExamples.CANCEL_REQUEST))
                 .andExpect(status().isForbidden());

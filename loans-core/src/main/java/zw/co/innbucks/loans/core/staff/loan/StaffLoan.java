@@ -14,6 +14,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGrades;
 
 import java.math.BigDecimal;
@@ -108,6 +109,20 @@ public class StaffLoan {
     @Column(name = "cancellation_reason", length = 500)
     private String cancellationReason;
 
+    /**
+     * Once paid out, the status the borrower moved to when they stopped being ACTIVE on the register (FR-SGL-007, BRD
+     * 3.8); null while they are ACTIVE. With when, and the register batch that moved them.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "employment_flag", length = 16)
+    private StaffEmploymentStatus employmentFlag;
+
+    @Column(name = "employment_flagged_at")
+    private LocalDateTime employmentFlaggedAt;
+
+    @Column(name = "employment_flag_batch_id")
+    private Long employmentFlagBatchId;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -135,5 +150,13 @@ public class StaffLoan {
         this.cancelledAt = at;
         this.cancelledBy = by;
         this.cancellationReason = reason;
+    }
+
+    /** Records that its borrower is now {@code to}: flagged when not ACTIVE, the flag cleared when ACTIVE again. */
+    void flagEmployment(StaffEmploymentStatus to, LocalDateTime at, Long batchId) {
+        boolean cleared = to == StaffEmploymentStatus.ACTIVE;
+        this.employmentFlag = cleared ? null : to;
+        this.employmentFlaggedAt = cleared ? null : at;
+        this.employmentFlagBatchId = cleared ? null : batchId;
     }
 }

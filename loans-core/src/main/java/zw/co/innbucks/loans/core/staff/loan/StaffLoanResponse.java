@@ -6,14 +6,18 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** A Staff Grocery Loan as Credit, Finance and Human Capital see it. The borrower's number is masked. */
+/**
+ * A Staff Grocery Loan as Credit, Finance and Human Capital see it. The borrower's number is masked.
+ * {@code employmentFlag} is set on a paid-out loan whose borrower is no longer ACTIVE on the register.
+ */
 public record StaffLoanResponse(Long id, String reference, Long offerId, Long staffMemberId, String employeeNumber,
                                 String fullName, String msisdn, String grade, BigDecimal amount, String currency,
                                 BigDecimal interestRate, BigDecimal totalRepayable, LocalDate dueDate,
                                 UnredeemedVoucherTreatment unredeemedVoucherTreatment, StaffLoanStatus status,
                                 boolean inArrears, LocalDateTime acceptedAt, LocalDateTime disbursedAt,
                                 String disbursementReference, LocalDateTime settledAt, LocalDateTime cancelledAt,
-                                String cancelledBy, String cancellationReason) {
+                                String cancelledBy, String cancellationReason,
+                                StaffLoanEmploymentFlag employmentFlag) {
 
     static StaffLoanResponse of(StaffLoan loan, LocalDate today, int graceDays) {
         return new StaffLoanResponse(loan.getId(), loan.getReference(), loan.getOfferId(), loan.getStaffMemberId(),
@@ -22,6 +26,6 @@ public record StaffLoanResponse(Long id, String reference, Long offerId, Long st
                 loan.getDueDate(), loan.getUnredeemedVoucherTreatment(), loan.getStatus(),
                 loan.inArrearsOn(today, graceDays), loan.getAcceptedAt(), loan.getDisbursedAt(),
                 loan.getDisbursementReference(), loan.getSettledAt(), loan.getCancelledAt(), loan.getCancelledBy(),
-                loan.getCancellationReason());
+                loan.getCancellationReason(), StaffLoanEmploymentFlag.of(loan));
     }
 }

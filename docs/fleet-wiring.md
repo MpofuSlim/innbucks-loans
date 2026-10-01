@@ -468,6 +468,19 @@ default:
 | `STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT` | `DEBT_STANDS` | Or `REDUCED_TO_AMOUNT_SPENT` (OQ-09). Shown to the borrower and kept on each loan. |
 | `STAFF_LOANS_CURRENCY` | `USD` | |
 | `STAFF_LOANS_MERCHANT_NAME` | `GetMore Groceries` | |
+| `STAFF_LOANS_PAYROLL_EMAILS` | blank | Payroll's mailboxes, comma-separated: emailed with Human Capital when a borrower leaves owing a paid-out loan. Blank: Human Capital alone, and the boot log warns. |
+
+When Human Capital moves a borrower off ACTIVE, a loan still awaiting payout is
+cancelled. A paid-out loan (DISBURSED or WRITTEN_OFF) is flagged instead
+(`employmentFlag` on `GET /lending/v1/staff-loans`, `?flagged=true` lists them)
+and, once the register approval commits, the people who must act are emailed:
+Human Capital and the Payroll mailboxes for RESIGNED or TERMINATED (recover it
+from terminal benefits), CREDIT_MANAGER users for SUSPENDED or UNPAID_LEAVE
+(Credit decides the due date). The flag moves with each later change and clears
+when they are ACTIVE again, and whoever was told about it hears that too. The
+emails go through the InnBucks notification API (`INNBUCKS_NOTIFY_*`) to the
+email addresses on the portal users, so each Human Capital and Credit user needs
+one.
 
 Arrears and active loans come from loans' own records for now. Other InnBucks
 facilities, and the balance once disbursed, are the core banking system's to
