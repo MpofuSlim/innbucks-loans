@@ -80,6 +80,71 @@ public final class StaffLoanApiExamples {
                   }
                 }""";
 
+    // As it stands on 9 December: SGL-2026-000143 was collected from Chipo's salary on 20 November, with voucher 7
+    // lapsed on 5 November at USD 120.00 unspent (owed all the same: DEBT_STANDS); on 7 December she took a new
+    // offer up as SGL-2026-000212, awaiting payout.
+    public static final String LOAN_HISTORY = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "reference": "SGL-2026-000212",
+                    "status": "AWAITING_DISBURSEMENT",
+                    "statusMessage": "Your loan is approved. Your voucher will be sent to you once the loan is paid out to GetMore Groceries.",
+                    "amount": 200.00,
+                    "currency": "USD",
+                    "totalRepayable": 200.00,
+                    "outstandingBalance": 200.00,
+                    "repaymentDate": "2027-01-20",
+                    "merchantName": "GetMore Groceries",
+                    "acceptedAt": "2026-12-07T10:31:16+02:00",
+                    "voucher": null
+                  },
+                  {
+                    "reference": "SGL-2026-000143",
+                    "status": "REPAID",
+                    "statusMessage": "Repaid in full. Thank you.",
+                    "amount": 300.00,
+                    "currency": "USD",
+                    "totalRepayable": 300.00,
+                    "outstandingBalance": 0.00,
+                    "repaymentDate": "2026-11-20",
+                    "merchantName": "GetMore Groceries",
+                    "acceptedAt": "2026-10-06T09:10:41+02:00",
+                    "voucher": {
+                      "status": "EXPIRED",
+                      "faceValue": 300.00,
+                      "balance": 120.00,
+                      "currency": "USD",
+                      "expiresAt": "2026-11-05T23:59:59+02:00",
+                      "maskedCode": "**** **** **** 8406",
+                      "code": null,
+                      "scanValue": null
+                    }
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String LOAN_HISTORY_NONE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [],
+                "page": 0,
+                "size": 20,
+                "totalItems": 0,
+                "totalPages": 0
+              }
+            }""";
+
     public static final String HOME_OFFER = """
             {
               "code": "OK",

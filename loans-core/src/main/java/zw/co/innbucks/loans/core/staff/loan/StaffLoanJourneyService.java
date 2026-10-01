@@ -2,6 +2,10 @@ package zw.co.innbucks.loans.core.staff.loan;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import zw.co.innbucks.loans.core.audit.AuditLog;
@@ -39,7 +43,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -66,6 +72,9 @@ public class StaffLoanJourneyService {
     static final String DEVICE_HEADER = "X-Device-Id";
     /** Visible ASCII, as the signed instruments take it: an app's installation id, a hardware id. */
     private static final Pattern DEVICE_ID = Pattern.compile("[\\x21-\\x7E]{1,128}");
+    /** Paid out, so with a voucher: only these are looked up. */
+    private static final Set<StaffLoanStatus> PAID_OUT = EnumSet.of(StaffLoanStatus.DISBURSED, StaffLoanStatus.REPAID,
+            StaffLoanStatus.WRITTEN_OFF);
     private static final char SEPARATOR = '\u001F';
     /** The acceptance time as the seal writes it: UTC, always six decimals, as the column holds it. */
     private static final DateTimeFormatter SEALED_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS");
@@ -106,6 +115,19 @@ public class StaffLoanJourneyService {
         }
         return assessment.unavailable() == null ? StaffLoanHome.mayApply()
                 : StaffLoanHome.unavailable(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
+    }
+
+    /**
+     * Their Staff Grocery Loans, newest first, whatever became of them (FR-SGL-030): the one the tile shows and every
+     * one before it, each as the tile shows a loan.
+     *
+     * @throws NotOnStaffRegisterException they are no longer on the register
+     */
+    @Transactional(readOnly = true)
+    public Page<StaffLoanView> loans(Long staffMemberId, Pageable pageable) {
+        StaffMember member = member(staffMemberId);
+        return loanRepository.findByStaffMemberId(member.getId(), PageRequest.of(pageable.getPageNumber(),
+                pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"))).map(this::view);
     }
 
     /**
@@ -320,8 +342,9 @@ public class StaffLoanJourneyService {
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
                 StaffLoanView.message(loan.getStatus(), policy.merchantName()), loan.getAmount(), loan.getCurrency(),
                 loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), policy.merchantName(),
-                loan.getAcceptedAt(), loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT ? null
-                        : voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null));
+                loan.getAcceptedAt(), PAID_OUT.contains(loan.getStatus())
+                        ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
+                        : null);
     }
 
     private static String collection(StaffLoanTerms.Signing terms) {

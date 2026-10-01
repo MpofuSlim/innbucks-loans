@@ -5,6 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.borrower.AssertionRejectedException;
@@ -13,6 +17,7 @@ import zw.co.innbucks.loans.core.borrower.BorrowerAssertionUse;
 import zw.co.innbucks.loans.core.borrower.BorrowerProperties;
 import zw.co.innbucks.loans.core.borrower.BorrowerSignInUnavailableException;
 import zw.co.innbucks.loans.core.borrower.MiddlewareAssertionVerifier;
+import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.borrower.TestAssertionSigner;
 import zw.co.innbucks.loans.core.borrower.VerifiedAssertion;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -58,6 +63,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -184,6 +190,45 @@ class StaffLoanJourneyServiceTest {
         when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
                 .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
         assertThat(journey.home(2L).loan().voucher()).isEqualTo(voucher);
+    }
+
+    // --- Their loans ---
+
+    @Test
+    @DisplayName("their loans: every one, newest first, as the tile shows a loan; vouchers looked up once paid out")
+    void history() {
+        StaffLoan repaid = loan(StaffLoanStatus.REPAID);
+        StaffLoan cancelled = loan(StaffLoanStatus.CANCELLED);
+        when(loans.findByStaffMemberId(eq(2L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(cancelled, repaid)));
+        BorrowerVoucherResponse lapsed = new BorrowerVoucherResponse(VoucherStatus.EXPIRED, new BigDecimal("300.00"),
+                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null);
+        when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(lapsed));
+
+        List<StaffLoanView> views = journey.loans(2L, PageRequest.of(1, 5)).getContent();
+
+        ArgumentCaptor<Pageable> asked = ArgumentCaptor.forClass(Pageable.class);
+        verify(loans).findByStaffMemberId(eq(2L), asked.capture());
+        assertThat(asked.getValue().getPageNumber()).isEqualTo(1);
+        assertThat(asked.getValue().getPageSize()).isEqualTo(5);
+        assertThat(asked.getValue().getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "id"));
+        assertThat(views).extracting(StaffLoanView::status)
+                .containsExactly(StaffLoanStatus.CANCELLED, StaffLoanStatus.REPAID);
+        assertThat(views.get(0).statusMessage())
+                .isEqualTo("This loan was cancelled before it was paid out. Nothing is owed.");
+        assertThat(views.get(0).outstandingBalance()).isEqualByComparingTo("0.00");
+        assertThat(views.get(0).voucher()).isNull();
+        assertThat(views.get(1).statusMessage()).isEqualTo("Repaid in full. Thank you.");
+        assertThat(views.get(1).voucher()).isEqualTo(lapsed);
+        verify(vouchers, times(1)).forBorrower(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("their loans: someone no longer on the register is refused, never shown another's")
+    void historyOfSomeoneUnknown() {
+        assertThatThrownBy(() -> journey.loans(9L, PageRequest.of(0, 20)))
+                .isInstanceOf(NotOnStaffRegisterException.class);
+        verify(loans, never()).findByStaffMemberId(anyLong(), any());
     }
 
     // --- Apply ---

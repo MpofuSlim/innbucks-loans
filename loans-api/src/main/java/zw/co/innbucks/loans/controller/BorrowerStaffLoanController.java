@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.staff.loan.AcceptStaffLoanRequest;
@@ -33,6 +34,8 @@ import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
 import zw.co.innbucks.loans.web.BorrowerApiExamples;
+import zw.co.innbucks.loans.web.PageResponse;
+import zw.co.innbucks.loans.web.Paging;
 import zw.co.innbucks.loans.web.SigningContexts;
 import zw.co.innbucks.loans.web.StaffLoanApiExamples;
 
@@ -41,7 +44,8 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 @Tag(name = "Borrower: Staff Grocery Loan (SuperApp)", description = "The Staff Grocery Loan journey in the SuperApp"
         + " (FR-SGL-025 to FR-SGL-031), for the borrower session's own staff member: the tile (GET), \"Apply\" when"
         + " there is no offer, the disclosure and agreement for the amount chosen (quote), and accepting it with a"
-        + " fresh PIN or biometric. A loan accepted waits for disbursement through the bank's system, which pays"
+        + " fresh PIN or biometric, and every loan they have taken (GET /loans). A loan accepted waits for"
+        + " disbursement through the bank's system, which pays"
         + " GetMore Groceries and sends the voucher. When a borrower cannot borrow, the reason comes in plain words"
         + " (unavailable.message, or a 422's message): show it as it is.")
 @RestController
@@ -73,6 +77,32 @@ public class BorrowerStaffLoanController {
     @GetMapping
     public ApiResult<StaffLoanHome> home(@Parameter(hidden = true) JwtAuthenticationToken authentication) {
         return ApiResult.ok(journeyService.home(staffMemberId(authentication)));
+    }
+
+    @Operation(summary = "Their Staff Grocery Loans",
+            description = "BORROWER. Every Staff Grocery Loan the session's own staff member has taken, newest first,"
+                    + " whatever became of it (FR-SGL-030): the one the tile shows and those before it, repaid,"
+                    + " cancelled before payout or written off. Each has the tile's loan shape: statusMessage says where"
+                    + " it stands in words to show as they are, and voucher is set once it was paid out, with its code"
+                    + " only while it can still be spent. No items: they have never borrowed.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "A loan awaiting payout, and one repaid", value =
+                            StaffLoanApiExamples.LOAN_HISTORY),
+                    @ExampleObject(name = "Never borrowed", value = StaffLoanApiExamples.LOAN_HISTORY_NONE)})),
+            @ApiResponse(responseCode = "401", description = "No valid borrower session",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not a borrower session",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
+    })
+    @GetMapping("/loans")
+    public ApiResult<PageResponse<StaffLoanView>> loans(
+            @Parameter(hidden = true) JwtAuthenticationToken authentication,
+            @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
+            @Parameter(description = "Page size, 1 to 100", example = "20")
+            @RequestParam(required = false) Integer size) {
+        return ApiResult.ok(PageResponse.from(journeyService.loans(staffMemberId(authentication),
+                Paging.of(page, size))));
     }
 
     @Operation(summary = "Apply",

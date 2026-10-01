@@ -140,6 +140,28 @@ class StaffLoanWebContractTest {
     }
 
     @Test
+    @DisplayName("their loans are the session's own staff member's, paged; staff and anonymous callers are refused")
+    void history() throws Exception {
+        StaffLoanView repaid = new StaffLoanView("SGL-2026-000143", StaffLoanStatus.REPAID, "Repaid in full. Thank you.",
+                new BigDecimal("300.00"), "USD", new BigDecimal("300.00"), new BigDecimal("0.00"),
+                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null);
+        when(journeyService.loans(eq(2L), any())).thenReturn(new PageImpl<>(List.of(repaid),
+                org.springframework.data.domain.PageRequest.of(1, 5), 6));
+
+        mvc.perform(as("borrower", get(JOURNEY + "/loans").param("page", "1").param("size", "5")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].reference").value("SGL-2026-000143"))
+                .andExpect(jsonPath("$.data.items[0].status").value("REPAID"))
+                .andExpect(jsonPath("$.data.items[0].outstandingBalance").value(0.00))
+                .andExpect(jsonPath("$.data.totalItems").value(6))
+                .andExpect(jsonPath("$.data.page").value(1));
+        verify(journeyService).loans(eq(2L), org.mockito.ArgumentMatchers.argThat(paging ->
+                paging.getPageNumber() == 1 && paging.getPageSize() == 5));
+        mvc.perform(as("HUMAN_CAPITAL", get(JOURNEY + "/loans"))).andExpect(status().isForbidden());
+        mvc.perform(get(JOURNEY + "/loans")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("apply: 201 for an offer made now, 200 for the one already held, 422 with the reason when declined")
     void apply() throws Exception {
         when(journeyService.apply(2L)).thenReturn(new StaffLoanAppliedOffer(OFFER, true));
