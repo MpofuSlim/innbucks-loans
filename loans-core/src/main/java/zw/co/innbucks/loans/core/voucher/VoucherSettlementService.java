@@ -11,6 +11,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.Line;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.OutletTotals;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class VoucherSettlementService {
 
-    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2);
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
     private static final String[] CSV_HEADER = {"event", "at", "voucherId", "maskedCode", "loanAccount",
             "customerReference", "currency", "amount", "outletId", "outletName", "merchantReference"};
 

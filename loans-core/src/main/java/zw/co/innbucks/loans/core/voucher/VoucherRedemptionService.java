@@ -12,6 +12,7 @@ import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 /**
@@ -99,14 +100,16 @@ public class VoucherRedemptionService {
             throw refused(VoucherRefusal.PARTIAL_REDEMPTION_NOT_ALLOWED, voucher, username, outletId);
         }
         String outletName = StringUtils.trimToNull(request.getOutletName());
-        voucher.redeem(amount.setScale(2), outletName == null ? outletId : outletName, now);
+        // Validated to at most two decimals, so this never rounds.
+        BigDecimal spent = amount.setScale(2, RoundingMode.UNNECESSARY);
+        voucher.redeem(spent, outletName == null ? outletId : outletName, now);
         voucherRepository.save(voucher);
         VoucherRedemption redemption;
         try {
             redemption = redemptionRepository.saveAndFlush(VoucherRedemption.builder()
                     .voucherId(voucher.getId())
                     .merchantReference(reference)
-                    .amount(amount.setScale(2))
+                    .amount(spent)
                     .balanceAfter(voucher.balance())
                     .outletId(outletId)
                     .outletName(outletName)

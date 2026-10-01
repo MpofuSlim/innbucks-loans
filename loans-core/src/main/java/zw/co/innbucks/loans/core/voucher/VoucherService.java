@@ -21,6 +21,7 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -98,8 +99,8 @@ public class VoucherService {
                     .codeCiphertext(vault.encrypt(code))
                     .codeLast4(VoucherCodes.lastFour(code))
                     .codeLength(code.length())
-                    .faceValue(command.faceValue().setScale(2))
-                    .redeemedAmount(BigDecimal.ZERO.setScale(2))
+                    .faceValue(command.faceValue().setScale(2, RoundingMode.UNNECESSARY))
+                    .redeemedAmount(BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY))
                     .currency(command.currency())
                     .issuedAt(now)
                     .expiresAt(expiryFor(now))
