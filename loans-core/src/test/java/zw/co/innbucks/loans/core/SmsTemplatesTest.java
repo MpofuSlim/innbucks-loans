@@ -5,8 +5,9 @@ import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.SmsMessages;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
-import zw.co.innbucks.loans.core.user.AdminPasswordResetServiceImpl;
-import zw.co.innbucks.loans.core.user.CreateUserServiceImpl;
+import zw.co.innbucks.loans.core.user.PortalCredentialMessages;
+import zw.co.innbucks.loans.core.user.PortalProperties;
+import zw.co.innbucks.loans.core.user.TemporaryPasswordGenerator;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -47,10 +48,13 @@ class SmsTemplatesTest {
         sms.put("SMS_MSG", DisbursementService.walletDisbursementSms(disbursedLoan(MOBILE)));
         sms.put("SMS_MSG_CONSUMER_FINANCE", String.format(DisbursementService.SMS_MSG_CONSUMER_FINANCE,
                 AMOUNT, REF, "Bulawayo Furnishers (Pvt) Ltd"));
-        sms.put("PASSWORD_SMS_TEMPLATE", String.format(CreateUserServiceImpl.PASSWORD_SMS_TEMPLATE,
-                "Tariro", "tmoyo", "Kp7#Rw3@q"));
-        sms.put("admin reset MESSAGE_TEMPLATE", String.format(AdminPasswordResetServiceImpl.MESSAGE_TEMPLATE,
-                "Tariro", "tmoyo", "#K7mnpqrst"));
+        PortalProperties portal = new PortalProperties();
+        portal.setSignInUrl("https://lending.innbucks.co.zw");
+        PortalCredentialMessages credentials = new PortalCredentialMessages(portal);
+        for (PortalCredentialMessages.Reason reason : PortalCredentialMessages.Reason.values()) {
+            sms.put("portal credentials " + reason, credentials.sms(reason, "Tariro", "tmoyo",
+                    TemporaryPasswordGenerator.generate()));
+        }
         return sms;
     }
 

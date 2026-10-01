@@ -14,6 +14,7 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanProperties;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationProperties;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferProperties;
+import zw.co.innbucks.loans.core.user.PortalProperties;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 
@@ -29,7 +30,8 @@ import zw.co.innbucks.loans.core.voucher.VoucherProperties;
         StaffNotificationProperties.class,
         VoucherProperties.class,
         BorrowerProperties.class,
-        StaffLoanProperties.class})
+        StaffLoanProperties.class,
+        PortalProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
 }

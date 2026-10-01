@@ -1,7 +1,6 @@
 package zw.co.innbucks.loans.core.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,7 +14,7 @@ import zw.co.innbucks.loans.core.notifications.NotificationChannel;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PasswordResetRequest {
-    @NotNull(message = "Delivery channel is required (EMAIL, SMS or WHATSAPP)")
-    @Schema(description = "EMAIL, SMS or WHATSAPP", example = "SMS")
+    @Schema(description = "WHATSAPP (the default: WhatsApp, and SMS when WhatsApp fails), SMS or EMAIL",
+            example = "WHATSAPP")
     private NotificationChannel channel;
 }

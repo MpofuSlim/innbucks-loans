@@ -10,10 +10,17 @@ import lombok.ToString;
 import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.user.UserGroup;
 
-/** A user to create in a merchant: an agent, a credit manager or finance. The temporary password is sent by SMS. */
+/**
+ * A user to create in a merchant: an agent, a credit manager or finance. The temporary password is sent by WhatsApp, or
+ * by SMS when WhatsApp fails.
+ */
 @Data
 public class CreateUserRequest {
     @NotBlank(message = "Username is required")
+    // The username goes to the new user by SMS, and the SMS gateway alters anything else (an underscore arrives as a
+    // space), so a username outside this set could reach them in a form they cannot sign in with.
+    @Pattern(regexp = "[A-Za-z0-9.@-]{1,100}",
+            message = "Username may use only letters, digits, dots, hyphens and @, up to 100 characters")
     @Schema(example = "tmoyo")
     private String username;
     @NotBlank(message = "First name is required")

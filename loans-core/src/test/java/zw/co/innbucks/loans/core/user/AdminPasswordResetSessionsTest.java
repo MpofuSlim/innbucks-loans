@@ -39,7 +39,8 @@ class AdminPasswordResetSessionsTest {
         user.setLockedUntil(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(20));
         when(users.findById(5L)).thenReturn(Optional.of(user));
         AdminPasswordResetServiceImpl service = new AdminPasswordResetServiceImpl(users, new BCryptPasswordEncoder(4),
-                sms, mock(EmailNotificationClient.class), mock(WhatsAppNotificationClient.class));
+                sms, mock(EmailNotificationClient.class), mock(WhatsAppNotificationClient.class),
+                new PortalCredentialMessages(new PortalProperties()));
 
         service.resetPassword(5L, NotificationChannel.SMS);
 
@@ -47,7 +48,7 @@ class AdminPasswordResetSessionsTest {
         assertThat(user.getFailedLoginAttempts()).isZero();
         assertThat(user.getLockedUntil()).isNull();
         assertThat(user.getTemporaryPassword()).isTrue();
-        verify(sms).sendSms(eq("263772123123"), anyString(), eq(null));
+        verify(sms).sendSms(eq("+263772123123"), anyString(), eq(null), eq(true));
         verify(users).save(user);
     }
 }

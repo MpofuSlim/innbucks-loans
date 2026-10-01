@@ -24,9 +24,7 @@ import zw.co.innbucks.loans.core.notifications.NotificationService;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
 import java.util.UUID;
-import java.util.stream.IntStream;
 
 import static zw.co.innbucks.loans.core.StartupTask.ZERO_BASED_DEFAULT;
 import static zw.co.innbucks.loans.core.commission.CommissionStructure.MERCHANT_DEFINED;
@@ -35,21 +33,11 @@ import static zw.co.innbucks.loans.core.commission.CommissionStructure.MERCHANT_
 @RequiredArgsConstructor
 public class CreateUserServiceImpl implements CreateUserService {
 
-    private static final char[] SPECIAL_CHARACTERS = {'#', '@', '$', '%', '&', '*', '!'};
-    private static final char[] NUMERIC_CHARACTERS = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
-    private static final String[] ALPHA_UPPER_CHARACTERS = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
-            "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
-
-
-    // No colons: the SMS gateway refuses ! : / ? " * ; in a body.
-    public static final String PASSWORD_SMS_TEMPLATE = """
-            %s, your account is ready. Username %s, Temp password %s. Please change password after login.""";
-
     private static final Logger logger = LoggerFactory.getLogger(CreateUserServiceImpl.class);
     private final MerchantRepository merchantRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final Random random;
+    private final PortalCredentialMessages messages;
     private final NotificationService notificationService;
     private final CommissionGroupRepository commissionGroupRepository;
 
@@ -98,14 +86,14 @@ public class CreateUserServiceImpl implements CreateUserService {
             return;
         }
         User user = account.get();
-        String generatedPassword = generatePassword();
+        String generatedPassword = TemporaryPasswordGenerator.generate();
         user.setPassword(passwordEncoder.encode(generatedPassword));
         user.setTemporaryPassword(true);
         // A new password ends the sessions minted under the old one.
         user.bumpTokenVersion();
         userRepository.save(user);
 
-        notifyUser(user.getFirstName(), user.getUsername(), user.getMobileNumber(), generatedPassword);
+        notifyUser(PortalCredentialMessages.Reason.SELF_SERVICE_RESET, user, generatedPassword);
     }
 
     private UserResponse create(NewUser createUserRequest) {
@@ -123,7 +111,7 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         CommissionGroup commissionGroup = resolveCommissionGroup(createUserRequest, merchant);
 
-        String generatedPassword = generatePassword();
+        String generatedPassword = TemporaryPasswordGenerator.generate();
 
         User user = new User();
         user.setExternalSystemId(UUID.randomUUID().toString());
@@ -143,14 +131,16 @@ public class CreateUserServiceImpl implements CreateUserService {
 
         User savedUser = userRepository.save(user);
 
-        notifyUser(savedUser.getFirstName(), savedUser.getUsername(), savedUser.getMobileNumber(), generatedPassword);
+        notifyUser(PortalCredentialMessages.Reason.ACCOUNT_CREATED, savedUser, generatedPassword);
         logger.info("Created user {} with id {}", createUserRequest.getUsername(), savedUser.getId());
         return UserResponse.from(savedUser);
     }
 
-    private void notifyUser(String firstName, String username, String mobileNumber, String generatedPassword) {
-        String message = String.format(PASSWORD_SMS_TEMPLATE, firstName, username, generatedPassword);
-        notificationService.sendSms(MsisdnUtils.formatMsisdnInternational(mobileNumber), message);
+    /** By WhatsApp, or by SMS when WhatsApp fails; never logged. */
+    private void notifyUser(PortalCredentialMessages.Reason reason, User user, String generatedPassword) {
+        notificationService.sendPrivate(user.getMobileNumber(),
+                messages.whatsApp(reason, user.getFirstName(), user.getUsername(), generatedPassword),
+                messages.sms(reason, user.getFirstName(), user.getUsername(), generatedPassword));
     }
 
     private void validateRequest(NewUser createUserRequest) {
@@ -182,39 +172,4 @@ public class CreateUserServiceImpl implements CreateUserService {
             throw new ValidationException("User groups required");
         }
     }
-
-    private String generatePassword() {
-
-        StringBuilder passwordBuilder = new StringBuilder(8);
-
-        IntStream.range(0, 3).forEach(index -> {
-            int nextSpecialCharacterIndex = random.nextInt(SPECIAL_CHARACTERS.length);
-            passwordBuilder.append(SPECIAL_CHARACTERS[nextSpecialCharacterIndex]);
-        });
-        IntStream.range(0, 3).forEach(index -> {
-            int nextUpperCharacterIndex = random.nextInt(ALPHA_UPPER_CHARACTERS.length);
-            passwordBuilder.append(ALPHA_UPPER_CHARACTERS[nextUpperCharacterIndex]);
-        });
-        IntStream.range(0, 3).forEach(index -> {
-            int nextNumericCharacterIndex = random.nextInt(NUMERIC_CHARACTERS.length);
-            passwordBuilder.append(NUMERIC_CHARACTERS[nextNumericCharacterIndex]);
-        });
-        int remainingCharacters = 8 - passwordBuilder.length();
-        for (int i = 0; i < remainingCharacters; i++) {
-            int nextUpperCharacterIndex = random.nextInt(ALPHA_UPPER_CHARACTERS.length);
-            passwordBuilder.append(ALPHA_UPPER_CHARACTERS[nextUpperCharacterIndex].toLowerCase());
-        }
-        swapCharacters(passwordBuilder);
-        return passwordBuilder.toString();
-    }
-
-    private void swapCharacters(StringBuilder passwordBuilder) {
-        int firstRandomIndex = random.nextInt(passwordBuilder.length());
-        int secondRandomIndex = random.nextInt(passwordBuilder.length());
-        char charAtFirstRandomIndex = passwordBuilder.charAt(firstRandomIndex);
-        char charAtSecondRandomIndex = passwordBuilder.charAt(secondRandomIndex);
-        passwordBuilder.setCharAt(firstRandomIndex, charAtSecondRandomIndex);
-        passwordBuilder.setCharAt(secondRandomIndex, charAtFirstRandomIndex);
-    }
-
 }
