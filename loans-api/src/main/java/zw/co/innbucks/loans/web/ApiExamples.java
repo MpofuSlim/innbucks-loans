@@ -3432,7 +3432,7 @@ public final class ApiExamples {
             }""";
     // Staff notifications (FR-SGL-019 to 023). credit1 announced the launch on 2 Oct to the 1240 members of the register
     // who have not left (broadcast 1, notifications 1 to 1240); run 1 on 5 Oct then made offers 1 (E1001) and 2 (E1012),
-    // notified as 1241 and 1242. E1001's SMS went through; E1012's was refused and WhatsApp took it.
+    // notified as 1241 and 1242. E1001's WhatsApp went through; E1012's was refused and the SMS took it.
     private static final String NOTIFICATION_OFFER_TEXT_300 = "InnBucks Staff Grocery Loan. You have a new offer of up to"
             + " USD 300.00, open until 08.00 on 12 Oct 2026. Log in to the InnBucks app to accept it.";
 
@@ -3456,13 +3456,13 @@ public final class ApiExamples {
                         "notificationId": 1242,
                         "employeeNumber": "E1012",
                         "fullName": "Chipo Banda",
-                        "channel": "SMS",
+                        "channel": "WHATSAPP",
                         "recipient": "+263773456789",
                         "template": "OFFER_NEW",
                         "templateVersion": 1,
                         "status": "FAILED",
-                        "gatewayReference": "LOANS-SMS-0d5e6f7a-8b9c-4d1e-a2f3-4b5c6d7e8f90",
-                        "failureReason": "Notification API rejected SMS: HTTP 400",
+                        "gatewayReference": null,
+                        "failureReason": "WhatsApp gateway rejected the message: HTTP 400",
                         "attemptedAt": "2026-10-05T08:00:03+02:00"
                       },
                       {
@@ -3470,12 +3470,12 @@ public final class ApiExamples {
                         "notificationId": 1242,
                         "employeeNumber": "E1012",
                         "fullName": "Chipo Banda",
-                        "channel": "WHATSAPP",
+                        "channel": "SMS",
                         "recipient": "+263773456789",
                         "template": "OFFER_NEW",
                         "templateVersion": 1,
                         "status": "SENT",
-                        "gatewayReference": null,
+                        "gatewayReference": "LOANS-SMS-0d5e6f7a-8b9c-4d1e-a2f3-4b5c6d7e8f90",
                         "failureReason": null,
                         "attemptedAt": "2026-10-05T08:00:04+02:00"
                       }""";
@@ -3500,12 +3500,12 @@ public final class ApiExamples {
                         "notificationId": 1241,
                         "employeeNumber": "E1001",
                         "fullName": "Nyasha Dube",
-                        "channel": "SMS",
+                        "channel": "WHATSAPP",
                         "recipient": "+263782606983",
                         "template": "OFFER_NEW",
                         "templateVersion": 1,
                         "status": "SENT",
-                        "gatewayReference": "LOANS-SMS-6f1c2a9e-0b7d-4f43-9a51-3c2e8d7b1f04",
+                        "gatewayReference": null,
                         "failureReason": null,
                         "attemptedAt": "2026-10-05T08:00:02+02:00"
                       }""";
@@ -3531,7 +3531,7 @@ public final class ApiExamples {
                     "createdAt": "2026-10-05T08:00:01+02:00",
                     "outboundStatus": "SENT",
                     "skipReason": null,
-                    "deliveredChannel": "WHATSAPP",
+                    "deliveredChannel": "SMS",
                     "finishedAt": "2026-10-05T08:00:04+02:00",
                     "dispatches": [""" + DISPATCHES_1242 + """
 
@@ -3552,7 +3552,7 @@ public final class ApiExamples {
                     "createdAt": "2026-10-05T08:00:01+02:00",
                     "outboundStatus": "SENT",
                     "skipReason": null,
-                    "deliveredChannel": "SMS",
+                    "deliveredChannel": "WHATSAPP",
                     "finishedAt": "2026-10-05T08:00:02+02:00",
                     "dispatches": [""" + DISPATCHES_1241 + """
 
@@ -3701,8 +3701,8 @@ public final class ApiExamples {
                       "OFFER_CLOSED": 0
                     },
                     "sentBy": {
-                      "SMS": 1221,
-                      "WHATSAPP": 14
+                      "SMS": 14,
+                      "WHATSAPP": 1221
                     }
                   }
                 }

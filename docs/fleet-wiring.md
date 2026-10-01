@@ -249,9 +249,10 @@ ticketing fleet's SMS client; email goes through the same API. The credentials
 are loans' own `INNBUCKS_NOTIFY_URL` / `_API_KEY` / `_USERNAME` / `_PASSWORD`
 in its Secret, set to the values the fleet keeps as `BANK_API_*` (loans never
 reads the cell's names, section 5). Without them every loans SMS and email fails
-and is logged. Staff Grocery Loan messages fall back to WhatsApp when the SMS
-fails, so they also need `WHATSAPP_API_KEY` in the Secret for the fallback (the
-URL comes from the cell).
+and is logged. Staff Grocery Loan messages (offers, the launch, vouchers) and
+portal users' temporary passwords go by WhatsApp first and fall back to SMS, so
+they need `WHATSAPP_API_KEY` in the Secret too (the URL comes from the cell);
+without it they all go by SMS.
 
 It used to post to the InnBucks core gateway adapter (`INNBUCKS_GATEWAY_URL`), a
 retired host, so no loans SMS reached anyone in the cell. Two flows deliver a
@@ -333,7 +334,7 @@ open voucher's value.
 The rules are plain env keys too, with defaults (`application.yml`,
 `loans.vouchers`): `VOUCHER_CODE_LENGTH` (16), `VOUCHER_VALIDITY_DAYS` (30, the
 voucher lapses at the end of that market day), `VOUCHER_PARTIAL_REDEMPTION_ALLOWED`
-(true) and `VOUCHER_DELIVERY_CHANNELS` (`SMS,WHATSAPP`, tried in that order).
+(true) and `VOUCHER_DELIVERY_CHANNELS` (`WHATSAPP,SMS`, tried in that order).
 Validity and partial redemption are OQ-08, still to be agreed with GetMore.
 
 **GetMore's till integration signs in as a loans user in group `GETMORE`**,

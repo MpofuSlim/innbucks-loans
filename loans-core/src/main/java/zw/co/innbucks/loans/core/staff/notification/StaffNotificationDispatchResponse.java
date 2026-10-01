@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 
 /** One attempt to reach a staff member on one channel (FR-SGL-023). */
 @Schema(description = "One attempt to reach a staff member on one channel: IN_APP when the notification was stored,"
-        + " then SMS, then WhatsApp when the SMS failed")
+        + " then WhatsApp, then SMS when WhatsApp failed")
 public record StaffNotificationDispatchResponse(
         Long id,
         Long notificationId,

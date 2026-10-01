@@ -26,7 +26,7 @@ public record StaffNotificationResponse(
         @Schema(description = "PENDING, SENDING, SENT, FAILED (every channel failed) or SKIPPED")
         StaffNotificationOutboundStatus outboundStatus,
         StaffNotificationSkipReason skipReason,
-        @Schema(description = "SMS, or WHATSAPP when the SMS failed; set once SENT")
+        @Schema(description = "WHATSAPP, or SMS when WhatsApp failed; set once SENT")
         StaffNotificationChannel deliveredChannel,
         LocalDateTime finishedAt,
         List<StaffNotificationDispatchResponse> dispatches) {

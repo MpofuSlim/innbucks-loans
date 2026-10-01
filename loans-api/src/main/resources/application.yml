@@ -147,7 +147,7 @@ loans:
     run-cron: "${STAFF_OFFERS_RUN_CRON:0 0 8 * * MON}"
     validity-days: "${STAFF_OFFERS_VALIDITY_DAYS:7}"
     max-reconciliation-age-days: "${STAFF_OFFERS_MAX_RECONCILIATION_AGE_DAYS:35}"
-    # Offer and launch messages (FR-SGL-019 to 023): SMS through innbucks-notify, WhatsApp when the SMS fails.
+    # Offer and launch messages (FR-SGL-019 to 023): WhatsApp, and SMS through innbucks-notify when WhatsApp fails.
     notifications:
       # The frequency cap: after this many offers in a row left unanswered, a member is messaged only every
       # capped-reminder-weeks (0: not at all while the run of ignored offers lasts). Offers still show in-app.
@@ -167,7 +167,7 @@ loans:
     code-length: "${VOUCHER_CODE_LENGTH:16}"
     validity-days: "${VOUCHER_VALIDITY_DAYS:30}"
     partial-redemption-allowed: "${VOUCHER_PARTIAL_REDEMPTION_ALLOWED:true}"
-    delivery-channels: "${VOUCHER_DELIVERY_CHANNELS:SMS,WHATSAPP}"
+    delivery-channels: "${VOUCHER_DELIVERY_CHANNELS:WHATSAPP,SMS}"
     code-hmac-key: "${VOUCHER_CODE_HMAC_KEY:}"
     code-encryption-key: "${VOUCHER_CODE_ENCRYPTION_KEY:}"
     # How often the scheduled-tasks profile marks lapsed vouchers EXPIRED and sends any left PENDING by a stop.

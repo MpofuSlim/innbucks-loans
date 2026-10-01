@@ -2,7 +2,7 @@ package zw.co.innbucks.loans.web;
 
 /**
  * Example bodies for the voucher endpoints, as one story: voucher 7 (Chipo Banda, USD 300.00, issued 6 October) was
- * sent by SMS and spent down to USD 120.00 at GetMore Avondale on 8 October; voucher 8 (Nyasha Dube, USD 250.00, issued
+ * sent by WhatsApp and spent down to USD 120.00 at GetMore Avondale on 8 October; voucher 8 (Nyasha Dube, USD 250.00, issued
  * 8 October) could not be sent on either channel. Their codes carry real Damm check digits.
  */
 public final class VoucherApiExamples {
@@ -33,7 +33,7 @@ public final class VoucherApiExamples {
                   "cancelledAt": null,
                   "cancellationReason": null,
                   "deliveryStatus": "SENT",
-                  "deliveredChannel": "SMS",
+                  "deliveredChannel": "WHATSAPP",
                   "deliveryUpdatedAt": "2026-10-06T09:14:23+02:00"
                 }""";
 
@@ -104,12 +104,12 @@ public final class VoucherApiExamples {
                 "deliveries": [
                   {
                     "id": 11,
-                    "channel": "SMS",
+                    "channel": "WHATSAPP",
                     "recipient": "****6789",
                     "template": "VOUCHER_ISSUED",
                     "templateVersion": 1,
                     "status": "SENT",
-                    "gatewayReference": "LOANS-VCH-5b1d0c7e-2f44-4a8e-9a51-0c3e8f2d6b19",
+                    "gatewayReference": null,
                     "failureReason": null,
                     "requestedBy": "system",
                     "attemptedAt": "2026-10-06T09:14:23+02:00"

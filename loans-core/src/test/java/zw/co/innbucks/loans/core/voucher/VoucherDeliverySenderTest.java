@@ -71,18 +71,18 @@ class VoucherDeliverySenderTest {
     }
 
     @Test
-    @DisplayName("SMS first: the dashed code in full, the upstream reply withheld from the logs, one SENT attempt")
-    void smsAccepted() {
+    @DisplayName("WhatsApp first: the dashed code in full, the upstream reply withheld from the logs, one SENT attempt")
+    void whatsAppAccepted() {
         assertThat(sender.send(7L, "system")).isTrue();
 
-        verify(sms).sendSms(eq("+263772123123"), eq(MESSAGE), anyString(), eq(true));
-        verifyNoInteractions(whatsApp);
+        verify(whatsApp).sendCustomNotification("+263772123123", MESSAGE, true);
+        verifyNoInteractions(sms);
         assertThat(voucher.getDeliveryStatus()).isEqualTo(VoucherDeliveryStatus.SENT);
-        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.SMS);
+        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.WHATSAPP);
         assertThat(logged).singleElement().satisfies(attempt -> {
-            assertThat(attempt.getChannel()).isEqualTo(VoucherChannel.SMS);
+            assertThat(attempt.getChannel()).isEqualTo(VoucherChannel.WHATSAPP);
             assertThat(attempt.getStatus()).isEqualTo(Status.SENT);
-            assertThat(attempt.getGatewayReference()).startsWith("LOANS-VCH-");
+            assertThat(attempt.getGatewayReference()).as("the WhatsApp gateway takes no reference").isNull();
             assertThat(attempt.getTemplate()).isEqualTo("VOUCHER_ISSUED");
             assertThat(attempt.getTemplateVersion()).isEqualTo(1);
             assertThat(attempt.getRequestedBy()).isEqualTo("system");
@@ -91,22 +91,22 @@ class VoucherDeliverySenderTest {
     }
 
     @Test
-    @DisplayName("SMS refused: WhatsApp takes it, and both attempts are logged")
-    void whatsAppFallback() {
-        doThrow(new NotificationDeliveryException("Notification API rejected SMS: HTTP 400"))
-                .when(sms).sendSms(anyString(), anyString(), anyString(), eq(true));
+    @DisplayName("WhatsApp refused: the SMS takes it, and both attempts are logged")
+    void smsFallback() {
+        doThrow(new NotificationDeliveryException("WhatsApp gateway rejected the message: HTTP 400"))
+                .when(whatsApp).sendCustomNotification(anyString(), anyString(), eq(true));
 
         sender.send(7L, "support1");
 
-        verify(whatsApp).sendCustomNotification("+263772123123", MESSAGE, true);
+        verify(sms).sendSms(eq("+263772123123"), eq(MESSAGE), anyString(), eq(true));
         assertThat(voucher.getDeliveryStatus()).isEqualTo(VoucherDeliveryStatus.SENT);
-        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.WHATSAPP);
+        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.SMS);
         assertThat(logged).extracting(VoucherDelivery::getChannel, VoucherDelivery::getStatus,
                         VoucherDelivery::getFailureReason)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple(VoucherChannel.SMS, Status.FAILED,
-                                "Notification API rejected SMS: HTTP 400"),
-                        org.assertj.core.groups.Tuple.tuple(VoucherChannel.WHATSAPP, Status.SENT, null));
-        assertThat(logged.get(1).getGatewayReference()).isNull();
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(VoucherChannel.WHATSAPP, Status.FAILED,
+                                "WhatsApp gateway rejected the message: HTTP 400"),
+                        org.assertj.core.groups.Tuple.tuple(VoucherChannel.SMS, Status.SENT, null));
+        assertThat(logged.get(1).getGatewayReference()).startsWith("LOANS-VCH-");
         assertThat(logged).allSatisfy(attempt -> assertThat(attempt.getRequestedBy()).isEqualTo("support1"));
     }
 
@@ -122,19 +122,21 @@ class VoucherDeliverySenderTest {
 
         assertThat(voucher.getDeliveryStatus()).isEqualTo(VoucherDeliveryStatus.FAILED);
         assertThat(voucher.getDeliveredChannel()).isNull();
-        assertThat(logged).extracting(VoucherDelivery::getStatus).containsExactly(Status.FAILED, Status.FAILED);
+        assertThat(logged).extracting(VoucherDelivery::getChannel, VoucherDelivery::getStatus)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(VoucherChannel.WHATSAPP, Status.FAILED),
+                        org.assertj.core.groups.Tuple.tuple(VoucherChannel.SMS, Status.FAILED));
     }
 
     @Test
-    @DisplayName("the channels go in the configured order: WhatsApp first when so set")
+    @DisplayName("the channels go in the configured order: SMS first when so set")
     void configuredOrder() {
-        properties.setDeliveryChannels(List.of(VoucherChannel.WHATSAPP, VoucherChannel.SMS));
+        properties.setDeliveryChannels(List.of(VoucherChannel.SMS, VoucherChannel.WHATSAPP));
 
         sender.send(7L, "system");
 
-        verify(whatsApp).sendCustomNotification("+263772123123", MESSAGE, true);
-        verify(sms, never()).sendSms(anyString(), anyString(), anyString(), eq(true));
-        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.WHATSAPP);
+        verify(sms).sendSms(eq("+263772123123"), eq(MESSAGE), anyString(), eq(true));
+        verify(whatsApp, never()).sendCustomNotification(anyString(), anyString(), eq(true));
+        assertThat(voucher.getDeliveredChannel()).isEqualTo(VoucherChannel.SMS);
     }
 
     @Test
@@ -145,8 +147,7 @@ class VoucherDeliverySenderTest {
 
         sender.send(7L, "support1");
 
-        verify(sms).sendSms(eq("+263772123123"), eq(MESSAGE.replace("USD 300.00", "USD 120.00")), anyString(),
-                eq(true));
+        verify(whatsApp).sendCustomNotification("+263772123123", MESSAGE.replace("USD 300.00", "USD 120.00"), true);
     }
 
     @Test
