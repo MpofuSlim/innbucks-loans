@@ -103,7 +103,7 @@ class StaffGradeLimitWebContractTest {
         mvc.perform(get("/lending/v1/staff-grade-limits").with(as("AGENTS"))).andExpect(status().isForbidden());
         mvc.perform(get("/lending/v1/staff-grade-limit-changes").with(as("AGENTS")))
                 .andExpect(status().isForbidden());
-        for (String role : List.of("CREDIT_MANAGER", "FINANCE", "SUPER_ADMIN")) {
+        for (String role : List.of("CREDIT_MANAGER", "FINANCE", "HUMAN_CAPITAL", "SUPER_ADMIN")) {
             mvc.perform(get("/lending/v1/staff-grade-limits").with(as(role)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].grade").value("C4"))
@@ -144,11 +144,11 @@ class StaffGradeLimitWebContractTest {
     }
 
     @Test
-    @DisplayName("credit managers and SUPER_ADMIN propose (201); finance and agents cannot")
+    @DisplayName("credit managers and SUPER_ADMIN propose (201); finance, Human Capital and agents cannot")
     void propose() throws Exception {
         when(service.propose(any())).thenReturn(PENDING);
 
-        for (String role : List.of("FINANCE", "AGENTS")) {
+        for (String role : List.of("FINANCE", "HUMAN_CAPITAL", "AGENTS")) {
             mvc.perform(post("/lending/v1/staff-grade-limit-changes").with(as(role))
                             .contentType(MediaType.APPLICATION_JSON).content(ApiExamples.STAFF_GRADE_LIMIT_PROPOSAL))
                     .andExpect(status().isForbidden());

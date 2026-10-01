@@ -68,11 +68,11 @@ public class StaffGradeLimitController {
                             }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE or SUPER_ADMIN",
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE, HUMAN_CAPITAL or SUPER_ADMIN",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/staff-grade-limits")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','HUMAN_CAPITAL','SUPER_ADMIN')")
     public ApiResult<List<StaffGradeLimitResponse>> matrix(
             @Parameter(description = "The market day to show the matrix for (yyyy-MM-dd); today by default",
                     example = "2026-10-01")
@@ -95,11 +95,11 @@ public class StaffGradeLimitController {
                             }"""))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE or SUPER_ADMIN",
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE, HUMAN_CAPITAL or SUPER_ADMIN",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
     })
     @GetMapping("/staff-grade-limit-changes")
-    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','HUMAN_CAPITAL','SUPER_ADMIN')")
     public ApiResult<List<StaffGradeLimitChangeResponse>> changes(
             @Parameter(description = "Only this grade's changes", example = "C4")
             @RequestParam(required = false) String grade,

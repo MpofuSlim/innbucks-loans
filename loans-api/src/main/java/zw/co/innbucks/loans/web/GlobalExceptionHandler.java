@@ -33,6 +33,9 @@ import zw.co.innbucks.loans.core.exception.IncompleteApplicationException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.PendingApplicationException;
 import zw.co.innbucks.loans.core.notifications.NotificationDeliveryException;
+import zw.co.innbucks.loans.core.staff.StaffRecordInvalidException;
+import zw.co.innbucks.loans.core.staff.StaffRegisterRowResponse;
+import zw.co.innbucks.loans.core.staff.StaffUploadRejectedException;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -131,6 +134,23 @@ public class GlobalExceptionHandler {
         log.warn("Incomplete application refused: {}", ex.getFields().keySet());
         return ResponseEntity.badRequest().body(ApiResult.error("VALIDATION_ERROR", "The application is not complete",
                 new TreeMap<>(ex.getFields())));
+    }
+
+    /** A staff record changed on the admin screen fails the register's rules (FR-SGL-003): every failing field. */
+    @ExceptionHandler(StaffRecordInvalidException.class)
+    public ResponseEntity<ApiResult<Map<String, String>>> invalidStaffRecord(StaffRecordInvalidException ex) {
+        log.warn("Staff record refused: {}", ex.getFields().keySet());
+        return ResponseEntity.badRequest().body(ApiResult.error("VALIDATION_ERROR", "Request validation failed",
+                new TreeMap<>(ex.getFields())));
+    }
+
+    /** Every row of an uploaded staff file was refused: nothing was submitted, and each row says why (FR-SGL-003). */
+    @ExceptionHandler(StaffUploadRejectedException.class)
+    public ResponseEntity<ApiResult<Map<String, List<StaffRegisterRowResponse>>>> nothingToLoad(
+            StaffUploadRejectedException ex) {
+        log.warn("Staff file refused: {}", ex.getMessage());
+        return ResponseEntity.badRequest().body(ApiResult.error("NOTHING_TO_LOAD", ex.getMessage(),
+                Map.of("rejected", ex.getRows())));
     }
 
     /** A username another account already holds. Checked before {@link BusinessException}, its parent. */

@@ -162,6 +162,9 @@ public class WorkflowStageService {
         if (settings.getEscalateTo().contains(UserGroup.AGENTS)) {
             throw new IllegalArgumentException("Escalations cannot be sent to AGENTS");
         }
+        if (settings.getEscalateTo().contains(UserGroup.HUMAN_CAPITAL)) {
+            throw new IllegalArgumentException("Escalations cannot be sent to HUMAN_CAPITAL");
+        }
         if (settings.getEscalationHours() != null && settings.getEscalationHours() < settings.getTargetHours()) {
             throw new IllegalArgumentException("Escalation hours cannot be fewer than the target hours");
         }
@@ -210,6 +213,10 @@ public class WorkflowStageService {
         for (Set<UserGroup> roles : roleSets) {
             if (roles.contains(UserGroup.AGENTS)) {
                 throw new IllegalArgumentException("AGENTS originate applications and cannot be given a workflow stage");
+            }
+            if (roles.contains(UserGroup.HUMAN_CAPITAL)) {
+                throw new IllegalArgumentException(
+                        "HUMAN_CAPITAL keeps the staff register and cannot be given a loan workflow stage");
             }
         }
     }
