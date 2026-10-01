@@ -399,4 +399,24 @@ class SwaggerExamplesTest {
     static Stream<Class<?>> controllers() {
         return CONTROLLERS.stream();
     }
+
+    @Test
+    void theLoanHistoryShowsTheSameLoanAndVoucherAsTheTile() {
+        // In December Chipo's list holds SGL-2026-000143 repaid: the loan the tile showed in October, with voucher 7
+        // lapsed at what was left of it. Its terms, dates and voucher must be the ones every other screen shows.
+        JsonNode tile = JSON.readTree(StaffLoanApiExamples.HOME_VOUCHER).path("data").path("loan");
+        JsonNode items = JSON.readTree(StaffLoanApiExamples.LOAN_HISTORY).path("data").path("items");
+        JsonNode repaid = items.get(1);
+        assertThat(repaid.path("reference").asString()).isEqualTo(tile.path("reference").asString());
+        for (String field : List.of("amount", "totalRepayable", "repaymentDate", "acceptedAt", "merchantName")) {
+            assertThat(repaid.path(field)).as(field).isEqualTo(tile.path(field));
+        }
+        JsonNode voucher = repaid.path("voucher");
+        for (String field : List.of("faceValue", "balance", "expiresAt", "maskedCode")) {
+            assertThat(voucher.path(field)).as(field).isEqualTo(tile.path("voucher").path(field));
+        }
+        assertThat(voucher.path("code").isNull()).as("a lapsed voucher's code is not shown").isTrue();
+        assertThat(OffsetDateTime.parse(items.get(0).path("acceptedAt").asString()))
+                .as("newest first").isAfter(OffsetDateTime.parse(repaid.path("acceptedAt").asString()));
+    }
 }
