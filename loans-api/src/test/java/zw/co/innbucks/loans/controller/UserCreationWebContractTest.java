@@ -28,6 +28,8 @@ import zw.co.innbucks.loans.core.merchant.MerchantService;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.user.CreateUserServiceImpl;
 import zw.co.innbucks.loans.core.user.FindUserService;
+import zw.co.innbucks.loans.core.user.PortalCredentialMessages;
+import zw.co.innbucks.loans.core.user.PortalProperties;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserRepository;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
@@ -36,7 +38,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,7 +86,8 @@ class UserCreationWebContractTest {
         MerchantService merchantService = new MerchantService(merchantRepository, new MerchantMapperImpl(),
                 commissionGroupRepository, mock(AuditService.class));
         CreateUserServiceImpl createUserService = new CreateUserServiceImpl(merchantRepository, userRepository,
-                new BCryptPasswordEncoder(4), new Random(7), notificationService, commissionGroupRepository);
+                new BCryptPasswordEncoder(4), new PortalCredentialMessages(new PortalProperties()), notificationService,
+                commissionGroupRepository);
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
         mvc = MockMvcBuilders.standaloneSetup(new MerchantController(merchantService, mock(AuthService.class),
@@ -166,7 +168,22 @@ class UserCreationWebContractTest {
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(saved.capture());
         assertThat(saved.getValue().getMobileNumber()).isEqualTo("263772123123");
-        verify(notificationService).sendSms(eq("263772123123"), anyString());
+        verify(notificationService).sendPrivate(eq("263772123123"), anyString(), anyString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"t_moyo", "t moyo", "tmoyo!", "t/moyo", "tmoyo*"})
+    @DisplayName("a username the SMS gateway would alter → 400 VALIDATION_ERROR on the field; nothing saved or sent")
+    void usernameTheSmsCannotCarryIs400(String username) throws Exception {
+        mvc.perform(post("/lending/v1/merchants/{code}/users", MERCHANT_CODE).with(asSuperAdmin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(newUser("0772123123", 3).replace("\"tmoyo\"", "\"" + username + "\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.username").value("Username may use only letters, digits, dots, hyphens"
+                        + " and @, up to 100 characters"));
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
     }
 
     @Test

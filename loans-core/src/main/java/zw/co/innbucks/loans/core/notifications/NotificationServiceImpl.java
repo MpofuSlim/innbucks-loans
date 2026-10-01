@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import zw.co.innbucks.loans.core.MsisdnUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +22,24 @@ public class NotificationServiceImpl implements NotificationService {
             smsNotificationClient.sendSms(mobileNumber, text, null);
         } catch (NotificationDeliveryException ex) {
             log.error("SMS delivery failed: {}", ex.getMessage());
+        }
+    }
+
+    @Override
+    @Async
+    public void sendPrivate(String mobileNumber, String whatsAppText, String smsText) {
+        String to = MsisdnUtils.toE164(mobileNumber);
+        try {
+            whatsAppNotificationClient.sendCustomNotification(to, whatsAppText, true);
+            return;
+        } catch (NotificationDeliveryException ex) {
+            log.warn("WhatsApp delivery to {} failed, sending by SMS instead: {}", MsisdnUtils.mask(to),
+                    ex.getMessage());
+        }
+        try {
+            smsNotificationClient.sendSms(to, smsText, null, true);
+        } catch (NotificationDeliveryException ex) {
+            log.error("Delivery to {} failed by WhatsApp and by SMS: {}", MsisdnUtils.mask(to), ex.getMessage());
         }
     }
 

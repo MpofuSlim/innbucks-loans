@@ -165,8 +165,10 @@ What this asks of loans, all in this repo:
     OWN key, at least 32 bytes, `openssl rand -base64 48`, never the fleet's)
     and `BOOTSTRAP_ADMIN_PASSWORD` (the first boot on an empty `loans_service`
     creates `admin`; clear it afterwards). Optional: the `INNBUCKS_*`,
-    `NDASENDA_*`, `INNBUCKS_NOTIFY_*` and `WHATSAPP_API_KEY` credentials, and
-    the two voucher code keys (section 10).
+    `NDASENDA_*`, `INNBUCKS_NOTIFY_*` and `WHATSAPP_API_KEY` credentials, the
+    two voucher code keys (section 10), and `LOANS_PORTAL_SIGN_IN_URL` (where
+    portal users sign in: the link in the message that gives them a temporary
+    password; not a secret, but loans' own, so it lives here too).
   - **Explicit `env:` entries**, named key by key: `JAVA_TOOL_OPTIONS` (heap
     percentage, and `user.home` plus the PDFBox font cache on `/tmp`, because
     the root filesystem is read-only), `SPRING_PROFILES_ACTIVE=api`,

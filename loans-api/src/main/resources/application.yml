@@ -126,6 +126,11 @@ http:
 # The defaults refuse what cannot be read, not what is merely imperfect. Accepted images are logged with
 # their measured contrast and sharpness, which is what to tune these against.
 loans:
+  # The lending portal, as its users are told about it: the message that gives someone a temporary password (a new
+  # account, a reset) links to sign-in-url, e.g. https://lending.innbucks.co.zw. SMS carries it only as a bare host
+  # (the gateway refuses : and /); WhatsApp and email carry it whole. Blank: the message names the portal, no link.
+  portal:
+    sign-in-url: "${LOANS_PORTAL_SIGN_IN_URL:}"
   documents:
     max-size-bytes: "${DOCUMENT_MAX_SIZE_BYTES:5242880}"
     max-pdf-pages: "${DOCUMENT_MAX_PDF_PAGES:10}"

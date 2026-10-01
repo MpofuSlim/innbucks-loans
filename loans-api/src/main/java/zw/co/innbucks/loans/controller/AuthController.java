@@ -109,9 +109,10 @@ public class AuthController {
     }
 
     @Operation(summary = "Forgot password",
-            description = "Sends a temporary password by SMS to the account's registered mobile number. The answer"
-                    + " is the same whether or not the username exists, so it cannot be used to find accounts; the"
-                    + " SMS is sent in the background, so a delivery failure is not reported here either.")
+            description = "Sends a temporary password to the account's registered mobile number, by WhatsApp (SMS"
+                    + " when WhatsApp fails). The answer is the same whether or not the username exists, so it cannot"
+                    + " be used to find accounts; the message is sent in the background, so a delivery failure is not"
+                    + " reported here either.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Accepted", content = @Content(examples = @ExampleObject("""
                     {

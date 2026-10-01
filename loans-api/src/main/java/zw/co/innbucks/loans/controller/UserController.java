@@ -21,6 +21,7 @@ import zw.co.innbucks.loans.core.api.UserResponse;
 import zw.co.innbucks.loans.core.authority.CreditAuthorityService;
 import zw.co.innbucks.loans.core.authority.UserCreditAuthorityRequest;
 import zw.co.innbucks.loans.core.user.AdminPasswordResetService;
+import zw.co.innbucks.loans.core.user.PasswordResetOutcome;
 import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
@@ -39,27 +40,27 @@ public class UserController {
     private final CreditAuthorityService creditAuthorityService;
 
     @Operation(summary = "Reset a user's password",
-            description = "SUPER_ADMIN only. Sets a fresh temporary password and delivers it over the chosen channel."
-                    + " Delivery comes first: if it fails nothing changes and the old password still works. The"
-                    + " user's existing sessions end and any sign-in lock is lifted. The password is never returned.")
+            description = "SUPER_ADMIN only. Sets a fresh temporary password and delivers it: by WhatsApp unless a"
+                    + " channel is named, falling back to SMS when WhatsApp fails; SMS or EMAIL when named. The"
+                    + " message names the InnBucks Loans portal, the username and the sign-in address. Delivery comes"
+                    + " first: if it fails nothing changes and the old password still works. The user's existing"
+                    + " sessions end and any sign-in lock is lifted. The password is never returned; the message says"
+                    + " which channel delivered it.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Reset and delivered",
                     content = @Content(examples = @ExampleObject("""
                             {
                               "code": "OK",
-                              "message": "Temporary password sent by SMS",
+                              "message": "Temporary password sent by WHATSAPP",
                               "data": """ + ApiExamples.AGENT_USER + """
 
                             }"""))),
-            @ApiResponse(responseCode = "400", description = "No channel, or nowhere on file to send it",
+            @ApiResponse(responseCode = "400", description = "Nowhere on file to send it",
                     content = @Content(examples = {
-                            @ExampleObject(name = "No channel", value = """
+                            @ExampleObject(name = "No mobile number on file", value = """
                                     {
-                                      "code": "VALIDATION_ERROR",
-                                      "message": "Request validation failed",
-                                      "data": {
-                                        "channel": "Delivery channel is required (EMAIL, SMS or WHATSAPP)"
-                                      }
+                                      "code": "INVALID_REQUEST",
+                                      "message": "User tmoyo has no mobile number on file"
                                     }"""),
                             @ExampleObject(name = "No email on file", value = """
                                     {
@@ -76,19 +77,21 @@ public class UserController {
                               "code": "NOT_FOUND",
                               "message": "User 7 not found"
                             }"""))),
-            @ApiResponse(responseCode = "502", description = "The channel refused or could not be reached; nothing changed",
+            @ApiResponse(responseCode = "502", description = "The channel refused or could not be reached (for WhatsApp,"
+                    + " then SMS too); nothing changed",
                     content = @Content(examples = @ExampleObject("""
                             {
                               "code": "NOTIFICATION_FAILED",
-                              "message": "InnBucks gateway rejected SMS: HTTP 400"
+                              "message": "WhatsApp gateway rejected the message: HTTP 400"
                             }""")))
     })
     @PostMapping("/{userId}/password-reset")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ApiResult<UserResponse> resetPassword(@PathVariable Long userId,
-                                                 @Valid @RequestBody PasswordResetRequest request) {
-        UserResponse user = adminPasswordResetService.resetPassword(userId, request.getChannel());
-        return ApiResult.ok("Temporary password sent by " + request.getChannel(), user);
+                                                 @Valid @RequestBody(required = false) PasswordResetRequest request) {
+        PasswordResetOutcome reset = adminPasswordResetService.resetPassword(userId,
+                request == null ? null : request.getChannel());
+        return ApiResult.ok("Temporary password sent by " + reset.sentBy(), reset.user());
     }
 
     @Operation(summary = "Set a user's credit approval limit",

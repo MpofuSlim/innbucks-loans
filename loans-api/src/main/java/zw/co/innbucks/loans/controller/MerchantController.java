@@ -185,9 +185,11 @@ public class MerchantController {
     }
 
     @Operation(summary = "Create a user in a merchant",
-            description = "SUPER_ADMIN only: an agent, a credit manager or finance. The user receives a temporary"
-                    + " password by SMS and must change it at first sign-in: until then their session can do nothing"
-                    + " else. mobileNumber is a Zimbabwean mobile (0772123123, 772123123, 263772123123 or"
+            description = "SUPER_ADMIN only: an agent, a credit manager or finance. The user is sent their username, a"
+                    + " temporary password and where to sign in, by WhatsApp (SMS when WhatsApp fails), and must"
+                    + " change the password at first sign-in: until then their session can do nothing else. username"
+                    + " is letters, digits, dots, hyphens and @ only (anything else would not reach them intact by"
+                    + " SMS). mobileNumber is a Zimbabwean mobile (0772123123, 772123123, 263772123123 or"
                     + " +263772123123) and is stored as 263772123123. commissionGroupId is required unless the"
                     + " merchant's commission structure is MERCHANT_DEFINED; 0 means the default group.")
     @ApiResponses({
