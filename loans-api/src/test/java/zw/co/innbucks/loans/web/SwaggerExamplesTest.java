@@ -52,16 +52,22 @@ import zw.co.innbucks.loans.controller.CheckpointController;
 import zw.co.innbucks.loans.controller.CreditAuthorityController;
 import zw.co.innbucks.loans.controller.WorkQueueController;
 import zw.co.innbucks.loans.controller.WorkflowStageController;
+import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.loan.CreditWorkbenchService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanAgreement;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.voucher.VoucherCodes;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -275,6 +281,84 @@ class SwaggerExamplesTest {
                 .subtract(redemption.path("amount").decimalValue()))
                 .isEqualByComparingTo(detail.path("voucher").path("balance").decimalValue())
                 .isEqualByComparingTo(redemption.path("balanceAfter").decimalValue());
+    }
+
+    @Test
+    void theStaffLoanAgreementExamplesCarryTheRealHashesOfTheirText() {
+        // The app sends the quote's contentSha256 back at Accept, and the portal shows the seal over the acceptance;
+        // a reader re-hashing either example must get what it says.
+        JsonNode quoted = JSON.readTree(StaffLoanApiExamples.QUOTE).path("data").path("agreement");
+        JsonNode signed = JSON.readTree(StaffLoanApiExamples.STAFF_LOAN_DETAIL).path("data");
+        JsonNode agreement = signed.path("agreement");
+        for (JsonNode text : List.of(quoted, agreement)) {
+            assertThat(AuditService.sha256Hex(text.path("content").asString()))
+                    .isEqualTo(text.path("contentSha256").asString())
+                    .isEqualTo(StaffLoanApiExamples.AGREEMENT_SHA256);
+        }
+        assertThat(JSON.readTree(StaffLoanApiExamples.ACCEPT_REQUEST).path("agreementSha256").asString())
+                .isEqualTo(StaffLoanApiExamples.AGREEMENT_SHA256);
+        StaffLoanAgreement sealed = StaffLoanAgreement.builder()
+                .staffLoanId(signed.path("loan").path("id").asLong())
+                .instrumentType(InstrumentType.valueOf(agreement.path("instrumentType").asString()))
+                .templateVersion(agreement.path("templateVersion").asInt())
+                .title(agreement.path("title").asString())
+                .contentSha256(agreement.path("contentSha256").asString())
+                .acceptedBy(agreement.path("acceptedBy").asString())
+                .acceptedAt(OffsetDateTime.parse(agreement.path("acceptedAt").asString())
+                        .withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime())
+                .deviceId(agreement.path("deviceId").asString())
+                .ipAddress(agreement.path("ipAddress").asString())
+                .forwardedFor(agreement.path("forwardedFor").asString())
+                .userAgent(agreement.path("userAgent").asString())
+                .authenticationMethod(agreement.path("authenticationMethod").asString())
+                .assertionId(agreement.path("assertionId").asString())
+                .build();
+        assertThat(StaffLoanJourneyService.evidenceSha256(sealed))
+                .isEqualTo(agreement.path("evidenceSha256").asString());
+    }
+
+    @Test
+    void theStaffGroceryLoanExamplesTellOneStory() {
+        // Chipo Banda (E1012) takes offer 2 up as SGL-2026-000143 and it becomes voucher 7: whichever screen a reader
+        // starts from, the offer, the loan, the phone and the dates must be the same ones.
+        JsonNode offer = JSON.readTree(StaffLoanApiExamples.HOME_OFFER).path("data").path("offer");
+        JsonNode loan = JSON.readTree(StaffLoanApiExamples.STAFF_LOAN_DETAIL).path("data").path("loan");
+        JsonNode listed = null;
+        for (JsonNode item : JSON.readTree(ApiExamples.STAFF_OFFERS).path("data").path("items")) {
+            if (item.path("employeeNumber").asString().equals(loan.path("employeeNumber").asString())) {
+                listed = item;
+            }
+        }
+        assertThat(listed).isNotNull();
+        assertThat(listed.path("id").asLong()).isEqualTo(offer.path("offerId").asLong())
+                .isEqualTo(loan.path("offerId").asLong())
+                .isEqualTo(JSON.readTree(StaffLoanApiExamples.QUOTE_REQUEST).path("offerId").asLong())
+                .isEqualTo(JSON.readTree(StaffLoanApiExamples.ACCEPT_REQUEST).path("offerId").asLong())
+                .isEqualTo(JSON.readTree(BorrowerApiExamples.INBOX).path("data").path("items").get(0)
+                        .path("offerId").asLong());
+        assertThat(listed.path("expiresAt").asString()).isEqualTo(offer.path("expiresAt").asString());
+        assertThat(listed.path("closedReason").asString()).isEqualTo("Taken up as " + loan.path("reference").asString());
+        assertThat(listed.path("closedAt").asString()).isEqualTo(loan.path("acceptedAt").asString());
+        assertThat(JSON.readTree(StaffLoanApiExamples.APPLIED).path("data").path("offer").path("offerId").asLong())
+                .as("an Apply offer is a new offer, not the run's").isNotEqualTo(listed.path("id").asLong());
+
+        JsonNode voucher7 = JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("voucher");
+        assertThat(voucher7.path("loanAccount").asString()).isEqualTo(loan.path("reference").asString());
+        assertThat(voucher7.path("issuedAt").asString()).isGreaterThan(loan.path("acceptedAt").asString());
+        Map<String, String> registerPhones = new HashMap<>();
+        for (JsonNode member : JSON.readTree(ApiExamples.STAFF_MEMBERS).path("data").path("items")) {
+            registerPhones.put(member.path("employeeNumber").asString(),
+                    MsisdnUtils.mask(member.path("mobileNumber").asString()));
+        }
+        assertThat(List.of(loan.path("msisdn").asString(), voucher7.path("customerMsisdn").asString(),
+                JSON.readTree(BorrowerApiExamples.PROFILE).path("data").path("maskedMsisdn").asString(),
+                JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("deliveries").get(0)
+                        .path("recipient").asString()))
+                .containsOnly(registerPhones.get("E1012"));
+        for (JsonNode voucher : JSON.readTree(VoucherApiExamples.VOUCHERS).path("data").path("items")) {
+            assertThat(voucher.path("customerMsisdn").asString()).as(voucher.path("customerReference").asString())
+                    .isEqualTo(registerPhones.get(voucher.path("customerReference").asString()));
+        }
     }
 
     static Stream<Class<?>> controllers() {

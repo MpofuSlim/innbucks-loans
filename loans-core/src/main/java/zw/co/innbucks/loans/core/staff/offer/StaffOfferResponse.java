@@ -12,10 +12,13 @@ import java.time.LocalDateTime;
  * whether or not a run has closed it yet.
  *
  * @param amount             the most they may borrow: their grade's limit when it was issued, or Credit's override
+ * @param runId              the weekly run that issued it; absent for an offer made when the borrower applied
+ * @param origin             RUN (a weekly run issued it) or APPLY (made when the borrower chose "Apply" in the
+ *                           SuperApp)
  * @param gradeLimitChangeId the approved grade-limit change for their grade
  * @param limitOverrideId    the limit override the amount came from, when Credit set one
  * @param replacesOfferId    the open offer it replaced, when it was a refresh
- * @param closedReason       why it was WITHDRAWN
+ * @param closedReason       why it was WITHDRAWN, or the loan it was TAKEN_UP as
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record StaffOfferResponse(
@@ -29,6 +32,7 @@ public record StaffOfferResponse(
         Long limitOverrideId,
         LocalDate cycleStart,
         Long runId,
+        StaffOfferOrigin origin,
         StaffOfferStatus status,
         LocalDateTime issuedAt,
         LocalDateTime expiresAt,
@@ -41,7 +45,7 @@ public record StaffOfferResponse(
         return new StaffOfferResponse(offer.getId(), member == null ? null : member.getEmployeeNumber(),
                 member == null ? null : member.getFullName(), offer.getGrade(), offer.getScoreBand(), offer.getAmount(),
                 offer.getGradeLimitChangeId(), offer.getLimitOverrideId(), offer.getCycleStart(), offer.getRunId(),
-                lapsed ? StaffOfferStatus.EXPIRED : offer.getStatus(), offer.getIssuedAt(), offer.getExpiresAt(),
+                offer.getOrigin(), lapsed ? StaffOfferStatus.EXPIRED : offer.getStatus(), offer.getIssuedAt(), offer.getExpiresAt(),
                 offer.getReplacesOfferId(), lapsed ? offer.getExpiresAt() : offer.getClosedAt(),
                 offer.getClosedReason());
     }

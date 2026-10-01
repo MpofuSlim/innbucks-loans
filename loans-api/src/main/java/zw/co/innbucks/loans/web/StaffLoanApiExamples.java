@@ -1,10 +1,11 @@
 package zw.co.innbucks.loans.web;
 
 /**
- * Example bodies for the Staff Grocery Loan journey and its portal screens, as one story: Chipo Banda (E1012, grade C4,
- * Treasury) holds offer 31 for USD 300.00 from the run of Monday 28 September, takes it in full in the SuperApp on
- * Thursday 1 October as loan SGL-2026-000143, due on 20 November; once paid out, it is voucher 7 of the voucher
- * examples.
+ * Example bodies for the Staff Grocery Loan journey and its portal screens, as one story, the same one the offer,
+ * notification and voucher examples tell: Chipo Banda (E1012, grade C4, Treasury) holds offer 2 for USD 300.00 from
+ * run 1 of Monday 5 October, takes it in full in the SuperApp on Tuesday 6 October as loan SGL-2026-000143, due on
+ * 20 November; once paid out, it is voucher 7 of the voucher examples. The Apply example is a member who held no offer
+ * that week (taken on after Monday's run, say): offer 3, made on Wednesday 7 October.
  */
 public final class StaffLoanApiExamples {
 
@@ -19,12 +20,22 @@ public final class StaffLoanApiExamples {
                     "currency": "USD"
                   }""";
 
-    private static final String OFFER_31 = """
+    private static final String OFFER_2 = """
             {
-                  "offerId": 31,
+                  "offerId": 2,
                   "amount": 300.00,
                   "currency": "USD",
-                  "expiresAt": "2026-10-05T08:00:00+02:00",
+                  "expiresAt": "2026-10-12T08:00:01+02:00",
+                  "draw": """ + DRAW + """
+
+                }""";
+
+    private static final String OFFER_3_APPLIED = """
+            {
+                  "offerId": 3,
+                  "amount": 300.00,
+                  "currency": "USD",
+                  "expiresAt": "2026-10-14T11:20:05+02:00",
                   "draw": """ + DRAW + """
 
                 }""";
@@ -40,7 +51,7 @@ public final class StaffLoanApiExamples {
                   "outstandingBalance": 300.00,
                   "repaymentDate": "2026-11-20",
                   "merchantName": "GetMore Groceries",
-                  "acceptedAt": "2026-10-01T09:10:41+02:00",""";
+                  "acceptedAt": "2026-10-06T09:10:41+02:00",""";
 
     private static final String LOAN_143_AWAITING = LOAN_143_HEAD + """
 
@@ -62,7 +73,7 @@ public final class StaffLoanApiExamples {
                     "faceValue": 300.00,
                     "balance": 120.00,
                     "currency": "USD",
-                    "expiresAt": "2026-10-31T23:59:59+02:00",
+                    "expiresAt": "2026-11-05T23:59:59+02:00",
                     "maskedCode": "**** **** **** 8406",
                     "code": "4829 1506 7331 8406",
                     "scanValue": "4829150673318406"
@@ -75,7 +86,7 @@ public final class StaffLoanApiExamples {
               "message": "Success",
               "data": {
                 "loan": null,
-                "offer": """ + OFFER_31 + """
+                "offer": """ + OFFER_2 + """
             ,
                 "canApply": false,
                 "unavailable": null
@@ -140,7 +151,7 @@ public final class StaffLoanApiExamples {
               "code": "CREATED",
               "message": "Created",
               "data": {
-                "offer": """ + OFFER_31 + """
+                "offer": """ + OFFER_3_APPLIED + """
             ,
                 "created": true
               }
@@ -151,7 +162,7 @@ public final class StaffLoanApiExamples {
               "code": "OK",
               "message": "Success",
               "data": {
-                "offer": """ + OFFER_31 + """
+                "offer": """ + OFFER_2 + """
             ,
                 "created": false
               }
@@ -159,7 +170,7 @@ public final class StaffLoanApiExamples {
 
     public static final String QUOTE_REQUEST = """
             {
-              "offerId": 31,
+              "offerId": 2,
               "amount": 300.00
             }""";
 
@@ -167,16 +178,16 @@ public final class StaffLoanApiExamples {
             + " number E1012, borrow USD 300.00 from InnBucks Microfinance Bank at 0% interest, as a voucher to spend"
             + " at GetMore Groceries within 30 days. I will repay USD 300.00, collected from my salary on 2026-11-20."
             + " If you do not spend the whole voucher before it expires, you still repay the full amount.\\n\\n"
-            + "Accepted on 2026-10-01.";
+            + "Accepted on 2026-10-06.";
 
-    public static final String AGREEMENT_SHA256 = "46a81739c6ee7c1d5ed084e7de843a7ed79435cd445513e4dd5c4e5ac395fb4b";
+    public static final String AGREEMENT_SHA256 = "f884d117b9c52ef69491a3a85ba4a7b42573127cb1847f168187bb49a9b3ad17";
 
     public static final String QUOTE = """
             {
               "code": "OK",
               "message": "Success",
               "data": {
-                "offerId": 31,
+                "offerId": 2,
                 "amount": 300.00,
                 "currency": "USD",
                 "interestRate": 0,
@@ -202,7 +213,7 @@ public final class StaffLoanApiExamples {
 
     public static final String ACCEPT_REQUEST = """
             {
-              "offerId": 31,
+              "offerId": 2,
               "amount": 300.00,
               "agreementVersion": 1,
               "agreementSha256": \"""" + AGREEMENT_SHA256 + """
@@ -287,7 +298,7 @@ public final class StaffLoanApiExamples {
             {
                   "id": 143,
                   "reference": "SGL-2026-000143",
-                  "offerId": 31,
+                  "offerId": 2,
                   "staffMemberId": 2,
                   "employeeNumber": "E1012",
                   "fullName": "Chipo Banda",
@@ -304,7 +315,7 @@ public final class StaffLoanApiExamples {
 
                   "status": "AWAITING_DISBURSEMENT",
                   "inArrears": false,
-                  "acceptedAt": "2026-10-01T09:10:41+02:00",
+                  "acceptedAt": "2026-10-06T09:10:41+02:00",
                   "disbursedAt": null,
                   "disbursementReference": null,
                   "settledAt": null,
@@ -345,14 +356,14 @@ public final class StaffLoanApiExamples {
                   "contentSha256": \"""" + AGREEMENT_SHA256 + """
             ",
                   "acceptedBy": "borrower:E1012",
-                  "acceptedAt": "2026-10-01T09:10:41+02:00",
+                  "acceptedAt": "2026-10-06T09:10:41+02:00",
                   "deviceId": "a1f3c9e2-7b4d-4e8a-9c21-5d6e7f8a9b0c",
                   "ipAddress": "10.0.4.17",
                   "forwardedFor": "196.27.112.45",
                   "userAgent": "InnBucks/2.4.1 (Android 14)",
                   "authenticationMethod": "pin",
                   "assertionId": "mw-7c1d9e2a",
-                  "evidenceSha256": "ee8250fb76e094b34b471f13a73dbbe51d1ae142e9df59d7c0d31ec20f0a0a8e",
+                  "evidenceSha256": "3eb6aa62f4d351766cb2c6b70316065dfda5323f4f0e56ad1ce03d039737b512",
                   "intact": true
                 }
               }
@@ -371,11 +382,11 @@ public final class StaffLoanApiExamples {
 
                   "status": "CANCELLED",
                   "inArrears": false,
-                  "acceptedAt": "2026-10-01T09:10:41+02:00",
+                  "acceptedAt": "2026-10-06T09:10:41+02:00",
                   "disbursedAt": null,
                   "disbursementReference": null,
                   "settledAt": null,
-                  "cancelledAt": "2026-10-01T11:02:17+02:00",
+                  "cancelledAt": "2026-10-06T11:02:17+02:00",
                   "cancelledBy": "cmanager",
                   "cancellationReason": "Accepted in error: the borrower asked to cancel before payout"
                 }

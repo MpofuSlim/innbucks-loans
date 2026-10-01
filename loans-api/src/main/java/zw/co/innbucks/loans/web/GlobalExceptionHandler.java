@@ -31,6 +31,8 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanRequestInvalidException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
 import zw.co.innbucks.loans.core.staff.loan.StepUpRequiredException;
+import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunFailedException;
+import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunResponse;
 import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.exception.BusinessException;
@@ -291,6 +293,14 @@ public class GlobalExceptionHandler {
      * A borrower who cannot take a Staff Grocery Loan now (FR-SGL-029): the message is the plain-language reason to
      * show as it is, and data.reason names it for the app.
      */
+    /** An offer run broke off: nothing it did was kept, and {@code data} is the FAILED run it is recorded as. */
+    @ExceptionHandler(StaffOfferRunFailedException.class)
+    public ResponseEntity<ApiResult<StaffOfferRunResponse>> staffOfferRunFailed(StaffOfferRunFailedException ex) {
+        log.warn("Staff offer run {} failed (logged with its cause when it broke off)", ex.run().id());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiResult.error("RUN_FAILED",
+                ex.getMessage(), ex.run()));
+    }
+
     @ExceptionHandler(StaffLoanDeclinedException.class)
     public ResponseEntity<ApiResult<Map<String, String>>> staffLoanDeclined(StaffLoanDeclinedException ex) {
         log.info("Staff Grocery Loan declined: {}", ex.decline());

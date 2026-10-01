@@ -341,7 +341,7 @@ public class StaffLoanJourneyService {
      * {@code yyyy-MM-ddTHH:mm:ss.SSSSSS}), device id, IP address, forwarded for, user agent, authentication method,
      * assertion id.
      */
-    static String evidenceSha256(StaffLoanAgreement agreement) {
+    public static String evidenceSha256(StaffLoanAgreement agreement) {
         return AuditService.sha256Hex(String.join(String.valueOf(SEPARATOR),
                 String.valueOf(agreement.getStaffLoanId()),
                 agreement.getInstrumentType().name(),

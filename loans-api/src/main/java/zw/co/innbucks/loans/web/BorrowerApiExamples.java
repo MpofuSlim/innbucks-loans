@@ -67,7 +67,7 @@ public final class BorrowerApiExamples {
               "message": "Success",
               "data": {
                 "assertion": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJpbm5idWNrcy1taWRkbGV3YXJlIiwianRpIjoidGVzdC0xIn0.c2lnbmF0dXJl",
-                "expiresAt": "2026-10-01T10:02:00+02:00"
+                "expiresAt": "2026-10-06T09:02:00+02:00"
               }
             }""";
 
@@ -91,15 +91,16 @@ public final class BorrowerApiExamples {
             }""";
 
     // ---- The SuperApp inbox and offer messages (FR-SGL-019, FR-SGL-020, FR-SGL-022) ----
-    // Chipo Banda's inbox on the morning of 1 October, before she takes up offer 31: its notification from the run of
-    // Monday 28 September, unread, and the one for offer 12 from the run of 14 September, read, which lapsed.
+    // Chipo Banda's inbox on the morning of Tuesday 6 October, before she takes up offer 2, as the staff notification
+    // examples have it: notification 1242 for offer 2 from run 1 of Monday 5 October, unread, and her copy of the
+    // launch announced on 2 October (broadcast 1), read.
 
-    private static final String INBOX_1103 = """
-                  "id": 1103,
+    private static final String INBOX_1242 = """
+                  "id": 1242,
                   "kind": "OFFER_NEW",
                   "title": "Your Staff Grocery Loan offer",
-                  "message": "InnBucks Staff Grocery Loan. You have a new offer of up to USD 300.00, open until 08.00 on 5 Oct 2026. Log in to the InnBucks app to accept it.",
-                  "createdAt": "2026-09-28T08:00:01+02:00",""";
+                  "message": "InnBucks Staff Grocery Loan. You have a new offer of up to USD 300.00, open until 08.00 on 12 Oct 2026. Log in to the InnBucks app to accept it.",
+                  "createdAt": "2026-10-05T08:00:01+02:00",""";
 
     public static final String INBOX = """
             {
@@ -108,20 +109,18 @@ public final class BorrowerApiExamples {
               "data": {
                 "items": [
                   {
-            """ + INBOX_1103 + """
+            """ + INBOX_1242 + """
 
-                    "offerId": 31,
+                    "offerId": 2,
                     "offerOpen": true
                   },
                   {
-                    "id": 877,
-                    "kind": "OFFER_NEW",
-                    "title": "Your Staff Grocery Loan offer",
-                    "message": "InnBucks Staff Grocery Loan. You have a new offer of up to USD 300.00, open until 08.00 on 21 Sep 2026. Log in to the InnBucks app to accept it.",
-                    "createdAt": "2026-09-14T08:00:01+02:00",
-                    "readAt": "2026-09-14T17:22:40+02:00",
-                    "offerId": 12,
-                    "offerOpen": false
+                    "id": 2,
+                    "kind": "LAUNCH",
+                    "title": "Introducing the Staff Grocery Loan",
+                    "message": "InnBucks has launched the Staff Grocery Loan for staff. Log in to the InnBucks app to find out more.",
+                    "createdAt": "2026-10-02T09:15:04+02:00",
+                    "readAt": "2026-10-02T12:40:18+02:00"
                   }
                 ],
                 "page": 0,
@@ -145,10 +144,10 @@ public final class BorrowerApiExamples {
               "code": "OK",
               "message": "Marked read",
               "data": {
-            """ + INBOX_1103 + """
+            """ + INBOX_1242 + """
 
-                "readAt": "2026-10-01T09:01:55+02:00",
-                "offerId": 31,
+                "readAt": "2026-10-06T09:01:55+02:00",
+                "offerId": 2,
                 "offerOpen": true
               }
             }""";
@@ -188,7 +187,7 @@ public final class BorrowerApiExamples {
               "message": "Offer messages stopped; offers still appear in the app",
               "data": {
                 "optedOut": true,
-                "updatedAt": "2026-10-01T09:03:12+02:00"
+                "updatedAt": "2026-10-06T09:03:12+02:00"
               }
             }""";
 }

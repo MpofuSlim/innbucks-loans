@@ -55,6 +55,7 @@ public class StaffGradeLimitService {
     private static final String CHANNEL = "admin-portal";
 
     private final StaffGradeLimitChangeRepository repository;
+    private final StaffGradeChangeRepository gradeChangeRepository;
     private final AuthService authService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
@@ -115,8 +116,8 @@ public class StaffGradeLimitService {
      * Proposes a grade's limit from a day, for a second person to approve.
      *
      * @throws ValidationException the grade is longer than a grade may be, or the effective date is in the past
-     * @throws ConflictException   a proposal for the grade and date is already waiting, or the grade's limit from that
-     *                             date is already in force
+     * @throws ConflictException   a proposal for the grade and date is already waiting, the grade's limit from that
+     *                             date is already in force, or a retirement or rename naming the grade is waiting
      */
     @Transactional
     public StaffGradeLimitChangeResponse propose(ProposeStaffGradeLimitRequest request) {
@@ -141,6 +142,7 @@ public class StaffGradeLimitService {
                 .ifPresent(inForce -> {
                     throw inForce(grade, from);
                 });
+        requireNoGradeChangeWaiting(grade);
         String username = authService.getLoggedInUsername();
         StaffGradeLimitChange change;
         try {
@@ -168,8 +170,9 @@ public class StaffGradeLimitService {
      * Approves or rejects a proposed change. Never by whoever proposed it.
      *
      * @throws NotFoundException     no such change
-     * @throws ConflictException     it is no longer pending; or, to approve: its date has passed, or the grade's limit
-     *                               from that date came into force while it waited
+     * @throws ConflictException     it is no longer pending; or, to approve: its date has passed, the grade's limit
+     *                               from that date came into force while it waited, or a retirement or rename naming
+     *                               the grade is waiting
      * @throws AccessDeniedException the caller proposed it
      * @throws ValidationException   a rejection without a reason
      */
@@ -197,6 +200,7 @@ public class StaffGradeLimitService {
             throw new ConflictException(String.format("Grade limit change %d was to apply from %s, which has passed;"
                     + " reject it and propose it again from today or later", id, change.getEffectiveFrom()));
         }
+        requireNoGradeChangeWaiting(change.getGrade());
         Optional<StaffGradeLimitChange> replaced = repository.findForUpdate(change.getGrade(),
                 change.getEffectiveFrom(), StaffGradeLimitChangeStatus.APPROVED);
         if (replaced.isPresent()) {
@@ -275,6 +279,19 @@ public class StaffGradeLimitService {
             }
         }
         return limits;
+    }
+
+    /**
+     * A limit for a grade that a waiting retirement or rename names, as the grade or as its new name, would land on a
+     * grade about to go (or on a name about to be taken), and would hold that grade change up when it came to be
+     * approved: it is refused until the grade change is decided, as a grade change is refused while a limit waits.
+     */
+    private void requireNoGradeChangeWaiting(String grade) {
+        gradeChangeRepository.findNaming(grade, StaffGradeChangeStatus.PENDING).stream().findFirst()
+                .ifPresent(waiting -> {
+                    throw new ConflictException(String.format("Grade change %d, naming grade %s, is waiting for"
+                            + " approval; approve, reject or withdraw it first", waiting.getId(), grade));
+                });
     }
 
     private StaffGradeLimitChange pendingForUpdate(Long id) {
