@@ -9,7 +9,7 @@ public enum StaffNotificationOutboundStatus {
      * whether it went out is unknown, so it is never sent again.
      */
     SENDING,
-    /** Accepted by the SMS API, or by the WhatsApp gateway after the SMS failed. */
+    /** Accepted by the WhatsApp gateway, or by the SMS API after WhatsApp failed. */
     SENT,
     /** Every channel failed; the in-app copy is all the member has. */
     FAILED,

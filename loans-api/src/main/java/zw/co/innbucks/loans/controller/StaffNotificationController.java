@@ -50,12 +50,12 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff notifications", description = "What staff are told about the Staff Grocery Loan (FR-SGL-019 to"
         + " FR-SGL-024). Every member a weekly run makes an offer to, new or refreshed, gets a notification: kept here as"
-        + " their in-app inbox (the SuperApp reads it at GET /borrower/notifications), and sent to their phone by SMS"
-        + " through the InnBucks notification API, by WhatsApp when the SMS fails. The product launch is announced once"
-        + " to the whole register. A member can opt out of the phone messages and still see and take up offers in-app,"
-        + " and a member who keeps ignoring offers is messaged less often. Every attempt on every channel is logged. A"
-        + " notification is created at most once per offer and once per member per broadcast, so running again never"
-        + " tells anyone twice.")
+        + " their in-app inbox (the SuperApp reads it at GET /borrower/notifications), and sent to their phone by"
+        + " WhatsApp, or by SMS through the InnBucks notification API when WhatsApp fails. The product launch is"
+        + " announced once to the whole register. A member can opt out of the phone messages and still see and take up"
+        + " offers in-app, and a member who keeps ignoring offers is messaged less often. Every attempt on every channel"
+        + " is logged. A notification is created at most once per offer and once per member per broadcast, so running"
+        + " again never tells anyone twice.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -77,7 +77,7 @@ public class StaffNotificationController {
     @Operation(summary = "Staff notifications",
             description = "Newest first, each with every attempt to send it (dispatches). The in-app copy is stored"
                     + " when the notification is created; outboundStatus says where the message to the phone stands:"
-                    + " PENDING, SENDING, SENT (deliveredChannel SMS, or WHATSAPP when the SMS failed), FAILED (every"
+                    + " PENDING, SENDING, SENT (deliveredChannel WHATSAPP, or SMS when WhatsApp failed), FAILED (every"
                     + " channel failed; the in-app copy is all the member has) or SKIPPED (skipReason OPTED_OUT,"
                     + " FREQUENCY_CAP, or OFFER_CLOSED when the offer closed before it could be sent). fromDate and"
                     + " toDate are market days, on when the notification was created.")
@@ -243,7 +243,7 @@ public class StaffNotificationController {
 
     @Operation(summary = "Announce the launch to all staff",
             description = "CREDIT_MANAGER or SUPER_ADMIN. Once only (FR-SGL-020). Every member of the staff register"
-                    + " who has not left gets the announcement in-app at once, and by SMS (WhatsApp if the SMS fails)"
+                    + " who has not left gets the announcement in-app at once, and by WhatsApp (SMS if WhatsApp fails)"
                     + " at the configured pace, so the gateways are not flooded. expectedRecipients must equal the"
                     + " preview's recipients: if the register has changed since, it is refused and nothing is sent."
                     + " Delivery per recipient is in the dispatch log and the notifications list (broadcastId). Audited.")

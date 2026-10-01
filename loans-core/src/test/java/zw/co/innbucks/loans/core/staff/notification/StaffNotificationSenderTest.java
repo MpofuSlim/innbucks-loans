@@ -39,7 +39,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Sending one staff notification: SMS first, WhatsApp when the SMS fails, every attempt logged; and the decisions not to
+ * Sending one staff notification: WhatsApp first, SMS when WhatsApp fails, every attempt logged; and the decisions not to
  * send at all: a notification someone else claimed, an offer that has closed, a member who opted out, and the frequency
  * cap (FR-SGL-019, FR-SGL-021 to FR-SGL-023).
  */
@@ -136,49 +136,49 @@ class StaffNotificationSenderTest {
     }
 
     @Test
-    @DisplayName("the SMS goes to the member's number in E.164; the attempt and the outcome are recorded")
-    void sendsBySms() {
+    @DisplayName("WhatsApp goes first, to the member's number in E.164; the attempt and the outcome are recorded")
+    void sendsByWhatsApp() {
         offerNotification();
-
-        assertThat(sender.send(100L)).isTrue();
-
-        verify(sms).sendSms(eq("+263782606983"), eq(MESSAGE), anyString());
-        verifyNoInteractions(whatsApp);
-        assertThat(dispatched).singleElement().satisfies(row -> {
-            assertThat(row.getChannel()).isEqualTo(StaffNotificationChannel.SMS);
-            assertThat(row.getStatus()).isEqualTo(StaffNotificationDispatchStatus.SENT);
-            assertThat(row.getRecipient()).isEqualTo("+263782606983");
-            assertThat(row.getTemplate()).isEqualTo(StaffNotificationTemplate.OFFER_NEW);
-            assertThat(row.getTemplateVersion()).isEqualTo(1);
-            assertThat(row.getGatewayReference()).matches("LOANS-SMS-[0-9a-f-]{36}");
-            assertThat(row.getFailureReason()).isNull();
-            assertThat(row.getAttemptedAt()).isEqualTo(NOW);
-        });
-        assertThat(saved.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.SENT);
-        assertThat(saved.getDeliveredChannel()).isEqualTo(StaffNotificationChannel.SMS);
-        assertThat(saved.getFinishedAt()).isEqualTo(NOW);
-    }
-
-    @Test
-    @DisplayName("an SMS that fails falls back to WhatsApp, the ticketing fleet's route; both attempts are logged")
-    void fallsBackToWhatsApp() {
-        offerNotification();
-        doThrow(new NotificationDeliveryException("Notification API rejected SMS: HTTP 400"))
-                .when(sms).sendSms(anyString(), anyString(), anyString());
 
         assertThat(sender.send(100L)).isTrue();
 
         verify(whatsApp).sendCustomNotification("+263782606983", MESSAGE);
+        verifyNoInteractions(sms);
+        assertThat(dispatched).singleElement().satisfies(row -> {
+            assertThat(row.getChannel()).isEqualTo(StaffNotificationChannel.WHATSAPP);
+            assertThat(row.getStatus()).isEqualTo(StaffNotificationDispatchStatus.SENT);
+            assertThat(row.getRecipient()).isEqualTo("+263782606983");
+            assertThat(row.getTemplate()).isEqualTo(StaffNotificationTemplate.OFFER_NEW);
+            assertThat(row.getTemplateVersion()).isEqualTo(1);
+            assertThat(row.getGatewayReference()).as("the WhatsApp gateway takes no reference").isNull();
+            assertThat(row.getFailureReason()).isNull();
+            assertThat(row.getAttemptedAt()).isEqualTo(NOW);
+        });
+        assertThat(saved.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.SENT);
+        assertThat(saved.getDeliveredChannel()).isEqualTo(StaffNotificationChannel.WHATSAPP);
+        assertThat(saved.getFinishedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("WhatsApp that fails falls back to SMS through the notification API; both attempts are logged")
+    void fallsBackToSms() {
+        offerNotification();
+        doThrow(new NotificationDeliveryException("WhatsApp gateway rejected the message: HTTP 400"))
+                .when(whatsApp).sendCustomNotification(anyString(), anyString());
+
+        assertThat(sender.send(100L)).isTrue();
+
+        verify(sms).sendSms(eq("+263782606983"), eq(MESSAGE), anyString());
         assertThat(dispatched).extracting(StaffNotificationDispatch::getChannel, StaffNotificationDispatch::getStatus,
                         StaffNotificationDispatch::getFailureReason)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(StaffNotificationChannel.SMS,
-                                StaffNotificationDispatchStatus.FAILED, "Notification API rejected SMS: HTTP 400"),
                         org.assertj.core.groups.Tuple.tuple(StaffNotificationChannel.WHATSAPP,
+                                StaffNotificationDispatchStatus.FAILED, "WhatsApp gateway rejected the message: HTTP 400"),
+                        org.assertj.core.groups.Tuple.tuple(StaffNotificationChannel.SMS,
                                 StaffNotificationDispatchStatus.SENT, null));
-        assertThat(dispatched.get(1).getGatewayReference()).as("the WhatsApp gateway takes no reference").isNull();
+        assertThat(dispatched.get(1).getGatewayReference()).matches("LOANS-SMS-[0-9a-f-]{36}");
         assertThat(saved.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.SENT);
-        assertThat(saved.getDeliveredChannel()).isEqualTo(StaffNotificationChannel.WHATSAPP);
+        assertThat(saved.getDeliveredChannel()).isEqualTo(StaffNotificationChannel.SMS);
     }
 
     @Test
@@ -192,9 +192,14 @@ class StaffNotificationSenderTest {
 
         assertThat(sender.send(100L)).isTrue();
 
-        assertThat(dispatched).extracting(StaffNotificationDispatch::getStatus)
-                .containsExactly(StaffNotificationDispatchStatus.FAILED, StaffNotificationDispatchStatus.FAILED);
-        assertThat(dispatched.get(1).getFailureReason()).startsWith("WhatsApp is not configured");
+        assertThat(dispatched).extracting(StaffNotificationDispatch::getChannel, StaffNotificationDispatch::getStatus)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(StaffNotificationChannel.WHATSAPP,
+                                StaffNotificationDispatchStatus.FAILED),
+                        org.assertj.core.groups.Tuple.tuple(StaffNotificationChannel.SMS,
+                                StaffNotificationDispatchStatus.FAILED));
+        assertThat(dispatched.get(0).getFailureReason()).startsWith("WhatsApp is not configured");
+        assertThat(dispatched.get(1).getFailureReason()).isEqualTo("Notification API unreachable: Connection refused");
         assertThat(saved.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.FAILED);
         assertThat(saved.getDeliveredChannel()).isNull();
     }
@@ -253,7 +258,7 @@ class StaffNotificationSenderTest {
         saved = null;
         preference.setOfferMessagesOptedOut(false);
         assertThat(sender.send(101L)).as("opted back in").isTrue();
-        verify(sms).sendSms(eq("+263782606983"), eq(StaffNotificationTemplate.LAUNCH.text()), anyString());
+        verify(whatsApp).sendCustomNotification("+263782606983", StaffNotificationTemplate.LAUNCH.text());
     }
 
     @Test
@@ -280,7 +285,7 @@ class StaffNotificationSenderTest {
         lastMessaged(NOW.minusWeeks(4).plusSeconds(3));
 
         assertThat(sender.send(100L)).isTrue();
-        verify(sms).sendSms(anyString(), anyString(), anyString());
+        verify(whatsApp).sendCustomNotification(anyString(), anyString());
     }
 
     @Test
@@ -320,6 +325,6 @@ class StaffNotificationSenderTest {
         saved = null;
         properties.setIgnoredOffersBeforeCap(4);
         assertThat(sender.send(100L)).as("three ignored, the cap now four").isTrue();
-        verify(whatsApp, never()).sendCustomNotification(anyString(), anyString());
+        verify(sms, never()).sendSms(anyString(), anyString(), anyString());
     }
 }

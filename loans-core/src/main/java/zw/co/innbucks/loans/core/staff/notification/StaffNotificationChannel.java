@@ -4,8 +4,8 @@ package zw.co.innbucks.loans.core.staff.notification;
 public enum StaffNotificationChannel {
     /** Stored here, as the member's in-app inbox. */
     IN_APP,
-    /** Through the InnBucks notification API. */
+    /** Through the InnBucks notification API, when WhatsApp failed. */
     SMS,
-    /** Through the WhatsApp gateway, when the SMS failed. */
+    /** Through the WhatsApp gateway: tried first. */
     WHATSAPP
 }

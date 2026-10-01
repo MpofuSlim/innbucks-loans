@@ -26,8 +26,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Sends one staff notification to the member's phone: SMS through the InnBucks notification API, and WhatsApp when the
- * SMS fails, the ticketing fleet's OTP route (FR-SGL-019). Every attempt is logged, sent or not (FR-SGL-023).
+ * Sends one staff notification to the member's phone: WhatsApp first, and SMS through the InnBucks notification API when
+ * WhatsApp fails (FR-SGL-019), the order every Staff Grocery Loan message goes in. Every attempt is logged, sent or not
+ * (FR-SGL-023).
  *
  * <p>The notification is claimed first (PENDING to SENDING, in its own short transaction), so it is never sent twice,
  * and whether to send at all is decided then, against the state of things at that moment: an offer that has closed
@@ -100,24 +101,24 @@ public class StaffNotificationSender {
         }
         List<StaffNotificationDispatch> attempts = new ArrayList<>();
         StaffNotificationChannel delivered = null;
-        String reference = "LOANS-SMS-" + UUID.randomUUID();
         try {
-            smsClient.sendSms(claim.recipient(), claim.message(), reference);
-            attempts.add(attempt(claim, StaffNotificationChannel.SMS, reference, null));
-            delivered = StaffNotificationChannel.SMS;
-        } catch (RuntimeException smsFailure) {
-            attempts.add(attempt(claim, StaffNotificationChannel.SMS, reference, smsFailure));
-            log.warn("Staff notification {} SMS to {} failed, falling back to WhatsApp: {}", claim.id(),
-                    MsisdnUtils.mask(claim.recipient()), smsFailure.getMessage());
+            whatsAppClient.sendCustomNotification(claim.recipient(), claim.message());
+            attempts.add(attempt(claim, StaffNotificationChannel.WHATSAPP, null, null));
+            delivered = StaffNotificationChannel.WHATSAPP;
+        } catch (RuntimeException whatsAppFailure) {
+            attempts.add(attempt(claim, StaffNotificationChannel.WHATSAPP, null, whatsAppFailure));
+            log.warn("Staff notification {} WhatsApp to {} failed, falling back to SMS: {}", claim.id(),
+                    MsisdnUtils.mask(claim.recipient()), whatsAppFailure.getMessage());
+            String reference = "LOANS-SMS-" + UUID.randomUUID();
             try {
-                whatsAppClient.sendCustomNotification(claim.recipient(), claim.message());
-                attempts.add(attempt(claim, StaffNotificationChannel.WHATSAPP, null, null));
-                delivered = StaffNotificationChannel.WHATSAPP;
-            } catch (RuntimeException whatsAppFailure) {
-                attempts.add(attempt(claim, StaffNotificationChannel.WHATSAPP, null, whatsAppFailure));
-                log.error("Staff notification {} to {} failed on SMS and WhatsApp; only its in-app copy reached the"
+                smsClient.sendSms(claim.recipient(), claim.message(), reference);
+                attempts.add(attempt(claim, StaffNotificationChannel.SMS, reference, null));
+                delivered = StaffNotificationChannel.SMS;
+            } catch (RuntimeException smsFailure) {
+                attempts.add(attempt(claim, StaffNotificationChannel.SMS, reference, smsFailure));
+                log.error("Staff notification {} to {} failed on WhatsApp and SMS; only its in-app copy reached the"
                                 + " member: {}", claim.id(), MsisdnUtils.mask(claim.recipient()),
-                        whatsAppFailure.getMessage());
+                        smsFailure.getMessage());
             }
         }
         StaffNotificationChannel channel = delivered;

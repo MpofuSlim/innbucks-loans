@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /**
  * Sends one voucher to its customer (FR-SGL-034): on each configured channel in turn until one accepts it, by default
- * SMS through the InnBucks notification API and then WhatsApp. Every attempt is logged, sent or not, and none holds the
+ * WhatsApp and then SMS through the InnBucks notification API. Every attempt is logged, sent or not, and none holds the
  * code. When every channel refuses, the voucher is FAILED: on the failed-delivery list for operations to follow up
  * (FR-SGL-037), and still readable in full by those entitled to.
  *

@@ -41,7 +41,7 @@ public class VoucherProperties {
 
     /** The channels a voucher is sent on, tried in this order until one accepts it (FR-SGL-034). */
     @NotEmpty(message = "loans.vouchers.delivery-channels must name at least one channel")
-    private List<VoucherChannel> deliveryChannels = List.of(VoucherChannel.SMS, VoucherChannel.WHATSAPP);
+    private List<VoucherChannel> deliveryChannels = List.of(VoucherChannel.WHATSAPP, VoucherChannel.SMS);
 
     /**
      * Keys a code to the row it belongs to (HMAC-SHA256), so a code typed at a till finds its voucher without the code

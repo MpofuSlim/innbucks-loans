@@ -47,8 +47,8 @@ import java.time.LocalDate;
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Vouchers", description = "Staff Grocery Loan vouchers (FR-SGL-033 to FR-SGL-040). A loan is paid out as a"
-        + " GetMore voucher, never as cash: one per disbursement, worth what was disbursed, sent to the customer by SMS"
-        + " (WhatsApp when the SMS fails), spent at GetMore's tills in one go or over several purchases, until it"
+        + " GetMore voucher, never as cash: one per disbursement, worth what was disbursed, sent to the customer by"
+        + " WhatsApp (SMS when WhatsApp fails), spent at GetMore's tills in one go or over several purchases, until it"
         + " expires. The code is 16 digits, the last a check digit, shown as 4829 1506 7331 8406 and sent as"
         + " 4829-1506-7331-8406. Everywhere here it is masked; only a VOUCHER_SUPPORT user can see it in full, one"
         + " voucher at a time and on the record. Vouchers are issued by the disbursement, never from a screen.")
