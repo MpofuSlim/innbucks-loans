@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -71,6 +72,7 @@ class BorrowerTokenTest {
         assertThat(jwt.getSubject()).isEqualTo("staff-member:2");
         assertThat(jwt.getClaimAsString("preferred_username")).isEqualTo("borrower:E1012");
         assertThat(jwt.getClaims().get(JwtService.STAFF_MEMBER_CLAIM)).isEqualTo(2L);
+        assertThat(JwtService.borrowerStaffMemberId(jwt)).isEqualTo(2L);
         assertThat(jwt.getClaimAsString(JwtService.MSISDN_CLAIM)).isEqualTo("263773456789");
         assertThat(jwt.getClaimAsStringList(JwtService.AUTHENTICATION_METHODS_CLAIM)).containsExactly("pin");
         assertThat(jwt.getClaimAsString("iss")).isEqualTo("innbucks-loans");
@@ -82,14 +84,17 @@ class BorrowerTokenTest {
     }
 
     @Test
-    @DisplayName("a staff user's token is not a borrower's")
+    @DisplayName("a staff user's token is not a borrower's, and names no staff member")
     void staffTokenIsNotABorrowers() {
         User admin = new User();
         admin.setUsername("admin");
         admin.setExternalSystemId("7f1c2a9e-0000-4000-8000-000000000001");
         admin.setGroups(Set.of(UserGroup.SUPER_ADMIN));
+        Jwt jwt = decoder.decode(jwtService.generateToken(admin));
 
-        assertThat(JwtService.isBorrowerToken(decoder.decode(jwtService.generateToken(admin)))).isFalse();
+        assertThat(JwtService.isBorrowerToken(jwt)).isFalse();
+        assertThatThrownBy(() -> JwtService.borrowerStaffMemberId(jwt))
+                .isInstanceOf(InsufficientAuthenticationException.class);
     }
 
     @ParameterizedTest

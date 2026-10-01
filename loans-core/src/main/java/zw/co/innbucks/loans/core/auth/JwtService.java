@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.auth;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -111,6 +112,17 @@ public class JwtService {
     /** Whether {@code jwt} is a borrower's session rather than a staff user's. */
     public static boolean isBorrowerToken(Jwt jwt) {
         return BORROWER_TOKEN_USE.equals(jwt.getClaimAsString(TOKEN_USE_CLAIM));
+    }
+
+    /**
+     * The staff member a borrower session is for. The decoder already refuses a borrower token without one
+     * ({@link TokenVersionValidator}), so a miss here is a token that is not a borrower's at all: unauthenticated.
+     */
+    public static long borrowerStaffMemberId(Jwt jwt) {
+        if (jwt.getClaims().get(STAFF_MEMBER_CLAIM) instanceof Number id) {
+            return id.longValue();
+        }
+        throw new InsufficientAuthenticationException("The session names no staff member");
     }
 
     /** Whether {@code jwt} was minted on a temporary password, and so may only change it. */

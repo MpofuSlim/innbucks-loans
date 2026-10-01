@@ -55,8 +55,8 @@ public class BorrowerController {
     @PreAuthorize("hasRole('BORROWER')")
     public ApiResult<BorrowerProfile> me(@Parameter(hidden = true) JwtAuthenticationToken authentication) {
         Jwt token = authentication.getToken();
-        Long staffMemberId = Long.valueOf(token.getClaimAsString(JwtService.STAFF_MEMBER_CLAIM));
         List<String> methods = token.getClaimAsStringList(JwtService.AUTHENTICATION_METHODS_CLAIM);
-        return ApiResult.ok(sessionService.profile(staffMemberId, methods == null ? List.of() : methods));
+        return ApiResult.ok(sessionService.profile(JwtService.borrowerStaffMemberId(token),
+                methods == null ? List.of() : methods));
     }
 }
