@@ -15,7 +15,8 @@ import java.time.LocalDateTime;
 
 /**
  * One field of one staff record changing (FR-SGL-006): its previous value (none when the record was created), its new
- * value, who submitted the change, who approved it, and when. Written once and never changed.
+ * value, who submitted the change, who approved it, and when: a register batch, or a grade renamed in the matrix.
+ * Written once and never changed.
  */
 @Entity
 @Table(name = "staff_member_changes")
@@ -32,8 +33,13 @@ public class StaffMemberChange {
     @Column(name = "staff_member_id", nullable = false)
     private Long staffMemberId;
 
-    @Column(name = "batch_id", nullable = false)
+    /** The register batch that made the change; absent when a grade change did. */
+    @Column(name = "batch_id")
     private Long batchId;
+
+    /** The grade change that renamed the member's grade; absent when a register batch made the change. */
+    @Column(name = "grade_change_id")
+    private Long gradeChangeId;
 
     /** The field's API name, e.g. grade or employmentStatus. */
     @Column(name = "field", length = 40, nullable = false)

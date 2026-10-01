@@ -31,6 +31,9 @@ public interface StaffGradeLimitChangeRepository extends JpaRepository<StaffGrad
 
     boolean existsByGradeAndStatus(String grade, StaffGradeLimitChangeStatus status);
 
+    List<StaffGradeLimitChange> findByGradeAndStatusOrderByEffectiveFrom(String grade,
+                                                                          StaffGradeLimitChangeStatus status);
+
     @Query("select distinct c.grade from StaffGradeLimitChange c where c.status = :status")
     List<String> findGradesByStatus(@Param("status") StaffGradeLimitChangeStatus status);
 

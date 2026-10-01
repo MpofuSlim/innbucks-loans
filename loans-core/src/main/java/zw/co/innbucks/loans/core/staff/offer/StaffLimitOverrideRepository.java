@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,4 +26,9 @@ public interface StaffLimitOverrideRepository extends JpaRepository<StaffLimitOv
     Optional<StaffLimitOverride> findByStaffMemberIdAndStatus(Long staffMemberId, StaffLimitOverrideStatus status);
 
     List<StaffLimitOverride> findByStatus(StaffLimitOverrideStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from StaffLimitOverride o where o.grade = :grade and o.status in :statuses order by o.id")
+    List<StaffLimitOverride> findByGradeForUpdate(@Param("grade") String grade,
+                                                  @Param("statuses") Collection<StaffLimitOverrideStatus> statuses);
 }

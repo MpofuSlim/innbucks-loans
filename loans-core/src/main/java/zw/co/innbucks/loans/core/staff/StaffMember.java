@@ -21,7 +21,8 @@ import java.time.LocalDateTime;
 
 /**
  * One InnBucks employee on the Staff Register (FR-SGL-001), the master control for the Staff Grocery Loan. Changed only
- * by approving a batch (FR-SGL-004); every field it changes is kept in {@link StaffMemberChange}.
+ * by approving a batch (FR-SGL-004), and its grade also by approving the grade's rename ({@link StaffGradeChange});
+ * every field either changes is kept in {@link StaffMemberChange}.
  */
 @Entity
 @Table(name = "staff_members")

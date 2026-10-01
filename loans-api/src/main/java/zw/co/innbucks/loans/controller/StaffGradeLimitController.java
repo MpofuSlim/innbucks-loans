@@ -22,7 +22,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import zw.co.innbucks.loans.core.staff.ProposeStaffGradeChangeRequest;
 import zw.co.innbucks.loans.core.staff.ProposeStaffGradeLimitRequest;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeResponse;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeService;
+import zw.co.innbucks.loans.core.staff.StaffGradeChangeStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitChangeResponse;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitChangeStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitDecision;
@@ -45,7 +49,10 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
         + " and none around a slash, so 'Clerk / Assistant / Agent' is the same grade. The matrix changes only under"
         + " maker-checker: a CREDIT_MANAGER or SUPER_ADMIN proposes a change, and another one approves or rejects it. A"
         + " change applies from today or later, never earlier, and a limit already in force is never rewritten: change"
-        + " it from a later day. A limit of 0 stops lending to the grade. Loans keep the amount they were booked for.")
+        + " it from a later day. A limit of 0 stops lending to the grade. Loans keep the amount they were booked for."
+        + " Grades themselves are retired or renamed the same way, through grade changes: a retired grade leaves the"
+        + " matrix and the register refuses it; a renamed one takes its limits, its staff and their limit overrides to"
+        + " the new name.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -53,6 +60,7 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 public class StaffGradeLimitController {
 
     private final StaffGradeLimitService staffGradeLimitService;
+    private final StaffGradeChangeService staffGradeChangeService;
 
     @Operation(summary = "The grade-to-limit matrix on a day",
             description = "Every grade with an approved limit or a pending proposal, alphabetically. current is the"
@@ -241,5 +249,179 @@ public class StaffGradeLimitController {
     @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
     public ApiResult<StaffGradeLimitChangeResponse> withdraw(@PathVariable Long changeId) {
         return ApiResult.ok("Grade limit change withdrawn", staffGradeLimitService.withdraw(changeId));
+    }
+
+    @Operation(summary = "Grade changes",
+            description = "Proposals to retire or rename a grade, newest first. status=PENDING is the checker's"
+                    + " queue; grade gives one grade's history, as the grade changed or as a new name. A PENDING change"
+                    + " carries staffMembers: how many staff hold the grade now. An approved RENAME carries how many"
+                    + " staff members and limit overrides it moved.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Success",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGES))),
+            @ApiResponse(responseCode = "400", description = "An unknown status",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "INVALID_PARAMETER",
+                              "message": "Invalid value for 'status'"
+                            }"""))),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE, HUMAN_CAPITAL or SUPER_ADMIN",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
+    })
+    @GetMapping("/staff-grade-changes")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','FINANCE','HUMAN_CAPITAL','SUPER_ADMIN')")
+    public ApiResult<List<StaffGradeChangeResponse>> gradeChanges(
+            @Parameter(description = "Only changes naming this grade", example = "DRIVER/OFFICE ORDERLY")
+            @RequestParam(required = false) String grade,
+            @Parameter(description = "Only changes in this status", example = "PENDING")
+            @RequestParam(required = false) StaffGradeChangeStatus status) {
+        return ApiResult.ok(staffGradeChangeService.changes(grade, status));
+    }
+
+    @Operation(summary = "Propose retiring or renaming a grade",
+            description = "CREDIT_MANAGER or SUPER_ADMIN. It is carried out only once a different CREDIT_MANAGER or"
+                    + " SUPER_ADMIN approves it. RETIRE takes the grade out of the matrix: its limits stop applying and"
+                    + " the staff register refuses it; refused while anyone still employed (ACTIVE, SUSPENDED or"
+                    + " UNPAID_LEAVE) holds it. RENAME gives it newGrade as its name: its limits, every staff member"
+                    + " at it and their limit overrides move to the new name, which must not already be a grade. Both"
+                    + " are refused while a limit change for the grade, another grade change naming it, or a staff"
+                    + " register batch putting staff at it waits for approval. Audited.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Proposed",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_PROPOSED))),
+            @ApiResponse(responseCode = "400", description = "A missing or bad field, or a new name that is missing,"
+                    + " unchanged, or sent with a RETIRE",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Bad fields", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "action": "Action is required (RETIRE or RENAME)",
+                                        "grade": "Grade is required"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Rename without a new name", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "The new name is required to rename a grade"
+                                    }"""),
+                            @ExampleObject(name = "Retire with a new name", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "A grade being retired takes no new name; propose a RENAME to rename it"
+                                    }""")})),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "404", description = "The grade is not in the matrix",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_NOT_IN_MATRIX))),
+            @ApiResponse(responseCode = "409", description = "Something stands in the way",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Employed staff hold it", value = ApiExamples.STAFF_GRADE_STILL_HELD),
+                            @ExampleObject(name = "New name is a grade",
+                                    value = ApiExamples.STAFF_GRADE_ALREADY_IN_MATRIX),
+                            @ExampleObject(name = "Limit change waiting",
+                                    value = ApiExamples.STAFF_GRADE_LIMIT_CHANGE_WAITING),
+                            @ExampleObject(name = "Register batch waiting",
+                                    value = ApiExamples.STAFF_GRADE_BATCH_WAITING),
+                            @ExampleObject(name = "Grade change waiting",
+                                    value = ApiExamples.STAFF_GRADE_CHANGE_WAITING)}))
+    })
+    @PostMapping("/staff-grade-changes")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    public ApiResult<StaffGradeChangeResponse> proposeGradeChange(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+                    examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_PROPOSAL)))
+            @Valid @RequestBody ProposeStaffGradeChangeRequest request) {
+        return new ApiResult<>("CREATED", "Grade change proposed; it is carried out once someone else approves it",
+                staffGradeChangeService.propose(request));
+    }
+
+    @Operation(summary = "Approve or reject a proposed grade change",
+            description = "CREDIT_MANAGER or SUPER_ADMIN, never whoever proposed it. A rejection needs a comment. An"
+                    + " approval checks everything the proposal was checked for again, and then carries it out at once:"
+                    + " a retired grade's limits are retired; a renamed grade's limits are copied to the new name with"
+                    + " their dates and the old ones retired, and its staff and their limit overrides move to the new"
+                    + " name, each move in the member's history. Offers and loans keep the grade they were made at."
+                    + " Human Capital's next register upload must use the new name. Audited.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Decided",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_APPROVED))),
+            @ApiResponse(responseCode = "400", description = "No decision, or a rejection without a reason",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "No decision", value = """
+                                    {
+                                      "code": "VALIDATION_ERROR",
+                                      "message": "Request validation failed",
+                                      "data": {
+                                        "decision": "Decision is required (APPROVED or REJECTED)"
+                                      }
+                                    }"""),
+                            @ExampleObject(name = "Rejection without a reason", value = """
+                                    {
+                                      "code": "INVALID_REQUEST",
+                                      "message": "A reason is required to reject a grade change"
+                                    }""")})),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or the caller proposed"
+                    + " the change",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Own proposal", value = ApiExamples.STAFF_GRADE_CHANGE_OWN_CHANGE),
+                            @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN)})),
+            @ApiResponse(responseCode = "404", description = "No such change, or its grade left the matrix while it"
+                    + " waited",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "No such change", value = ApiExamples.STAFF_GRADE_CHANGE_NOT_FOUND),
+                            @ExampleObject(name = "Grade gone", value = ApiExamples.STAFF_GRADE_NOT_IN_MATRIX)})),
+            @ApiResponse(responseCode = "409", description = "Already decided, or something now stands in the way",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Already decided",
+                                    value = ApiExamples.STAFF_GRADE_CHANGE_ALREADY_DECIDED),
+                            @ExampleObject(name = "Employed staff hold it", value = ApiExamples.STAFF_GRADE_STILL_HELD),
+                            @ExampleObject(name = "Register batch waiting",
+                                    value = ApiExamples.STAFF_GRADE_BATCH_WAITING)}))
+    })
+    @PostMapping("/staff-grade-changes/{changeId}/decision")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    public ApiResult<StaffGradeChangeResponse> decideGradeChange(
+            @PathVariable Long changeId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+                    examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_APPROVAL)))
+            @Valid @RequestBody StaffGradeLimitDecisionRequest request) {
+        StaffGradeChangeResponse decided = staffGradeChangeService.decide(changeId, request);
+        return ApiResult.ok(request.getDecision() == StaffGradeLimitDecision.APPROVED
+                ? "Grade change approved" : "Grade change rejected", decided);
+    }
+
+    @Operation(summary = "Withdraw a proposed grade change",
+            description = "Only whoever proposed it, before anyone decides it. Audited.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Withdrawn",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_WITHDRAWN))),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN, or not the proposer",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Not the proposer", value = """
+                                    {
+                                      "code": "FORBIDDEN",
+                                      "message": "Only credit1, who proposed grade change 2, can withdraw it; anyone else approves or rejects it"
+                                    }"""),
+                            @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN)})),
+            @ApiResponse(responseCode = "404", description = "No such change",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_NOT_FOUND))),
+            @ApiResponse(responseCode = "409", description = "Already decided",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_CHANGE_ALREADY_DECIDED)))
+    })
+    @DeleteMapping("/staff-grade-changes/{changeId}")
+    @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")
+    public ApiResult<StaffGradeChangeResponse> withdrawGradeChange(@PathVariable Long changeId) {
+        return ApiResult.ok("Grade change withdrawn", staffGradeChangeService.withdraw(changeId));
     }
 }

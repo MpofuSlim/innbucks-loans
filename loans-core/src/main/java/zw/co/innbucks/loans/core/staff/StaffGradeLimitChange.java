@@ -23,7 +23,8 @@ import java.time.LocalDateTime;
  * One change to the Staff Grocery Loan grade-to-limit matrix (FR-SGL-009, FR-SGL-010): a grade's maximum loan amount
  * and score band from an effective date. Proposed by one user and approved or rejected by another; the database
  * refuses a decision by the proposer. Once decided it never changes again, except that an approved change not yet in
- * force can be SUPERSEDED by a later approval for the same grade and date.
+ * force can be SUPERSEDED by a later approval for the same grade and date, and an approved change is RETIRED when its
+ * grade is retired or renamed ({@link StaffGradeChange}).
  */
 @Entity
 @Table(name = "staff_grade_limit_changes")
@@ -83,6 +84,13 @@ public class StaffGradeLimitChange {
 
     @Column(name = "superseded_at")
     private LocalDateTime supersededAt;
+
+    /** The grade change that retired or renamed the grade, for a RETIRED change. */
+    @Column(name = "retired_by")
+    private Long retiredBy;
+
+    @Column(name = "retired_at")
+    private LocalDateTime retiredAt;
 
     @Version
     @Column(name = "version", nullable = false)
