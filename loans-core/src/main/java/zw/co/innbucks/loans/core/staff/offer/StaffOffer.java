@@ -69,6 +69,10 @@ public class StaffOffer {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    /** The limit override its amount came from, when Credit set one; otherwise it is the grade's limit. */
+    @Column(name = "limit_override_id")
+    private Long limitOverrideId;
+
     /** The earlier offer this one replaced while it was still open: a refresh. */
     @Column(name = "replaces_offer_id")
     private Long replacesOfferId;

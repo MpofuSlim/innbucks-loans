@@ -81,6 +81,9 @@ public class StaffOfferRun {
     @Column(name = "excluded_by_reconciliation")
     private Integer excludedByReconciliation;
 
+    @Column(name = "excluded_by_override")
+    private Integer excludedByOverride;
+
     @Column(name = "eligible")
     private Integer eligible;
 

@@ -11,8 +11,9 @@ import java.time.LocalDateTime;
  * A pre-approved offer and where it stands. An ACTIVE offer past its expiry reads as EXPIRED, closed at its expiry,
  * whether or not a run has closed it yet.
  *
- * @param amount             the grade's limit when it was issued
- * @param gradeLimitChangeId the approved grade-limit change the amount comes from
+ * @param amount             the most they may borrow: their grade's limit when it was issued, or Credit's override
+ * @param gradeLimitChangeId the approved grade-limit change for their grade
+ * @param limitOverrideId    the limit override the amount came from, when Credit set one
  * @param replacesOfferId    the open offer it replaced, when it was a refresh
  * @param closedReason       why it was WITHDRAWN
  */
@@ -25,6 +26,7 @@ public record StaffOfferResponse(
         String scoreBand,
         BigDecimal amount,
         Long gradeLimitChangeId,
+        Long limitOverrideId,
         LocalDate cycleStart,
         Long runId,
         StaffOfferStatus status,
@@ -38,7 +40,7 @@ public record StaffOfferResponse(
         boolean lapsed = offer.getStatus() == StaffOfferStatus.ACTIVE && !offer.getExpiresAt().isAfter(now);
         return new StaffOfferResponse(offer.getId(), member == null ? null : member.getEmployeeNumber(),
                 member == null ? null : member.getFullName(), offer.getGrade(), offer.getScoreBand(), offer.getAmount(),
-                offer.getGradeLimitChangeId(), offer.getCycleStart(), offer.getRunId(),
+                offer.getGradeLimitChangeId(), offer.getLimitOverrideId(), offer.getCycleStart(), offer.getRunId(),
                 lapsed ? StaffOfferStatus.EXPIRED : offer.getStatus(), offer.getIssuedAt(), offer.getExpiresAt(),
                 offer.getReplacesOfferId(), lapsed ? offer.getExpiresAt() : offer.getClosedAt(),
                 offer.getClosedReason());
