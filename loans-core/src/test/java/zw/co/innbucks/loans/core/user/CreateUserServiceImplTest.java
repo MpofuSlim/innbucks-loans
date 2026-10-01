@@ -98,7 +98,7 @@ class CreateUserServiceImplTest {
         assertThat(password.find()).isTrue();
         assertThat(new BCryptPasswordEncoder(4).matches(password.group(1), saved.getValue().getPassword())).isTrue();
         assertThat(saved.getValue().getTemporaryPassword()).isTrue();
-        assertThat(sms.getValue()).isEqualTo("Hi Tendai, your InnBucks Loans portal account is ready. Your username"
+        assertThat(sms.getValue()).isEqualTo("Hi Tendai, your InnBucks Lending account is ready. Your username"
                 + " is tmoyo and your temporary password is " + password.group(1) + ". Please sign in and change it"
                 + " immediately.");
         assertThat(whatsApp.getValue()).contains("Username: tmoyo\nTemporary password: " + password.group(1) + "\n");
@@ -119,7 +119,7 @@ class CreateUserServiceImplTest {
 
         ArgumentCaptor<String> sms = ArgumentCaptor.forClass(String.class);
         verify(notificationService).sendPrivate(eq("263772123123"), anyString(), sms.capture());
-        assertThat(sms.getValue()).startsWith("Hi Tendai, your InnBucks Loans portal password has been reset. Your"
+        assertThat(sms.getValue()).startsWith("Hi Tendai, your InnBucks Lending password has been reset. Your"
                 + " username is tmoyo and your temporary password is ")
                 .endsWith(". Please sign in and change it immediately. If you did not ask for this, tell your"
                         + " administrator.");

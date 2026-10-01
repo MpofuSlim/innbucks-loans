@@ -42,7 +42,7 @@ public class UserController {
     @Operation(summary = "Reset a user's password",
             description = "SUPER_ADMIN only. Sets a fresh temporary password and delivers it: by WhatsApp unless a"
                     + " channel is named, falling back to SMS when WhatsApp fails; SMS or EMAIL when named. The"
-                    + " message names the InnBucks Loans portal, the username and the sign-in address. Delivery comes"
+                    + " message names InnBucks Lending, the username and the sign-in address. Delivery comes"
                     + " first: if it fails nothing changes and the old password still works. The user's existing"
                     + " sessions end and any sign-in lock is lifted. The password is never returned; the message says"
                     + " which channel delivered it.")

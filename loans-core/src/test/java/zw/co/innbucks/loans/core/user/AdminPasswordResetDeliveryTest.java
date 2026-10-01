@@ -64,7 +64,7 @@ class AdminPasswordResetDeliveryTest {
         assertThat(outcome.sentBy()).isEqualTo(NotificationChannel.WHATSAPP);
         assertThat(outcome.user().username()).isEqualTo("mpofuslim");
         String password = text.getValue().replaceAll("(?s).*Temporary password: (\\S+)\n.*", "$1");
-        assertThat(text.getValue()).isEqualTo("Hi Tawanda, your InnBucks Loans portal password has been reset by an"
+        assertThat(text.getValue()).isEqualTo("Hi Tawanda, your InnBucks Lending password has been reset by an"
                 + " administrator.\n\nUsername: mpofuslim\nTemporary password: " + password + "\nSign in at:"
                 + " https://lending.innbucks.co.zw/\n\nYou will be asked to choose your own password when you sign in.");
         assertThat(new BCryptPasswordEncoder(4).matches(password, user.getPassword())).isTrue();
@@ -82,7 +82,7 @@ class AdminPasswordResetDeliveryTest {
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(sms).sendSms(eq("+263772123123"), text.capture(), eq(null), eq(true));
         assertThat(outcome.sentBy()).isEqualTo(NotificationChannel.SMS);
-        assertThat(text.getValue()).startsWith("Hi Tawanda, your InnBucks Loans portal password has been reset by an"
+        assertThat(text.getValue()).startsWith("Hi Tawanda, your InnBucks Lending password has been reset by an"
                         + " administrator. Your username is mpofuslim and your temporary password is ")
                 .endsWith(". Please sign in at lending.innbucks.co.zw and change it immediately.");
     }
@@ -109,11 +109,11 @@ class AdminPasswordResetDeliveryTest {
 
         verify(sms).sendSms(eq("+263772123123"), anyString(), eq(null), eq(true));
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
-        verify(email).sendEmail(eq("tawanda@innbucks.co.zw"), eq("Your InnBucks Loans portal password has been reset"),
+        verify(email).sendEmail(eq("tawanda@innbucks.co.zw"), eq("Your InnBucks Lending password has been reset"),
                 body.capture(), eq(null));
-        assertThat(body.getValue()).startsWith("Hi Tawanda,\n\nYour InnBucks Loans portal password has been reset")
+        assertThat(body.getValue()).startsWith("Hi Tawanda,\n\nYour InnBucks Lending password has been reset")
                 .contains("Username: mpofuslim\n", "Sign in at: https://lending.innbucks.co.zw/\n")
-                .endsWith("The InnBucks Loans Team");
+                .endsWith("The InnBucks Lending Team");
         verifyNoInteractions(whatsApp);
     }
 }
