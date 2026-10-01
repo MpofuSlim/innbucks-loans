@@ -347,3 +347,78 @@ the voucher screens and nothing more.
 
 Vouchers are issued by the disbursement (FR-SGL-032, BR.NET), never from a
 screen, so until that lands none exist in the cell.
+
+## 11. SuperApp borrowers: the middleware's assertion, and staging's stand-in
+
+A Staff Grocery Loan borrower signs in from the SuperApp (FR-SGL-025), not
+through loans' own login. The SuperApp user has already signed in at the
+InnBucks middleware with their PIN or biometrics; the middleware signs a
+short-lived assertion that they did, and the app trades it at
+`POST /lending/v1/auth/exchange` for a 15-minute **borrower session**. Loans never
+sees the PIN, and holds only the middleware's PUBLIC key, so nothing in loans
+can mint an assertion.
+
+**The assertion contract** is the one the fleet's `/auth/exchange` already
+verifies (`FederationAssertionVerifier` in ticketing's user-service), with
+loans' own audience, so the middleware signs one shape for everyone:
+
+| Claim | Value |
+|---|---|
+| `alg` | RS256/384/512 or ES256/384/512. Never HS*, never `none`. |
+| `iss` | `innbucks-middleware` (`BORROWER_ASSERTION_ISSUER`) |
+| `aud` | `innbucks-lending` (`BORROWER_ASSERTION_AUDIENCE`). Differs from the fleet's `innbucks-foundry` on purpose: a fleet login is not a loan login. |
+| `sub` | the phone, any Zimbabwean spelling (`+263773456789`, `0773456789`) |
+| `jti` | unique, at most 128 characters; each is accepted once, ever |
+| `iat`, `exp` | both required; `exp - iat` at most 300 s; 30 s of clock skew |
+| `amr` | how they authenticated: `pin`, `fpt` (fingerprint), `face` |
+
+Who the borrower is comes from the **staff register**, by phone, never from
+anything else in the assertion. A phone not on the register, or a staff member
+who has left, is `403 NOT_ON_STAFF_REGISTER`. Every other failure (forged,
+expired, wrong audience, used before) is one opaque `401 ASSERTION_REJECTED`,
+with the reason in the log and the audit trail (`BORROWER_SIGN_IN_REFUSED`).
+Used assertions are recorded in `borrower_assertion_uses` (loans has no Redis).
+Approving a loan will take a FRESH assertion (signed in the last 120 s, `amr` of
+`pin`, `fpt` or `face`: FR-SGL-028), spent the same way.
+
+**A borrower session is not a staff session.** It carries the `BORROWER` role and
+nothing else, names a staff member rather than a user, reaches
+`/lending/v1/borrower/**` and nothing else, and those endpoints refuse every
+staff session, SUPER_ADMIN's included (`BorrowerSessionFilter`). It dies the
+moment the staff member leaves, is removed from the register or changes number
+(`TokenVersionValidator`), and is not refreshed: the app signs in again with a
+fresh assertion.
+
+Env keys (loans' Secret, `loans.<iso>.local.env`):
+
+- `BORROWER_ASSERTION_PUBLIC_KEY`: the middleware's public key, PEM or bare
+  base64 of the X.509 encoding. An env file holds one line per key, so write the
+  PEM's line breaks as `\n`. **Blank, nobody can sign in**: `/auth/exchange`
+  answers `503 BORROWER_SIGN_IN_UNAVAILABLE` and the boot log WARNs. Nothing else
+  is affected.
+- `BORROWER_ASSERTION_PREVIOUS_PUBLIC_KEY`: the key before a rotation, accepted
+  beside the new one until every assertion signed with it has expired (5 minutes).
+- `BORROWER_SESSION_MINUTES` (15), `BORROWER_ASSERTION_MAX_TTL_SECONDS` (300),
+  `BORROWER_STEP_UP_MAX_AGE_SECONDS` (120), `BORROWER_STEP_UP_METHODS`
+  (`pin,fpt,face`): defaults that need no entry.
+
+**Staging only, until the middleware signs: test assertions.** With
+`BORROWER_TEST_ASSERTIONS_ENABLED=true`, loans signs assertions itself, in exactly
+the middleware's shape, for ANY phone, to whoever presents
+`BORROWER_TEST_ASSERTIONS_API_KEY` (at least 32 characters) in `X-Api-Key` at
+`POST /lending/v1/auth/test-assertions`; `BORROWER_TEST_ASSERTIONS_PRIVATE_KEY` is
+the RSA key it signs with (PKCS#8, one line). The SuperApp then runs the real
+flow, sign in and approve, and switches to the middleware's assertions with no
+change but where it gets them. **Whoever holds that api key can sign in and
+borrow as any staff member**: it is announced at ERROR on every boot, the
+endpoint does not exist unless it is on (a plain 404, whatever is sent), and it
+must never be on where real money moves. Switched on without both keys, loans
+refuses to start.
+
+No gateway change: both `/auth/exchange` and `/auth/test-assertions` ride the
+existing `/lending/**` route like loans' own login.
+
+**What still needs the middleware team:** sign the assertion at login (and on a
+PIN or biometric prompt at loan approval) with `aud: innbucks-lending`, and hand
+over the public key. Until then staging runs on test assertions and production
+has no borrower sign-in, which is the documented state, not a fault.

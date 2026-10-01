@@ -22,6 +22,9 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import zw.co.innbucks.loans.core.borrower.AssertionRejectedException;
+import zw.co.innbucks.loans.core.borrower.BorrowerSignInUnavailableException;
+import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.document.DocumentProblem;
 import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
@@ -261,6 +264,27 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> accessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
         return error(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage());
+    }
+
+    /**
+     * A middleware assertion that was not accepted: forged, expired, for someone else, or used before. One opaque
+     * answer whatever the reason (the reason is logged and audited), since naming it would help whoever forged it.
+     */
+    @ExceptionHandler(AssertionRejectedException.class)
+    public ResponseEntity<ApiResult<Void>> assertionRejected(AssertionRejectedException ex) {
+        return error(HttpStatus.UNAUTHORIZED, "ASSERTION_REJECTED", "Assertion rejected - sign in to the SuperApp again");
+    }
+
+    /** No middleware key configured, so no assertion can be checked: the server's state, not the caller's request. */
+    @ExceptionHandler(BorrowerSignInUnavailableException.class)
+    public ResponseEntity<ApiResult<Void>> borrowerSignInUnavailable(BorrowerSignInUnavailableException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "BORROWER_SIGN_IN_UNAVAILABLE", ex.getMessage());
+    }
+
+    /** A genuine sign-in for a phone that is not a current staff member's: the product is not for them (FR-SGL-029). */
+    @ExceptionHandler(NotOnStaffRegisterException.class)
+    public ResponseEntity<ApiResult<Void>> notOnStaffRegister(NotOnStaffRegisterException ex) {
+        return error(HttpStatus.FORBIDDEN, "NOT_ON_STAFF_REGISTER", ex.getMessage());
     }
 
     /**

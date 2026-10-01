@@ -5,6 +5,7 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import zw.co.innbucks.loans.core.auth.JwtProperties;
+import zw.co.innbucks.loans.core.borrower.BorrowerProperties;
 import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
 import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
@@ -25,7 +26,8 @@ import zw.co.innbucks.loans.core.voucher.VoucherProperties;
         LoanApplicationDraftProperties.class,
         StaffOfferProperties.class,
         StaffNotificationProperties.class,
-        VoucherProperties.class})
+        VoucherProperties.class,
+        BorrowerProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
 }
