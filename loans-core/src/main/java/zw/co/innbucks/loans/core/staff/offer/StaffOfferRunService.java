@@ -26,6 +26,7 @@ import zw.co.innbucks.loans.core.staff.StaffRegisterReconciliationRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
 import zw.co.innbucks.loans.core.staff.StaffRegisterVarianceKind;
 import zw.co.innbucks.loans.core.staff.StaffRegisterVarianceRepository;
+import zw.co.innbucks.loans.core.staff.notification.StaffNotificationService;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -63,6 +64,10 @@ import java.util.stream.Collectors;
  * while one is in progress, and the register's lock, so no approval changes the register mid-run. So a run that fails
  * leaves nothing behind, and running again in the same week only tops up the members still without an offer, such as
  * those added to the register since.</p>
+ *
+ * <p><b>Telling them.</b> Every member issued an offer, new or refreshed, gets a notification created in the same
+ * transaction (FR-SGL-019), one per offer, so a retried or topped-up run never tells anyone twice; it is sent to their
+ * phone once the run commits.</p>
  */
 @Slf4j
 @Service
@@ -88,6 +93,7 @@ public class StaffOfferRunService {
     private final StaffLoanStanding loanStanding;
     private final StaffLimitOverrideRepository overrideRepository;
     private final StaffOfferProperties properties;
+    private final StaffNotificationService notificationService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
 
@@ -197,6 +203,9 @@ public class StaffOfferRunService {
         // The closed offers are written before the new ones go in: a member may hold only one ACTIVE offer.
         offerRepository.flush();
         offerRepository.saveAll(issue);
+        // Each member just offered is told, in-app at once and by SMS once this commits (FR-SGL-019).
+        notificationService.notifyOffers(issue, members.stream()
+                .collect(Collectors.toMap(StaffMember::getId, Function.identity())));
 
         run.setRegisterMembers(members.size());
         run.setIneligible(counts.ineligible);

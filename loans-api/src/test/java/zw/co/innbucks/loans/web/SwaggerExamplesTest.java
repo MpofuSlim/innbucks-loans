@@ -35,6 +35,7 @@ import zw.co.innbucks.loans.controller.ReportController;
 import zw.co.innbucks.loans.controller.SignedInstrumentController;
 import zw.co.innbucks.loans.controller.StaffGradeLimitController;
 import zw.co.innbucks.loans.controller.StaffLimitOverrideController;
+import zw.co.innbucks.loans.controller.StaffNotificationController;
 import zw.co.innbucks.loans.controller.StaffOfferController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
 import zw.co.innbucks.loans.controller.StaffRegisterReconciliationController;
@@ -84,7 +85,7 @@ class SwaggerExamplesTest {
             WorkflowStageController.class, WorkQueueController.class, CheckpointController.class,
             CreditAuthorityController.class, StaffGradeLimitController.class,
             StaffRegisterController.class, StaffRegisterReconciliationController.class, StaffOfferController.class,
-            StaffLimitOverrideController.class);
+            StaffLimitOverrideController.class, StaffNotificationController.class);
 
     record Example(String where, String json) {
         @Override

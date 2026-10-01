@@ -58,6 +58,10 @@ public class WhatsAppNotificationClient {
             throw new NotificationDeliveryException(
                     "WhatsApp message exceeds the gateway's " + MAX_MESSAGE_LENGTH + "-character limit");
         }
+        if (isBlank(properties.getBaseUrl()) || isBlank(properties.getApiKey())) {
+            throw new NotificationDeliveryException(
+                    "WhatsApp is not configured: set WHATSAPP_GATEWAY_URL and WHATSAPP_API_KEY");
+        }
         try {
             restClient.post()
                     .uri(CUSTOM_NOTIFICATION_PATH)
@@ -77,5 +81,9 @@ public class WhatsAppNotificationClient {
             throw new NotificationDeliveryException(
                     "WhatsApp gateway is unreachable: " + ex.getMessage(), ex);
         }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

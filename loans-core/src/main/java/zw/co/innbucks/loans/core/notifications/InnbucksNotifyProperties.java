@@ -7,9 +7,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * Config for the InnBucks public notification API (email). Email is delivered
- * via {@code POST /api/notification/email} after a {@code POST /auth/third-party}
- * login; auth is an {@code X-Api-Key} header plus a bearer token.
+ * Config for the InnBucks public notification API (SMS and email), the same API
+ * and credentials the ticketing fleet sends through. SMS goes to
+ * {@code POST /api/notification/sms} and email to {@code POST /api/notification/email},
+ * after a {@code POST /auth/third-party} login; auth is an {@code X-Api-Key}
+ * header plus a bearer token.
  */
 @Data
 @ConfigurationProperties(prefix = "innbucks-notify")

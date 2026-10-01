@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.core.staff.offer;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -17,6 +18,9 @@ public interface StaffOfferRepository extends JpaRepository<StaffOffer, Long>, J
     List<StaffOffer> findByStatus(StaffOfferStatus status);
 
     Optional<StaffOffer> findByStaffMemberIdAndStatus(Long staffMemberId, StaffOfferStatus status);
+
+    /** The member's offers made before {@code offerId}, newest first: what the notification frequency cap reads. */
+    List<StaffOffer> findByStaffMemberIdAndIdLessThanOrderByIdDesc(Long staffMemberId, Long offerId, Pageable pageable);
 
     /** The members already holding an offer from this cycle, whatever has happened to it since. */
     @Query("select o.staffMemberId from StaffOffer o where o.cycleStart = :cycleStart")

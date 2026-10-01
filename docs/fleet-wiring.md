@@ -22,8 +22,8 @@ token therefore passes through untouched, and loans remains the authority on it.
 ## 1. Gateway routes: `api-gateway/src/main/resources/application.yaml`
 
 ```yaml
-# Loans' anonymous forgot-password, refused at the edge (404) while loans has no
-# working SMS channel in the cell (section 8). BEFORE loans-service-route.
+# Loans' anonymous forgot-password, refused at the edge (404) until the path has
+# its own IP-keyed limiter (section 8). BEFORE loans-service-route.
 - id: loans-forgot-password-deny
   uri: forward:/__edge_deny__
   predicates:
@@ -240,34 +240,43 @@ callers to the gateway (`https://<edge>/foundry/lending/v1`) first, and add thei
 origin to the gateway's `CORS_ALLOWED_ORIGINS`. A staging-only origin belongs in
 the host's `cell.zw.local.env`, because `cell.zw.env` is shared with production.
 
-## 8. Passwords in the cell: SMS reaches nobody
+## 8. SMS in the cell, and passwords
 
-Loans sends SMS through the InnBucks core gateway adapter
-(`INNBUCKS_GATEWAY_URL`). The cell has no working value for it, so
-`loans.example.env` leaves it out on purpose, and every loans SMS in the cell
-fails and is logged. Two flows deliver a password by SMS and by nothing else:
+Loans sends SMS through the InnBucks notification API
+(`POST /api/notification/sms`), the same API, credentials and wire body as the
+ticketing fleet's SMS client; email goes through the same API. The credentials
+are loans' own `INNBUCKS_NOTIFY_URL` / `_API_KEY` / `_USERNAME` / `_PASSWORD`
+in its Secret, set to the values the fleet keeps as `BANK_API_*` (loans never
+reads the cell's names, section 5). Without them every loans SMS and email fails
+and is logged. Staff Grocery Loan messages fall back to WhatsApp when the SMS
+fails, so they also need `WHATSAPP_API_KEY` in the Secret for the fallback (the
+URL comes from the cell).
 
-- **Creating a user.** The generated password goes out by SMS only, so a user
-  created in the cell never receives it.
+It used to post to the InnBucks core gateway adapter (`INNBUCKS_GATEWAY_URL`), a
+retired host, so no loans SMS reached anyone in the cell. Two flows deliver a
+password by SMS and by nothing else:
+
+- **Creating a user.** The generated password goes out by SMS only. With the
+  `INNBUCKS_NOTIFY_*` keys provisioned it now arrives; without them the user
+  never receives it.
 - **`POST /lending/v1/auth/forgot-password`**, which is anonymous. It replaces
   the account's password FIRST and only then sends the new one, best-effort
-  (`CreateUserServiceImpl.resetPassword`, `NotificationServiceImpl.sendSms`). In
-  the cell one request would give any account whose username is known, `admin`
-  first, a password nobody receives. That is why the gateway refuses the path at
-  the edge (section 1). Remove that route only once loans' SMS reaches people in
-  the cell, and then give the path an IP-keyed, fail-safe limiter ahead of
-  `loans-service-route`, shaped like the fleet's own `auth-password-reset-route`.
-  The catch-all's limiter is keyed on the bearer header, which an anonymous
-  caller picks for itself, so it would not slow this path down.
+  (`CreateUserServiceImpl.resetPassword`, `NotificationServiceImpl.sendSms`).
+  The gateway refuses the path at the edge (section 1). Working SMS is the first
+  of two conditions for removing that route: the new password then reaches the
+  account's owner rather than nobody, but one request still changes any known
+  account's password, `admin` first. The second is an IP-keyed, fail-safe
+  limiter ahead of `loans-service-route`, shaped like the fleet's own
+  `auth-password-reset-route`. The catch-all's limiter is keyed on the bearer
+  header, which an anonymous caller picks for itself, so it would not slow this
+  path down. Lift the deny only with both in place.
 
-The way in for both is the super-admin reset,
-`POST /lending/v1/users/{userId}/password-reset` with `channel` `EMAIL` (needs
-the `INNBUCKS_NOTIFY_*` keys in loans' Secret) or `WHATSAPP` (needs
-`WHATSAPP_API_KEY` there; the URL comes from the cell). It delivers first and
-changes the password only after delivery has succeeded. Provision at least one
-of the two before anyone is given a loans account in the cell, and keep a
-second SUPER_ADMIN: `admin` is created only while it is absent, so the bootstrap
-cannot restore a lost `admin` password.
+The super-admin reset, `POST /lending/v1/users/{userId}/password-reset` with
+`channel` `EMAIL` (needs the `INNBUCKS_NOTIFY_*` keys) or `WHATSAPP` (needs
+`WHATSAPP_API_KEY`), delivers first and changes the password only after delivery
+has succeeded. Provision at least one of the two before anyone is given a loans
+account in the cell, and keep a second SUPER_ADMIN: `admin` is created only
+while it is absent, so the bootstrap cannot restore a lost `admin` password.
 
 ## 9. Supply chain: below the fleet's bar, called out
 

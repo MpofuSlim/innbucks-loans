@@ -17,14 +17,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Contract test: pins {@link SmsNotificationClient}'s behaviour against each
- * response shape the InnBucks core gateway adapter can return, so a change in
- * the adapter's wire contract fails the build at PR time.
+ * response shape the InnBucks notification API can return, so a change in its
+ * wire contract fails the build at PR time. The wire shape is the ticketing
+ * fleet's (user-service {@code SmsNotificationClientContractTest}), which sends
+ * through the same API.
  *
- * <p>The gateway is fronted by the same auth as the notification API, so the
- * client logs in via {@link NotificationApiAuthenticator}
+ * <p>The client logs in via {@link NotificationApiAuthenticator}
  * ({@code POST /auth/third-party}) and presents {@code X-Api-Key} + a bearer
- * token on {@code POST /notifications/sms}. Both rails point at the same WireMock
- * here.
+ * token on {@code POST /api/notification/sms}, body
+ * {@code {message, reference, destinationMsisdn}}.
  *
  * <p>Pure JUnit + WireMock, no Spring context.
  */
@@ -32,7 +33,7 @@ class SmsNotificationClientContractTest {
 
     private static final String API_KEY = "test-api-key";
     private static final String LOGIN = "/auth/third-party";
-    private static final String SMS = "/notifications/sms";
+    private static final String SMS = "/api/notification/sms";
 
     private static WireMockServer wireMock;
     private SmsNotificationClient client;
@@ -51,7 +52,7 @@ class SmsNotificationClientContractTest {
     @BeforeEach
     void setup() {
         wireMock.resetAll();
-        // Login succeeds by default; individual tests add their own /notifications/sms stub.
+        // Login succeeds by default; individual tests add their own /api/notification/sms stub.
         wireMock.stubFor(post(urlEqualTo(LOGIN))
                 .willReturn(okJson("{\"accessToken\":\"tok-abc\"}")));
         client = smsClient(baseUrl(wireMock.port()), baseUrl(wireMock.port()));
@@ -97,14 +98,36 @@ class SmsNotificationClientContractTest {
                 .withHeader("Content-Type", equalTo("application/json"))
                 .withHeader("X-Api-Key", equalTo(API_KEY))
                 .withHeader("Authorization", equalTo("Bearer tok-abc"))
-                .withRequestBody(matchingJsonPath("$.destination", equalTo("+263782606983")))
-                .withRequestBody(matchingJsonPath("$.message", equalTo("InnBucks temp password 123456")))
-                .withRequestBody(matchingJsonPath("$.reference", equalTo("r1")))
-                .withRequestBody(matchingJsonPath("$.senderId", equalTo("INNBUCKS"))));
+                .withRequestBody(equalToJson("{\"message\":\"InnBucks temp password 123456\",\"reference\":\"r1\","
+                        + "\"destinationMsisdn\":\"+263782606983\"}")));
     }
 
     @Test
-    @DisplayName("gateway 401 once: refreshes the token and replays, then succeeds")
+    @DisplayName("every stored form of a Zimbabwean mobile number goes out in E.164")
+    void sendSms_normalisesTheNumber() {
+        wireMock.stubFor(post(urlEqualTo(SMS)).willReturn(aResponse().withStatus(200)));
+
+        client.sendSms("263782606983", "msg", "r-a");
+        client.sendSms("0782606983", "msg", "r-b");
+
+        wireMock.verify(2, postRequestedFor(urlEqualTo(SMS))
+                .withRequestBody(matchingJsonPath("$.destinationMsisdn", equalTo("+263782606983"))));
+    }
+
+    @Test
+    @DisplayName("the message is made safe for the API: the characters it refuses never reach it")
+    void sendSms_sanitisesTheMessage() {
+        wireMock.stubFor(post(urlEqualTo(SMS)).willReturn(aResponse().withStatus(200)));
+
+        client.sendSms("+263782606983", "Your loan ref: L-1/26 is approved! \u2014 Innbucks", "r-s");
+
+        wireMock.verify(postRequestedFor(urlEqualTo(SMS))
+                .withRequestBody(matchingJsonPath("$.message",
+                        equalTo("Your loan ref L-1 26 is approved. - Innbucks"))));
+    }
+
+    @Test
+    @DisplayName("API 401 once: refreshes the token and replays, then succeeds")
     void sendSms_gateway401_refreshesAndReplays() {
         wireMock.stubFor(post(urlEqualTo(SMS)).inScenario("auth")
                 .whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
@@ -122,7 +145,7 @@ class SmsNotificationClientContractTest {
     }
 
     @Test
-    @DisplayName("gateway 401 twice: gives up with a credentials-rejected error")
+    @DisplayName("API 401 twice: gives up with a credentials-rejected error")
     void sendSms_gateway401Twice_throws() {
         wireMock.stubFor(post(urlEqualTo(SMS)).willReturn(aResponse().withStatus(401)));
 
@@ -132,7 +155,7 @@ class SmsNotificationClientContractTest {
     }
 
     @Test
-    @DisplayName("gateway 502: throws NotificationDeliveryException with status")
+    @DisplayName("API 502: throws NotificationDeliveryException with status")
     void sendSms_gateway502_throwsWithRejectionDetail() {
         wireMock.stubFor(post(urlEqualTo(SMS)).willReturn(aResponse()
                 .withStatus(502)
@@ -145,7 +168,7 @@ class SmsNotificationClientContractTest {
     }
 
     @Test
-    @DisplayName("gateway unreachable (connection refused): throws NotificationDeliveryException")
+    @DisplayName("API unreachable (connection refused): throws NotificationDeliveryException")
     void sendSms_gatewayUnreachable_throwsWithUnreachableMessage() throws Exception {
         int closedPort;
         try (java.net.ServerSocket s = new java.net.ServerSocket(0)) {
@@ -157,6 +180,21 @@ class SmsNotificationClientContractTest {
         assertThatThrownBy(() -> unreachableClient.sendSms("+263782606983", "msg", "r4"))
                 .isInstanceOf(NotificationDeliveryException.class)
                 .hasMessageContaining("unreachable");
+    }
+
+    @Test
+    @DisplayName("no notification API credentials: refused before the network")
+    void sendSms_unconfigured_rejectedBeforeNetwork() {
+        InnbucksNotifyProperties blank = new InnbucksNotifyProperties();
+        RestClient restClient = RestClient.builder().baseUrl(baseUrl(wireMock.port())).build();
+        SmsNotificationClient unconfigured = new SmsNotificationClient(restClient,
+                new NotificationApiAuthenticator(restClient, blank));
+
+        assertThatThrownBy(() -> unconfigured.sendSms("+263782606983", "msg", "r-u"))
+                .isInstanceOf(NotificationDeliveryException.class)
+                .hasMessageContaining("not configured");
+        wireMock.verify(0, postRequestedFor(urlEqualTo(LOGIN)));
+        wireMock.verify(0, postRequestedFor(urlEqualTo(SMS)));
     }
 
     @Test

@@ -23,6 +23,7 @@ import zw.co.innbucks.loans.core.staff.StaffRegisterReconciliationRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
 import zw.co.innbucks.loans.core.staff.StaffRegisterVarianceKind;
 import zw.co.innbucks.loans.core.staff.StaffRegisterVarianceRepository;
+import zw.co.innbucks.loans.core.staff.notification.StaffNotificationService;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -70,6 +71,8 @@ class StaffOfferRunServiceTest {
     private StaffMemberRepository memberRepository;
     private StaffOfferRepository offerRepository;
     private AuditService auditService;
+    /** Each call's offers, as the run handed them over to be notified. */
+    private final List<List<StaffOffer>> notified = new ArrayList<>();
     private StaffOfferRunService service;
 
     @BeforeEach
@@ -148,9 +151,20 @@ class StaffOfferRunServiceTest {
         when(overrideRepository.findByStatus(any())).thenAnswer(i -> overrides.stream()
                 .filter(o -> o.getStatus() == i.getArgument(0)).toList());
         StaffOfferProperties properties = new StaffOfferProperties();
+        StaffNotificationService notificationService = mock(StaffNotificationService.class);
+        doAnswer(i -> {
+            Collection<StaffOffer> issued = i.getArgument(0);
+            Map<Long, StaffMember> byId = i.getArgument(1);
+            assertThat(issued).allSatisfy(offer -> {
+                assertThat(offer.getId()).as("notified after it is saved").isNotNull();
+                assertThat(byId).containsKey(offer.getStaffMemberId());
+            });
+            notified.add(List.copyOf(issued));
+            return null;
+        }).when(notificationService).notifyOffers(any(), any());
         service = new StaffOfferRunService(offerRepository, runRepository, memberRepository, reconciliationRepository,
                 varianceRepository, gradeLimitService, members -> standings, overrideRepository, properties,
-                auditService, new MarketTimeZone("ZW", clockProxy()));
+                notificationService, auditService, new MarketTimeZone("ZW", clockProxy()));
     }
 
     /** The clock the service reads, which a test can move. */
@@ -267,6 +281,9 @@ class StaffOfferRunServiceTest {
         assertThat(service.run(StaffOfferRunTrigger.MANUAL, "credit1").eligible())
                 .as("a third run in the week finds nothing to do").isEqualTo(2);
         assertThat(offers).hasSize(2);
+        assertThat(notified).as("each run notifies only the offers it issued, so nobody is told twice (FR-SGL-024)")
+                .extracting(batch -> batch.stream().map(StaffOffer::getStaffMemberId).toList())
+                .containsExactly(List.of(1L), List.of(2L), List.of());
     }
 
     @Test
@@ -293,6 +310,8 @@ class StaffOfferRunServiceTest {
         assertThat(offers.get(1).getClosedAt()).as("closed at the moment it lapsed").isEqualTo(NOW.plusDays(3));
         assertThat(offers.get(2).getReplacesOfferId()).isEqualTo(1L);
         assertThat(offers.get(3).getReplacesOfferId()).isNull();
+        assertThat(notified.getLast()).as("the refreshed offer and the new one are both notified (FR-SGL-019)")
+                .containsExactly(offers.get(2), offers.get(3));
     }
 
     @Test
@@ -419,6 +438,7 @@ class StaffOfferRunServiceTest {
                 + " 2026-08-30, 36 days ago; offers need a reconciliation within the last 35 days");
         assertThat(stale.reconciliationId()).isEqualTo(1L);
         assertThat(offers).isEmpty();
+        assertThat(notified).as("a refused run tells nobody anything").isEmpty();
         verify(offerRepository, never()).expireDue(any(), any(), any());
         assertThat(audited()).containsExactly(StaffOfferRunService.REFUSED, StaffOfferRunService.REFUSED);
     }

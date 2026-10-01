@@ -3253,4 +3253,322 @@ public final class ApiExamples {
               "code": "FORBIDDEN",
               "message": "credit1 proposed limit override 1 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
             }""";
+    // Staff notifications (FR-SGL-019 to 023). credit1 announced the launch on 2 Oct to the 1240 members of the register
+    // who have not left (broadcast 1, notifications 1 to 1240); run 1 on 5 Oct then made offers 1 (E1001) and 2 (E1012),
+    // notified as 1241 and 1242. E1001's SMS went through; E1012's was refused and WhatsApp took it.
+    private static final String NOTIFICATION_OFFER_TEXT_300 = "InnBucks Staff Grocery Loan. You have a new offer of up to"
+            + " USD 300.00, open until 08.00 on 12 Oct 2026. Log in to the InnBucks app to accept it.";
+
+    private static final String DISPATCHES_1242 = """
+                      {
+                        "id": 2495,
+                        "notificationId": 1242,
+                        "employeeNumber": "E1012",
+                        "fullName": "Chipo Banda",
+                        "channel": "IN_APP",
+                        "recipient": "+263773456789",
+                        "template": "OFFER_NEW",
+                        "templateVersion": 1,
+                        "status": "STORED",
+                        "gatewayReference": null,
+                        "failureReason": null,
+                        "attemptedAt": "2026-10-05T08:00:01+02:00"
+                      },
+                      {
+                        "id": 2497,
+                        "notificationId": 1242,
+                        "employeeNumber": "E1012",
+                        "fullName": "Chipo Banda",
+                        "channel": "SMS",
+                        "recipient": "+263773456789",
+                        "template": "OFFER_NEW",
+                        "templateVersion": 1,
+                        "status": "FAILED",
+                        "gatewayReference": "LOANS-SMS-0d5e6f7a-8b9c-4d1e-a2f3-4b5c6d7e8f90",
+                        "failureReason": "Notification API rejected SMS: HTTP 400",
+                        "attemptedAt": "2026-10-05T08:00:03+02:00"
+                      },
+                      {
+                        "id": 2498,
+                        "notificationId": 1242,
+                        "employeeNumber": "E1012",
+                        "fullName": "Chipo Banda",
+                        "channel": "WHATSAPP",
+                        "recipient": "+263773456789",
+                        "template": "OFFER_NEW",
+                        "templateVersion": 1,
+                        "status": "SENT",
+                        "gatewayReference": null,
+                        "failureReason": null,
+                        "attemptedAt": "2026-10-05T08:00:04+02:00"
+                      }""";
+
+    private static final String DISPATCHES_1241 = """
+                      {
+                        "id": 2494,
+                        "notificationId": 1241,
+                        "employeeNumber": "E1001",
+                        "fullName": "Nyasha Dube",
+                        "channel": "IN_APP",
+                        "recipient": "+263782606983",
+                        "template": "OFFER_NEW",
+                        "templateVersion": 1,
+                        "status": "STORED",
+                        "gatewayReference": null,
+                        "failureReason": null,
+                        "attemptedAt": "2026-10-05T08:00:01+02:00"
+                      },
+                      {
+                        "id": 2496,
+                        "notificationId": 1241,
+                        "employeeNumber": "E1001",
+                        "fullName": "Nyasha Dube",
+                        "channel": "SMS",
+                        "recipient": "+263782606983",
+                        "template": "OFFER_NEW",
+                        "templateVersion": 1,
+                        "status": "SENT",
+                        "gatewayReference": "LOANS-SMS-6f1c2a9e-0b7d-4f43-9a51-3c2e8d7b1f04",
+                        "failureReason": null,
+                        "attemptedAt": "2026-10-05T08:00:02+02:00"
+                      }""";
+
+    public static final String STAFF_NOTIFICATIONS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "id": 1242,
+                    "employeeNumber": "E1012",
+                    "fullName": "Chipo Banda",
+                    "template": "OFFER_NEW",
+                    "templateVersion": 1,
+                    "offerId": 2,
+                    "runId": 1,
+                    "broadcastId": null,
+                    "title": "Your Staff Grocery Loan offer",
+                    "message": \"""" + NOTIFICATION_OFFER_TEXT_300 + """
+            ",
+                    "createdAt": "2026-10-05T08:00:01+02:00",
+                    "outboundStatus": "SENT",
+                    "skipReason": null,
+                    "deliveredChannel": "WHATSAPP",
+                    "finishedAt": "2026-10-05T08:00:04+02:00",
+                    "dispatches": [""" + DISPATCHES_1242 + """
+
+                    ]
+                  },
+                  {
+                    "id": 1241,
+                    "employeeNumber": "E1001",
+                    "fullName": "Nyasha Dube",
+                    "template": "OFFER_NEW",
+                    "templateVersion": 1,
+                    "offerId": 1,
+                    "runId": 1,
+                    "broadcastId": null,
+                    "title": "Your Staff Grocery Loan offer",
+                    "message": \"""" + NOTIFICATION_OFFER_TEXT_300 + """
+            ",
+                    "createdAt": "2026-10-05T08:00:01+02:00",
+                    "outboundStatus": "SENT",
+                    "skipReason": null,
+                    "deliveredChannel": "SMS",
+                    "finishedAt": "2026-10-05T08:00:02+02:00",
+                    "dispatches": [""" + DISPATCHES_1241 + """
+
+                    ]
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_NOTIFICATION_DISPATCHES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [""" + DISPATCHES_1242 + "," + DISPATCHES_1241 + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 5,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_NOTIFICATION_RUN_SUMMARY = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "notifications": 2,
+                "outboundStatus": {
+                  "PENDING": 0,
+                  "SENDING": 0,
+                  "SENT": 2,
+                  "FAILED": 0,
+                  "SKIPPED": 0
+                },
+                "skipped": {
+                  "OPTED_OUT": 0,
+                  "FREQUENCY_CAP": 0,
+                  "OFFER_CLOSED": 0
+                },
+                "sentBy": {
+                  "SMS": 1,
+                  "WHATSAPP": 1
+                }
+              }
+            }""";
+
+    private static final String LAUNCH_TEXT = "InnBucks has launched the Staff Grocery Loan for staff. Log in to the InnBucks"
+            + " app to find out more.";
+
+    public static final String STAFF_LAUNCH_PREVIEW = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "template": "LAUNCH",
+                "templateVersion": 1,
+                "title": "Introducing the Staff Grocery Loan",
+                "message": \"""" + LAUNCH_TEXT + """
+            ",
+                "recipients": 1240,
+                "optedOut": 3,
+                "leftExcluded": 17,
+                "alreadySentAs": null
+              }
+            }""";
+
+    public static final String STAFF_LAUNCH_REQUEST = """
+            {
+              "expectedRecipients": 1240
+            }""";
+
+    public static final String STAFF_LAUNCH_SENT = """
+            {
+              "code": "CREATED",
+              "message": "Launch announced to 1240 staff: stored in-app now, and sent to their phones at a measured pace",
+              "data": {
+                "id": 1,
+                "kind": "LAUNCH",
+                "template": "LAUNCH",
+                "templateVersion": 1,
+                "title": "Introducing the Staff Grocery Loan",
+                "message": \"""" + LAUNCH_TEXT + """
+            ",
+                "recipients": 1240,
+                "leftExcluded": 17,
+                "createdBy": "credit1",
+                "createdAt": "2026-10-02T09:15:04+02:00",
+                "summary": {
+                  "notifications": 1240,
+                  "outboundStatus": {
+                    "PENDING": 1240,
+                    "SENDING": 0,
+                    "SENT": 0,
+                    "FAILED": 0,
+                    "SKIPPED": 0
+                  },
+                  "skipped": {
+                    "OPTED_OUT": 0,
+                    "FREQUENCY_CAP": 0,
+                    "OFFER_CLOSED": 0
+                  },
+                  "sentBy": {
+                    "SMS": 0,
+                    "WHATSAPP": 0
+                  }
+                }
+              }
+            }""";
+
+    public static final String STAFF_BROADCASTS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "id": 1,
+                  "kind": "LAUNCH",
+                  "template": "LAUNCH",
+                  "templateVersion": 1,
+                  "title": "Introducing the Staff Grocery Loan",
+                  "message": \"""" + LAUNCH_TEXT + """
+            ",
+                  "recipients": 1240,
+                  "leftExcluded": 17,
+                  "createdBy": "credit1",
+                  "createdAt": "2026-10-02T09:15:04+02:00",
+                  "summary": {
+                    "notifications": 1240,
+                    "outboundStatus": {
+                      "PENDING": 0,
+                      "SENDING": 0,
+                      "SENT": 1235,
+                      "FAILED": 2,
+                      "SKIPPED": 3
+                    },
+                    "skipped": {
+                      "OPTED_OUT": 3,
+                      "FREQUENCY_CAP": 0,
+                      "OFFER_CLOSED": 0
+                    },
+                    "sentBy": {
+                      "SMS": 1221,
+                      "WHATSAPP": 14
+                    }
+                  }
+                }
+              ]
+            }""";
+
+    public static final String STAFF_LAUNCH_ALREADY_SENT = """
+            {
+              "code": "CONFLICT",
+              "message": "The launch was announced by credit1 (broadcast 1); it is sent once"
+            }""";
+
+    public static final String STAFF_OFFER_MESSAGES_REQUEST = """
+            {
+              "optedOut": true,
+              "reason": "Asked by phone to the Human Capital help desk, 1 Oct 2026"
+            }""";
+
+    public static final String STAFF_OFFER_MESSAGES_OPTED_OUT = """
+            {
+              "code": "OK",
+              "message": "Employee E1043 will no longer be sent offer messages; offers still appear in the app",
+              "data": {
+                "employeeNumber": "E1043",
+                "fullName": "Tendai Moyo",
+                "optedOut": true,
+                "reason": "Asked by phone to the Human Capital help desk, 1 Oct 2026",
+                "updatedBy": "hc1",
+                "updatedAt": "2026-10-01T10:20:31+02:00"
+              }
+            }""";
+
+    public static final String STAFF_OFFER_MESSAGES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "employeeNumber": "E1043",
+                "fullName": "Tendai Moyo",
+                "optedOut": true,
+                "reason": "Asked by phone to the Human Capital help desk, 1 Oct 2026",
+                "updatedBy": "hc1",
+                "updatedAt": "2026-10-01T10:20:31+02:00"
+              }
+            }""";
 }
