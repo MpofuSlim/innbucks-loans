@@ -23,8 +23,11 @@ import java.time.LocalDate;
 public class ProposeStaffGradeLimitRequest {
 
     @NotBlank(message = "Grade is required")
+    @Size(max = 64, message = StaffGrades.MESSAGE)
     @Pattern(regexp = StaffGrades.PATTERN, message = StaffGrades.MESSAGE)
-    @Schema(description = "The Paterson grade; stored upper case", example = "C4")
+    @Schema(description = "The grade, as the bank grades its staff: a Paterson grade such as C4 or a band such as"
+            + " CLERK/ASSISTANT/AGENT. Stored upper case, with runs of spaces as one and none around a slash",
+            example = "C4")
     private String grade;
 
     @NotBlank(message = "Score band is required")

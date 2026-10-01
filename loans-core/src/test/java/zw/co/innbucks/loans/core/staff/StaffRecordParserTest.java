@@ -125,7 +125,7 @@ class StaffRecordParserTest {
     void futureDateAndMalformedGrade() {
         Map<String, String> record = record();
         record.put(StaffFields.ENGAGEMENT_DATE, "2026-10-02");
-        record.put(StaffFields.GRADE, "C 4");
+        record.put(StaffFields.GRADE, "C4/");
 
         assertThat(StaffRecordParser.parse(record, GRADES, TODAY).errors()).containsExactly(
                 Map.entry(StaffFields.GRADE, StaffGrades.MESSAGE),
@@ -133,5 +133,24 @@ class StaffRecordParserTest {
         record.put(StaffFields.ENGAGEMENT_DATE, "2026-10-01");
         record.put(StaffFields.GRADE, "C4");
         assertThat(StaffRecordParser.parse(record, GRADES, TODAY).valid()).as("today is fine").isTrue();
+    }
+
+    @Test
+    @DisplayName("a band typed with spaces around its slashes is the band in the matrix; one too long is refused")
+    void gradeBands() {
+        Map<String, String> record = record();
+        record.put(StaffFields.GRADE, " clerk/ assistant /agent ");
+        Set<String> bands = Set.of("CLERK/ASSISTANT/AGENT", "DRIVER/OFFICE ORDERLY");
+
+        assertThat(StaffRecordParser.parse(record, bands, TODAY).record().grade()).isEqualTo("CLERK/ASSISTANT/AGENT");
+        record.put(StaffFields.GRADE, "Driver /  Office   Orderly");
+        assertThat(StaffRecordParser.parse(record, bands, TODAY).record().grade()).isEqualTo("DRIVER/OFFICE ORDERLY");
+        record.put(StaffFields.GRADE, "DRIVER/OFFICE ODERLY");
+        assertThat(StaffRecordParser.parse(record, bands, TODAY).errors()).as("a misspelt band is not the band")
+                .containsExactly(Map.entry(StaffFields.GRADE,
+                        "Grade DRIVER/OFFICE ODERLY is not in the grade-to-limit matrix"));
+        record.put(StaffFields.GRADE, "X".repeat(33));
+        assertThat(StaffRecordParser.parse(record, bands, TODAY).errors())
+                .containsExactly(Map.entry(StaffFields.GRADE, StaffGrades.MESSAGE));
     }
 }

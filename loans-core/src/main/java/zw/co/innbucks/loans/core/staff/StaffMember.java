@@ -51,7 +51,7 @@ public class StaffMember {
     @Column(name = "msisdn", length = 12, nullable = false, unique = true)
     private String msisdn;
 
-    @Column(name = "grade", length = 16, nullable = false)
+    @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false)
     private String grade;
 
     @Column(name = "department", length = 120, nullable = false)

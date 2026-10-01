@@ -20,9 +20,10 @@ import java.util.stream.Collectors;
  * file can be corrected in one pass.
  *
  * <p>Values are forgiving about how they are typed, because they come from spreadsheets: a mobile number with spaces or
- * without its leading 0, a grade in lower case, {@code Unpaid leave} for {@code UNPAID_LEAVE}, a date as {@code
- * 2015-02-02} or {@code 02/02/2015}. They are strict about what they mean: a number that is not a Zimbabwean mobile, a
- * grade the grade-to-limit matrix does not know, or an engagement date in the future is refused.</p>
+ * without its leading 0, a grade in lower case or with spaces around a slash, {@code Unpaid leave} for {@code
+ * UNPAID_LEAVE}, a date as {@code 2015-02-02} or {@code 02/02/2015}. They are strict about what they mean: a number
+ * that is not a Zimbabwean mobile, a grade the grade-to-limit matrix does not know, or an engagement date in the future
+ * is refused.</p>
  */
 public final class StaffRecordParser {
 
@@ -79,7 +80,7 @@ public final class StaffRecordParser {
         String grade = StaffGrades.normalise(rawGrade);
         if (grade == null) {
             errors.put(StaffFields.GRADE, "Grade is required");
-        } else if (!rawGrade.matches(StaffGrades.PATTERN)) {
+        } else if (!StaffGrades.valid(rawGrade)) {
             errors.put(StaffFields.GRADE, StaffGrades.MESSAGE);
         } else if (!knownGrades.contains(grade)) {
             errors.put(StaffFields.GRADE, "Grade " + grade + " is not in the grade-to-limit matrix");

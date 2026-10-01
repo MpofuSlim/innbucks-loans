@@ -38,8 +38,8 @@ public class StaffGradeLimitChange {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** The Paterson grade, upper case, e.g. C4. */
-    @Column(name = "grade", length = 16, nullable = false)
+    /** The grade, written as {@link StaffGrades} writes it, e.g. C4 or MANAGER. */
+    @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false)
     private String grade;
 
     /** The internal credit score / risk band label the grade maps to. */

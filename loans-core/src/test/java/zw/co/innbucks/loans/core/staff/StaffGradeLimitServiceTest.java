@@ -141,6 +141,17 @@ class StaffGradeLimitServiceTest {
     }
 
     @Test
+    @DisplayName("a band is a grade, written one way however it is typed; one too long for the column is refused")
+    void bands() {
+        StaffGradeLimitChangeResponse proposed = service.propose(proposal("Clerk / Assistant / Agent", "50",
+                TODAY.plusMonths(1)));
+
+        assertThat(proposed.grade()).isEqualTo("CLERK/ASSISTANT/AGENT");
+        assertThatThrownBy(() -> service.propose(proposal("X".repeat(33), "50", TODAY.plusMonths(1))))
+                .isInstanceOf(ValidationException.class).hasMessage(StaffGrades.MESSAGE);
+    }
+
+    @Test
     @DisplayName("a pending change shows the limit it would replace on its date")
     void pendingChangeShowsWhatItReplaces() {
         approved("C4", "300.00", TODAY);

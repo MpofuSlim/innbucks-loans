@@ -14,6 +14,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.staff.StaffGrades;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -58,7 +59,7 @@ public class StaffLoan {
     @Column(name = "msisdn", length = 12, nullable = false, updatable = false)
     private String msisdn;
 
-    @Column(name = "grade", length = 16, nullable = false, updatable = false)
+    @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false, updatable = false)
     private String grade;
 
     @Column(name = "amount", precision = 19, scale = 2, nullable = false, updatable = false)

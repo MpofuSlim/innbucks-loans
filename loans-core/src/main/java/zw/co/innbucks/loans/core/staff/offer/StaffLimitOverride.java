@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.staff.StaffGrades;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 
 import java.math.BigDecimal;
@@ -43,7 +44,7 @@ public class StaffLimitOverride {
     private Long staffMemberId;
 
     /** The grade the member held when it was proposed; it applies only while they still hold it. */
-    @Column(name = "grade", length = 16, nullable = false)
+    @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false)
     private String grade;
 
     @Column(name = "amount", precision = 19, scale = 2, nullable = false)
