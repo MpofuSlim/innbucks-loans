@@ -31,6 +31,9 @@ public interface StaffGradeLimitChangeRepository extends JpaRepository<StaffGrad
 
     boolean existsByGradeAndStatus(String grade, StaffGradeLimitChangeStatus status);
 
+    @Query("select distinct c.grade from StaffGradeLimitChange c where c.status = :status")
+    List<String> findGradesByStatus(@Param("status") StaffGradeLimitChangeStatus status);
+
     /** The approved limit in force for the grade on the day: the latest effective on or before it. */
     Optional<StaffGradeLimitChange> findFirstByGradeAndStatusAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
             String grade, StaffGradeLimitChangeStatus status, LocalDate on);

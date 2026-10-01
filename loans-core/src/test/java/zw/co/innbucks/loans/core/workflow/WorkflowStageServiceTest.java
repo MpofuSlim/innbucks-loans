@@ -135,6 +135,27 @@ class WorkflowStageServiceTest {
     }
 
     @Test
+    @DisplayName("HUMAN_CAPITAL keeps the staff register: it can be given no loan stage and sent no escalation")
+    void humanCapitalRefused() {
+        when(repository.findById("CREDIT_DECISION"))
+                .thenReturn(Optional.of(WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL)));
+
+        assertThatThrownBy(() -> service.update("CREDIT_DECISION",
+                tightened().viewRoles(Set.of(UserGroup.CREDIT_MANAGER, UserGroup.HUMAN_CAPITAL)).build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUMAN_CAPITAL keeps the staff register and cannot be given a loan workflow stage");
+        assertThatThrownBy(() -> service.update("CREDIT_DECISION",
+                tightened().workRoles(Set.of(UserGroup.HUMAN_CAPITAL)).build()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.update("CREDIT_DECISION",
+                tightened().escalateTo(Set.of(UserGroup.HUMAN_CAPITAL)).build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Escalations cannot be sent to HUMAN_CAPITAL");
+        verify(repository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
     @DisplayName("an escalation point before the target is refused")
     void escalationBeforeTarget() {
         when(repository.findById("CREDIT_DECISION"))

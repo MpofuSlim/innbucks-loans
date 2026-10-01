@@ -26,6 +26,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -253,6 +254,24 @@ public class StaffGradeLimitService {
     public boolean recognises(String grade) {
         return StringUtils.isNotBlank(grade)
                 && repository.existsByGradeAndStatus(StaffGrades.normalise(grade), StaffGradeLimitChangeStatus.APPROVED);
+    }
+
+    /** Every grade the matrix knows, for checking a whole file in one query. */
+    @Transactional(readOnly = true)
+    public Set<String> recognisedGrades() {
+        return Set.copyOf(repository.findGradesByStatus(StaffGradeLimitChangeStatus.APPROVED));
+    }
+
+    /** The approved limit in force on the market day for every grade that has one. */
+    @Transactional(readOnly = true)
+    public Map<String, StaffGradeLimit> limitsOn(LocalDate day) {
+        Map<String, StaffGradeLimit> limits = new TreeMap<>();
+        for (StaffGradeLimitResponse row : matrix(day)) {
+            if (row.current() != null) {
+                limits.put(row.grade(), row.current());
+            }
+        }
+        return limits;
     }
 
     private StaffGradeLimitChange pendingForUpdate(Long id) {

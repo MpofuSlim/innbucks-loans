@@ -2429,4 +2429,340 @@ public final class ApiExamples {
               "code": "FORBIDDEN",
               "message": "credit1 proposed grade limit change 2 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
             }""";
+
+    // ---- Staff Register (FR-SGL-001 to FR-SGL-007) ----
+    // hc1 uploads staff-register-2026-10.csv as batch 12: row 2 adds E1043 Tendai Moyo, row 3 moves E1001 Nyasha Dube
+    // from C3 to C4, row 4 is refused. hc2 approves it. hc1 then submits batch 13 (E1043 resigned), which hc2 approves.
+
+    private static final String STAFF_ROW_4_REFUSED = """
+                {
+                  "rowNumber": 4,
+                  "outcome": "REJECTED",
+                  "values": {
+                    "employeeNumber": "E1045",
+                    "fullName": "Rudo Chikwanha",
+                    "nationalId": "63-1112223-C-07",
+                    "mobileNumber": "12345",
+                    "grade": "C9",
+                    "department": "Operations",
+                    "employmentStatus": "Active",
+                    "engagementDate": "01/03/2019",
+                    "walletAccountNumber": "0782606983"
+                  },
+                  "errors": {
+                    "mobileNumber": "Mobile number must be a Zimbabwean mobile number, e.g. 0772123123 or +263772123123",
+                    "grade": "Grade C9 is not in the grade-to-limit matrix"
+                  }
+                }""";
+
+    public static final String STAFF_REGISTER_UPLOAD_REQUEST = """
+            {
+              "fileName": "staff-register-2026-10.csv",
+              "content": "RW1wbG95ZWUgTnVtYmVyLEZ1bGwgTmFtZSxOYXRpb25hbCBJRCxNb2JpbGUsR3JhZGUsRGVwYXJ0bWVudCxTdGF0dXMsRGF0ZSBKb2luZWQsV2FsbGV0LENvc3QgQ2VudHJlCg==",
+              "comment": "October register from Human Capital"
+            }""";
+
+    public static final String STAFF_REGISTER_UPLOADED = """
+            {
+              "code": "CREATED",
+              "message": "Staff register file submitted; it reaches the register once someone else approves it",
+              "data": {
+                "id": 12,
+                "source": "UPLOAD",
+                "fileName": "staff-register-2026-10.csv",
+                "status": "PENDING",
+                "submittedBy": "hc1",
+                "submittedAt": "2026-10-01T10:15:00+02:00",
+                "comment": "October register from Human Capital",
+                "totalRows": 3,
+                "stagedRows": 2,
+                "rejectedRows": 1,
+                "ignoredColumns": ["Cost Centre"],
+                "rejected": [
+            """ + STAFF_ROW_4_REFUSED + """
+
+                ]
+              }
+            }""";
+
+    public static final String STAFF_REGISTER_NOTHING_TO_LOAD = """
+            {
+              "code": "NOTHING_TO_LOAD",
+              "message": "No row of staff-register-2026-10.csv can be loaded; all 1 were refused",
+              "data": {
+                "rejected": [
+            """ + STAFF_ROW_4_REFUSED + """
+
+                ]
+              }
+            }""";
+
+    private static final String STAFF_BATCH_12_PENDING = """
+                {
+                  "id": 12,
+                  "source": "UPLOAD",
+                  "fileName": "staff-register-2026-10.csv",
+                  "status": "PENDING",
+                  "submittedBy": "hc1",
+                  "submittedAt": "2026-10-01T10:15:00+02:00",
+                  "comment": "October register from Human Capital",
+                  "totalRows": 3,
+                  "stagedRows": 2,
+                  "rejectedRows": 1
+                }""";
+
+    public static final String STAFF_REGISTER_BATCHES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+            """ + STAFF_BATCH_12_PENDING + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_REGISTER_BATCH_12 = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_BATCH_12_PENDING + """
+
+            }""";
+
+    public static final String STAFF_REGISTER_STAGED_ROWS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "rowNumber": 2,
+                    "outcome": "STAGED",
+                    "action": "CREATE",
+                    "values": {
+                      "employeeNumber": "E1043",
+                      "fullName": "Tendai Moyo",
+                      "nationalId": "632345678B42",
+                      "mobileNumber": "263771234000",
+                      "grade": "C4",
+                      "department": "Finance",
+                      "employmentStatus": "ACTIVE",
+                      "engagementDate": "2015-02-02",
+                      "walletAccountNumber": "263771234000"
+                    },
+                    "changes": [
+                      { "field": "employeeNumber", "to": "E1043" },
+                      { "field": "fullName", "to": "Tendai Moyo" },
+                      { "field": "nationalId", "to": "632345678B42" },
+                      { "field": "mobileNumber", "to": "263771234000" },
+                      { "field": "grade", "to": "C4" },
+                      { "field": "department", "to": "Finance" },
+                      { "field": "employmentStatus", "to": "ACTIVE" },
+                      { "field": "engagementDate", "to": "2015-02-02" },
+                      { "field": "walletAccountNumber", "to": "263771234000" }
+                    ]
+                  },
+                  {
+                    "rowNumber": 3,
+                    "outcome": "STAGED",
+                    "action": "AMEND",
+                    "values": {
+                      "employeeNumber": "E1001",
+                      "fullName": "Nyasha Dube",
+                      "nationalId": "08765432F21",
+                      "mobileNumber": "263782606983",
+                      "grade": "C4",
+                      "department": "Credit",
+                      "employmentStatus": "ACTIVE",
+                      "engagementDate": "2012-06-11",
+                      "walletAccountNumber": "263782606983"
+                    },
+                    "changes": [
+                      { "field": "grade", "from": "C3", "to": "C4" }
+                    ]
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_REGISTER_APPROVAL = """
+            {
+              "decision": "APPROVED",
+              "comment": "Checked against the HR master"
+            }""";
+
+    public static final String STAFF_REGISTER_APPROVED = """
+            {
+              "code": "OK",
+              "message": "Staff register batch approved: 1 added, 1 changed, 0 unchanged, 0 skipped",
+              "data": {
+                "id": 12,
+                "source": "UPLOAD",
+                "fileName": "staff-register-2026-10.csv",
+                "status": "APPROVED",
+                "submittedBy": "hc1",
+                "submittedAt": "2026-10-01T10:15:00+02:00",
+                "comment": "October register from Human Capital",
+                "totalRows": 3,
+                "stagedRows": 2,
+                "rejectedRows": 1,
+                "decidedBy": "hc2",
+                "decidedAt": "2026-10-01T11:02:40+02:00",
+                "decisionComment": "Checked against the HR master",
+                "createdRows": 1,
+                "amendedRows": 1,
+                "unchangedRows": 0,
+                "skippedRows": 0
+              }
+            }""";
+
+    public static final String STAFF_RECORD_REQUEST = """
+            {
+              "employeeNumber": "E1043",
+              "fullName": "Tendai Moyo",
+              "nationalId": "63-2345678-B-42",
+              "mobileNumber": "0771234000",
+              "grade": "C4",
+              "department": "Finance",
+              "employmentStatus": "RESIGNED",
+              "engagementDate": "2015-02-02",
+              "walletAccountNumber": "0771234000",
+              "comment": "Resigned with effect from 30 September"
+            }""";
+
+    public static final String STAFF_RECORD_SUBMITTED = """
+            {
+              "code": "CREATED",
+              "message": "Staff record change submitted; it reaches the register once someone else approves it",
+              "data": {
+                "id": 13,
+                "source": "MANUAL",
+                "status": "PENDING",
+                "submittedBy": "hc1",
+                "submittedAt": "2026-10-01T14:30:12+02:00",
+                "comment": "Resigned with effect from 30 September",
+                "totalRows": 1,
+                "stagedRows": 1,
+                "rejectedRows": 0
+              }
+            }""";
+
+    private static final String STAFF_E1001 = """
+                {
+                  "id": 1,
+                  "employeeNumber": "E1001",
+                  "fullName": "Nyasha Dube",
+                  "nationalId": "08765432F21",
+                  "mobileNumber": "263782606983",
+                  "grade": "C4",
+                  "department": "Credit",
+                  "employmentStatus": "ACTIVE",
+                  "engagementDate": "2012-06-11",
+                  "walletAccountNumber": "263782606983",
+                  "statusChangedAt": "2026-09-30T15:40:03+02:00",
+                  "createdAt": "2026-09-30T15:40:03+02:00",
+                  "updatedAt": "2026-10-01T11:02:40+02:00",
+                  "eligible": true,
+                  "limit": """ + GRADE_LIMIT_C4_1 + """
+
+                }""";
+
+    private static final String STAFF_E1043 = """
+                {
+                  "id": 7,
+                  "employeeNumber": "E1043",
+                  "fullName": "Tendai Moyo",
+                  "nationalId": "632345678B42",
+                  "mobileNumber": "263771234000",
+                  "grade": "C4",
+                  "department": "Finance",
+                  "employmentStatus": "RESIGNED",
+                  "engagementDate": "2015-02-02",
+                  "walletAccountNumber": "263771234000",
+                  "statusChangedAt": "2026-10-01T15:05:51+02:00",
+                  "createdAt": "2026-10-01T11:02:40+02:00",
+                  "updatedAt": "2026-10-01T15:05:51+02:00",
+                  "eligible": false,
+                  "ineligibleReason": "Employment status is RESIGNED; only ACTIVE staff may borrow",
+                  "limit": """ + GRADE_LIMIT_C4_1 + """
+
+                }""";
+
+    public static final String STAFF_MEMBERS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+            """ + STAFF_E1001 + """
+            ,
+            """ + STAFF_E1043 + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_MEMBER_E1043 = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_E1043 + """
+
+            }""";
+
+    public static final String STAFF_MEMBER_E1043_HISTORY = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                { "field": "employmentStatus", "previousValue": "ACTIVE", "newValue": "RESIGNED", "batchId": 13, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T15:05:51+02:00" },
+                { "field": "walletAccountNumber", "newValue": "263771234000", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "engagementDate", "newValue": "2015-02-02", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "employmentStatus", "newValue": "ACTIVE", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "department", "newValue": "Finance", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "grade", "newValue": "C4", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "mobileNumber", "newValue": "263771234000", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "nationalId", "newValue": "632345678B42", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "fullName", "newValue": "Tendai Moyo", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" },
+                { "field": "employeeNumber", "newValue": "E1043", "batchId": 12, "submittedBy": "hc1", "approvedBy": "hc2", "changedAt": "2026-10-01T11:02:40+02:00" }
+              ]
+            }""";
+
+    public static final String STAFF_MEMBER_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Employee E9999 is not on the staff register"
+            }""";
+
+    public static final String STAFF_BATCH_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Staff register batch 99 not found"
+            }""";
+
+    public static final String STAFF_BATCH_ALREADY_DECIDED = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff register batch 12 is already approved"
+            }""";
+
+    public static final String STAFF_BATCH_OWN = """
+            {
+              "code": "FORBIDDEN",
+              "message": "hc1 submitted staff register batch 12 and cannot also approve or reject it; someone else in Human Capital or a SUPER_ADMIN must"
+            }""";
 }
