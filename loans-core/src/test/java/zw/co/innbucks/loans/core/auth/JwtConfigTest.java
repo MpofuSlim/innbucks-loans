@@ -46,7 +46,8 @@ import static org.mockito.Mockito.when;
 class JwtConfigTest {
 
     private final UserRepository users = mock(UserRepository.class);
-    private final TokenVersionValidator versions = new TokenVersionValidator(users);
+    private final TokenVersionValidator versions = new TokenVersionValidator(users,
+            mock(zw.co.innbucks.loans.core.staff.StaffMemberRepository.class));
 
     {
         when(users.findTokenVersionByUsername(anyString())).thenReturn(Optional.of(0L));

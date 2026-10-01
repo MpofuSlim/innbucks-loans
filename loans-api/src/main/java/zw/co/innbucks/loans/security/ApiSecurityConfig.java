@@ -69,8 +69,9 @@ public class ApiSecurityConfig {
      * gap where root-mapped controllers fell outside a path-prefix matcher and were reachable
      * with no authentication. A missing, expired or revoked token is a 401 and a role refusal a
      * 403, both in the standard error envelope rather than an empty body; a token minted on a temporary
-     * password is a 403 PASSWORD_CHANGE_REQUIRED for anything but changing it, and a voucher role is a 403 outside the
-     * voucher endpoints ({@link VoucherRoleFilter}).
+     * password is a 403 PASSWORD_CHANGE_REQUIRED for anything but changing it, a voucher role is a 403 outside the
+     * voucher endpoints ({@link VoucherRoleFilter}), and a borrower session is a 403 outside the borrower endpoints, which
+     * refuse every other session ({@link BorrowerSessionFilter}).
      */
     @Bean
     @Order(2)
@@ -91,6 +92,8 @@ public class ApiSecurityConfig {
                 .addFilterAfter(new TemporaryPasswordFilter(), BearerTokenAuthenticationFilter.class)
                 // Then a voucher role is kept to the voucher endpoints (GetMore's till to validation and redemption).
                 .addFilterAfter(new VoucherRoleFilter(), TemporaryPasswordFilter.class)
+                // And a SuperApp borrower's session to the borrower endpoints, which answer nobody else.
+                .addFilterAfter(new BorrowerSessionFilter(), VoucherRoleFilter.class)
                 .build();
     }
 }

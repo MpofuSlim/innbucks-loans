@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.auth;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -42,6 +43,19 @@ public class JwtService {
      * (24 hours) or the password changes, whichever is first.</p>
      */
     public static final String TEMPORARY_PASSWORD_CLAIM = "temporary_password";
+    /**
+     * What a token is for: absent on a staff session; {@value #BORROWER_TOKEN_USE} on a Staff Grocery Loan borrower's,
+     * which names a staff member rather than a user and reaches the borrower endpoints only.
+     */
+    public static final String TOKEN_USE_CLAIM = "token_use";
+    public static final String BORROWER_TOKEN_USE = "borrower";
+    /** The role a borrower session carries, and the only one. */
+    public static final String BORROWER_ROLE = "BORROWER";
+    /** On a borrower session: the staff member it is for, and the register number it was signed in from. */
+    public static final String STAFF_MEMBER_CLAIM = "staff_member_id";
+    public static final String MSISDN_CLAIM = "msisdn";
+    /** The username a borrower session writes into the audit trail: never a user's, since a user's name cannot hold ':'. */
+    public static final String BORROWER_USERNAME_PREFIX = "borrower:";
 
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwtProperties;
@@ -68,6 +82,47 @@ public class JwtService {
 
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
+    }
+
+    /**
+     * A Staff Grocery Loan borrower's session (FR-SGL-025): for a staff member signed in through the SuperApp, not a
+     * user. Short-lived and never refreshed. It carries how the middleware authenticated them ({@code amr}) and the
+     * register number it was issued for, so {@link TokenVersionValidator} ends it the moment the member leaves or their
+     * number changes.
+     */
+    public String generateBorrowerToken(Long staffMemberId, String employeeNumber, String msisdn,
+                                        List<String> methods, long ttlSeconds) {
+        Instant now = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(jwtProperties.getIssuer())
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(ttlSeconds))
+                .subject("staff-member:" + staffMemberId)
+                .claim("preferred_username", BORROWER_USERNAME_PREFIX + employeeNumber)
+                .claim("realm_access", Map.of("roles", List.of(BORROWER_ROLE)))
+                .claim(TOKEN_USE_CLAIM, BORROWER_TOKEN_USE)
+                .claim(STAFF_MEMBER_CLAIM, staffMemberId)
+                .claim(MSISDN_CLAIM, msisdn)
+                .claim(AUTHENTICATION_METHODS_CLAIM, methods)
+                .build();
+        JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
+        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+    }
+
+    /** Whether {@code jwt} is a borrower's session rather than a staff user's. */
+    public static boolean isBorrowerToken(Jwt jwt) {
+        return BORROWER_TOKEN_USE.equals(jwt.getClaimAsString(TOKEN_USE_CLAIM));
+    }
+
+    /**
+     * The staff member a borrower session is for. The decoder already refuses a borrower token without one
+     * ({@link TokenVersionValidator}), so a miss here is a token that is not a borrower's at all: unauthenticated.
+     */
+    public static long borrowerStaffMemberId(Jwt jwt) {
+        if (jwt.getClaims().get(STAFF_MEMBER_CLAIM) instanceof Number id) {
+            return id.longValue();
+        }
+        throw new InsufficientAuthenticationException("The session names no staff member");
     }
 
     /** Whether {@code jwt} was minted on a temporary password, and so may only change it. */

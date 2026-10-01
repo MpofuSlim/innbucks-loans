@@ -7,6 +7,8 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import zw.co.innbucks.loans.core.staff.StaffMember;
+import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.user.UserRepository;
 
 import java.util.Optional;
@@ -21,6 +23,10 @@ import java.util.Optional;
  * token from before this check existed carries no claim and reads as 0, so it stays good until its
  * user's first password change, then dies with the rest. A token whose user no longer exists is
  * refused. One indexed read per request, on the unique username.</p>
+ *
+ * <p>A borrower's session names a staff member, not a user ({@link JwtService#isBorrowerToken}), and is refused the
+ * moment that member is gone from the register, has left, or is on a different number than it was signed in from:
+ * one read by primary key.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -29,9 +35,13 @@ public class TokenVersionValidator implements OAuth2TokenValidator<Jwt> {
     static final String CLAIM = "token_version";
 
     private final UserRepository userRepository;
+    private final StaffMemberRepository staffMemberRepository;
 
     @Override
     public OAuth2TokenValidatorResult validate(Jwt jwt) {
+        if (JwtService.isBorrowerToken(jwt)) {
+            return validateBorrower(jwt);
+        }
         String username = jwt.getClaimAsString("preferred_username");
         if (username == null) {
             return refused("The token names no user");
@@ -42,6 +52,19 @@ public class TokenVersionValidator implements OAuth2TokenValidator<Jwt> {
         }
         if (presented(jwt) != current.get()) {
             return refused("The token was issued before the password was last changed; sign in again");
+        }
+        return OAuth2TokenValidatorResult.success();
+    }
+
+    private OAuth2TokenValidatorResult validateBorrower(Jwt jwt) {
+        Object id = jwt.getClaims().get(JwtService.STAFF_MEMBER_CLAIM);
+        if (!(id instanceof Number number)) {
+            return refused("The borrower session names no staff member");
+        }
+        Optional<StaffMember> member = staffMemberRepository.findById(number.longValue());
+        if (member.isEmpty() || member.get().getEmploymentStatus().hasLeft()
+                || !member.get().getMsisdn().equals(jwt.getClaimAsString(JwtService.MSISDN_CLAIM))) {
+            return refused("The borrower is no longer a current staff member on this number; sign in again");
         }
         return OAuth2TokenValidatorResult.success();
     }

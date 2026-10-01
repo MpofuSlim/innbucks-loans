@@ -172,6 +172,27 @@ loans:
     code-encryption-key: "${VOUCHER_CODE_ENCRYPTION_KEY:}"
     # How often the scheduled-tasks profile marks lapsed vouchers EXPIRED and sends any left PENDING by a stop.
     sweep-interval: "${VOUCHER_SWEEP_INTERVAL:PT15M}"
+  # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
+  # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
+  # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a
+  # loan needs an assertion signed no more than step-up-max-age-seconds ago naming one of step-up-methods (FR-SGL-028).
+  # No public key: nobody can sign in, and the boot log says so.
+  borrower:
+    session-minutes: "${BORROWER_SESSION_MINUTES:15}"
+    assertion:
+      issuer: "${BORROWER_ASSERTION_ISSUER:innbucks-middleware}"
+      audience: "${BORROWER_ASSERTION_AUDIENCE:innbucks-lending}"
+      public-key: "${BORROWER_ASSERTION_PUBLIC_KEY:}"
+      previous-public-key: "${BORROWER_ASSERTION_PREVIOUS_PUBLIC_KEY:}"
+      max-ttl-seconds: "${BORROWER_ASSERTION_MAX_TTL_SECONDS:300}"
+      step-up-max-age-seconds: "${BORROWER_STEP_UP_MAX_AGE_SECONDS:120}"
+      step-up-methods: "${BORROWER_STEP_UP_METHODS:pin,fpt,face}"
+    # STAGING ONLY, until the middleware signs: loans signs assertions itself, for ANY phone, to whoever holds the api
+    # key (POST /lending/v1/auth/test-assertions). Whoever holds it can borrow as any staff member. Off by default.
+    test-assertions:
+      enabled: "${BORROWER_TEST_ASSERTIONS_ENABLED:false}"
+      api-key: "${BORROWER_TEST_ASSERTIONS_API_KEY:}"
+      private-key: "${BORROWER_TEST_ASSERTIONS_PRIVATE_KEY:}"
   # In a Kubernetes pod the scheduled-tasks profile alone refuses to boot (ScheduledTasksKubernetesGuard):
   # the fleet cell runs loans with the jobs OFF, and a Secret entry such as SPRING_PROFILES_INCLUDE could
   # otherwise switch on InnBucks booking (which pays) without the manifest changing. Turning them on in
