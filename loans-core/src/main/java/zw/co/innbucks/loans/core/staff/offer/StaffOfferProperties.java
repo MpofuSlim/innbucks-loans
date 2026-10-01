@@ -34,6 +34,6 @@ public class StaffOfferProperties {
     @AssertTrue(message = "loans.staff-offers.run-cron is not a valid cron expression (second minute hour day month"
             + " weekday, e.g. 0 0 8 * * MON)")
     public boolean isRunCronValid() {
-        return runCron != null && CronExpression.isValidExpression(runCron);
+        return CronExpression.isValidExpression(runCron);
     }
 }
