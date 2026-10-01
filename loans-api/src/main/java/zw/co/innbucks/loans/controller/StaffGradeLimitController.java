@@ -42,10 +42,10 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
         + " FR-SGL-010): each grade maps to the most a staff member of that grade may borrow, and a score band label,"
         + " from an effective market date. A grade is whatever the bank grades its staff by: a Paterson grade such as"
         + " C4, or a band such as MANAGER or CLERK/ASSISTANT/AGENT. It is stored upper case with runs of spaces as one"
-        + " and none around a slash, so 'Clerk / Assistant / Agent' is the same grade. The matrix changes only under maker-checker: a CREDIT_MANAGER or"
-        + " SUPER_ADMIN proposes a change, and another one approves or rejects it. A change applies from today or later,"
-        + " never earlier, and a limit already in force is never rewritten: change it from a later day. A limit of 0"
-        + " stops lending to the grade. Loans keep the amount they were booked for.")
+        + " and none around a slash, so 'Clerk / Assistant / Agent' is the same grade. The matrix changes only under"
+        + " maker-checker: a CREDIT_MANAGER or SUPER_ADMIN proposes a change, and another one approves or rejects it. A"
+        + " change applies from today or later, never earlier, and a limit already in force is never rewritten: change"
+        + " it from a later day. A limit of 0 stops lending to the grade. Loans keep the amount they were booked for.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
