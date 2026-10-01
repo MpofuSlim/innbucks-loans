@@ -11,6 +11,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import zw.co.innbucks.loans.controller.AuthController;
 import zw.co.innbucks.loans.controller.CommissionGroupController;
 import zw.co.innbucks.loans.controller.CreditReasonCodeController;
@@ -34,6 +35,7 @@ import zw.co.innbucks.loans.controller.ReportController;
 import zw.co.innbucks.loans.controller.SignedInstrumentController;
 import zw.co.innbucks.loans.controller.StaffGradeLimitController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
+import zw.co.innbucks.loans.controller.StaffRegisterReconciliationController;
 import zw.co.innbucks.loans.controller.UserController;
 import zw.co.innbucks.loans.controller.CheckpointController;
 import zw.co.innbucks.loans.controller.CreditAuthorityController;
@@ -50,7 +52,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -77,7 +81,7 @@ class SwaggerExamplesTest {
             MerchantController.class, ReportController.class, SignedInstrumentController.class, UserController.class,
             WorkflowStageController.class, WorkQueueController.class, CheckpointController.class,
             CreditAuthorityController.class, StaffGradeLimitController.class,
-            StaffRegisterController.class);
+            StaffRegisterController.class, StaffRegisterReconciliationController.class);
 
     record Example(String where, String json) {
         @Override
@@ -208,6 +212,32 @@ class SwaggerExamplesTest {
                 deduction.multiply(BigDecimal.valueOf(100)).divide(net, 1, RoundingMode.HALF_UP));
         assertThat(affordability.path("note").asString()).isEqualTo(CreditWorkbenchService.AFFORDABILITY_NOT_ASSESSED);
         assertThat(data.path("decisions").size()).isEqualTo(2);
+    }
+
+    @Test
+    void theReconciliationExampleAddsUp() {
+        // The summary's counts are what the report lists; a reader comparing the two must find the same numbers.
+        JsonNode summary = JSON.readTree(ApiExamples.STAFF_RECONCILED).path("data");
+        JsonNode variances = JSON.readTree(ApiExamples.STAFF_RECONCILIATION_VARIANCES).path("data").path("items");
+        Map<String, Integer> byKind = new HashMap<>();
+        Map<String, Integer> eligible = new HashMap<>();
+        for (JsonNode variance : variances) {
+            byKind.merge(variance.path("kind").asString(), 1, Integer::sum);
+            eligible.merge(variance.path("kind").asString(), variance.path("eligible").asBoolean(false) ? 1 : 0,
+                    Integer::sum);
+        }
+        assertThat(byKind).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "LEFT_ON_PAYROLL", summary.path("leftOnPayroll").asInt(),
+                "NOT_ON_PAYROLL", summary.path("notOnPayroll").asInt(),
+                "DIFFERENT", summary.path("different").asInt(),
+                "NOT_ON_REGISTER", summary.path("notOnRegister").asInt(),
+                "DUPLICATE_ON_PAYROLL", summary.path("duplicatesOnPayroll").asInt(),
+                "UNREADABLE", summary.path("unreadableRows").asInt()));
+        assertThat(eligible.get("LEFT_ON_PAYROLL")).isEqualTo(summary.path("leftOnPayrollEligible").asInt());
+        assertThat(eligible.get("NOT_ON_PAYROLL")).isEqualTo(summary.path("notOnPayrollEligible").asInt());
+        assertThat(variances.size()).isEqualTo(summary.path("variances").asInt());
+        assertThat(JSON.readTree(ApiExamples.STAFF_RECONCILIATION_1).path("data"))
+                .isEqualTo(((ObjectNode) summary.deepCopy()).without("ignoredColumns"));
     }
 
     static Stream<Class<?>> controllers() {

@@ -135,11 +135,27 @@ public final class StaffRecordParser {
         }
 
         String validEmployeeNumber = errors.containsKey(StaffFields.EMPLOYEE_NUMBER) ? null : employeeNumber;
+        Map<String, String> values = new LinkedHashMap<>();
+        valid(values, errors, StaffFields.EMPLOYEE_NUMBER, employeeNumber);
+        valid(values, errors, StaffFields.FULL_NAME, fullName);
+        valid(values, errors, StaffFields.NATIONAL_ID, nationalId);
+        valid(values, errors, StaffFields.MOBILE_NUMBER, msisdn);
+        valid(values, errors, StaffFields.GRADE, grade);
+        valid(values, errors, StaffFields.DEPARTMENT, department);
+        valid(values, errors, StaffFields.EMPLOYMENT_STATUS, status == null ? null : status.name());
+        valid(values, errors, StaffFields.ENGAGEMENT_DATE, engagementDate == null ? null : engagementDate.toString());
+        valid(values, errors, StaffFields.WALLET_ACCOUNT_NUMBER, wallet);
         if (!errors.isEmpty()) {
-            return new Parsed(null, errors, validEmployeeNumber, msisdn);
+            return new Parsed(null, errors, validEmployeeNumber, msisdn, values);
         }
         return new Parsed(new StaffRecord(employeeNumber, fullName, nationalId, msisdn, grade, department, status,
-                engagementDate, wallet), Map.of(), employeeNumber, msisdn);
+                engagementDate, wallet), Map.of(), employeeNumber, msisdn, values);
+    }
+
+    private static void valid(Map<String, String> values, Map<String, String> errors, String field, String value) {
+        if (!errors.containsKey(field) && value != null) {
+            values.put(field, value);
+        }
     }
 
     /**
@@ -148,8 +164,11 @@ public final class StaffRecordParser {
      * @param employeeNumber the employee number, normalised, whenever it is valid, even if other fields are not; so a
      *                       refused row is still checked for clashes with the rest of its file and the register
      * @param msisdn         likewise the mobile number, in international form
+     * @param values         every field that passed, normalised, by {@link StaffFields} name, whatever else failed:
+     *                       what a reconciliation compares
      */
-    public record Parsed(StaffRecord record, Map<String, String> errors, String employeeNumber, String msisdn) {
+    public record Parsed(StaffRecord record, Map<String, String> errors, String employeeNumber, String msisdn,
+                         Map<String, String> values) {
         public boolean valid() {
             return record != null;
         }

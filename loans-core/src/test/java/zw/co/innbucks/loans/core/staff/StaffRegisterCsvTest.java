@@ -104,6 +104,26 @@ class StaffRegisterCsvTest {
     }
 
     @Test
+    @DisplayName("a file needing only some columns reads the others it has, and names only what it needs when refused")
+    void requiredSubset() {
+        StaffRegisterCsv.Sheet sheet = StaffRegisterCsv.read(utf8("Pay Point,Grade,Surname,Employee No.,First Name\n"
+                + "Harare,C4,Moyo,E1043,Tendai\n"), java.util.Set.of(StaffFields.EMPLOYEE_NUMBER));
+
+        assertThat(sheet.fields()).as("in the register's order")
+                .containsExactly(StaffFields.EMPLOYEE_NUMBER, StaffFields.FULL_NAME, StaffFields.GRADE);
+        assertThat(sheet.ignoredColumns()).containsExactly("Pay Point");
+        assertThat(sheet.rows().getFirst().values()).containsExactly(
+                java.util.Map.entry(StaffFields.EMPLOYEE_NUMBER, "E1043"),
+                java.util.Map.entry(StaffFields.FULL_NAME, "Tendai Moyo"),
+                java.util.Map.entry(StaffFields.GRADE, "C4"));
+        assertThatThrownBy(() -> StaffRegisterCsv.read(utf8("Name,Grade\nTendai Moyo,C4"),
+                java.util.Set.of(StaffFields.EMPLOYEE_NUMBER)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("The file has no column for employeeNumber. The columns it needs are: employee number");
+        assertThat(StaffRegisterCsv.read(utf8(HEADER + "\nE1")).fields()).isEqualTo(StaffFields.ALL);
+    }
+
+    @Test
     @DisplayName("two columns read as the same field are refused")
     void ambiguousColumns() {
         assertThatThrownBy(() -> StaffRegisterCsv.read(utf8(HEADER + ",Phone\nE1")))

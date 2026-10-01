@@ -9,16 +9,19 @@ import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Reads a staff register file (FR-SGL-002): CSV with a header row, as Excel saves it. The header names the columns,
- * matched without regard to case, spaces or punctuation, and under the names HR spreadsheets commonly use, so "Employee
- * No.", "Mobile" and "Date Joined" all work. A full name may instead come as first name and surname columns. Columns
- * it does not know are ignored and reported.
+ * Reads a staff register file (FR-SGL-002), or the HR payroll master the register is reconciled against (FR-SGL-008):
+ * CSV with a header row, as Excel saves it. The header names the columns, matched without regard to case, spaces or
+ * punctuation, and under the names HR spreadsheets commonly use, so "Employee No.", "Mobile" and "Date Joined" all
+ * work. A full name may instead come as first name and surname columns. Columns it does not know are ignored and
+ * reported.
  *
  * <p>Comma, semicolon and tab separators are all accepted (the header decides), quoted cells may hold separators,
  * quotes and line breaks, and the file may be UTF-8 (with or without Excel's byte-order mark) or Windows-1252, which is
@@ -60,15 +63,26 @@ public final class StaffRegisterCsv {
         }
     }
 
-    /** The column names a file needs, as the refusal names them. */
-    static final String EXPECTED = "employee number, full name (or first name and surname), national ID, mobile"
-            + " number, grade, department, employment status, engagement date, wallet or account number";
+    /** Each field's column as a refusal names it. */
+    private static final Map<String, String> COLUMNS = Map.of(
+            StaffFields.EMPLOYEE_NUMBER, "employee number",
+            StaffFields.FULL_NAME, "full name (or first name and surname)",
+            StaffFields.NATIONAL_ID, "national ID",
+            StaffFields.MOBILE_NUMBER, "mobile number",
+            StaffFields.GRADE, "grade",
+            StaffFields.DEPARTMENT, "department",
+            StaffFields.EMPLOYMENT_STATUS, "employment status",
+            StaffFields.ENGAGEMENT_DATE, "engagement date",
+            StaffFields.WALLET_ACCOUNT_NUMBER, "wallet or account number");
 
     private StaffRegisterCsv() {
     }
 
-    /** A file as read: its rows, each keyed by {@link StaffFields} name, and the header cells it ignored. */
-    public record Sheet(List<Row> rows, List<String> ignoredColumns) {
+    /**
+     * A file as read: its rows, each keyed by {@link StaffFields} name, the header cells it ignored, and the fields
+     * it has a column for (in {@link StaffFields#ALL} order; a row holds exactly these).
+     */
+    public record Sheet(List<Row> rows, List<String> ignoredColumns, List<String> fields) {
     }
 
     /** @param rowNumber the row's line in the file, the header being line 1 */
@@ -77,6 +91,16 @@ public final class StaffRegisterCsv {
 
     /** @throws ValidationException the file cannot be read as a staff register at all */
     public static Sheet read(byte[] content) {
+        return read(content, StaffFields.ALL);
+    }
+
+    /**
+     * Reads a file that must have a column for each of {@code required}; columns for the register's other fields are
+     * read when present. The HR payroll master needs only the employee number (FR-SGL-008).
+     *
+     * @throws ValidationException the file cannot be read, or lacks a required column
+     */
+    public static Sheet read(byte[] content, Collection<String> required) {
         if (content == null || content.length == 0) {
             throw new ValidationException("The file is empty");
         }
@@ -112,13 +136,14 @@ public final class StaffRegisterCsv {
         }
         boolean splitName = !headerOf.containsKey(StaffFields.FULL_NAME)
                 && headerOf.containsKey(FIRST_NAME) && headerOf.containsKey(LAST_NAME);
-        List<String> missing = StaffFields.ALL.stream()
-                .filter(field -> !headerOf.containsKey(field)
-                        && !(StaffFields.FULL_NAME.equals(field) && splitName))
+        List<String> present = StaffFields.ALL.stream()
+                .filter(field -> headerOf.containsKey(field) || (StaffFields.FULL_NAME.equals(field) && splitName))
                 .toList();
+        List<String> missing = required.stream().filter(field -> !present.contains(field)).toList();
         if (!missing.isEmpty()) {
             throw new ValidationException(String.format("The file has no column for %s. The columns it needs are: %s",
-                    String.join(", ", missing), EXPECTED));
+                    String.join(", ", missing), StaffFields.ALL.stream().filter(required::contains)
+                            .map(COLUMNS::get).collect(Collectors.joining(", "))));
         }
 
         List<Row> rows = new ArrayList<>();
@@ -142,13 +167,13 @@ public final class StaffRegisterCsv {
                 values.remove(LAST_NAME);
             }
             Map<String, String> ordered = new LinkedHashMap<>();
-            StaffFields.ALL.forEach(field -> ordered.put(field, values.get(field)));
+            present.forEach(field -> ordered.put(field, values.get(field)));
             rows.add(new Row(record.line(), ordered));
         }
         if (rows.isEmpty()) {
             throw new ValidationException("The file has a header but no staff rows");
         }
-        return new Sheet(List.copyOf(rows), List.copyOf(ignored));
+        return new Sheet(List.copyOf(rows), List.copyOf(ignored), present);
     }
 
     /** UTF-8 (without its byte-order mark), else Windows-1252, which is what Excel's plain CSV is. */

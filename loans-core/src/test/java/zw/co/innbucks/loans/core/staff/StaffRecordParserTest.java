@@ -40,6 +40,7 @@ class StaffRecordParserTest {
                 "C4", "Finance", StaffEmploymentStatus.UNPAID_LEAVE, LocalDate.of(2015, 2, 2), "263771234000"));
         assertThat(parsed.employeeNumber()).isEqualTo("E1043");
         assertThat(parsed.msisdn()).isEqualTo("263771234000");
+        assertThat(parsed.values()).isEqualTo(parsed.record().asText());
     }
 
     @Test
@@ -109,6 +110,14 @@ class StaffRecordParserTest {
         assertThat(parsed.errors()).containsOnlyKeys(StaffFields.GRADE);
         assertThat(parsed.employeeNumber()).isEqualTo("E1043");
         assertThat(parsed.msisdn()).isEqualTo("263771234000");
+        assertThat(parsed.values()).as("every field that passed, normalised; the failing grade is not among them")
+                .containsEntry(StaffFields.FULL_NAME, "Tendai Moyo")
+                .containsEntry(StaffFields.EMPLOYMENT_STATUS, "UNPAID_LEAVE")
+                .containsEntry(StaffFields.ENGAGEMENT_DATE, "2015-02-02")
+                .doesNotContainKey(StaffFields.GRADE)
+                .hasSize(8);
+        assertThat(StaffRecordParser.parse(Map.of(StaffFields.EMPLOYEE_NUMBER, "e1"), GRADES, TODAY).values())
+                .as("a field not sent has no value").containsOnlyKeys(StaffFields.EMPLOYEE_NUMBER);
     }
 
     @Test
