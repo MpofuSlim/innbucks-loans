@@ -99,6 +99,8 @@ class StaffOfferRunnerTest {
         assertThat(properties.isRunCronValid()).isTrue();
         properties.setRunCron("every monday");
         assertThat(properties.isRunCronValid()).isFalse();
+        properties.setRunCron(null);
+        assertThat(properties.isRunCronValid()).as("a missing cron is refused too").isFalse();
         jakarta.validation.Validator validator = jakarta.validation.Validation.buildDefaultValidatorFactory()
                 .getValidator();
         properties.setRunCron("0 0 8 * * MON");
