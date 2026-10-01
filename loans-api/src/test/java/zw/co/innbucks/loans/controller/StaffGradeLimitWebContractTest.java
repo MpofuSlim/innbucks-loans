@@ -175,10 +175,11 @@ class StaffGradeLimitWebContractTest {
     void badProposal() throws Exception {
         mvc.perform(post("/lending/v1/staff-grade-limit-changes").with(as("CREDIT_MANAGER"))
                         .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"grade": "C 4", "scoreBand": "", "maximumLimit": 350.123, "effectiveFrom": null}"""))
+                                {"grade": "C4%", "scoreBand": "", "maximumLimit": 350.123, "effectiveFrom": null}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.data.grade").value("Grade must be 1 to 16 letters, digits or hyphens, e.g. C4"))
+                .andExpect(jsonPath("$.data.grade").value("Grade must be at most 32 letters, digits, spaces, hyphens or"
+                        + " slashes, e.g. C4 or CLERK/ASSISTANT/AGENT"))
                 .andExpect(jsonPath("$.data.scoreBand").value("Score band is required"))
                 .andExpect(jsonPath("$.data.maximumLimit").value("Maximum limit must have at most 2 decimal places"))
                 .andExpect(jsonPath("$.data.effectiveFrom").value("Effective date is required"));

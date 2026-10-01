@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.staff.StaffGrades;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -56,7 +57,7 @@ public class StaffOffer {
     @Column(name = "cycle_start", nullable = false)
     private LocalDate cycleStart;
 
-    @Column(name = "grade", length = 16, nullable = false)
+    @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false)
     private String grade;
 
     @Column(name = "score_band", length = 40, nullable = false)

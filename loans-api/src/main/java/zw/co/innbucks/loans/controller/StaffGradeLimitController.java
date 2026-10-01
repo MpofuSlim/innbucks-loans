@@ -39,11 +39,13 @@ import java.util.List;
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff grade limits", description = "The Staff Grocery Loan grade-to-limit matrix (FR-SGL-009,"
-        + " FR-SGL-010): each Paterson grade maps to the most a staff member of that grade may borrow, and a score band"
-        + " label, from an effective market date. The matrix changes only under maker-checker: a CREDIT_MANAGER or"
-        + " SUPER_ADMIN proposes a change, and another one approves or rejects it. A change applies from today or later,"
-        + " never earlier, and a limit already in force is never rewritten: change it from a later day. A limit of 0"
-        + " stops lending to the grade. Loans keep the amount they were booked for.")
+        + " FR-SGL-010): each grade maps to the most a staff member of that grade may borrow, and a score band label,"
+        + " from an effective market date. A grade is whatever the bank grades its staff by: a Paterson grade such as"
+        + " C4, or a band such as MANAGER or CLERK/ASSISTANT/AGENT. It is stored upper case with runs of spaces as one"
+        + " and none around a slash, so 'Clerk / Assistant / Agent' is the same grade. The matrix changes only under"
+        + " maker-checker: a CREDIT_MANAGER or SUPER_ADMIN proposes a change, and another one approves or rejects it. A"
+        + " change applies from today or later, never earlier, and a limit already in force is never rewritten: change"
+        + " it from a later day. A limit of 0 stops lending to the grade. Loans keep the amount they were booked for.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -123,7 +125,7 @@ public class StaffGradeLimitController {
                                       "code": "VALIDATION_ERROR",
                                       "message": "Request validation failed",
                                       "data": {
-                                        "grade": "Grade must be 1 to 16 letters, digits or hyphens, e.g. C4",
+                                        "grade": "Grade must be at most 32 letters, digits, spaces, hyphens or slashes, e.g. C4 or CLERK/ASSISTANT/AGENT",
                                         "maximumLimit": "Maximum limit must have at most 2 decimal places"
                                       }
                                     }"""),

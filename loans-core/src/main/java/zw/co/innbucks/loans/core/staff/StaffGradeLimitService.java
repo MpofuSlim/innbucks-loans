@@ -30,7 +30,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * The Staff Grocery Loan grade-to-limit matrix (FR-SGL-009, FR-SGL-010). Each Paterson grade maps to one maximum loan
+ * The Staff Grocery Loan grade-to-limit matrix (FR-SGL-009, FR-SGL-010). Each grade maps to one maximum loan
  * amount and a score band, from an effective market date. The matrix is the credit decision for this product: a
  * deterministic lookup, so it changes only under maker-checker. One user proposes a change; another approves or
  * rejects it; the proposer may withdraw it until then.
@@ -114,12 +114,15 @@ public class StaffGradeLimitService {
     /**
      * Proposes a grade's limit from a day, for a second person to approve.
      *
-     * @throws ValidationException the effective date is in the past
+     * @throws ValidationException the grade is longer than a grade may be, or the effective date is in the past
      * @throws ConflictException   a proposal for the grade and date is already waiting, or the grade's limit from that
      *                             date is already in force
      */
     @Transactional
     public StaffGradeLimitChangeResponse propose(ProposeStaffGradeLimitRequest request) {
+        if (!StaffGrades.valid(request.getGrade())) {
+            throw new ValidationException(StaffGrades.MESSAGE);
+        }
         String grade = StaffGrades.normalise(request.getGrade());
         LocalDate from = request.getEffectiveFrom();
         LocalDate today = marketTimeZone.today();
