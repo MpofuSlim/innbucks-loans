@@ -146,8 +146,24 @@ class StaffOfferRunServiceTest {
                         "credit2", LocalDateTime.of(2026, 9, 30, 8, 5)),
                 "C3", new StaffGradeLimit(4L, "C3", "Band D", BigDecimal.ZERO.setScale(2), LocalDate.of(2026, 10, 1),
                         "credit2", LocalDateTime.of(2026, 9, 30, 8, 5))));
+        when(gradeLimitService.limitOn(any(), any())).thenAnswer(i -> Optional.ofNullable(
+                gradeLimitService.limitsOn(i.getArgument(1)).get((String) i.getArgument(0))));
+        when(memberRepository.findById(anyLong())).thenAnswer(i -> members.stream()
+                .filter(m -> m.getId().equals(i.getArgument(0))).findFirst());
+        when(offerRepository.findByStaffMemberIdAndStatus(anyLong(), any())).thenAnswer(i -> offers.stream()
+                .filter(o -> o.getStaffMemberId().equals(i.getArgument(0)) && o.getStatus() == i.getArgument(1))
+                .findFirst());
+        when(offerRepository.save(any())).thenAnswer(i -> {
+            StaffOffer offer = i.getArgument(0);
+            offer.setId((long) offers.size() + 1);
+            offers.add(offer);
+            return offer;
+        });
         auditService = mock(AuditService.class);
         StaffLimitOverrideRepository overrideRepository = mock(StaffLimitOverrideRepository.class);
+        when(overrideRepository.findByStaffMemberIdAndStatus(anyLong(), any())).thenAnswer(i -> overrides.stream()
+                .filter(o -> o.getStaffMemberId().equals(i.getArgument(0)) && o.getStatus() == i.getArgument(1))
+                .findFirst());
         when(overrideRepository.findByStatus(any())).thenAnswer(i -> overrides.stream()
                 .filter(o -> o.getStatus() == i.getArgument(0)).toList());
         StaffOfferProperties properties = new StaffOfferProperties();
@@ -541,5 +557,130 @@ class StaffOfferRunServiceTest {
                 .as("00:30 on Monday the 12th in Harare is the new week, though it is still Sunday in UTC")
                 .isEqualTo(LocalDate.of(2026, 10, 12));
         assertThat(runs.getFirst().getStartedAt()).isEqualTo(LocalDateTime.of(2026, 10, 11, 22, 30));
+    }
+
+    // --- A borrower applying in the SuperApp (FR-SGL-025) ---
+
+    @Test
+    @DisplayName("applying without an offer makes one on demand, on the run's terms, in no run and not notified")
+    void applyMakesAnOffer() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+
+        StaffOfferApplication application = service.apply(member.getId());
+
+        assertThat(application.created()).isTrue();
+        assertThat(application.verdict()).isEqualTo(StaffOfferVerdict.ELIGIBLE);
+        assertThat(application.offer()).satisfies(offer -> {
+            assertThat(offer.getOrigin()).isEqualTo(StaffOfferOrigin.APPLY);
+            assertThat(offer.getRunId()).isNull();
+            assertThat(offer.getCycleStart()).isEqualTo(LocalDate.of(2026, 10, 5));
+            assertThat(offer.getAmount()).isEqualByComparingTo("300.00");
+            assertThat(offer.getScoreBand()).isEqualTo("Band C");
+            assertThat(offer.getGradeLimitChangeId()).isEqualTo(1L);
+            assertThat(offer.getIssuedAt()).isEqualTo(NOW);
+            assertThat(offer.getExpiresAt()).isEqualTo(NOW.plusDays(7));
+            assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.ACTIVE);
+        });
+        assertThat(notified).isEmpty();
+        assertThat(runs).isEmpty();
+        verify(memberRepository).lockRegister(StaffRegisterService.REGISTER_LOCK);
+        assertThat(audited()).containsExactly(StaffOfferRunService.APPLIED);
+    }
+
+    @Test
+    @DisplayName("applying while holding an open offer returns it and makes nothing")
+    void applyReturnsTheHeldOffer() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
+        StaffOffer held = offers.getFirst();
+
+        StaffOfferApplication application = service.apply(member.getId());
+
+        assertThat(application.created()).isFalse();
+        assertThat(application.offer()).isSameAs(held);
+        assertThat(offers).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("an offer past its expiry that no run closed is closed EXPIRED at its expiry, and a new one made")
+    void applyReplacesALapsedOffer() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
+        StaffOffer lapsed = offers.getFirst();
+        at("2026-10-12T07:00:00Z");
+
+        StaffOfferApplication application = service.apply(member.getId());
+
+        assertThat(lapsed.getStatus()).isEqualTo(StaffOfferStatus.EXPIRED);
+        assertThat(lapsed.getClosedAt()).isEqualTo(lapsed.getExpiresAt());
+        assertThat(application.created()).isTrue();
+        assertThat(application.offer().getCycleStart()).isEqualTo(LocalDate.of(2026, 10, 12));
+    }
+
+    @Test
+    @DisplayName("a member the run would not offer is declined with the run's own reason, and nothing is made")
+    void applyDeclinesWhomTheRunWouldNotOffer() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40), "E1005");
+        StaffMember resigned = member("E1001", "C4", StaffEmploymentStatus.RESIGNED);
+        StaffMember noLimit = member("E1002", "C3", StaffEmploymentStatus.ACTIVE);
+        StaffMember arrears = member("E1003", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember holding = member("E1004", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember flaggedMember = member("E1005", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember blocked = member("E1006", "C4", StaffEmploymentStatus.ACTIVE);
+        standings.put(arrears.getId(), StaffLoanStanding.Standing.ARREARS);
+        standings.put(holding.getId(), StaffLoanStanding.Standing.ACTIVE_LOAN);
+        override(blocked, "C4", "0.00");
+
+        assertThat(List.of(resigned, noLimit, arrears, holding, flaggedMember, blocked))
+                .extracting(member -> service.apply(member.getId()).verdict())
+                .containsExactly(StaffOfferVerdict.NOT_ACTIVE, StaffOfferVerdict.NO_LIMIT, StaffOfferVerdict.ARREARS,
+                        StaffOfferVerdict.ACTIVE_LOAN, StaffOfferVerdict.PAYROLL_FLAGGED, StaffOfferVerdict.LIMIT_ZERO);
+        assertThat(offers).isEmpty();
+        assertThat(audited()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Credit's override sets the amount of an offer made on demand, as it does the run's")
+    void applyHonoursTheOverride() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffLimitOverride lower = override(member, "C4", "150.00");
+
+        StaffOffer offer = service.apply(member.getId()).offer();
+
+        assertThat(offer.getAmount()).isEqualByComparingTo("150.00");
+        assertThat(offer.getLimitOverrideId()).isEqualTo(lower.getId());
+    }
+
+    @Test
+    @DisplayName("with the register not reconciled recently enough nothing is made, though an offer held stands")
+    void applyRespectsTheGate() {
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+
+        StaffOfferApplication refused = service.apply(member.getId());
+
+        assertThat(refused.offer()).isNull();
+        assertThat(refused.unavailable()).isEqualTo(StaffOfferRunService.NEVER_RECONCILED);
+        assertThat(offers).isEmpty();
+        assertThat(service.assess(member).unavailable()).isEqualTo(StaffOfferRunService.NEVER_RECONCILED);
+        assertThat(service.assess(member).verdict()).isEqualTo(StaffOfferVerdict.ELIGIBLE);
+    }
+
+    @Test
+    @DisplayName("a member who applied this week is not offered again by a run in the same week")
+    void aRunDoesNotOfferAgainAfterAnApplication() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember member = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        service.apply(member.getId());
+
+        StaffOfferRunResponse run = service.run(StaffOfferRunTrigger.MANUAL, "credit1");
+
+        assertThat(run.alreadyOffered()).isEqualTo(1);
+        assertThat(run.offered()).isZero();
+        assertThat(offers).hasSize(1);
+        assertThat(notified).singleElement().satisfies(batch -> assertThat(batch).isEmpty());
     }
 }

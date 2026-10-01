@@ -32,15 +32,16 @@ public class InstrumentTemplateService {
     /**
      * Publishes new wording as the instrument's next version, in force from now.
      *
-     * @throws IllegalArgumentException the wording names a placeholder that is not a loan term
+     * @throws IllegalArgumentException the wording names a placeholder that is not one of this instrument's terms
      */
     @Transactional
     public InstrumentTemplateResponse publish(PublishInstrumentTemplateRequest request) {
-        List<String> unknown = InstrumentTerms.unknownPlaceholders(request.body());
+        List<String> unknown = request.instrumentType().unknownPlaceholders(request.body());
         if (!unknown.isEmpty()) {
             throw new IllegalArgumentException("Unknown placeholder" + (unknown.size() == 1 ? " " : "s ")
                     + String.join(", ", unknown.stream().map(name -> "{{" + name + "}}").toList())
-                    + ": a placeholder must be one of the loan terms listed by GET /instrument-templates/placeholders");
+                    + ": a placeholder must be one of the terms listed by GET /instrument-templates/placeholders"
+                    + "?instrumentType=" + request.instrumentType());
         }
         String publishedBy = authService.getLoggedInUsername();
         // Two publications of one instrument take the next version one after the other.
@@ -85,7 +86,7 @@ public class InstrumentTemplateService {
     }
 
     /** The version in force, if the instrument has been published. */
-    Optional<InstrumentTemplate> currentTemplate(InstrumentType instrumentType) {
+    public Optional<InstrumentTemplate> currentTemplate(InstrumentType instrumentType) {
         return templateRepository.findFirstByInstrumentTypeOrderByVersionDesc(instrumentType);
     }
 }

@@ -26,6 +26,11 @@ import zw.co.innbucks.loans.core.borrower.AssertionRejectedException;
 import zw.co.innbucks.loans.core.borrower.BorrowerSignInUnavailableException;
 import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.document.DocumentProblem;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanRequestInvalidException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
+import zw.co.innbucks.loans.core.staff.loan.StepUpRequiredException;
 import zw.co.innbucks.loans.core.document.DocumentRejectedException;
 import zw.co.innbucks.loans.core.exception.AccountLockedException;
 import zw.co.innbucks.loans.core.exception.BusinessException;
@@ -272,13 +277,54 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AssertionRejectedException.class)
     public ResponseEntity<ApiResult<Void>> assertionRejected(AssertionRejectedException ex) {
-        return error(HttpStatus.UNAUTHORIZED, "ASSERTION_REJECTED", "Assertion rejected - sign in to the SuperApp again");
+        return error(HttpStatus.UNAUTHORIZED, "ASSERTION_REJECTED",
+                "Assertion rejected - sign in to the SuperApp again");
     }
 
     /** No middleware key configured, so no assertion can be checked: the server's state, not the caller's request. */
     @ExceptionHandler(BorrowerSignInUnavailableException.class)
     public ResponseEntity<ApiResult<Void>> borrowerSignInUnavailable(BorrowerSignInUnavailableException ex) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "BORROWER_SIGN_IN_UNAVAILABLE", ex.getMessage());
+    }
+
+    /**
+     * A borrower who cannot take a Staff Grocery Loan now (FR-SGL-029): the message is the plain-language reason to
+     * show as it is, and data.reason names it for the app.
+     */
+    @ExceptionHandler(StaffLoanDeclinedException.class)
+    public ResponseEntity<ApiResult<Map<String, String>>> staffLoanDeclined(StaffLoanDeclinedException ex) {
+        log.info("Staff Grocery Loan declined: {}", ex.decline());
+        return ResponseEntity.unprocessableEntity().body(ApiResult.error("STAFF_LOAN_DECLINED", ex.getMessage(),
+                Map.of("reason", ex.decline().name())));
+    }
+
+    /** A field of a borrower's request the journey cannot take: the amount, the device. */
+    @ExceptionHandler(StaffLoanRequestInvalidException.class)
+    public ResponseEntity<ApiResult<Map<String, String>>> staffLoanRequestInvalid(StaffLoanRequestInvalidException ex) {
+        log.warn("Staff Grocery Loan request refused: {}", ex.getFields().keySet());
+        return validationError(new TreeMap<>(ex.getFields()));
+    }
+
+    /**
+     * No Staff Grocery Loan agreement is published, so nothing can be accepted: the server's state, not the request.
+     */
+    @ExceptionHandler(StaffLoanTermsUnavailableException.class)
+    public ResponseEntity<ApiResult<Void>> staffLoanTermsUnavailable(StaffLoanTermsUnavailableException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "STAFF_LOAN_TERMS_UNAVAILABLE", ex.getMessage());
+    }
+
+    /** The agreement accepted is not the one in force now: the borrower must see the current one first. */
+    @ExceptionHandler(StaffLoanTermsChangedException.class)
+    public ResponseEntity<ApiResult<Void>> staffLoanTermsChanged(StaffLoanTermsChangedException ex) {
+        return error(HttpStatus.CONFLICT, "TERMS_CHANGED", ex.getMessage());
+    }
+
+    /**
+     * A genuine assertion that is not a PIN or biometric from just now (FR-SGL-028): the app asks for the PIN again.
+     */
+    @ExceptionHandler(StepUpRequiredException.class)
+    public ResponseEntity<ApiResult<Void>> stepUpRequired(StepUpRequiredException ex) {
+        return error(HttpStatus.UNAUTHORIZED, "STEP_UP_REQUIRED", ex.getMessage());
     }
 
     /** A genuine sign-in for a phone that is not a current staff member's: the product is not for them (FR-SGL-029). */

@@ -18,6 +18,8 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long>, JpaSpec
 
     Optional<Voucher> findByDisbursementReference(String disbursementReference);
 
+    Optional<Voucher> findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(Long staffMemberId, String loanAccount);
+
     Optional<Voucher> findByCodeHmac(String codeHmac);
 
     boolean existsByCodeHmac(String codeHmac);

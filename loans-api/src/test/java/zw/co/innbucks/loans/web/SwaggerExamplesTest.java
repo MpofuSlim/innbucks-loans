@@ -15,6 +15,7 @@ import tools.jackson.databind.node.ObjectNode;
 import zw.co.innbucks.loans.controller.AuthController;
 import zw.co.innbucks.loans.controller.BorrowerAuthController;
 import zw.co.innbucks.loans.controller.BorrowerController;
+import zw.co.innbucks.loans.controller.BorrowerStaffLoanController;
 import zw.co.innbucks.loans.controller.CommissionGroupController;
 import zw.co.innbucks.loans.controller.CreditReasonCodeController;
 import zw.co.innbucks.loans.controller.CreditTurnaroundController;
@@ -37,6 +38,7 @@ import zw.co.innbucks.loans.controller.ReportController;
 import zw.co.innbucks.loans.controller.SignedInstrumentController;
 import zw.co.innbucks.loans.controller.StaffGradeLimitController;
 import zw.co.innbucks.loans.controller.StaffLimitOverrideController;
+import zw.co.innbucks.loans.controller.StaffLoanController;
 import zw.co.innbucks.loans.controller.StaffNotificationController;
 import zw.co.innbucks.loans.controller.StaffOfferController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
@@ -93,7 +95,7 @@ class SwaggerExamplesTest {
             StaffRegisterController.class, StaffRegisterReconciliationController.class, StaffOfferController.class,
             StaffLimitOverrideController.class, StaffNotificationController.class, VoucherController.class,
             VoucherRedemptionController.class, BorrowerAuthController.class, TestAssertionController.class,
-            BorrowerController.class);
+            BorrowerController.class, BorrowerStaffLoanController.class, StaffLoanController.class);
 
     record Example(String where, String json) {
         @Override

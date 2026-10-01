@@ -16,6 +16,8 @@ import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
+import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitService;
 import zw.co.innbucks.loans.core.staff.StaffMember;
@@ -77,6 +79,7 @@ public class StaffOfferRunService {
     static final String COMPLETED = "STAFF_OFFER_RUN_COMPLETED";
     static final String REFUSED = "STAFF_OFFER_RUN_REFUSED";
     static final String FAILED = "STAFF_OFFER_RUN_FAILED";
+    static final String APPLIED = "STAFF_OFFER_APPLIED";
     /** The advisory lock that keeps two runs from overlapping: "STAFFOFR". */
     static final long RUN_LOCK = 0x53544146464F4652L;
     static final String NEVER_RECONCILED = "The staff register has never been reconciled against the payroll master;"
@@ -161,16 +164,13 @@ public class StaffOfferRunService {
             StaffGradeLimit limit = limits.get(member.getGrade());
             StaffLimitOverride override = Optional.ofNullable(overrides.get(member.getId()))
                     .filter(candidate -> candidate.appliesTo(member)).orElse(null);
-            String ineligible = StaffMemberResponse.ineligibleReason(member, limit);
-            String excluded = ineligible != null ? null
-                    : exclusion(member, standings.get(member.getId()), flagged, gate.reconciliation(), override, counts);
-            if (ineligible != null || excluded != null) {
-                if (ineligible != null) {
-                    counts.ineligible++;
-                }
+            StaffOfferVerdict verdict = classify(member, limit, standings.get(member.getId()), flagged,
+                    gate.reconciliation(), override);
+            if (verdict != StaffOfferVerdict.ELIGIBLE) {
+                counts.count(verdict);
                 if (held != null) {
                     held.close(StaffOfferStatus.WITHDRAWN, now,
-                            ineligible != null ? "No longer eligible: " + ineligible : excluded);
+                            reason(verdict, member, limit, gate.reconciliation(), override));
                     counts.withdrawn++;
                 }
                 continue;
@@ -238,6 +238,87 @@ public class StaffOfferRunService {
                 + run.getExcludedByOverride() + ";withdrawn:"
                 + run.getWithdrawn() + ";expired:" + run.getExpired());
         return StaffOfferRunResponse.of(run);
+    }
+
+    /**
+     * Where {@code member} stands for an offer right now: the verdict the run would reach, the amount it would offer,
+     * and whether offers can be made at all. What the SuperApp shows before a borrower applies, and what is checked
+     * again when they accept (FR-SGL-013).
+     */
+    @Transactional(readOnly = true)
+    public StaffOfferAssessment assess(StaffMember member) {
+        LocalDate today = marketTimeZone.today();
+        return assess(member, today, gate(today));
+    }
+
+    /**
+     * A borrower applying in the SuperApp without an offer in hand (FR-SGL-025): the offer they already hold, or, when
+     * they hold none and the run would offer them one, a new one made now, on the run's terms: their grade's limit or
+     * Credit's override, valid for {@code validity-days}. It belongs to no run and is not notified, since they are in
+     * the app. Under the register's lock, like a run, so no approval or run changes them meanwhile.
+     *
+     * @throws NotFoundException no such member
+     */
+    @Transactional
+    public StaffOfferApplication apply(Long staffMemberId) {
+        memberRepository.lockRegister(StaffRegisterService.REGISTER_LOCK);
+        StaffMember member = memberRepository.findById(staffMemberId)
+                .orElseThrow(() -> new NotFoundException("Staff member " + staffMemberId + " not found"));
+        LocalDateTime now = marketTimeZone.nowUtc();
+        LocalDate today = marketTimeZone.today();
+        Gate gate = gate(today);
+        StaffOfferAssessment assessment = assess(member, today, gate);
+        if (assessment.verdict() != StaffOfferVerdict.ELIGIBLE) {
+            return StaffOfferApplication.declined(assessment.verdict());
+        }
+        Optional<StaffOffer> held = offerRepository.findByStaffMemberIdAndStatus(member.getId(),
+                StaffOfferStatus.ACTIVE);
+        if (held.isPresent() && held.get().isOpenAt(now)) {
+            return StaffOfferApplication.held(held.get());
+        }
+        if (gate.refusal() != null) {
+            log.warn("Staff member {} applied for a Staff Grocery Loan, but no offer can be made: {}",
+                    member.getEmployeeNumber(), gate.refusal());
+            return StaffOfferApplication.unavailable(gate.refusal());
+        }
+        held.ifPresent(lapsed -> {
+            // Past its expiry and not yet closed by a run: closed as it would have been, at its expiry.
+            lapsed.close(StaffOfferStatus.EXPIRED, lapsed.getExpiresAt(), null);
+            offerRepository.flush();
+        });
+        StaffOffer offer = offerRepository.save(StaffOffer.builder()
+                .staffMemberId(member.getId())
+                .origin(StaffOfferOrigin.APPLY)
+                .cycleStart(cycleOf(today))
+                .grade(member.getGrade())
+                .scoreBand(assessment.limit().scoreBand())
+                .gradeLimitChangeId(assessment.limit().changeId())
+                .amount(assessment.amount())
+                .limitOverrideId(assessment.override() == null ? null : assessment.override().getId())
+                .issuedAt(now)
+                .expiresAt(now.plusDays(properties.getValidityDays()))
+                .status(StaffOfferStatus.ACTIVE)
+                .build());
+        log.info("Staff member {} applied in the SuperApp: offer {} made for {}", member.getEmployeeNumber(),
+                offer.getId(), offer.getAmount());
+        auditService.record(AuditLog.builder()
+                .eventType(APPLIED)
+                .entityType("STAFF_OFFER").entityId(String.valueOf(offer.getId()))
+                .actorId(JwtService.BORROWER_USERNAME_PREFIX + member.getEmployeeNumber()).channelUsed("superapp")
+                .detail("amount:" + offer.getAmount() + ";cycle:" + offer.getCycleStart()
+                        + (offer.getLimitOverrideId() == null ? "" : ";limitOverride:" + offer.getLimitOverrideId())));
+        return StaffOfferApplication.made(offer);
+    }
+
+    private StaffOfferAssessment assess(StaffMember member, LocalDate today, Gate gate) {
+        StaffGradeLimit limit = gradeLimitService.limitOn(member.getGrade(), today).orElse(null);
+        StaffLimitOverride override = overrideRepository
+                .findByStaffMemberIdAndStatus(member.getId(), StaffLimitOverrideStatus.APPROVED)
+                .filter(candidate -> candidate.appliesTo(member)).orElse(null);
+        StaffLoanStanding.Standing standing = loanStanding.of(List.of(member)).get(member.getId());
+        Set<String> flagged = gate.reconciliation() == null ? Set.of() : flagged(gate.reconciliation());
+        return new StaffOfferAssessment(classify(member, limit, standing, flagged, gate.reconciliation(), override),
+                gate.refusal(), limit, override);
     }
 
     /**
@@ -323,29 +404,50 @@ public class StaffOfferRunService {
                 List.of(StaffRegisterVarianceKind.LEFT_ON_PAYROLL, StaffRegisterVarianceKind.NOT_ON_PAYROLL)));
     }
 
-    /** Why an eligible member is not offered, counted; null when they are. */
-    private static String exclusion(StaffMember member, StaffLoanStanding.Standing standing, Set<String> flagged,
-                                    StaffRegisterReconciliation reconciliation, StaffLimitOverride override,
-                                    Counts counts) {
+    /**
+     * Whether {@code member} may be offered, and if not why: the one rule for the run, a borrower applying, and one
+     * accepting. {@code standing} is their Staff Grocery Loan standing (null when clear), {@code flagged} the employee
+     * numbers the latest reconciliation lists as having left or not on the payroll, and {@code override} Credit's
+     * limit override in force for them, if any.
+     */
+    static StaffOfferVerdict classify(StaffMember member, StaffGradeLimit limit, StaffLoanStanding.Standing standing,
+                                      Set<String> flagged, StaffRegisterReconciliation reconciliation,
+                                      StaffLimitOverride override) {
+        if (member.getEmploymentStatus() != StaffEmploymentStatus.ACTIVE) {
+            return StaffOfferVerdict.NOT_ACTIVE;
+        }
+        if (limit == null || !limit.lends()) {
+            return StaffOfferVerdict.NO_LIMIT;
+        }
         if (standing == StaffLoanStanding.Standing.ARREARS) {
-            counts.excludedArrears++;
-            return "In arrears on a Staff Grocery Loan";
+            return StaffOfferVerdict.ARREARS;
         }
         if (standing == StaffLoanStanding.Standing.ACTIVE_LOAN) {
-            counts.excludedActiveLoan++;
-            return "Holds an active Staff Grocery Loan";
+            return StaffOfferVerdict.ACTIVE_LOAN;
         }
         // A record Human Capital has changed since the reconciliation is taken as dealt with.
-        if (flagged.contains(member.getEmployeeNumber()) && !member.getUpdatedAt().isAfter(reconciliation.getRunAt())) {
-            counts.excludedByReconciliation++;
-            return "Payroll reconciliation " + reconciliation.getId() + " lists them as having left or not on the"
-                    + " payroll";
+        if (reconciliation != null && flagged.contains(member.getEmployeeNumber())
+                && !member.getUpdatedAt().isAfter(reconciliation.getRunAt())) {
+            return StaffOfferVerdict.PAYROLL_FLAGGED;
         }
         if (override != null && override.blocks()) {
-            counts.excludedByOverride++;
-            return "Credit set their limit to 0 (limit override " + override.getId() + ")";
+            return StaffOfferVerdict.LIMIT_ZERO;
         }
-        return null;
+        return StaffOfferVerdict.ELIGIBLE;
+    }
+
+    /** Why a member is not offered, as the run records it on an offer it withdraws. */
+    private static String reason(StaffOfferVerdict verdict, StaffMember member, StaffGradeLimit limit,
+                                 StaffRegisterReconciliation reconciliation, StaffLimitOverride override) {
+        return switch (verdict) {
+            case NOT_ACTIVE, NO_LIMIT -> "No longer eligible: " + StaffMemberResponse.ineligibleReason(member, limit);
+            case ARREARS -> "In arrears on a Staff Grocery Loan";
+            case ACTIVE_LOAN -> "Holds an active Staff Grocery Loan";
+            case PAYROLL_FLAGGED -> "Payroll reconciliation " + reconciliation.getId() + " lists them as having left or"
+                    + " not on the payroll";
+            case LIMIT_ZERO -> "Credit set their limit to 0 (limit override " + override.getId() + ")";
+            case ELIGIBLE -> throw new IllegalArgumentException("An eligible member is not withdrawn from");
+        };
     }
 
     private static final class Counts {
@@ -358,6 +460,17 @@ public class StaffOfferRunService {
         int refreshed;
         int alreadyOffered;
         int withdrawn;
+
+        void count(StaffOfferVerdict verdict) {
+            switch (verdict) {
+                case NOT_ACTIVE, NO_LIMIT -> ineligible++;
+                case ARREARS -> excludedArrears++;
+                case ACTIVE_LOAN -> excludedActiveLoan++;
+                case PAYROLL_FLAGGED -> excludedByReconciliation++;
+                case LIMIT_ZERO -> excludedByOverride++;
+                case ELIGIBLE -> throw new IllegalArgumentException("An eligible member is counted as offered");
+            }
+        }
     }
 
     private void audit(String eventType, StaffOfferRun run, String actor, String detail) {

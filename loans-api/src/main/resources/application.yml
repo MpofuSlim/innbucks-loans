@@ -172,6 +172,18 @@ loans:
     code-encryption-key: "${VOUCHER_CODE_ENCRYPTION_KEY:}"
     # How often the scheduled-tasks profile marks lapsed vouchers EXPIRED and sends any left PENDING by a stop.
     sweep-interval: "${VOUCHER_SWEEP_INTERVAL:PT15M}"
+  # The Staff Grocery Loan as a borrower takes it in the SuperApp (FR-SGL-012, FR-SGL-026). Three are open business
+  # questions, so each is a setting with the working answer as default: the partial draw (OQ-03: any amount from the
+  # minimum to the offer in steps of the increment, or the full offer), the due date (OQ-02 and BRD 3.7: the 20th, when
+  # salary is credited, rather than the 19th) and an unspent voucher (OQ-09: DEBT_STANDS or REDUCED_TO_AMOUNT_SPENT).
+  staff-loans:
+    minimum-draw: "${STAFF_LOANS_MINIMUM_DRAW:10.00}"
+    draw-increment: "${STAFF_LOANS_DRAW_INCREMENT:5.00}"
+    repayment-day: "${STAFF_LOANS_REPAYMENT_DAY:20}"
+    arrears-grace-days: "${STAFF_LOANS_ARREARS_GRACE_DAYS:0}"
+    currency: "${STAFF_LOANS_CURRENCY:USD}"
+    merchant-name: "${STAFF_LOANS_MERCHANT_NAME:GetMore Groceries}"
+    unredeemed-voucher-treatment: "${STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT:DEBT_STANDS}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
   # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
   # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a

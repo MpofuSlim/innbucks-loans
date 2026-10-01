@@ -422,3 +422,50 @@ existing `/lending/**` route like loans' own login.
 PIN or biometric prompt at loan approval) with `aud: innbucks-lending`, and hand
 over the public key. Until then staging runs on test assertions and production
 has no borrower sign-in, which is the documented state, not a fault.
+
+## 12. The Staff Grocery Loan journey: settings, and the agreement to publish
+
+With a borrower signed in (§11), the SuperApp takes the loan through
+`/lending/v1/borrower/staff-grocery-loan`:
+
+1. the tile (`GET`);
+2. "Apply" without an offer (`POST /offers`);
+3. the disclosure and agreement for an amount (`POST /quote`);
+4. acceptance with a fresh PIN or biometric assertion (`POST /loans`).
+
+An accepted loan is `AWAITING_DISBURSEMENT` until the bank's system (BR.NET)
+pays GetMore and issues the voucher. That integration is not wired yet, so no
+loan goes further. Credit, Finance and Human Capital see accepted loans at
+`/lending/v1/staff-loans`; Credit can cancel one before payout.
+
+**Nothing can be accepted until the agreement is published.** A SUPER_ADMIN
+publishes it as an instrument, Legal's wording, using the placeholders listed by
+`GET /lending/v1/instrument-templates/placeholders?instrumentType=STAFF_GROCERY_LOAN_AGREEMENT`:
+
+```
+POST /lending/v1/instrument-templates
+{ "instrumentType": "STAFF_GROCERY_LOAN_AGREEMENT", "title": "...", "body": "..." }
+```
+
+Until then a quote or an acceptance answers `503 STAFF_LOAN_TERMS_UNAVAILABLE`
+and logs an ERROR. Publishing a new version makes any quote shown under the old
+one answer `409 TERMS_CHANGED` at acceptance, so the borrower reads the new
+wording first.
+
+Three open business questions are settings, each defaulting to its working
+answer. They are plain env keys in loans' Secret, needed only to change the
+default:
+
+| Key | Default | Decides |
+|---|---|---|
+| `STAFF_LOANS_MINIMUM_DRAW` | `10.00` | Least a borrower may take (OQ-03). |
+| `STAFF_LOANS_DRAW_INCREMENT` | `5.00` | Steps below the full offer (OQ-03). The minimum must be a multiple of it. |
+| `STAFF_LOANS_REPAYMENT_DAY` | `20` | Day of the following month it is due: the salary day (OQ-02, BRD 3.7). At most 28. |
+| `STAFF_LOANS_ARREARS_GRACE_DAYS` | `0` | Days past due before a disbursed loan counts as arrears. |
+| `STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT` | `DEBT_STANDS` | Or `REDUCED_TO_AMOUNT_SPENT` (OQ-09). Shown to the borrower and kept on each loan. |
+| `STAFF_LOANS_CURRENCY` | `USD` | |
+| `STAFF_LOANS_MERCHANT_NAME` | `GetMore Groceries` | |
+
+Arrears and active loans come from loans' own records for now. Other InnBucks
+facilities, and the balance once disbursed, are the core banking system's to
+report when that integration lands.

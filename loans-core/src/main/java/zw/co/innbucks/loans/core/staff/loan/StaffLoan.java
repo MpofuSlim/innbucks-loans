@@ -1,0 +1,138 @@
+package zw.co.innbucks.loans.core.staff.loan;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+/**
+ * A Staff Grocery Loan a borrower accepted in the SuperApp (FR-SGL-027): the terms they were shown and accepted, which
+ * never change after, and where it stands. Who borrowed is kept as the register held them at acceptance.
+ */
+@Entity
+@Table(name = "staff_loans")
+@Getter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString(of = {"id", "reference", "staffMemberId", "status"})
+public class StaffLoan {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    /** SGL-2026-000143: the loan account its disbursement and voucher name. */
+    @Column(name = "reference", length = 32, nullable = false, updatable = false)
+    private String reference;
+
+    @Column(name = "staff_member_id", nullable = false, updatable = false)
+    private Long staffMemberId;
+
+    /** The offer it took up. */
+    @Column(name = "offer_id", nullable = false, updatable = false)
+    private Long offerId;
+
+    @Column(name = "employee_number", length = 32, nullable = false, updatable = false)
+    private String employeeNumber;
+
+    @Column(name = "full_name", length = 160, nullable = false, updatable = false)
+    private String fullName;
+
+    /** 2637XXXXXXXX, the number the voucher goes to. */
+    @Column(name = "msisdn", length = 12, nullable = false, updatable = false)
+    private String msisdn;
+
+    @Column(name = "grade", length = 16, nullable = false, updatable = false)
+    private String grade;
+
+    @Column(name = "amount", precision = 19, scale = 2, nullable = false, updatable = false)
+    private BigDecimal amount;
+
+    @Column(name = "currency", length = 3, nullable = false, updatable = false)
+    private String currency;
+
+    /** Percent; 0 for this product. */
+    @Column(name = "interest_rate", precision = 9, scale = 4, nullable = false, updatable = false)
+    private BigDecimal interestRate;
+
+    @Column(name = "total_repayable", precision = 19, scale = 2, nullable = false, updatable = false)
+    private BigDecimal totalRepayable;
+
+    /** The market day it is collected from salary. */
+    @Column(name = "due_date", nullable = false, updatable = false)
+    private LocalDate dueDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "unredeemed_voucher_treatment", length = 32, nullable = false, updatable = false)
+    private UnredeemedVoucherTreatment unredeemedVoucherTreatment;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 32, nullable = false)
+    private StaffLoanStatus status;
+
+    @Column(name = "accepted_at", nullable = false, updatable = false)
+    private LocalDateTime acceptedAt;
+
+    @Column(name = "disbursed_at")
+    private LocalDateTime disbursedAt;
+
+    @Column(name = "disbursement_reference", length = 64)
+    private String disbursementReference;
+
+    @Column(name = "settled_at")
+    private LocalDateTime settledAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private String cancelledBy;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    /**
+     * Whether it counts as in arrears on {@code today} (FR-SGL-013, FR-SGL-014): disbursed and still owed more than
+     * {@code graceDays} after its due date, or written off.
+     */
+    public boolean inArrearsOn(LocalDate today, int graceDays) {
+        return status == StaffLoanStatus.WRITTEN_OFF
+                || (status == StaffLoanStatus.DISBURSED && today.isAfter(dueDate.plusDays(graceDays)));
+    }
+
+    /** What is still owed, as far as loans knows: the core banking system holds the balance once it is disbursed. */
+    public BigDecimal outstanding() {
+        return switch (status) {
+            case AWAITING_DISBURSEMENT, DISBURSED, WRITTEN_OFF -> totalRepayable;
+            case REPAID, CANCELLED -> BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
+        };
+    }
+
+    /** Stops it before anything is paid. The caller checks it is AWAITING_DISBURSEMENT. */
+    void cancel(LocalDateTime at, String by, String reason) {
+        this.status = StaffLoanStatus.CANCELLED;
+        this.cancelledAt = at;
+        this.cancelledBy = by;
+        this.cancellationReason = reason;
+    }
+}

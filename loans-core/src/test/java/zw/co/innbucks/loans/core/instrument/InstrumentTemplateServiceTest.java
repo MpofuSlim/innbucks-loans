@@ -72,10 +72,32 @@ class InstrumentTemplateServiceTest {
         assertThatThrownBy(() -> service.publish(new PublishInstrumentTemplateRequest(InstrumentType.LOAN_AGREEMENT,
                 "SSB Loan Agreement", "Pay {{salary}} to {{applicantName}}")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unknown placeholder {{salary}}: a placeholder must be one of the loan terms listed by"
-                        + " GET /instrument-templates/placeholders");
+                .hasMessage("Unknown placeholder {{salary}}: a placeholder must be one of the terms listed by"
+                        + " GET /instrument-templates/placeholders?instrumentType=LOAN_AGREEMENT");
         verify(templateRepository, never()).save(any());
         verify(loanRepository, never()).lockApplicant(any());
+    }
+
+    @Test
+    @DisplayName("the Staff Grocery Loan agreement has its own terms: an SSB loan's are refused, its own taken")
+    void staffLoanAgreementHasItsOwnTerms() {
+        assertThatThrownBy(() -> service.publish(new PublishInstrumentTemplateRequest(
+                InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT, "Staff Grocery Loan Agreement",
+                "I, {{borrowerName}}, repay {{monthlyInstalment}} over {{tenor}} months")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Unknown placeholders {{monthlyInstalment}}, {{tenor}}: a placeholder must be one of the"
+                        + " terms listed by GET /instrument-templates/placeholders"
+                        + "?instrumentType=STAFF_GROCERY_LOAN_AGREEMENT");
+        assertThatThrownBy(() -> service.publish(new PublishInstrumentTemplateRequest(InstrumentType.LOAN_AGREEMENT,
+                "SSB Loan Agreement", "Due on {{repaymentDate}}")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("{{repaymentDate}}");
+        verify(templateRepository, never()).save(any());
+
+        when(templateRepository.findLatestVersion(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)).thenReturn(0);
+        assertThat(service.publish(new PublishInstrumentTemplateRequest(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT,
+                "Staff Grocery Loan Agreement", "I, {{borrowerName}}, repay {{currency}} {{totalRepayable}} on"
+                + " {{repaymentDate}}.")).version()).isEqualTo(1);
     }
 
     @Test

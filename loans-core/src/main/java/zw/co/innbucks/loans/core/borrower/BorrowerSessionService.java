@@ -87,11 +87,7 @@ public class BorrowerSessionService {
 
     /** The staff member on the register with this phone who has not left, written however the middleware wrote it. */
     Optional<StaffMember> currentMemberFor(String phone) {
-        String stripped = phone.strip();
-        if (!stripped.matches(MsisdnUtils.ZIMBABWE_MOBILE_REGEX)) {
-            return Optional.empty();
-        }
-        return memberRepository.findByMsisdn(MsisdnUtils.formatMsisdnInternational(stripped))
+        return BorrowerPhones.asRegistered(phone).flatMap(memberRepository::findByMsisdn)
                 .filter(member -> !member.getEmploymentStatus().hasLeft());
     }
 

@@ -77,7 +77,7 @@ public class SignedInstrumentService {
         Map<String, String> problems = new TreeMap<>();
         List<String> changed = new ArrayList<>();
         List<InstrumentTemplate> due = new ArrayList<>();
-        for (InstrumentType type : InstrumentType.values()) {
+        for (InstrumentType type : InstrumentType.ssbApplication()) {
             Integer accepted = acceptedVersion(application, type);
             Optional<InstrumentTemplate> current = templateService.currentTemplate(type);
             if (current.isEmpty()) {
@@ -178,7 +178,7 @@ public class SignedInstrumentService {
     public List<InstrumentPreview> preview(Loan loan) {
         LocalDate today = marketTimeZone.today();
         List<InstrumentPreview> previews = new ArrayList<>();
-        for (InstrumentType type : InstrumentType.values()) {
+        for (InstrumentType type : InstrumentType.ssbApplication()) {
             templateService.currentTemplate(type).ifPresent(template -> {
                 String content = InstrumentTerms.render(template.getBody(), loan, today);
                 previews.add(new InstrumentPreview(type, template.getVersion(), template.getTitle(), content,
@@ -253,6 +253,8 @@ public class SignedInstrumentService {
         return switch (type) {
             case LOAN_AGREEMENT -> application.getLoanAgreementVersion();
             case SSB_DEDUCTION_AUTHORITY -> application.getDeductionAuthorityVersion();
+            case STAFF_GROCERY_LOAN_AGREEMENT -> throw new IllegalArgumentException(
+                    "The Staff Grocery Loan agreement is accepted in the SuperApp, not with an SSB application");
         };
     }
 
