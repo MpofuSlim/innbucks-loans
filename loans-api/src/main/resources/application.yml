@@ -157,6 +157,21 @@ loans:
       messages-per-second: "${STAFF_NOTIFICATIONS_MESSAGES_PER_SECOND:5}"
       # How often the scheduled-tasks profile picks up messages left PENDING by a stop.
       sweep-interval: "${STAFF_NOTIFICATIONS_SWEEP_INTERVAL:PT5M}"
+  # Grocery vouchers (FR-SGL-033 to 040). A code is code-length digits (a multiple of 4, 12 to 24), the last a Damm
+  # check digit; codes already issued keep their length. A voucher is good until the end of the validity-days'th market
+  # day after it is issued (OQ-08). With partial-redemption-allowed false, a till must spend it all in one purchase
+  # (OQ-08). It is sent on delivery-channels in that order until one accepts it. The two keys protect the codes: set
+  # both or neither (neither: vouchers are off, and every voucher call is a 503). Generate each with
+  # `openssl rand -base64 32`; never change the HMAC key while vouchers are open, or their codes stop being found.
+  vouchers:
+    code-length: "${VOUCHER_CODE_LENGTH:16}"
+    validity-days: "${VOUCHER_VALIDITY_DAYS:30}"
+    partial-redemption-allowed: "${VOUCHER_PARTIAL_REDEMPTION_ALLOWED:true}"
+    delivery-channels: "${VOUCHER_DELIVERY_CHANNELS:SMS,WHATSAPP}"
+    code-hmac-key: "${VOUCHER_CODE_HMAC_KEY:}"
+    code-encryption-key: "${VOUCHER_CODE_ENCRYPTION_KEY:}"
+    # How often the scheduled-tasks profile marks lapsed vouchers EXPIRED and sends any left PENDING by a stop.
+    sweep-interval: "${VOUCHER_SWEEP_INTERVAL:PT15M}"
   # In a Kubernetes pod the scheduled-tasks profile alone refuses to boot (ScheduledTasksKubernetesGuard):
   # the fleet cell runs loans with the jobs OFF, and a Secret entry such as SPRING_PROFILES_INCLUDE could
   # otherwise switch on InnBucks booking (which pays) without the manifest changing. Turning them on in

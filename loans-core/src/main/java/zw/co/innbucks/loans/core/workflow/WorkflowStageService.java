@@ -37,6 +37,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkflowStageService {
 
+    /** Roles that work on grocery vouchers only: never given a loan workflow stage or sent its escalations. */
+    private static final Set<UserGroup> VOUCHER_ROLES = EnumSet.of(UserGroup.GETMORE, UserGroup.VOUCHER_SUPPORT);
+
     static final String WORKFLOW_STAGE_CHANGED = "WORKFLOW_STAGE_CHANGED";
     static final String WORKFLOW_STAGE_CREATED = "WORKFLOW_STAGE_CREATED";
 
@@ -165,6 +168,11 @@ public class WorkflowStageService {
         if (settings.getEscalateTo().contains(UserGroup.HUMAN_CAPITAL)) {
             throw new IllegalArgumentException("Escalations cannot be sent to HUMAN_CAPITAL");
         }
+        for (UserGroup voucherRole : VOUCHER_ROLES) {
+            if (settings.getEscalateTo().contains(voucherRole)) {
+                throw new IllegalArgumentException("Escalations cannot be sent to " + voucherRole);
+            }
+        }
         if (settings.getEscalationHours() != null && settings.getEscalationHours() < settings.getTargetHours()) {
             throw new IllegalArgumentException("Escalation hours cannot be fewer than the target hours");
         }
@@ -217,6 +225,12 @@ public class WorkflowStageService {
             if (roles.contains(UserGroup.HUMAN_CAPITAL)) {
                 throw new IllegalArgumentException(
                         "HUMAN_CAPITAL keeps the staff register and cannot be given a loan workflow stage");
+            }
+            for (UserGroup voucherRole : VOUCHER_ROLES) {
+                if (roles.contains(voucherRole)) {
+                    throw new IllegalArgumentException(
+                            voucherRole + " works on grocery vouchers and cannot be given a loan workflow stage");
+                }
             }
         }
     }

@@ -36,6 +36,8 @@ import zw.co.innbucks.loans.core.notifications.NotificationDeliveryException;
 import zw.co.innbucks.loans.core.staff.StaffRecordInvalidException;
 import zw.co.innbucks.loans.core.staff.StaffRegisterRowResponse;
 import zw.co.innbucks.loans.core.staff.StaffUploadRejectedException;
+import zw.co.innbucks.loans.core.voucher.VoucherRefusedException;
+import zw.co.innbucks.loans.core.voucher.VouchersUnavailableException;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -259,6 +261,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> accessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
         return error(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage());
+    }
+
+    /**
+     * A till's voucher validation or redemption refused (FR-SGL-036): the code names why (INVALID_VOUCHER_CODE,
+     * VOUCHER_NOT_FOUND, VOUCHER_EXPIRED, INSUFFICIENT_BALANCE, ...). Nothing was redeemed.
+     */
+    @ExceptionHandler(VoucherRefusedException.class)
+    public ResponseEntity<ApiResult<Void>> voucherRefused(VoucherRefusedException ex) {
+        log.warn("Voucher refused: {}", ex.getRefusal());
+        return error(HttpStatus.valueOf(ex.getRefusal().httpStatus()), ex.getRefusal().name(), ex.getMessage());
+    }
+
+    /** The voucher code keys are not configured: no voucher can be issued, read in full or redeemed. */
+    @ExceptionHandler(VouchersUnavailableException.class)
+    public ResponseEntity<ApiResult<Void>> vouchersUnavailable(VouchersUnavailableException ex) {
+        log.error("Voucher call refused: {}", ex.getMessage());
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "VOUCHERS_UNAVAILABLE", ex.getMessage());
     }
 
     /** The SMS, email or WhatsApp provider refused or could not be reached; nothing was changed. */
