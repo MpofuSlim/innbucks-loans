@@ -40,6 +40,8 @@ import zw.co.innbucks.loans.controller.StaffOfferController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
 import zw.co.innbucks.loans.controller.StaffRegisterReconciliationController;
 import zw.co.innbucks.loans.controller.UserController;
+import zw.co.innbucks.loans.controller.VoucherController;
+import zw.co.innbucks.loans.controller.VoucherRedemptionController;
 import zw.co.innbucks.loans.controller.CheckpointController;
 import zw.co.innbucks.loans.controller.CreditAuthorityController;
 import zw.co.innbucks.loans.controller.WorkQueueController;
@@ -48,6 +50,7 @@ import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.loan.CreditWorkbenchService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
+import zw.co.innbucks.loans.core.voucher.VoucherCodes;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
@@ -85,7 +88,8 @@ class SwaggerExamplesTest {
             WorkflowStageController.class, WorkQueueController.class, CheckpointController.class,
             CreditAuthorityController.class, StaffGradeLimitController.class,
             StaffRegisterController.class, StaffRegisterReconciliationController.class, StaffOfferController.class,
-            StaffLimitOverrideController.class, StaffNotificationController.class);
+            StaffLimitOverrideController.class, StaffNotificationController.class, VoucherController.class,
+            VoucherRedemptionController.class);
 
     record Example(String where, String json) {
         @Override
@@ -242,6 +246,27 @@ class SwaggerExamplesTest {
         assertThat(variances.size()).isEqualTo(summary.path("variances").asInt());
         assertThat(JSON.readTree(ApiExamples.STAFF_RECONCILIATION_1).path("data"))
                 .isEqualTo(((ObjectNode) summary.deepCopy()).without("ignoredColumns"));
+    }
+
+    @Test
+    void theVoucherExamplesCarryARealCodeAndAgreeOnIt() {
+        // The code a reader sees in full is one the till would accept, and the masked form everywhere else is its tail.
+        String code = JSON.readTree(VoucherApiExamples.VOUCHER_7_CODE).path("data").path("scanValue").asString();
+        assertThat(code).isEqualTo(VoucherApiExamples.CODE_7);
+        assertThat(VoucherCodes.normalize(code)).contains(code);
+        assertThat(VoucherCodes.normalize(JSON.readTree(VoucherApiExamples.VALIDATION_REQUEST).path("code")
+                .asString())).contains(code);
+        assertThat(VoucherCodes.normalize(JSON.readTree(VoucherApiExamples.REDEMPTION_REQUEST).path("code")
+                .asString())).contains(code);
+        assertThat(JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("voucher").path("maskedCode")
+                .asString()).isEqualTo("**** **** **** " + code.substring(12));
+        assertThat(VoucherCodes.normalize("7391045288672151")).as("voucher 8, masked as **** 2151").isPresent();
+        JsonNode detail = JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data");
+        JsonNode redemption = detail.path("redemptions").get(0);
+        assertThat(detail.path("voucher").path("faceValue").decimalValue()
+                .subtract(redemption.path("amount").decimalValue()))
+                .isEqualByComparingTo(detail.path("voucher").path("balance").decimalValue())
+                .isEqualByComparingTo(redemption.path("balanceAfter").decimalValue());
     }
 
     static Stream<Class<?>> controllers() {

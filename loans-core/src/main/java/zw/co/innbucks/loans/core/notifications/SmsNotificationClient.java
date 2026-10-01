@@ -46,6 +46,14 @@ public class SmsNotificationClient {
      * configuration, a non-2xx answer or a connection failure becomes a {@link NotificationDeliveryException}.
      */
     public void sendSms(String destination, String message, String reference) {
+        sendSms(destination, message, reference, false);
+    }
+
+    /**
+     * As {@link #sendSms(String, String, String)}; with {@code withholdUpstreamReply}, a rejection is logged without the
+     * API's reply, for a message whose text must never reach a log (a voucher code) in case the reply echoes it.
+     */
+    public void sendSms(String destination, String message, String reference, boolean withholdUpstreamReply) {
         if (destination == null || destination.isBlank()) {
             throw new NotificationDeliveryException("SMS recipient is blank");
         }
@@ -79,7 +87,8 @@ public class SmsNotificationClient {
                     throw new NotificationApiAuthenticator.UnauthorizedException();
                 }
                 log.warn("Notification API rejected SMS destination={} ref={} status={} body={}",
-                        MsisdnUtils.mask(to), ref, ex.getStatusCode(), ex.getResponseBodyAsString());
+                        MsisdnUtils.mask(to), ref, ex.getStatusCode(),
+                        withholdUpstreamReply ? "<withheld>" : ex.getResponseBodyAsString());
                 throw new NotificationDeliveryException(
                         "Notification API rejected SMS: HTTP " + ex.getStatusCode().value(), ex);
             } catch (NotificationDeliveryException ex) {

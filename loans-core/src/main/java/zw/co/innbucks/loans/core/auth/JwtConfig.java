@@ -61,7 +61,8 @@ public class JwtConfig {
         this.issuer = jwtProperties.getIssuer();
     }
 
-    static boolean isPlaceholder(String secret) {
+    /** Whether a configured secret is one of the development placeholders this repo publishes. */
+    public static boolean isPlaceholder(String secret) {
         String folded = secret.toLowerCase(Locale.ROOT).replace("-", "").replace("_", "");
         return PLACEHOLDER_MARKERS.stream().anyMatch(folded::contains);
     }

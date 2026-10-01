@@ -2,9 +2,9 @@
 -- as cash: one voucher per disbursement, worth the amount disbursed, sent to the customer by SMS (WhatsApp when it
 -- fails) and redeemed at GetMore's tills, in part or in full, until it expires.
 --
--- The code is 16 digits, 15 random and a Luhn check digit, and is never stored as written: code_hmac (keyed SHA-256)
--- finds a voucher by its code, code_ciphertext (AES-GCM) gives it back to the customer and to staff entitled to see it,
--- and code_last4 is what everyone else sees.
+-- The code is all digits, 16 by default: random, the first never 0, the last a Damm check digit. It is never stored as
+-- written: code_hmac (HMAC-SHA256) finds a voucher by its code, code_ciphertext (AES-256-GCM) gives it back to the
+-- customer and to staff entitled to see it, and code_last4 and code_length are all anyone else is shown.
 
 -- GetMore's till integration signs in as a user of its own, and the staff who may read a voucher code in full.
 ALTER TABLE user_groups DROP CONSTRAINT ck_user_groups_user_group;
@@ -24,10 +24,11 @@ CREATE TABLE vouchers (
     customer_msisdn        VARCHAR(16)    NOT NULL,
     code_hmac              VARCHAR(64)    NOT NULL,
     code_ciphertext        VARCHAR(255)   NOT NULL,
-    code_last4             CHAR(4)        NOT NULL,
+    code_last4             VARCHAR(4)     NOT NULL,
+    code_length            INTEGER        NOT NULL,
     face_value             NUMERIC(19, 2) NOT NULL,
     redeemed_amount        NUMERIC(19, 2) NOT NULL DEFAULT 0,
-    currency               CHAR(3)        NOT NULL,
+    currency               VARCHAR(3)     NOT NULL,
     issued_at              TIMESTAMP(6)   NOT NULL,
     expires_at             TIMESTAMP(6)   NOT NULL,
     status                 VARCHAR(20)    NOT NULL,
@@ -46,10 +47,12 @@ CREATE TABLE vouchers (
     CONSTRAINT uq_vouchers_code UNIQUE (code_hmac),
     CONSTRAINT fk_vouchers_staff_member FOREIGN KEY (staff_member_id) REFERENCES staff_members (id),
     CONSTRAINT ck_vouchers_product CHECK (product IN ('STAFF_GROCERY_LOAN')),
+    CONSTRAINT ck_vouchers_currency CHECK (currency ~ '^[A-Z]{3}$'),
     CONSTRAINT ck_vouchers_amounts
         CHECK (face_value > 0 AND redeemed_amount >= 0 AND redeemed_amount <= face_value),
     CONSTRAINT ck_vouchers_expiry CHECK (expires_at > issued_at),
-    CONSTRAINT ck_vouchers_last4 CHECK (code_last4 ~ '^[0-9]{4}$'),
+    CONSTRAINT ck_vouchers_code_shape
+        CHECK (code_last4 ~ '^[0-9]{4}$' AND code_length BETWEEN 12 AND 24 AND code_length % 4 = 0),
     CONSTRAINT ck_vouchers_status
         CHECK (status IN ('ISSUED', 'PARTIALLY_REDEEMED', 'REDEEMED', 'EXPIRED', 'CANCELLED')),
     -- What has been redeemed agrees with the status; a cancelled voucher was never redeemed.

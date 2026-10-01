@@ -48,6 +48,15 @@ public class WhatsAppNotificationClient {
      * failure.
      */
     public void sendCustomNotification(String to, String notification) {
+        sendCustomNotification(to, notification, false);
+    }
+
+    /**
+     * As {@link #sendCustomNotification(String, String)}; with {@code withholdUpstreamReply}, a rejection is logged
+     * without the gateway's reply, for a message whose text must never reach a log (a voucher code) in case the reply
+     * echoes it.
+     */
+    public void sendCustomNotification(String to, String notification, boolean withholdUpstreamReply) {
         if (to == null || to.isBlank()) {
             throw new NotificationDeliveryException("WhatsApp recipient is blank");
         }
@@ -73,7 +82,8 @@ public class WhatsAppNotificationClient {
             log.info("WhatsApp notification sent to={}", MsisdnUtils.mask(to));
         } catch (RestClientResponseException ex) {
             log.warn("WhatsApp gateway rejected notification to={} status={} body={}",
-                    MsisdnUtils.mask(to), ex.getStatusCode(), ex.getResponseBodyAsString());
+                    MsisdnUtils.mask(to), ex.getStatusCode(),
+                    withholdUpstreamReply ? "<withheld>" : ex.getResponseBodyAsString());
             throw new NotificationDeliveryException(
                     "WhatsApp gateway rejected the message: HTTP " + ex.getStatusCode().value(), ex);
         } catch (RuntimeException ex) {

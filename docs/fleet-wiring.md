@@ -165,7 +165,8 @@ What this asks of loans, all in this repo:
     OWN key, at least 32 bytes, `openssl rand -base64 48`, never the fleet's)
     and `BOOTSTRAP_ADMIN_PASSWORD` (the first boot on an empty `loans_service`
     creates `admin`; clear it afterwards). Optional: the `INNBUCKS_*`,
-    `NDASENDA_*`, `INNBUCKS_NOTIFY_*` and `WHATSAPP_API_KEY` credentials.
+    `NDASENDA_*`, `INNBUCKS_NOTIFY_*` and `WHATSAPP_API_KEY` credentials, and
+    the two voucher code keys (section 10).
   - **Explicit `env:` entries**, named key by key: `JAVA_TOOL_OPTIONS` (heap
     percentage, and `user.home` plus the PDFBox font cache on `/tmp`, because
     the root filesystem is read-only), `SPRING_PROFILES_ACTIVE=api`,
@@ -311,3 +312,38 @@ The follow-up, in order:
 4. Run the image on the JRE that `ci.yml`'s `java-version` tests on.
 
 The box's own workflow is kept off the cell's tags meanwhile (section 7).
+
+## 10. Vouchers: two keys, and GetMore's account
+
+Staff Grocery Loan vouchers (FR-SGL-033 to 040) need two keys in loans' Secret,
+both generated with `openssl rand -base64 32`, both different:
+
+- `VOUCHER_CODE_HMAC_KEY` finds a voucher by the code a till sends, without the
+  code being stored. **Never change it while vouchers are open**: every code
+  issued under the old key stops being found.
+- `VOUCHER_CODE_ENCRYPTION_KEY` (base64 of exactly 32 bytes) seals the code so it
+  can be sent again and shown to a VOUCHER_SUPPORT user.
+
+With neither key, vouchers are off: every voucher endpoint answers 503
+`VOUCHERS_UNAVAILABLE`, a boot WARN says so, and nothing else is affected. With
+one but not the other, or a malformed one, loans refuses to start. Both are
+secrets, like the JWT key: a holder of both and a database copy holds every
+open voucher's value.
+
+The rules are plain env keys too, with defaults (`application.yml`,
+`loans.vouchers`): `VOUCHER_CODE_LENGTH` (16), `VOUCHER_VALIDITY_DAYS` (30, the
+voucher lapses at the end of that market day), `VOUCHER_PARTIAL_REDEMPTION_ALLOWED`
+(true) and `VOUCHER_DELIVERY_CHANNELS` (`SMS,WHATSAPP`, tried in that order).
+Validity and partial redemption are OQ-08, still to be agreed with GetMore.
+
+**GetMore's till integration signs in as a loans user in group `GETMORE`**,
+created by a super-admin like any other user, and reaches
+`POST /lending/v1/voucher-validations` and `/voucher-redemptions` through the
+existing `/lending/**` route (no gateway change). A `GETMORE` token is refused
+everywhere else, whatever other group it holds (`VoucherRoleFilter`), so the
+credential GetMore holds can never read a loan or submit one. Staff who may see
+a code in full are in group `VOUCHER_SUPPORT`; on its own that group reaches
+the voucher screens and nothing more.
+
+Vouchers are issued by the disbursement (FR-SGL-032, BR.NET), never from a
+screen, so until that lands none exist in the cell.
