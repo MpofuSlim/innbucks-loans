@@ -84,6 +84,14 @@ public class StaffNotification {
     @Column(name = "finished_at")
     private LocalDateTime finishedAt;
 
+    /**
+     * When the member first read it in the SuperApp. Written only by {@link StaffNotificationRepository#markRead} and
+     * {@link StaffNotificationRepository#markAllRead}, never by saving this entity: the dispatcher saves it while it
+     * sends, and must not write back a read time it loaded before the member read it.
+     */
+    @Column(name = "read_at", insertable = false, updatable = false)
+    private LocalDateTime readAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;

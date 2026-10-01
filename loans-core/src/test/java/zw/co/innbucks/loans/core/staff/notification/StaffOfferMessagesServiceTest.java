@@ -34,6 +34,7 @@ class StaffOfferMessagesServiceTest {
 
     private StaffNotificationPreference stored;
     private AuditService auditService;
+    private AuthService authService;
     private StaffOfferMessagesService service;
 
     @BeforeEach
@@ -42,10 +43,11 @@ class StaffOfferMessagesServiceTest {
         when(repository.findById(anyLong())).thenAnswer(i -> Optional.ofNullable(stored));
         when(repository.save(any())).thenAnswer(i -> stored = i.getArgument(0));
         StaffMemberRepository memberRepository = mock(StaffMemberRepository.class);
-        when(memberRepository.findByEmployeeNumber("E1043")).thenReturn(Optional.of(StaffMember.builder().id(3L)
-                .employeeNumber("E1043").fullName("Tendai Moyo").employmentStatus(StaffEmploymentStatus.ACTIVE)
-                .build()));
-        AuthService authService = mock(AuthService.class);
+        StaffMember member = StaffMember.builder().id(3L).employeeNumber("E1043").fullName("Tendai Moyo")
+                .employmentStatus(StaffEmploymentStatus.ACTIVE).build();
+        when(memberRepository.findByEmployeeNumber("E1043")).thenReturn(Optional.of(member));
+        when(memberRepository.findById(3L)).thenReturn(Optional.of(member));
+        authService = mock(AuthService.class);
         when(authService.getLoggedInUsername()).thenReturn("hc1");
         auditService = mock(AuditService.class);
         service = new StaffOfferMessagesService(repository, memberRepository, authService, auditService,
@@ -91,5 +93,29 @@ class StaffOfferMessagesServiceTest {
         assertThatThrownBy(() -> service.set("E9999", request(true, "x"))).isInstanceOf(NotFoundException.class)
                 .hasMessage("Employee E9999 is not on the staff register");
         assertThatThrownBy(() -> service.get("E9999")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("in the SuperApp the member chooses for themselves: recorded as theirs, from the app, and audited")
+    void borrowerChooses() {
+        assertThat(service.forMember(3L)).isEqualTo(new BorrowerOfferMessages(false, null));
+        when(authService.getLoggedInUsername()).thenReturn("borrower:E1043");
+
+        BorrowerOfferMessages out = service.chooseForMember(3L, true);
+
+        assertThat(out).isEqualTo(new BorrowerOfferMessages(true, NOW));
+        assertThat(stored.getReason()).isEqualTo("Chosen in the SuperApp");
+        assertThat(stored.getUpdatedBy()).isEqualTo("borrower:E1043");
+        assertThat(service.get("E1043").optedOut()).as("staff see the member's own choice").isTrue();
+        assertThat(service.chooseForMember(3L, false).optedOut()).isFalse();
+
+        ArgumentCaptor<AuditLog.AuditLogBuilder> audits = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, times(2)).record(audits.capture());
+        AuditLog first = audits.getAllValues().getFirst().build();
+        assertThat(first.getEventType()).isEqualTo(StaffOfferMessagesService.OPTED_OUT);
+        assertThat(first.getActorId()).isEqualTo("borrower:E1043");
+        assertThat(first.getChannelUsed()).isEqualTo("superapp");
+        assertThatThrownBy(() -> service.forMember(9L)).isInstanceOf(NotFoundException.class)
+                .hasMessage("Staff member 9 is not on the staff register");
     }
 }

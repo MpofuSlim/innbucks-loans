@@ -89,4 +89,106 @@ public final class BorrowerApiExamples {
                 "signedInWith": ["pin"]
               }
             }""";
+
+    // ---- The SuperApp inbox and offer messages (FR-SGL-019, FR-SGL-020, FR-SGL-022) ----
+    // Chipo Banda's inbox on the morning of 1 October, before she takes up offer 31: its notification from the run of
+    // Monday 28 September, unread, and the one for offer 12 from the run of 14 September, read, which lapsed.
+
+    private static final String INBOX_1103 = """
+                  "id": 1103,
+                  "kind": "OFFER_NEW",
+                  "title": "Your Staff Grocery Loan offer",
+                  "message": "InnBucks Staff Grocery Loan. You have a new offer of up to USD 300.00, open until 08.00 on 5 Oct 2026. Log in to the InnBucks app to accept it.",
+                  "createdAt": "2026-09-28T08:00:01+02:00",""";
+
+    public static final String INBOX = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+            """ + INBOX_1103 + """
+
+                    "offerId": 31,
+                    "offerOpen": true
+                  },
+                  {
+                    "id": 877,
+                    "kind": "OFFER_NEW",
+                    "title": "Your Staff Grocery Loan offer",
+                    "message": "InnBucks Staff Grocery Loan. You have a new offer of up to USD 300.00, open until 08.00 on 21 Sep 2026. Log in to the InnBucks app to accept it.",
+                    "createdAt": "2026-09-14T08:00:01+02:00",
+                    "readAt": "2026-09-14T17:22:40+02:00",
+                    "offerId": 12,
+                    "offerOpen": false
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String INBOX_UNREAD = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "unread": 1
+              }
+            }""";
+
+    public static final String INBOX_READ = """
+            {
+              "code": "OK",
+              "message": "Marked read",
+              "data": {
+            """ + INBOX_1103 + """
+
+                "readAt": "2026-10-01T09:01:55+02:00",
+                "offerId": 31,
+                "offerOpen": true
+              }
+            }""";
+
+    public static final String INBOX_READ_ALL = """
+            {
+              "code": "OK",
+              "message": "1 notification marked read",
+              "data": {
+                "marked": 1
+              }
+            }""";
+
+    public static final String INBOX_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Notification 999 not found"
+            }""";
+
+    public static final String OFFER_MESSAGES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "optedOut": false
+              }
+            }""";
+
+    public static final String OFFER_MESSAGES_REQUEST = """
+            {
+              "optedOut": true
+            }""";
+
+    public static final String OFFER_MESSAGES_OPTED_OUT = """
+            {
+              "code": "OK",
+              "message": "Offer messages stopped; offers still appear in the app",
+              "data": {
+                "optedOut": true,
+                "updatedAt": "2026-10-01T09:03:12+02:00"
+              }
+            }""";
 }
