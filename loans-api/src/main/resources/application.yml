@@ -139,6 +139,14 @@ loans:
   drafts:
     expiry-days: "${DRAFT_EXPIRY_DAYS:30}"
     expiry-cron: "${DRAFT_EXPIRY_CRON:0 30 1 * * *}"
+  # Staff Grocery Loan offers (FR-SGL-015, FR-SGL-018). The weekly run fires on run-cron (second minute hour day
+  # month weekday), read on the market's clock, only where the scheduled-tasks profile is on; a run can always be
+  # started from the admin portal. Offers stay open validity-days. A run is refused when the staff register's latest
+  # payroll reconciliation is more than max-reconciliation-age-days old.
+  staff-offers:
+    run-cron: "${STAFF_OFFERS_RUN_CRON:0 0 8 * * MON}"
+    validity-days: "${STAFF_OFFERS_VALIDITY_DAYS:7}"
+    max-reconciliation-age-days: "${STAFF_OFFERS_MAX_RECONCILIATION_AGE_DAYS:35}"
   # In a Kubernetes pod the scheduled-tasks profile alone refuses to boot (ScheduledTasksKubernetesGuard):
   # the fleet cell runs loans with the jobs OFF, and a Secret entry such as SPRING_PROFILES_INCLUDE could
   # otherwise switch on InnBucks booking (which pays) without the manifest changing. Turning them on in

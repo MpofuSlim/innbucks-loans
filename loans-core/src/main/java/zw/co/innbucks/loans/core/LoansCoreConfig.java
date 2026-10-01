@@ -10,6 +10,7 @@ import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
 import zw.co.innbucks.loans.core.document.DocumentUploadProperties;
 import zw.co.innbucks.loans.core.draft.LoanApplicationDraftProperties;
 import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
+import zw.co.innbucks.loans.core.staff.offer.StaffOfferProperties;
 
 
 @EnableScheduling
@@ -19,7 +20,8 @@ import zw.co.innbucks.loans.core.ndasenda.NdasendaParameters;
         InnbucksParameters.class,
         JwtProperties.class,
         DocumentUploadProperties.class,
-        LoanApplicationDraftProperties.class})
+        LoanApplicationDraftProperties.class,
+        StaffOfferProperties.class})
 @EnableCaching
 public class LoansCoreConfig {
 }

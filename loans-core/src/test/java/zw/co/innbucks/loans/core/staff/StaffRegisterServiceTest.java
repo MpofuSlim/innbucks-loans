@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +57,7 @@ class StaffRegisterServiceTest {
     private AuthService authService;
     private AuditService auditService;
     private StaffGradeLimitService gradeLimitService;
+    private ApplicationEventPublisher events;
     private StaffRegisterService service;
 
     @BeforeEach
@@ -134,8 +136,9 @@ class StaffRegisterServiceTest {
         as("hc1");
         auditService = mock(AuditService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-10-01T08:00:00Z"), ZoneOffset.UTC);
+        events = mock(ApplicationEventPublisher.class);
         service = new StaffRegisterService(memberRepository, batchRepository, rowRepository, changeRepository,
-                gradeLimitService, authService, auditService, new MarketTimeZone("ZW", clock));
+                gradeLimitService, authService, auditService, new MarketTimeZone("ZW", clock), events);
     }
 
     private Optional<StaffRegisterBatch> batch(Long id) {
@@ -361,6 +364,9 @@ class StaffRegisterServiceTest {
                         org.assertj.core.groups.Tuple.tuple(StaffFields.GRADE, "C3", "C4"));
         assertThat(service.history("E1002")).isEmpty();
         assertThat(auditedEvents()).containsExactly(StaffRegisterService.UPLOADED, StaffRegisterService.APPROVED);
+        verify(events).publishEvent(new StaffEmploymentStatusChanged(known.getId(), "E1001",
+                StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, id, "hc2"));
+        verifyNoMoreInteractions(events);
     }
 
     @Test

@@ -2955,4 +2955,179 @@ public final class ApiExamples {
               "code": "NOT_FOUND",
               "message": "Staff register reconciliation 99 not found"
             }""";
+
+    // ---- Staff Grocery Loan offers (FR-SGL-015 to FR-SGL-018, FR-SGL-024) ----
+    // Human Capital corrected the payroll file and reconciliation 2 (2 October) came back clean. The scheduled run on
+    // Monday 5 October (run 1) offers E1001 and E1012 their C4 limit; E1043 has resigned. credit1 runs it again at
+    // 09:30 (run 2): both already hold this week's offer, so it issues nothing.
+
+    private static final String STAFF_OFFER_RUN_1 = """
+                {
+                  "id": 1,
+                  "cycleStart": "2026-10-05",
+                  "trigger": "SCHEDULED",
+                  "startedBy": "scheduler",
+                  "startedAt": "2026-10-05T08:00:00+02:00",
+                  "finishedAt": "2026-10-05T08:00:01+02:00",
+                  "status": "COMPLETED",
+                  "reconciliationId": 2,
+                  "registerMembers": 3,
+                  "ineligible": 1,
+                  "excludedActiveLoan": 0,
+                  "excludedArrears": 0,
+                  "excludedByReconciliation": 0,
+                  "eligible": 2,
+                  "offered": 2,
+                  "refreshed": 0,
+                  "alreadyOffered": 0,
+                  "withdrawn": 0,
+                  "expired": 0
+                }""";
+
+    private static final String STAFF_OFFER_RUN_2 = """
+                {
+                  "id": 2,
+                  "cycleStart": "2026-10-05",
+                  "trigger": "MANUAL",
+                  "startedBy": "credit1",
+                  "startedAt": "2026-10-05T09:30:12+02:00",
+                  "finishedAt": "2026-10-05T09:30:12+02:00",
+                  "status": "COMPLETED",
+                  "reconciliationId": 2,
+                  "registerMembers": 3,
+                  "ineligible": 1,
+                  "excludedActiveLoan": 0,
+                  "excludedArrears": 0,
+                  "excludedByReconciliation": 0,
+                  "eligible": 2,
+                  "offered": 0,
+                  "refreshed": 0,
+                  "alreadyOffered": 2,
+                  "withdrawn": 0,
+                  "expired": 0
+                }""";
+
+    public static final String STAFF_OFFER_RUN_STARTED = """
+            {
+              "code": "CREATED",
+              "message": "Offer run completed: 0 offered, 0 refreshed, 2 already held this week's offer",
+              "data": """ + STAFF_OFFER_RUN_2 + """
+
+            }""";
+
+    public static final String STAFF_OFFER_RUN_REFUSED = """
+            {
+              "code": "RUN_REFUSED",
+              "message": "The staff register was last reconciled against the payroll master on 2026-10-02, 38 days ago; offers need a reconciliation within the last 35 days",
+              "data": {
+                "id": 3,
+                "cycleStart": "2026-11-09",
+                "trigger": "MANUAL",
+                "startedBy": "credit1",
+                "startedAt": "2026-11-09T09:15:03+02:00",
+                "finishedAt": "2026-11-09T09:15:03+02:00",
+                "status": "REFUSED",
+                "reason": "The staff register was last reconciled against the payroll master on 2026-10-02, 38 days ago; offers need a reconciliation within the last 35 days",
+                "reconciliationId": 2
+              }
+            }""";
+
+    public static final String STAFF_OFFER_RUN_IN_PROGRESS = """
+            {
+              "code": "CONFLICT",
+              "message": "An offer run is already in progress; try again once it has finished"
+            }""";
+
+    public static final String STAFF_OFFER_RUNS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+            """ + STAFF_OFFER_RUN_2 + """
+            ,
+            """ + STAFF_OFFER_RUN_1 + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_OFFER_RUN_1_RESULT = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_OFFER_RUN_1 + """
+
+            }""";
+
+    public static final String STAFF_OFFER_RUN_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Staff offer run 99 not found"
+            }""";
+
+    public static final String STAFF_OFFER_SCHEDULE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "runCron": "0 0 8 * * MON",
+                "zone": "Africa/Harare",
+                "nextScheduledRunAt": "2026-10-12T08:00:00+02:00",
+                "validityDays": 7,
+                "maxReconciliationAgeDays": 35,
+                "lastReconciliationId": 2,
+                "lastReconciledAt": "2026-10-02T11:40:00+02:00",
+                "reconciliationAgeDays": 3,
+                "readyToRun": true,
+                "lastRun": """ + STAFF_OFFER_RUN_2 + """
+
+              }
+            }""";
+
+    public static final String STAFF_OFFERS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "id": 2,
+                    "employeeNumber": "E1012",
+                    "fullName": "Chipo Banda",
+                    "grade": "C4",
+                    "scoreBand": "Band C",
+                    "amount": 300.00,
+                    "gradeLimitChangeId": 1,
+                    "cycleStart": "2026-10-05",
+                    "runId": 1,
+                    "status": "ACTIVE",
+                    "issuedAt": "2026-10-05T08:00:01+02:00",
+                    "expiresAt": "2026-10-12T08:00:01+02:00"
+                  },
+                  {
+                    "id": 1,
+                    "employeeNumber": "E1001",
+                    "fullName": "Nyasha Dube",
+                    "grade": "C4",
+                    "scoreBand": "Band C",
+                    "amount": 300.00,
+                    "gradeLimitChangeId": 1,
+                    "cycleStart": "2026-10-05",
+                    "runId": 1,
+                    "status": "ACTIVE",
+                    "issuedAt": "2026-10-05T08:00:01+02:00",
+                    "expiresAt": "2026-10-12T08:00:01+02:00"
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 2,
+                "totalPages": 1
+              }
+            }""";
 }

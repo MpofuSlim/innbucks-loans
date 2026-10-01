@@ -3,6 +3,7 @@ package zw.co.innbucks.loans.core.staff;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,7 +35,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -71,8 +71,8 @@ public class StaffRegisterService {
     static final String APPROVED = "STAFF_REGISTER_APPROVED";
     static final String REJECTED = "STAFF_REGISTER_REJECTED";
     static final String WITHDRAWN = "STAFF_REGISTER_WITHDRAWN";
-    /** The advisory lock every approval takes: "STAFFREG". */
-    static final long REGISTER_LOCK = 0x5354414646524547L;
+    /** The advisory lock every approval, and every offer run, takes: "STAFFREG". */
+    public static final long REGISTER_LOCK = 0x5354414646524547L;
     private static final String ENTITY = "STAFF_REGISTER_BATCH";
     private static final String CHANNEL = "admin-portal";
     private static final int MAX_STORED = 255;
@@ -86,6 +86,7 @@ public class StaffRegisterService {
     private final AuthService authService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
+    private final ApplicationEventPublisher events;
 
     /**
      * Stages a staff register file for approval. Rows the register's rules refuse are reported and the rest staged.
@@ -440,6 +441,7 @@ public class StaffRegisterService {
         }
 
         Optional<StaffMember> existing = memberRepository.findByEmployeeNumberForUpdate(record.employeeNumber());
+        StaffEmploymentStatus previousStatus = existing.map(StaffMember::getEmploymentStatus).orElse(null);
         StaffMember member;
         Map<String, String[]> changed;
         StaffRegisterRowOutcome outcome;
@@ -492,6 +494,10 @@ public class StaffRegisterService {
         row.setOutcome(outcome);
         row.setStaffMemberId(member.getId());
         rowRepository.save(row);
+        if (previousStatus != null && previousStatus != record.employmentStatus()) {
+            events.publishEvent(new StaffEmploymentStatusChanged(member.getId(), member.getEmployeeNumber(),
+                    previousStatus, record.employmentStatus(), batch.getId(), approver));
+        }
         return outcome;
     }
 
