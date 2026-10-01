@@ -2262,4 +2262,171 @@ public final class ApiExamples {
               "code": "FORBIDDEN",
               "message": "gmoyo has no credit approval limit, so cannot approve loan 000000064; refer it to Senior credit officer or above"
             }""";
+
+    // ---- Staff Grocery Loan grade-to-limit matrix (FR-SGL-009, FR-SGL-010) ----
+    // Change 1 put grade C4 at 300.00 from 2026-10-01 (proposed by credit1, approved by credit2); change 3 put D1 at
+    // 500.00 the same day; change 2, proposed on 1 October, raises C4 to 350.00 from 1 November.
+
+    private static final String GRADE_LIMIT_C4_1 = """
+                {
+                  "changeId": 1,
+                  "grade": "C4",
+                  "scoreBand": "Band C",
+                  "maximumLimit": 300.00,
+                  "effectiveFrom": "2026-10-01",
+                  "approvedBy": "credit2",
+                  "approvedAt": "2026-09-30T10:05:11+02:00"
+                }""";
+
+    private static final String GRADE_LIMIT_D1_3 = """
+                {
+                  "changeId": 3,
+                  "grade": "D1",
+                  "scoreBand": "Band D",
+                  "maximumLimit": 500.00,
+                  "effectiveFrom": "2026-10-01",
+                  "approvedBy": "credit2",
+                  "approvedAt": "2026-09-30T10:06:40+02:00"
+                }""";
+
+    public static final String STAFF_GRADE_LIMITS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+                {
+                  "grade": "C4",
+                  "current": """ + GRADE_LIMIT_C4_1 + """
+            ,
+                  "scheduled": [],
+                  "pendingChanges": 1
+                },
+                {
+                  "grade": "D1",
+                  "current": """ + GRADE_LIMIT_D1_3 + """
+            ,
+                  "scheduled": [],
+                  "pendingChanges": 0
+                }
+              ]
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_PROPOSAL = """
+            {
+              "grade": "C4",
+              "scoreBand": "Band C",
+              "maximumLimit": 350.00,
+              "effectiveFrom": "2026-11-01",
+              "comment": "Annual review approved by Credit and Human Capital"
+            }""";
+
+    private static final String GRADE_LIMIT_CHANGE_2_PENDING = """
+                {
+                  "id": 2,
+                  "grade": "C4",
+                  "scoreBand": "Band C",
+                  "maximumLimit": 350.00,
+                  "effectiveFrom": "2026-11-01",
+                  "status": "PENDING",
+                  "proposedBy": "credit1",
+                  "proposedAt": "2026-10-01T08:30:02+02:00",
+                  "comment": "Annual review approved by Credit and Human Capital",
+                  "replacing": """ + GRADE_LIMIT_C4_1 + """
+
+                }""";
+
+    public static final String STAFF_GRADE_LIMIT_PROPOSED = """
+            {
+              "code": "CREATED",
+              "message": "Grade limit change proposed; it applies once someone else approves it",
+              "data": """ + GRADE_LIMIT_CHANGE_2_PENDING + """
+
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_CHANGES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": [
+            """ + GRADE_LIMIT_CHANGE_2_PENDING + """
+            ,
+                {
+                  "id": 1,
+                  "grade": "C4",
+                  "scoreBand": "Band C",
+                  "maximumLimit": 300.00,
+                  "effectiveFrom": "2026-10-01",
+                  "status": "APPROVED",
+                  "proposedBy": "credit1",
+                  "proposedAt": "2026-09-30T09:12:40+02:00",
+                  "comment": "Initial matrix approved by Credit and Human Capital",
+                  "decidedBy": "credit2",
+                  "decidedAt": "2026-09-30T10:05:11+02:00",
+                  "decisionComment": "Matches the signed-off matrix"
+                }
+              ]
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_APPROVAL = """
+            {
+              "decision": "APPROVED",
+              "comment": "Approved at the annual review"
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_APPROVED = """
+            {
+              "code": "OK",
+              "message": "Grade limit change approved",
+              "data": {
+                "id": 2,
+                "grade": "C4",
+                "scoreBand": "Band C",
+                "maximumLimit": 350.00,
+                "effectiveFrom": "2026-11-01",
+                "status": "APPROVED",
+                "proposedBy": "credit1",
+                "proposedAt": "2026-10-01T08:30:02+02:00",
+                "comment": "Annual review approved by Credit and Human Capital",
+                "decidedBy": "credit2",
+                "decidedAt": "2026-10-01T11:20:45+02:00",
+                "decisionComment": "Approved at the annual review"
+              }
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_WITHDRAWN = """
+            {
+              "code": "OK",
+              "message": "Grade limit change withdrawn",
+              "data": {
+                "id": 2,
+                "grade": "C4",
+                "scoreBand": "Band C",
+                "maximumLimit": 350.00,
+                "effectiveFrom": "2026-11-01",
+                "status": "WITHDRAWN",
+                "proposedBy": "credit1",
+                "proposedAt": "2026-10-01T08:30:02+02:00",
+                "comment": "Annual review approved by Credit and Human Capital",
+                "decidedBy": "credit1",
+                "decidedAt": "2026-10-01T09:02:17+02:00"
+              }
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_CHANGE_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Grade limit change 99 not found"
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_ALREADY_DECIDED = """
+            {
+              "code": "CONFLICT",
+              "message": "Grade limit change 2 is already approved"
+            }""";
+
+    public static final String STAFF_GRADE_LIMIT_OWN_CHANGE = """
+            {
+              "code": "FORBIDDEN",
+              "message": "credit1 proposed grade limit change 2 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
+            }""";
 }
