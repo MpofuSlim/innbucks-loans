@@ -62,6 +62,13 @@ class StaffOfferServiceTest {
         assertThat(open.closedAt()).isNull();
         assertThat(open.employeeNumber()).isEqualTo("E1001");
         assertThat(open.fullName()).isEqualTo("Nyasha Dube");
+        assertThat(open.origin()).as("a weekly run's").isEqualTo(StaffOfferOrigin.RUN);
+        StaffOffer applied = offer(NOW.plusDays(5));
+        applied.setRunId(null);
+        applied.setOrigin(StaffOfferOrigin.APPLY);
+        assertThat(StaffOfferResponse.of(applied, member, NOW)).as("made when the borrower applied")
+                .extracting(StaffOfferResponse::origin, StaffOfferResponse::runId)
+                .containsExactly(StaffOfferOrigin.APPLY, null);
         assertThat(StaffOfferResponse.of(offer(NOW), member, NOW).status()).as("expiring now is expired")
                 .isEqualTo(StaffOfferStatus.EXPIRED);
     }

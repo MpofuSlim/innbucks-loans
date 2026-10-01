@@ -42,6 +42,7 @@ class StaffGradeLimitServiceTest {
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 1);
 
     private final List<StaffGradeLimitChange> stored = new ArrayList<>();
+    private final List<StaffGradeChange> gradeChanges = new ArrayList<>();
     private StaffGradeLimitChangeRepository repository;
     private AuthService authService;
     private AuditService auditService;
@@ -74,7 +75,14 @@ class StaffGradeLimitServiceTest {
         as("credit1");
         auditService = mock(AuditService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-10-01T08:00:00Z"), ZoneOffset.UTC);
-        service = new StaffGradeLimitService(repository, authService, auditService, new MarketTimeZone("ZW", clock));
+        StaffGradeChangeRepository gradeChangeRepository = mock(StaffGradeChangeRepository.class);
+        when(gradeChangeRepository.findNaming(any(), any())).thenAnswer(i -> gradeChanges.stream()
+                .filter(change -> change.getStatus() == i.getArgument(1))
+                .filter(change -> i.getArgument(0).equals(change.getGrade())
+                        || i.getArgument(0).equals(change.getNewGrade()))
+                .toList());
+        service = new StaffGradeLimitService(repository, gradeChangeRepository, authService, auditService,
+                new MarketTimeZone("ZW", clock));
     }
 
     private Optional<StaffGradeLimitChange> byId(Long id) {
@@ -188,6 +196,36 @@ class StaffGradeLimitServiceTest {
                         + " approve, reject or withdraw it first");
         assertThat(service.propose(proposal("C4", "360", TODAY.plusMonths(2))).status())
                 .isEqualTo(StaffGradeLimitChangeStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("a limit cannot be proposed, nor approved, for a grade a waiting retirement or rename names")
+    void gradeChangeWaiting() {
+        approved("DRIVER", "100.00", TODAY.minusMonths(1));
+        Long beforeTheRename = service.propose(proposal("DRIVER", "120", TODAY.plusMonths(1))).id();
+        gradeChanges.add(StaffGradeChange.builder().id(2L).action(StaffGradeChangeAction.RENAME).grade("DRIVER")
+                .newGrade("DRIVER/ORDERLY").status(StaffGradeChangeStatus.PENDING).proposedBy("credit1")
+                .proposedAt(LocalDateTime.of(2026, 10, 1, 7, 30)).build());
+
+        for (String grade : List.of("DRIVER", "driver / orderly")) {
+            assertThatThrownBy(() -> service.propose(proposal(grade, "130", TODAY.plusMonths(2))))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessage("Grade change 2, naming grade " + StaffGrades.normalise(grade) + ", is waiting for"
+                            + " approval; approve, reject or withdraw it first");
+        }
+        as("credit2");
+        assertThatThrownBy(() -> service.decide(beforeTheRename, decision(StaffGradeLimitDecision.APPROVED, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Grade change 2, naming grade DRIVER, is waiting for approval; approve, reject or withdraw"
+                        + " it first");
+        assertThat(byId(beforeTheRename).orElseThrow().getStatus()).isEqualTo(StaffGradeLimitChangeStatus.PENDING);
+        assertThat(service.decide(beforeTheRename, decision(StaffGradeLimitDecision.REJECTED, "Wait for the rename"))
+                .status()).as("it can still be rejected").isEqualTo(StaffGradeLimitChangeStatus.REJECTED);
+
+        gradeChanges.getFirst().setStatus(StaffGradeChangeStatus.REJECTED);
+        as("credit1");
+        assertThat(service.propose(proposal("DRIVER", "130", TODAY.plusMonths(2))).status())
+                .as("once the grade change is decided").isEqualTo(StaffGradeLimitChangeStatus.PENDING);
     }
 
     @Test

@@ -122,7 +122,8 @@ public class StaffGradeLimitController {
             description = "CREDIT_MANAGER or SUPER_ADMIN. The grade's maximum loan amount and score band from"
                     + " effectiveFrom (today or later, in the market's time zone). It applies only once a different"
                     + " CREDIT_MANAGER or SUPER_ADMIN approves it. Proposing for a date whose approved limit is still to"
-                    + " come replaces that limit when approved. Audited.")
+                    + " come replaces that limit when approved. Refused while a retirement or rename naming the grade,"
+                    + " as the grade or as its new name, waits for approval. Audited.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Proposed",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_LIMIT_PROPOSED))),
@@ -146,8 +147,8 @@ public class StaffGradeLimitController {
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER or SUPER_ADMIN",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
-            @ApiResponse(responseCode = "409", description = "A proposal for the grade and date is already waiting, or"
-                    + " the grade's limit from that date is already in force",
+            @ApiResponse(responseCode = "409", description = "A proposal for the grade and date is already waiting, the"
+                    + " grade's limit from that date is already in force, or a grade change naming the grade is waiting",
                     content = @Content(examples = {
                             @ExampleObject(name = "Already waiting", value = """
                                     {
@@ -158,7 +159,9 @@ public class StaffGradeLimitController {
                                     {
                                       "code": "CONFLICT",
                                       "message": "Grade C4's limit from 2026-10-01 is already in force and cannot be replaced; propose a change from a later day"
-                                    }""")}))
+                                    }"""),
+                            @ExampleObject(name = "Grade change waiting",
+                                    value = ApiExamples.STAFF_GRADE_CHANGE_WAITING)}))
     })
     @PostMapping("/staff-grade-limit-changes")
     @ResponseStatus(HttpStatus.CREATED)
@@ -174,8 +177,8 @@ public class StaffGradeLimitController {
     @Operation(summary = "Approve or reject a proposed grade limit",
             description = "CREDIT_MANAGER or SUPER_ADMIN, never whoever proposed it. A rejection needs a comment. An"
                     + " approval puts the limit in the matrix from its effective date, and is refused once that date has"
-                    + " passed (propose it again) or when the grade's limit from that date came into force while the"
-                    + " proposal waited. Audited.")
+                    + " passed (propose it again), when the grade's limit from that date came into force while the"
+                    + " proposal waited, or while a retirement or rename naming the grade waits. Audited.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Decided",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_LIMIT_APPROVED))),
@@ -203,15 +206,18 @@ public class StaffGradeLimitController {
                             @ExampleObject(name = "Role", value = ApiExamples.FORBIDDEN)})),
             @ApiResponse(responseCode = "404", description = "No such change",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_GRADE_LIMIT_CHANGE_NOT_FOUND))),
-            @ApiResponse(responseCode = "409", description = "Already decided; or its date has passed, or the grade's"
-                    + " limit from that date came into force while it waited",
+            @ApiResponse(responseCode = "409", description = "Already decided; or its date has passed, the grade's"
+                    + " limit from that date came into force while it waited, or a grade change naming the grade is"
+                    + " waiting",
                     content = @Content(examples = {
                             @ExampleObject(name = "Already decided", value = ApiExamples.STAFF_GRADE_LIMIT_ALREADY_DECIDED),
                             @ExampleObject(name = "Date passed", value = """
                                     {
                                       "code": "CONFLICT",
                                       "message": "Grade limit change 2 was to apply from 2026-11-01, which has passed; reject it and propose it again from today or later"
-                                    }""")}))
+                                    }"""),
+                            @ExampleObject(name = "Grade change waiting",
+                                    value = ApiExamples.STAFF_GRADE_CHANGE_WAITING)}))
     })
     @PostMapping("/staff-grade-limit-changes/{changeId}/decision")
     @PreAuthorize("hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')")

@@ -63,7 +63,8 @@ public class StaffOfferController {
                     + " reconciliation as having left, gets an offer at that limit unless they already hold this"
                     + " week's; and any open offer whose holder no longer qualifies is withdrawn. A member gets at most"
                     + " one offer per week, so running again only offers those still without one. All or nothing: a"
-                    + " run that fails keeps nothing and is recorded as FAILED. Audited.")
+                    + " run that fails keeps nothing, is recorded as FAILED and answers 500 RUN_FAILED with that run as"
+                    + " data. Audited.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Completed; the counts say what it did",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_OFFER_RUN_STARTED))),
@@ -90,7 +91,10 @@ public class StaffOfferController {
                                         "reason": "The staff register has never been reconciled against the payroll master; Human Capital must run a reconciliation before offers can be generated"
                                       }
                                     }"""),
-                            @ExampleObject(name = "Run in progress", value = ApiExamples.STAFF_OFFER_RUN_IN_PROGRESS)}))
+                            @ExampleObject(name = "Run in progress", value = ApiExamples.STAFF_OFFER_RUN_IN_PROGRESS)})),
+            @ApiResponse(responseCode = "500", description = "The run failed: nothing it did was kept, and the attempt"
+                    + " is recorded as a FAILED run",
+                    content = @Content(examples = @ExampleObject(ApiExamples.STAFF_OFFER_RUN_FAILED)))
     })
     @PostMapping("/staff-offer-runs")
     @PreAuthorize(RUNNERS)
@@ -160,9 +164,11 @@ public class StaffOfferController {
 
     @Operation(summary = "Pre-approved offers",
             description = "Newest first. status: ACTIVE (open), EXPIRED (lapsed unaccepted; an open offer past its"
-                    + " expiry already reads as EXPIRED), SUPERSEDED (replaced by a later week's offer while open) or"
-                    + " WITHDRAWN (its holder stopped qualifying; closedReason says why). Filter by employeeNumber or"
-                    + " runId. An offer keeps the grade, score band and amount it was issued with.")
+                    + " expiry already reads as EXPIRED), SUPERSEDED (replaced by a later week's offer while open),"
+                    + " WITHDRAWN (its holder stopped qualifying; closedReason says why) or TAKEN_UP (accepted in the"
+                    + " SuperApp; closedReason names the loan). origin: RUN (issued by a weekly run, runId says which)"
+                    + " or APPLY (made when the borrower chose Apply in the SuperApp; no runId). Filter by"
+                    + " employeeNumber or runId. An offer keeps the grade, score band and amount it was issued with.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(ApiExamples.STAFF_OFFERS))),

@@ -50,13 +50,33 @@ class StaffOfferRunnerTest {
     }
 
     @Test
-    @DisplayName("a run that breaks off is recorded as FAILED in its own transaction, and the error still surfaces")
+    @DisplayName("a run that breaks off is recorded as FAILED in its own transaction, and surfaces naming that record")
     void recordsFailure() {
         IllegalStateException failure = new IllegalStateException("database went away");
         when(runService.run(any(), any())).thenThrow(failure);
+        StaffOfferRunResponse recorded = StaffOfferRunResponse.of(StaffOfferRun.builder().id(4L)
+                .cycleStart(NOW.toLocalDate()).trigger(StaffOfferRunTrigger.MANUAL).startedBy("credit1")
+                .startedAt(NOW).finishedAt(NOW).status(StaffOfferRunStatus.FAILED)
+                .reason("The run failed and nothing it did was kept: IllegalStateException: database went away")
+                .build());
+        when(runService.recordFailure(StaffOfferRunTrigger.MANUAL, "credit1", NOW, failure)).thenReturn(recorded);
 
-        assertThatThrownBy(() -> runner.runNow()).isSameAs(failure);
-        verify(runService).recordFailure(StaffOfferRunTrigger.MANUAL, "credit1", NOW, failure);
+        assertThatThrownBy(() -> runner.runNow())
+                .isInstanceOfSatisfying(StaffOfferRunFailedException.class,
+                        failed -> assertThat(failed.run()).isSameAs(recorded))
+                .hasCause(failure)
+                .hasMessage("The offer run failed and nothing it did was kept. It is recorded as run 4, with the"
+                        + " reason; try again, and if it fails again, report run 4");
+    }
+
+    @Test
+    @DisplayName("if even the failure cannot be recorded, the error that stopped the run surfaces as it was")
+    void failureNotRecorded() {
+        IllegalStateException failure = new IllegalStateException("database went away");
+        when(runService.run(any(), any())).thenThrow(failure);
+        when(runService.recordFailure(any(), any(), any(), any())).thenThrow(new IllegalStateException("still away"));
+
+        assertThatThrownBy(() -> runner.runScheduled()).isSameAs(failure);
     }
 
     @Test

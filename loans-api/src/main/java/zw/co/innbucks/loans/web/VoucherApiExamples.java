@@ -1,9 +1,9 @@
 package zw.co.innbucks.loans.web;
 
 /**
- * Example bodies for the voucher endpoints, as one story: voucher 7 (Chipo Banda, USD 300.00, issued 1 October) was
- * sent by SMS and spent down to USD 120.00 at GetMore Avondale on 3 October; voucher 8 (Nyasha Dube, USD 250.00, issued
- * 3 October) could not be sent on either channel. Their codes carry real Damm check digits.
+ * Example bodies for the voucher endpoints, as one story: voucher 7 (Chipo Banda, USD 300.00, issued 6 October) was
+ * sent by SMS and spent down to USD 120.00 at GetMore Avondale on 8 October; voucher 8 (Nyasha Dube, USD 250.00, issued
+ * 8 October) could not be sent on either channel. Their codes carry real Damm check digits.
  */
 public final class VoucherApiExamples {
 
@@ -15,26 +15,26 @@ public final class VoucherApiExamples {
                   "id": 7,
                   "product": "STAFF_GROCERY_LOAN",
                   "loanAccount": "SGL-2026-000143",
-                  "disbursementReference": "BRNET-20261001-0007",
+                  "disbursementReference": "BRNET-20261006-0007",
                   "customerReference": "E1012",
                   "customerName": "Chipo Banda",
-                  "customerMsisdn": "****3123",
+                  "customerMsisdn": "****6789",
                   "maskedCode": "**** **** **** 8406",
                   "faceValue": 300.00,
                   "redeemedAmount": 180.00,
                   "balance": 120.00,
                   "currency": "USD",
-                  "issuedAt": "2026-10-01T09:14:22+02:00",
-                  "expiresAt": "2026-10-31T23:59:59+02:00",
+                  "issuedAt": "2026-10-06T09:14:22+02:00",
+                  "expiresAt": "2026-11-05T23:59:59+02:00",
                   "status": "PARTIALLY_REDEEMED",
-                  "lastRedeemedAt": "2026-10-03T17:42:10+02:00",
+                  "lastRedeemedAt": "2026-10-08T17:42:10+02:00",
                   "lastRedeemedOutlet": "GetMore Avondale",
                   "cancelledBy": null,
                   "cancelledAt": null,
                   "cancellationReason": null,
                   "deliveryStatus": "SENT",
                   "deliveredChannel": "SMS",
-                  "deliveryUpdatedAt": "2026-10-01T09:14:23+02:00"
+                  "deliveryUpdatedAt": "2026-10-06T09:14:23+02:00"
                 }""";
 
     private static final String VOUCHER_8_HEAD = """
@@ -42,17 +42,17 @@ public final class VoucherApiExamples {
                   "id": 8,
                   "product": "STAFF_GROCERY_LOAN",
                   "loanAccount": "SGL-2026-000151",
-                  "disbursementReference": "BRNET-20261003-0002",
+                  "disbursementReference": "BRNET-20261008-0002",
                   "customerReference": "E1001",
                   "customerName": "Nyasha Dube",
-                  "customerMsisdn": "****4471",
+                  "customerMsisdn": "****6983",
                   "maskedCode": "**** **** **** 2151",
                   "faceValue": 250.00,
                   "redeemedAmount": 0.00,
                   "balance": 250.00,
                   "currency": "USD",
-                  "issuedAt": "2026-10-03T08:05:41+02:00",
-                  "expiresAt": "2026-11-02T23:59:59+02:00",
+                  "issuedAt": "2026-10-08T08:05:41+02:00",
+                  "expiresAt": "2026-11-07T23:59:59+02:00",
                   "lastRedeemedAt": null,
                   "lastRedeemedOutlet": null,
                   "deliveredChannel": null,""";
@@ -64,7 +64,7 @@ public final class VoucherApiExamples {
                   "cancelledAt": null,
                   "cancellationReason": null,
                   "deliveryStatus": "FAILED",
-                  "deliveryUpdatedAt": "2026-10-03T08:05:52+02:00"
+                  "deliveryUpdatedAt": "2026-10-08T08:05:52+02:00"
                 }""";
 
     public static final String VOUCHERS = """
@@ -98,21 +98,21 @@ public final class VoucherApiExamples {
                     "outletId": "GM-AVD-01",
                     "outletName": "GetMore Avondale",
                     "redeemedBy": "getmore-pos",
-                    "redeemedAt": "2026-10-03T17:42:10+02:00"
+                    "redeemedAt": "2026-10-08T17:42:10+02:00"
                   }
                 ],
                 "deliveries": [
                   {
                     "id": 11,
                     "channel": "SMS",
-                    "recipient": "****3123",
+                    "recipient": "****6789",
                     "template": "VOUCHER_ISSUED",
                     "templateVersion": 1,
                     "status": "SENT",
                     "gatewayReference": "LOANS-VCH-5b1d0c7e-2f44-4a8e-9a51-0c3e8f2d6b19",
                     "failureReason": null,
                     "requestedBy": "system",
-                    "attemptedAt": "2026-10-01T09:14:23+02:00"
+                    "attemptedAt": "2026-10-06T09:14:23+02:00"
                   }
                 ]
               }
@@ -147,10 +147,10 @@ public final class VoucherApiExamples {
 
                   "status": "CANCELLED",
                   "cancelledBy": "credit1",
-                  "cancelledAt": "2026-10-04T10:20:05+02:00",
+                  "cancelledAt": "2026-10-09T10:20:05+02:00",
                   "cancellationReason": "Payout reversed: paid to the wrong staff member",
                   "deliveryStatus": "FAILED",
-                  "deliveryUpdatedAt": "2026-10-03T08:05:52+02:00"
+                  "deliveryUpdatedAt": "2026-10-08T08:05:52+02:00"
                 }
             }""";
 
@@ -165,7 +165,7 @@ public final class VoucherApiExamples {
                   "cancelledAt": null,
                   "cancellationReason": null,
                   "deliveryStatus": "PENDING",
-                  "deliveryUpdatedAt": "2026-10-04T09:02:17+02:00"
+                  "deliveryUpdatedAt": "2026-10-09T09:02:17+02:00"
                 }
             }""";
 
@@ -186,7 +186,7 @@ public final class VoucherApiExamples {
                 "faceValue": 300.00,
                 "balance": 120.00,
                 "currency": "USD",
-                "expiresAt": "2026-10-31T23:59:59+02:00",
+                "expiresAt": "2026-11-05T23:59:59+02:00",
                 "holderName": "Chipo B.",
                 "partialRedemptionAllowed": true
               }
@@ -211,7 +211,7 @@ public final class VoucherApiExamples {
                 "currency": "USD",
                 "status": "PARTIALLY_REDEEMED",
                 "outletId": "GM-AVD-01",
-                "redeemedAt": "2026-10-03T17:42:10+02:00",""";
+                "redeemedAt": "2026-10-08T17:42:10+02:00",""";
 
     public static final String REDEEMED = """
             {
@@ -238,8 +238,8 @@ public final class VoucherApiExamples {
               "code": "OK",
               "message": "Success",
               "data": {
-                "date": "2026-10-03",
-                "generatedAt": "2026-10-04T06:30:00+02:00",
+                "date": "2026-10-08",
+                "generatedAt": "2026-10-09T06:30:00+02:00",
                 "totals": [
                   {
                     "currency": "USD",
@@ -265,7 +265,7 @@ public final class VoucherApiExamples {
                 "lines": [
                   {
                     "event": "ISSUED",
-                    "at": "2026-10-03T08:05:41+02:00",
+                    "at": "2026-10-08T08:05:41+02:00",
                     "voucherId": 8,
                     "maskedCode": "**** **** **** 2151",
                     "loanAccount": "SGL-2026-000151",
@@ -278,7 +278,7 @@ public final class VoucherApiExamples {
                   },
                   {
                     "event": "REDEEMED",
-                    "at": "2026-10-03T17:42:10+02:00",
+                    "at": "2026-10-08T17:42:10+02:00",
                     "voucherId": 7,
                     "maskedCode": "**** **** **** 8406",
                     "loanAccount": "SGL-2026-000143",

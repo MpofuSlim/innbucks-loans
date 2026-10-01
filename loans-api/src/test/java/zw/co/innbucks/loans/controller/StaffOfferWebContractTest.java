@@ -16,7 +16,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.staff.offer.StaffOfferOrigin;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferResponse;
+import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunFailedException;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunResponse;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunStatus;
@@ -119,6 +121,25 @@ class StaffOfferWebContractTest {
     }
 
     @Test
+    @DisplayName("a failed run is a 500 RUN_FAILED carrying the recorded attempt, not a bare internal error")
+    void failed() throws Exception {
+        StaffOfferRunResponse failed = new StaffOfferRunResponse(3L, LocalDate.of(2026, 10, 5),
+                StaffOfferRunTrigger.MANUAL, "credit1", AT, AT.plusSeconds(30), StaffOfferRunStatus.FAILED,
+                "The run failed and nothing it did was kept: QueryTimeoutException: canceling statement", null, null,
+                null, null, null, null, null, null, null, null, null, null, null);
+        when(runner.runNow()).thenThrow(new StaffOfferRunFailedException(failed,
+                new IllegalStateException("canceling statement")));
+
+        mvc.perform(post("/lending/v1/staff-offer-runs").with(as("CREDIT_MANAGER")))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("RUN_FAILED"))
+                .andExpect(jsonPath("$.message").value("The offer run failed and nothing it did was kept. It is"
+                        + " recorded as run 3, with the reason; try again, and if it fails again, report run 3"))
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.status").value("FAILED"));
+    }
+
+    @Test
     @DisplayName("a refused run is a 409 RUN_REFUSED carrying the recorded attempt; one in progress is a plain 409")
     void refused() throws Exception {
         when(runner.runNow()).thenReturn(REFUSED).thenThrow(new ConflictException("An offer run is already in"
@@ -148,7 +169,7 @@ class StaffOfferWebContractTest {
                 COMPLETED));
         when(offerService.offers(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(
                 new StaffOfferResponse(1L, "E1001", "Nyasha Dube", "C4", "Band C", new BigDecimal("300.00"), 1L,
-                        null, LocalDate.of(2026, 10, 5), 1L, StaffOfferStatus.ACTIVE, AT, AT.plusDays(7), null, null,
+                        null, LocalDate.of(2026, 10, 5), 1L, StaffOfferOrigin.RUN, StaffOfferStatus.ACTIVE, AT, AT.plusDays(7), null, null,
                         null)), PageRequest.of(0, 20), 1));
 
         for (String path : List.of("/lending/v1/staff-offer-runs", "/lending/v1/staff-offer-runs/2",
@@ -163,6 +184,7 @@ class StaffOfferWebContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].employeeNumber").value("E1001"))
                 .andExpect(jsonPath("$.data.items[0].amount").value(300.00))
+                .andExpect(jsonPath("$.data.items[0].origin").value("RUN"))
                 .andExpect(jsonPath("$.data.items[0].closedReason").doesNotExist());
         verify(offerService).offers(eq(StaffOfferStatus.ACTIVE), eq("e1001"), eq(1L), eq(PageRequest.of(0, 100)));
         mvc.perform(get("/lending/v1/staff-offers").param("status", "TAKEN").with(as("FINANCE")))

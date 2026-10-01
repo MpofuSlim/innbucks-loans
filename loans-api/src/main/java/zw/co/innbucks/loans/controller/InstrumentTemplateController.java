@@ -72,12 +72,13 @@ public class InstrumentTemplateController {
     @Operation(summary = "Publish new wording",
             description = "SUPER_ADMIN: publishes the wording as the instrument's next version, in force from now. Every"
                     + " application from then on must be signed against it, and one that accepted an earlier version is"
-                    + " refused with a 409. A placeholder that is not one of the loan terms (GET"
-                    + " /instrument-templates/placeholders) is refused.")
+                    + " refused with a 409. A placeholder that is not one of the instrument's terms (GET"
+                    + " /instrument-templates/placeholders?instrumentType=<TYPE>) is refused.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Published; the new version",
                     content = @Content(examples = @ExampleObject(ApiExamples.INSTRUMENT_TEMPLATE_PUBLISHED))),
-            @ApiResponse(responseCode = "400", description = "A missing field, or a placeholder that is not a loan term",
+            @ApiResponse(responseCode = "400", description = "A missing field, or a placeholder that is not one of"
+                    + " the instrument's terms",
                     content = @Content(examples = {
                             @ExampleObject(name = "Missing fields", value = """
                                     {
@@ -91,7 +92,7 @@ public class InstrumentTemplateController {
                             @ExampleObject(name = "Unknown placeholder", value = """
                                     {
                                       "code": "INVALID_REQUEST",
-                                      "message": "Unknown placeholder {{salary}}: a placeholder must be one of the loan terms listed by GET /instrument-templates/placeholders"
+                                      "message": "Unknown placeholder {{salary}}: a placeholder must be one of the terms listed by GET /instrument-templates/placeholders?instrumentType=LOAN_AGREEMENT"
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),

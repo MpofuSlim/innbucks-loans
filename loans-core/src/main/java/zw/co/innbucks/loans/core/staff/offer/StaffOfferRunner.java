@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 
 /**
  * Starts offer runs, from the weekly schedule or the admin portal, and records one that breaks off: the run's own
- * transaction is rolled back with everything it did, so the failure is written in a transaction of its own.
+ * transaction is rolled back with everything it did, so the failure is written in a transaction of its own, and
+ * surfaces as a {@link StaffOfferRunFailedException} naming that record. If even the record cannot be written, the
+ * original error surfaces as it was.
  */
 @Slf4j
 @Component
@@ -43,12 +45,14 @@ public class StaffOfferRunner {
             throw inProgress;
         } catch (RuntimeException failure) {
             log.error("Staff offer run ({}, by {}) failed; nothing it did was kept", trigger, startedBy, failure);
+            StaffOfferRunResponse recorded;
             try {
-                runService.recordFailure(trigger, startedBy, startedAt, failure);
+                recorded = runService.recordFailure(trigger, startedBy, startedAt, failure);
             } catch (RuntimeException recording) {
                 log.error("Could not record the failed staff offer run", recording);
+                throw failure;
             }
-            throw failure;
+            throw new StaffOfferRunFailedException(recorded, failure);
         }
     }
 }

@@ -103,9 +103,9 @@ public class VoucherController {
             @RequestParam(required = false) String employeeNumber,
             @Parameter(description = "Only this loan's", example = "SGL-2026-000143")
             @RequestParam(required = false) String loanAccount,
-            @Parameter(description = "Issued on or after this market day", example = "2026-10-01")
+            @Parameter(description = "Issued on or after this market day", example = "2026-10-06")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedFrom,
-            @Parameter(description = "Issued on or before this market day", example = "2026-10-03")
+            @Parameter(description = "Issued on or before this market day", example = "2026-10-08")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedTo,
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100", example = "20") @RequestParam(required = false) Integer size) {
@@ -252,7 +252,7 @@ public class VoucherController {
     @GetMapping("/voucher-settlement-reports/{date}")
     @PreAuthorize(REPORT_READERS)
     public ResponseEntity<?> settlementReport(
-            @Parameter(description = "The market day", example = "2026-10-03")
+            @Parameter(description = "The market day", example = "2026-10-08")
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Parameter(description = "json (the default) or csv", example = "csv")
             @RequestParam(required = false) String format) {

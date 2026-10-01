@@ -3115,7 +3115,8 @@ public final class ApiExamples {
     // ---- Staff Grocery Loan offers (FR-SGL-015 to FR-SGL-018, FR-SGL-024) ----
     // Human Capital corrected the payroll file and reconciliation 2 (2 October) came back clean. The scheduled run on
     // Monday 5 October (run 1) offers E1001 and E1012 their C4 limit; E1043 has resigned. credit1 runs it again at
-    // 09:30 (run 2): both already hold this week's offer, so it issues nothing.
+    // 09:30 (run 2): both already hold this week's offer, so it issues nothing. The offers list is as it stood on
+    // 7 October: E1012 took offer 2 up in the SuperApp on 6 October as SGL-2026-000143 (the staff loan examples).
 
     private static final String STAFF_OFFER_RUN_1 = """
                 {
@@ -3187,6 +3188,22 @@ public final class ApiExamples {
                 "status": "REFUSED",
                 "reason": "The staff register was last reconciled against the payroll master on 2026-10-02, 38 days ago; offers need a reconciliation within the last 35 days",
                 "reconciliationId": 2
+              }
+            }""";
+
+    public static final String STAFF_OFFER_RUN_FAILED = """
+            {
+              "code": "RUN_FAILED",
+              "message": "The offer run failed and nothing it did was kept. It is recorded as run 3, with the reason; try again, and if it fails again, report run 3",
+              "data": {
+                "id": 3,
+                "cycleStart": "2026-10-05",
+                "trigger": "MANUAL",
+                "startedBy": "credit1",
+                "startedAt": "2026-10-05T10:02:41+02:00",
+                "finishedAt": "2026-10-05T10:03:11+02:00",
+                "status": "FAILED",
+                "reason": "The run failed and nothing it did was kept: QueryTimeoutException: canceling statement due to statement timeout"
               }
             }""";
 
@@ -3263,9 +3280,12 @@ public final class ApiExamples {
                     "gradeLimitChangeId": 1,
                     "cycleStart": "2026-10-05",
                     "runId": 1,
-                    "status": "ACTIVE",
+                    "origin": "RUN",
+                    "status": "TAKEN_UP",
                     "issuedAt": "2026-10-05T08:00:01+02:00",
-                    "expiresAt": "2026-10-12T08:00:01+02:00"
+                    "expiresAt": "2026-10-12T08:00:01+02:00",
+                    "closedAt": "2026-10-06T09:10:41+02:00",
+                    "closedReason": "Taken up as SGL-2026-000143"
                   },
                   {
                     "id": 1,
@@ -3277,6 +3297,7 @@ public final class ApiExamples {
                     "gradeLimitChangeId": 1,
                     "cycleStart": "2026-10-05",
                     "runId": 1,
+                    "origin": "RUN",
                     "status": "ACTIVE",
                     "issuedAt": "2026-10-05T08:00:01+02:00",
                     "expiresAt": "2026-10-12T08:00:01+02:00"
