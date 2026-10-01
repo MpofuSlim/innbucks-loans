@@ -52,10 +52,11 @@ import java.util.stream.Collectors;
  * record or a later reconciliation no longer lists them.</p>
  *
  * <p><b>The run.</b> Offers past their expiry are closed. Then every member of the register is either ineligible (not
- * ACTIVE, or their grade has no limit above zero today), excluded (an active loan or arrears under this product, or
- * flagged by the reconciliation), or eligible. An eligible member without this cycle's offer gets one at their grade's
- * limit, valid for {@code validity-days}, replacing any offer they still hold; an ineligible or excluded member's open
- * offer is withdrawn with the reason.</p>
+ * ACTIVE, or their grade has no limit above zero today), excluded (an active loan or arrears under this product,
+ * flagged by the reconciliation, or a limit of 0 set by Credit), or eligible. An eligible member without this cycle's
+ * offer gets one at their grade's limit, or at the limit Credit's override sets for them (FR-SGL-011), valid for
+ * {@code validity-days} and replacing any offer they still hold; an ineligible or excluded member's open offer is
+ * withdrawn with the reason.</p>
  *
  * <p><b>Re-running.</b> A run belongs to a cycle, the market week it falls in, and a member gets at most one offer per
  * cycle (the database enforces it). A whole run is one transaction under two locks: one that refuses a second run
@@ -85,6 +86,7 @@ public class StaffOfferRunService {
     private final StaffRegisterVarianceRepository varianceRepository;
     private final StaffGradeLimitService gradeLimitService;
     private final StaffLoanStanding loanStanding;
+    private final StaffLimitOverrideRepository overrideRepository;
     private final StaffOfferProperties properties;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
@@ -130,7 +132,7 @@ public class StaffOfferRunService {
                 .status(StaffOfferRunStatus.COMPLETED)
                 .reconciliationId(gate.reconciliation().getId())
                 .registerMembers(0).ineligible(0).excludedActiveLoan(0).excludedArrears(0).excludedByReconciliation(0)
-                .eligible(0).offered(0).refreshed(0).alreadyOffered(0).withdrawn(0).expired(0)
+                .excludedByOverride(0).eligible(0).offered(0).refreshed(0).alreadyOffered(0).withdrawn(0).expired(0)
                 .build());
 
         List<StaffMember> members = memberRepository.findAll(Sort.by("employeeNumber"));
@@ -139,6 +141,8 @@ public class StaffOfferRunService {
                 .collect(Collectors.toMap(StaffOffer::getStaffMemberId, Function.identity()));
         Set<Long> offeredThisCycle = offerRepository.findMemberIdsByCycleStart(run.getCycleStart());
         Set<String> flagged = flagged(gate.reconciliation());
+        Map<Long, StaffLimitOverride> overrides = overrideRepository.findByStatus(StaffLimitOverrideStatus.APPROVED)
+                .stream().collect(Collectors.toMap(StaffLimitOverride::getStaffMemberId, Function.identity()));
         List<StaffMember> eligibleByRegister = members.stream()
                 .filter(member -> StaffMemberResponse.ineligibleReason(member, limits.get(member.getGrade())) == null)
                 .toList();
@@ -149,9 +153,11 @@ public class StaffOfferRunService {
         for (StaffMember member : members) {
             StaffOffer held = open.get(member.getId());
             StaffGradeLimit limit = limits.get(member.getGrade());
+            StaffLimitOverride override = Optional.ofNullable(overrides.get(member.getId()))
+                    .filter(candidate -> candidate.appliesTo(member)).orElse(null);
             String ineligible = StaffMemberResponse.ineligibleReason(member, limit);
             String excluded = ineligible != null ? null
-                    : exclusion(member, standings.get(member.getId()), flagged, gate.reconciliation(), counts);
+                    : exclusion(member, standings.get(member.getId()), flagged, gate.reconciliation(), override, counts);
             if (ineligible != null || excluded != null) {
                 if (ineligible != null) {
                     counts.ineligible++;
@@ -180,7 +186,8 @@ public class StaffOfferRunService {
                     .grade(member.getGrade())
                     .scoreBand(limit.scoreBand())
                     .gradeLimitChangeId(limit.changeId())
-                    .amount(limit.maximumLimit())
+                    .amount(override == null ? limit.maximumLimit() : override.getAmount())
+                    .limitOverrideId(override == null ? null : override.getId())
                     .issuedAt(now)
                     .expiresAt(now.plusDays(properties.getValidityDays()))
                     .replacesOfferId(held == null ? null : held.getId())
@@ -196,6 +203,7 @@ public class StaffOfferRunService {
         run.setExcludedActiveLoan(counts.excludedActiveLoan);
         run.setExcludedArrears(counts.excludedArrears);
         run.setExcludedByReconciliation(counts.excludedByReconciliation);
+        run.setExcludedByOverride(counts.excludedByOverride);
         run.setEligible(counts.offered + counts.refreshed + counts.alreadyOffered);
         run.setOffered(counts.offered);
         run.setRefreshed(counts.refreshed);
@@ -206,18 +214,19 @@ public class StaffOfferRunService {
         runRepository.save(run);
         log.info("Staff offer run {} for the cycle of {} ({}, by {}): {} members, {} eligible, {} offered, {} refreshed,"
                         + " {} already offered, {} ineligible, {} excluded (active loan {}, arrears {}, reconciliation"
-                        + " {}), {} withdrawn, {} expired", run.getId(), run.getCycleStart(), trigger, startedBy,
-                run.getRegisterMembers(), run.getEligible(), run.getOffered(), run.getRefreshed(),
-                run.getAlreadyOffered(), run.getIneligible(),
-                counts.excludedActiveLoan + counts.excludedArrears + counts.excludedByReconciliation,
+                        + " {}, override {}), {} withdrawn, {} expired", run.getId(), run.getCycleStart(), trigger,
+                startedBy, run.getRegisterMembers(), run.getEligible(), run.getOffered(), run.getRefreshed(),
+                run.getAlreadyOffered(), run.getIneligible(), counts.excludedActiveLoan + counts.excludedArrears
+                        + counts.excludedByReconciliation + counts.excludedByOverride,
                 counts.excludedActiveLoan, counts.excludedArrears, counts.excludedByReconciliation,
-                run.getWithdrawn(), run.getExpired());
+                counts.excludedByOverride, run.getWithdrawn(), run.getExpired());
         audit(COMPLETED, run, startedBy, "cycle:" + run.getCycleStart() + ";trigger:" + trigger + ";reconciliation:"
                 + run.getReconciliationId() + ";members:" + run.getRegisterMembers() + ";eligible:" + run.getEligible()
                 + ";offered:" + run.getOffered() + ";refreshed:" + run.getRefreshed() + ";alreadyOffered:"
                 + run.getAlreadyOffered() + ";ineligible:" + run.getIneligible() + ";excludedActiveLoan:"
                 + run.getExcludedActiveLoan() + ";excludedArrears:" + run.getExcludedArrears()
-                + ";excludedByReconciliation:" + run.getExcludedByReconciliation() + ";withdrawn:"
+                + ";excludedByReconciliation:" + run.getExcludedByReconciliation() + ";excludedByOverride:"
+                + run.getExcludedByOverride() + ";withdrawn:"
                 + run.getWithdrawn() + ";expired:" + run.getExpired());
         return StaffOfferRunResponse.of(run);
     }
@@ -307,7 +316,8 @@ public class StaffOfferRunService {
 
     /** Why an eligible member is not offered, counted; null when they are. */
     private static String exclusion(StaffMember member, StaffLoanStanding.Standing standing, Set<String> flagged,
-                                    StaffRegisterReconciliation reconciliation, Counts counts) {
+                                    StaffRegisterReconciliation reconciliation, StaffLimitOverride override,
+                                    Counts counts) {
         if (standing == StaffLoanStanding.Standing.ARREARS) {
             counts.excludedArrears++;
             return "In arrears on a Staff Grocery Loan";
@@ -322,6 +332,10 @@ public class StaffOfferRunService {
             return "Payroll reconciliation " + reconciliation.getId() + " lists them as having left or not on the"
                     + " payroll";
         }
+        if (override != null && override.blocks()) {
+            counts.excludedByOverride++;
+            return "Credit set their limit to 0 (limit override " + override.getId() + ")";
+        }
         return null;
     }
 
@@ -330,6 +344,7 @@ public class StaffOfferRunService {
         int excludedActiveLoan;
         int excludedArrears;
         int excludedByReconciliation;
+        int excludedByOverride;
         int offered;
         int refreshed;
         int alreadyOffered;

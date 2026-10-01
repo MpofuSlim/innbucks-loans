@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 
 /**
  * One attempt at the weekly offer run and how it ended. The counts are on a COMPLETED run only, and add up:
- * {@code registerMembers = ineligible + excludedActiveLoan + excludedArrears + excludedByReconciliation + eligible},
+ * {@code registerMembers = ineligible + excludedActiveLoan + excludedArrears + excludedByReconciliation
+ * + excludedByOverride + eligible},
  * and {@code eligible = offered + refreshed + alreadyOffered}.
  *
  * @param cycleStart               the Monday of the market week the run belongs to; one offer per member per cycle
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
  * @param excludedArrears          eligible members in arrears on one
  * @param excludedByReconciliation eligible members the latest payroll reconciliation lists as having left or not on
  *                                 the payroll, whose register record has not changed since
+ * @param excludedByOverride       eligible members Credit has set a limit of 0 for
  * @param offered                  members given an offer who held no open one
  * @param refreshed                members whose open offer was replaced by a new one
  * @param alreadyOffered           members who already held this cycle's offer: a repeated run gives them nothing
@@ -40,6 +42,7 @@ public record StaffOfferRunResponse(
         Integer excludedActiveLoan,
         Integer excludedArrears,
         Integer excludedByReconciliation,
+        Integer excludedByOverride,
         Integer eligible,
         Integer offered,
         Integer refreshed,
@@ -51,7 +54,7 @@ public record StaffOfferRunResponse(
         return new StaffOfferRunResponse(run.getId(), run.getCycleStart(), run.getTrigger(), run.getStartedBy(),
                 run.getStartedAt(), run.getFinishedAt(), run.getStatus(), run.getReason(), run.getReconciliationId(),
                 run.getRegisterMembers(), run.getIneligible(), run.getExcludedActiveLoan(), run.getExcludedArrears(),
-                run.getExcludedByReconciliation(), run.getEligible(), run.getOffered(), run.getRefreshed(),
+                run.getExcludedByReconciliation(), run.getExcludedByOverride(), run.getEligible(), run.getOffered(), run.getRefreshed(),
                 run.getAlreadyOffered(), run.getWithdrawn(), run.getExpired());
     }
 }

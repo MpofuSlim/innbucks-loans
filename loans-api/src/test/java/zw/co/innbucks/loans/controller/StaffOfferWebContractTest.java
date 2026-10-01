@@ -51,13 +51,13 @@ class StaffOfferWebContractTest {
 
     private static final LocalDateTime AT = LocalDateTime.of(2026, 10, 5, 7, 30, 12);
     private static final StaffOfferRunResponse COMPLETED = new StaffOfferRunResponse(2L, LocalDate.of(2026, 10, 5),
-            StaffOfferRunTrigger.MANUAL, "credit1", AT, AT, StaffOfferRunStatus.COMPLETED, null, 2L, 3, 1, 0, 0, 0, 2,
-            0, 0, 2, 0, 0);
+            StaffOfferRunTrigger.MANUAL, "credit1", AT, AT, StaffOfferRunStatus.COMPLETED, null, 2L, 3, 1, 0, 0, 0, 0,
+            2, 0, 0, 2, 0, 0);
     private static final String STALE = "The staff register was last reconciled against the payroll master on"
             + " 2026-10-02, 38 days ago; offers need a reconciliation within the last 35 days";
     private static final StaffOfferRunResponse REFUSED = new StaffOfferRunResponse(3L, LocalDate.of(2026, 11, 9),
             StaffOfferRunTrigger.MANUAL, "credit1", AT, AT, StaffOfferRunStatus.REFUSED, STALE, 2L, null, null, null,
-            null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null);
 
     private StaffOfferRunner runner;
     private StaffOfferRunService runService;
@@ -148,7 +148,7 @@ class StaffOfferWebContractTest {
                 COMPLETED));
         when(offerService.offers(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(
                 new StaffOfferResponse(1L, "E1001", "Nyasha Dube", "C4", "Band C", new BigDecimal("300.00"), 1L,
-                        LocalDate.of(2026, 10, 5), 1L, StaffOfferStatus.ACTIVE, AT, AT.plusDays(7), null, null,
+                        null, LocalDate.of(2026, 10, 5), 1L, StaffOfferStatus.ACTIVE, AT, AT.plusDays(7), null, null,
                         null)), PageRequest.of(0, 20), 1));
 
         for (String path : List.of("/lending/v1/staff-offer-runs", "/lending/v1/staff-offer-runs/2",

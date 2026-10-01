@@ -65,6 +65,7 @@ class StaffOfferRunServiceTest {
     private final Map<Long, List<String>> flagged = new HashMap<>();
     private final Map<Long, StaffLoanStanding.Standing> standings = new HashMap<>();
     private Clock clock = Clock.fixed(MONDAY_8AM, ZoneOffset.UTC);
+    private final List<StaffLimitOverride> overrides = new ArrayList<>();
     private boolean lockFree = true;
     private StaffMemberRepository memberRepository;
     private StaffOfferRepository offerRepository;
@@ -143,10 +144,13 @@ class StaffOfferRunServiceTest {
                 "C3", new StaffGradeLimit(4L, "C3", "Band D", BigDecimal.ZERO.setScale(2), LocalDate.of(2026, 10, 1),
                         "credit2", LocalDateTime.of(2026, 9, 30, 8, 5))));
         auditService = mock(AuditService.class);
+        StaffLimitOverrideRepository overrideRepository = mock(StaffLimitOverrideRepository.class);
+        when(overrideRepository.findByStatus(any())).thenAnswer(i -> overrides.stream()
+                .filter(o -> o.getStatus() == i.getArgument(0)).toList());
         StaffOfferProperties properties = new StaffOfferProperties();
         service = new StaffOfferRunService(offerRepository, runRepository, memberRepository, reconciliationRepository,
-                varianceRepository, gradeLimitService, members -> standings, properties, auditService,
-                new MarketTimeZone("ZW", clockProxy()));
+                varianceRepository, gradeLimitService, members -> standings, overrideRepository, properties,
+                auditService, new MarketTimeZone("ZW", clockProxy()));
     }
 
     /** The clock the service reads, which a test can move. */
@@ -327,6 +331,50 @@ class StaffOfferRunServiceTest {
                         tuple(StaffOfferStatus.WITHDRAWN, "Payroll reconciliation 2 lists them as having left or"
                                 + " not on the payroll"));
         assertThat(activeOffers()).extracting(StaffOffer::getStaffMemberId).containsExactly(4L, 5L);
+    }
+
+    private StaffLimitOverride override(StaffMember member, String grade, String amount) {
+        StaffLimitOverride override = StaffLimitOverride.builder().id((long) overrides.size() + 1)
+                .staffMemberId(member.getId()).grade(grade).amount(new BigDecimal(amount)).reason("Credit decision")
+                .status(StaffLimitOverrideStatus.APPROVED).proposedBy("credit1").proposedAt(NOW).decidedBy("credit2")
+                .decidedAt(NOW).build();
+        overrides.add(override);
+        return override;
+    }
+
+    @Test
+    @DisplayName("Credit's override sets the amount; 0 excludes the member; one set for another grade does not apply")
+    void overrides() {
+        StaffMember lowered = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember blocked = member("E1002", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember regraded = member("E1003", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember ineligible = member("E1004", "C3", StaffEmploymentStatus.ACTIVE);
+        reconciled(LocalDateTime.of(2026, 9, 28, 9, 0));
+        at("2026-09-28T12:00:00Z");
+        service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
+        StaffLimitOverride lower = override(lowered, "C4", "150.00");
+        StaffLimitOverride block = override(blocked, "C4", "0.00");
+        override(regraded, "C3", "500.00");
+        override(ineligible, "C3", "500.00");
+        override(member("E1005", "C4", StaffEmploymentStatus.ACTIVE), "C4", "200.00")
+                .setStatus(StaffLimitOverrideStatus.REVOKED);
+        at("2026-10-05T06:00:00Z");
+
+        StaffOfferRunResponse run = service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
+
+        assertThat(run.excludedByOverride()).isEqualTo(1);
+        assertThat(run.ineligible()).as("an override cannot make a grade without a limit eligible").isEqualTo(1);
+        assertThat(run.eligible()).isEqualTo(3);
+        assertThat(run.registerMembers()).isEqualTo(5);
+        assertThat(offers.get(1).getStatus()).isEqualTo(StaffOfferStatus.WITHDRAWN);
+        assertThat(offers.get(1).getClosedReason()).isEqualTo("Credit set their limit to 0 (limit override "
+                + block.getId() + ")");
+        assertThat(activeOffers()).extracting(StaffOffer::getStaffMemberId, StaffOffer::getAmount,
+                        StaffOffer::getLimitOverrideId)
+                .containsExactly(
+                        tuple(lowered.getId(), new BigDecimal("150.00"), lower.getId()),
+                        tuple(regraded.getId(), new BigDecimal("300.00"), null),
+                        tuple(5L, new BigDecimal("300.00"), null));
     }
 
     @Test

@@ -2976,6 +2976,7 @@ public final class ApiExamples {
                   "excludedActiveLoan": 0,
                   "excludedArrears": 0,
                   "excludedByReconciliation": 0,
+                  "excludedByOverride": 0,
                   "eligible": 2,
                   "offered": 2,
                   "refreshed": 0,
@@ -2999,6 +3000,7 @@ public final class ApiExamples {
                   "excludedActiveLoan": 0,
                   "excludedArrears": 0,
                   "excludedByReconciliation": 0,
+                  "excludedByOverride": 0,
                   "eligible": 2,
                   "offered": 0,
                   "refreshed": 0,
@@ -3129,5 +3131,126 @@ public final class ApiExamples {
                 "totalItems": 2,
                 "totalPages": 1
               }
+            }""";
+
+    // ---- Staff limit overrides (FR-SGL-011) ----
+    // credit1 proposes override 1: E1012 Chipo Banda (C4, grade limit 300.00) may borrow at most 150.00 while a salary
+    // advance is outstanding. credit2 approves it; from the next weekly run E1012's offer is for 150.00.
+
+    public static final String STAFF_LIMIT_OVERRIDE_PROPOSAL = """
+            {
+              "employeeNumber": "E1012",
+              "amount": 150.00,
+              "reason": "Existing salary advance outstanding until December"
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_PROPOSED = """
+            {
+              "code": "CREATED",
+              "message": "Limit override proposed; it applies once another credit manager approves it",
+              "data": {
+                "id": 1,
+                "employeeNumber": "E1012",
+                "fullName": "Chipo Banda",
+                "grade": "C4",
+                "amount": 150.00,
+                "reason": "Existing salary advance outstanding until December",
+                "status": "PENDING",
+                "proposedBy": "credit1",
+                "proposedAt": "2026-10-06T09:12:30+02:00"
+              }
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_APPROVAL = """
+            {
+              "decision": "APPROVED",
+              "comment": "Confirmed with Payroll"
+            }""";
+
+    private static final String STAFF_LIMIT_OVERRIDE_1_APPROVED = """
+                {
+                  "id": 1,
+                  "employeeNumber": "E1012",
+                  "fullName": "Chipo Banda",
+                  "grade": "C4",
+                  "amount": 150.00,
+                  "reason": "Existing salary advance outstanding until December",
+                  "status": "APPROVED",
+                  "proposedBy": "credit1",
+                  "proposedAt": "2026-10-06T09:12:30+02:00",
+                  "decidedBy": "credit2",
+                  "decidedAt": "2026-10-06T10:01:44+02:00",
+                  "decisionComment": "Confirmed with Payroll",
+                  "inForce": true
+                }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_APPROVED = """
+            {
+              "code": "OK",
+              "message": "Limit override approved; it sets the employee's offer from the next weekly run",
+              "data": """ + STAFF_LIMIT_OVERRIDE_1_APPROVED + """
+
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+            """ + STAFF_LIMIT_OVERRIDE_1_APPROVED + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_REVOCATION = """
+            {
+              "reason": "Salary advance repaid"
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_REVOKED = """
+            {
+              "code": "OK",
+              "message": "Limit override revoked; the employee's grade limit applies from the next weekly run",
+              "data": {
+                "id": 1,
+                "employeeNumber": "E1012",
+                "fullName": "Chipo Banda",
+                "grade": "C4",
+                "amount": 150.00,
+                "reason": "Existing salary advance outstanding until December",
+                "status": "REVOKED",
+                "proposedBy": "credit1",
+                "proposedAt": "2026-10-06T09:12:30+02:00",
+                "decidedBy": "credit2",
+                "decidedAt": "2026-10-06T10:01:44+02:00",
+                "decisionComment": "Confirmed with Payroll",
+                "revokedBy": "credit1",
+                "revokedAt": "2026-12-01T08:40:02+02:00",
+                "revocationReason": "Salary advance repaid"
+              }
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Limit override 99 not found"
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_ALREADY_DECIDED = """
+            {
+              "code": "CONFLICT",
+              "message": "Limit override 1 is already approved"
+            }""";
+
+    public static final String STAFF_LIMIT_OVERRIDE_OWN = """
+            {
+              "code": "FORBIDDEN",
+              "message": "credit1 proposed limit override 1 and cannot also approve or reject it; another credit manager or SUPER_ADMIN must"
             }""";
 }
