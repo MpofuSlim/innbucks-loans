@@ -12,6 +12,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
@@ -79,6 +80,16 @@ public class MarketTimeZone {
     /** This deployment's market timezone. */
     public ZoneId zone() {
         return zone;
+    }
+
+    /** Now, as the UTC timestamp the columns store, on this clock: consistent with {@link #today()}. */
+    public LocalDateTime nowUtc() {
+        return LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
+    }
+
+    /** Now on the market's clock, for a schedule a person reads (the next weekly offer run, say). */
+    public ZonedDateTime now() {
+        return ZonedDateTime.now(clock.withZone(zone));
     }
 
     /** The market's calendar day right now: what "today" means for a deduction month or a report. */

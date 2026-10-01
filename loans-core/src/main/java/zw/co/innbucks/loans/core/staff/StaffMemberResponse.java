@@ -45,7 +45,7 @@ public record StaffMemberResponse(
      *
      * @param limit their grade's limit in force today, null when it has none
      */
-    static String ineligibleReason(StaffMember member, StaffGradeLimit limit) {
+    public static String ineligibleReason(StaffMember member, StaffGradeLimit limit) {
         if (member.getEmploymentStatus() != StaffEmploymentStatus.ACTIVE) {
             return "Employment status is " + member.getEmploymentStatus() + "; only ACTIVE staff may borrow";
         }
