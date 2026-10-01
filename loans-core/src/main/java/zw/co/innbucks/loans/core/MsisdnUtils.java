@@ -74,6 +74,22 @@ public class MsisdnUtils {
         return INTERNATIONAL_CODE + formatMsisdnMinimum(msisdn);
     }
 
+    /**
+     * A Zimbabwean mobile number in E.164, {@code +263772123123}, however it was stored ({@code 0772123123},
+     * {@code 263772123123}): the form the notification API and the WhatsApp gateway are sent. Anything that is not a
+     * Zimbabwean mobile number is returned as it was, trimmed, for the gateway to accept or refuse.
+     */
+    public static String toE164(final String msisdn) {
+        if (msisdn == null) {
+            return null;
+        }
+        final String trimmed = msisdn.strip();
+        if (!trimmed.matches(ZIMBABWE_MOBILE_REGEX)) {
+            return trimmed;
+        }
+        return "+" + INTERNATIONAL_CODE + formatMsisdnMinimum(trimmed);
+    }
+
     public boolean isValidMsisdn(final String msisdn) {
 
         return !StringUtils.isEmpty(msisdn) && msisdn.matches(MSISDN_REGEX_EXPRESSION);

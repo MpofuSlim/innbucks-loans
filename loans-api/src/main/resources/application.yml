@@ -147,6 +147,16 @@ loans:
     run-cron: "${STAFF_OFFERS_RUN_CRON:0 0 8 * * MON}"
     validity-days: "${STAFF_OFFERS_VALIDITY_DAYS:7}"
     max-reconciliation-age-days: "${STAFF_OFFERS_MAX_RECONCILIATION_AGE_DAYS:35}"
+    # Offer and launch messages (FR-SGL-019 to 023): SMS through innbucks-notify, WhatsApp when the SMS fails.
+    notifications:
+      # The frequency cap: after this many offers in a row left unanswered, a member is messaged only every
+      # capped-reminder-weeks (0: not at all while the run of ignored offers lasts). Offers still show in-app.
+      ignored-offers-before-cap: "${STAFF_NOTIFICATIONS_IGNORED_OFFERS_BEFORE_CAP:3}"
+      capped-reminder-weeks: "${STAFF_NOTIFICATIONS_CAPPED_REMINDER_WEEKS:4}"
+      # Paces the launch broadcast and the weekly run's messages (FR-GEN-007); 0 sends without pause.
+      messages-per-second: "${STAFF_NOTIFICATIONS_MESSAGES_PER_SECOND:5}"
+      # How often the scheduled-tasks profile picks up messages left PENDING by a stop.
+      sweep-interval: "${STAFF_NOTIFICATIONS_SWEEP_INTERVAL:PT5M}"
   # In a Kubernetes pod the scheduled-tasks profile alone refuses to boot (ScheduledTasksKubernetesGuard):
   # the fleet cell runs loans with the jobs OFF, and a Secret entry such as SPRING_PROFILES_INCLUDE could
   # otherwise switch on InnBucks booking (which pays) without the manifest changing. Turning them on in
@@ -229,12 +239,10 @@ innbucks:
     stale-claim-minutes: "${INNBUCKS_BOOKING_STALE_CLAIM_MINUTES:30}"
 
 # --- Notifications ---------------------------------------------------------
-# SMS is delivered through the InnBucks core gateway adapter; email through the
-# InnBucks public notification API (X-Api-Key + third-party bearer). Supply the
-# URLs and credentials via env in every deployed environment.
-innbucks-gateway:
-  base-url: "${INNBUCKS_GATEWAY_URL:}"
-
+# SMS and email are delivered through the InnBucks public notification API
+# (X-Api-Key + third-party bearer), the same API and credentials the ticketing
+# fleet sends through (its BANK_API_* values). Supply them via env in every
+# deployed environment; blank, every SMS and email fails and is logged.
 innbucks-notify:
   base-url: "${INNBUCKS_NOTIFY_URL:}"
   api-key: "${INNBUCKS_NOTIFY_API_KEY:}"

@@ -1,8 +1,8 @@
 package zw.co.innbucks.loans.core.notifications;
 
 /**
- * Best-effort notification facade. Delegates to the InnBucks gateway (SMS) and
- * notification API (email) clients; delivery failures are logged, never thrown,
+ * Best-effort notification facade. Delegates to the InnBucks notification API
+ * (SMS and email) and WhatsApp gateway clients; delivery failures are logged, never thrown,
  * so an inline business flow is not failed by a notification outage.
  */
 public interface NotificationService {

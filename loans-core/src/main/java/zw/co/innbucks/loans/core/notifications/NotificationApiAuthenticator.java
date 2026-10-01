@@ -15,15 +15,15 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * Shared authentication for the InnBucks notification platform. Both the email
- * ({@code /api/notification/email}) and SMS ({@code /notifications/sms}) rails
+ * Shared authentication for the InnBucks notification API. Both the email
+ * ({@code /api/notification/email}) and SMS ({@code /api/notification/sms}) rails
  * are fronted by the same auth: an {@code X-Api-Key} header plus a bearer token
  * obtained from {@code POST /auth/third-party} (cached until the JWT {@code exp},
  * refreshed once on a 401).
  *
- * <p>Login always runs against the notification API base URL
- * ({@code innbucks-notify}); the resulting token is presented on whichever rail
- * the caller targets. Credentials come from {@link InnbucksNotifyProperties}.
+ * <p>Login runs against the notification API base URL ({@code innbucks-notify});
+ * the resulting token is presented on whichever rail the caller targets.
+ * Credentials come from {@link InnbucksNotifyProperties}.
  */
 @Slf4j
 @Component
