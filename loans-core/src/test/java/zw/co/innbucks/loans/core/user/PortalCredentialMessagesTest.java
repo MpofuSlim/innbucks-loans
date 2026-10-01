@@ -33,14 +33,14 @@ class PortalCredentialMessagesTest {
         PortalCredentialMessages messages = messages("https://lending.innbucks.co.zw");
 
         assertThat(messages.sms(Reason.ACCOUNT_CREATED, "Dionne", "dionne", PASSWORD)).isEqualTo("Hi Dionne, your"
-                + " InnBucks Loans portal account is ready. Your username is dionne and your temporary password is"
+                + " InnBucks Lending account is ready. Your username is dionne and your temporary password is"
                 + " Kp7rQ-n4mTx. Please sign in at lending.innbucks.co.zw and change it immediately.");
         assertThat(messages.sms(Reason.ADMIN_RESET, "Tawanda", "mpofuslim", PASSWORD)).isEqualTo("Hi Tawanda, your"
-                + " InnBucks Loans portal password has been reset by an administrator. Your username is mpofuslim and"
+                + " InnBucks Lending password has been reset by an administrator. Your username is mpofuslim and"
                 + " your temporary password is Kp7rQ-n4mTx. Please sign in at lending.innbucks.co.zw and change it"
                 + " immediately.");
         assertThat(messages.sms(Reason.SELF_SERVICE_RESET, " ", "mpofuslim", PASSWORD)).isEqualTo("Hello, your"
-                + " InnBucks Loans portal password has been reset. Your username is mpofuslim and your temporary"
+                + " InnBucks Lending password has been reset. Your username is mpofuslim and your temporary"
                 + " password is Kp7rQ-n4mTx. Please sign in at lending.innbucks.co.zw and change it immediately. If you"
                 + " did not ask for this, tell your administrator.");
     }
@@ -85,7 +85,7 @@ class PortalCredentialMessagesTest {
         assertThat(messages.sms(Reason.ACCOUNT_CREATED, "Dionne", "dionne", PASSWORD))
                 .endsWith("Please sign in and change it immediately.");
         assertThat(messages.whatsApp(Reason.ACCOUNT_CREATED, "Dionne", "dionne", PASSWORD)).isEqualTo("Hi Dionne, your"
-                + " InnBucks Loans portal account is ready.\n\nUsername: dionne\nTemporary password: Kp7rQ-n4mTx\n\nYou"
+                + " InnBucks Lending account is ready.\n\nUsername: dionne\nTemporary password: Kp7rQ-n4mTx\n\nYou"
                 + " will be asked to choose your own password when you sign in.");
     }
 
@@ -95,7 +95,7 @@ class PortalCredentialMessagesTest {
         PortalCredentialMessages messages = messages("");
 
         assertThat(messages.sms(Reason.ADMIN_RESET, "Tendai", "t_moyo", PASSWORD)).isEqualTo("Hi Tendai, your InnBucks"
-                + " Loans portal password has been reset by an administrator. Your temporary password is"
+                + " Lending password has been reset by an administrator. Your temporary password is"
                 + " Kp7rQ-n4mTx. Please sign in and change it immediately.");
         assertThat(messages.whatsApp(Reason.ADMIN_RESET, "Tendai", "t_moyo", PASSWORD)).contains("Username: t_moyo\n");
     }
@@ -105,7 +105,7 @@ class PortalCredentialMessagesTest {
     void emailSubjects() {
         PortalCredentialMessages messages = messages("");
         for (Reason reason : Reason.values()) {
-            assertThat(messages.emailSubject(reason)).contains("InnBucks Loans portal").doesNotContain(":")
+            assertThat(messages.emailSubject(reason)).contains("InnBucks Lending").doesNotContain(":")
                     .matches("\\p{ASCII}+");
         }
     }

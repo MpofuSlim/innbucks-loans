@@ -29,7 +29,7 @@ public class PortalCredentialMessages {
         SELF_SERVICE_RESET
     }
 
-    static final String PORTAL = "InnBucks Loans portal";
+    static final String PORTAL = "InnBucks Lending";
 
     /** The full sign-in address, or null. */
     private final String signInUrl;
@@ -51,7 +51,7 @@ public class PortalCredentialMessages {
     }
 
     /**
-     * One sentence the SMS gateway passes unchanged, e.g. {@code Hi Dionne, your InnBucks Loans portal account ...}.
+     * One sentence the SMS gateway passes unchanged, e.g. {@code Hi Dionne, your InnBucks Lending account ...}.
      * A username the gateway would alter (one made before usernames were held to letters, digits, dots, hyphens and
      * {@code @}) is left out rather than sent wrong.
      */
@@ -83,7 +83,7 @@ public class PortalCredentialMessages {
         return greeting(firstName) + "\n\n" + StringUtils.capitalize(event(reason)) + ".\n\n"
                 + "Use these to sign in.\n" + credentials(username, temporaryPassword)
                 + "\nFor your security, you will be asked to choose your own password when you sign in."
-                + afterword(reason) + "\n\nThe InnBucks Loans Team";
+                + afterword(reason) + "\n\nThe InnBucks Lending Team";
     }
 
     private String credentials(String username, String temporaryPassword) {
