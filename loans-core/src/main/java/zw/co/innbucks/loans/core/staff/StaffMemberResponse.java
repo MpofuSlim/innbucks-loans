@@ -32,18 +32,29 @@ public record StaffMemberResponse(
         StaffGradeLimit limit) {
 
     static StaffMemberResponse of(StaffMember member, StaffGradeLimit limit) {
-        String reason = null;
-        if (member.getEmploymentStatus() != StaffEmploymentStatus.ACTIVE) {
-            reason = "Employment status is " + member.getEmploymentStatus() + "; only ACTIVE staff may borrow";
-        } else if (limit == null) {
-            reason = "Grade " + member.getGrade() + " has no limit in force today";
-        } else if (!limit.lends()) {
-            reason = "Grade " + member.getGrade() + "'s limit is 0, so it is not lent to";
-        }
+        String reason = ineligibleReason(member, limit);
         return new StaffMemberResponse(member.getId(), member.getEmployeeNumber(), member.getFullName(),
                 member.getNationalId(), member.getMsisdn(), member.getGrade(), member.getDepartment(),
                 member.getEmploymentStatus(), member.getEngagementDate(), member.getWalletAccountNumber(),
                 member.getStatusChangedAt(), member.getCreatedAt(), member.getUpdatedAt(), reason == null, reason,
                 limit);
+    }
+
+    /**
+     * Why the member may not borrow, or null when they may (FR-SGL-005).
+     *
+     * @param limit their grade's limit in force today, null when it has none
+     */
+    static String ineligibleReason(StaffMember member, StaffGradeLimit limit) {
+        if (member.getEmploymentStatus() != StaffEmploymentStatus.ACTIVE) {
+            return "Employment status is " + member.getEmploymentStatus() + "; only ACTIVE staff may borrow";
+        }
+        if (limit == null) {
+            return "Grade " + member.getGrade() + " has no limit in force today";
+        }
+        if (!limit.lends()) {
+            return "Grade " + member.getGrade() + "'s limit is 0, so it is not lent to";
+        }
+        return null;
     }
 }

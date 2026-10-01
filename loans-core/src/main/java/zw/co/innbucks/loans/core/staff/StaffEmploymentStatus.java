@@ -9,5 +9,10 @@ public enum StaffEmploymentStatus {
     RESIGNED,
     TERMINATED,
     SUSPENDED,
-    UNPAID_LEAVE
+    UNPAID_LEAVE;
+
+    /** Whether they no longer work here: RESIGNED or TERMINATED. Suspended and unpaid-leave staff are still employed. */
+    public boolean hasLeft() {
+        return this == RESIGNED || this == TERMINATED;
+    }
 }

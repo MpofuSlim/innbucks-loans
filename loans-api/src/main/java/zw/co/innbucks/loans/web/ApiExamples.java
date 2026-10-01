@@ -2677,6 +2677,26 @@ public final class ApiExamples {
 
                 }""";
 
+    private static final String STAFF_E1012 = """
+                {
+                  "id": 2,
+                  "employeeNumber": "E1012",
+                  "fullName": "Chipo Banda",
+                  "nationalId": "632223334C55",
+                  "mobileNumber": "263773456789",
+                  "grade": "C4",
+                  "department": "Treasury",
+                  "employmentStatus": "ACTIVE",
+                  "engagementDate": "2017-03-01",
+                  "walletAccountNumber": "263773456789",
+                  "statusChangedAt": "2026-09-30T15:40:03+02:00",
+                  "createdAt": "2026-09-30T15:40:03+02:00",
+                  "updatedAt": "2026-09-30T15:40:03+02:00",
+                  "eligible": true,
+                  "limit": """ + GRADE_LIMIT_C4_1 + """
+
+                }""";
+
     private static final String STAFF_E1043 = """
                 {
                   "id": 7,
@@ -2706,12 +2726,14 @@ public final class ApiExamples {
                 "items": [
             """ + STAFF_E1001 + """
             ,
+            """ + STAFF_E1012 + """
+            ,
             """ + STAFF_E1043 + """
 
                 ],
                 "page": 0,
                 "size": 20,
-                "totalItems": 2,
+                "totalItems": 3,
                 "totalPages": 1
               }
             }""";
@@ -2764,5 +2786,173 @@ public final class ApiExamples {
             {
               "code": "FORBIDDEN",
               "message": "hc1 submitted staff register batch 12 and cannot also approve or reject it; someone else in Human Capital or a SUPER_ADMIN must"
+            }""";
+
+    // ---- Staff register reconciliation (FR-SGL-008) ----
+    // After batch 13, hc1 reconciles the register (E1001 Nyasha Dube and E1012 Chipo Banda ACTIVE, E1043 Tendai Moyo
+    // RESIGNED) against payroll-master-2026-10.csv: row 2 E1001 Resigned, row 3 E1043 at C5 and Active, row 4 E1050
+    // Farai Ncube (not on the register), rows 5 and 7 E1052 twice, row 6 with no employee number. E1012 is not on it.
+
+    public static final String STAFF_RECONCILIATION_REQUEST = """
+            {
+              "fileName": "payroll-master-2026-10.csv",
+              "content": "RW1wbG95ZWUgTm8uLFN1cm5hbWUsRmlyc3QgTmFtZSxHcmFkZSxEZXBhcnRtZW50LFN0YXR1cyxQYXkgUG9pbnQK",
+              "comment": "October payroll master from Human Capital"
+            }""";
+
+    private static final String STAFF_RECONCILIATION_1_FIELDS = """
+                  "id": 1,
+                  "fileName": "payroll-master-2026-10.csv",
+                  "runBy": "hc1",
+                  "runAt": "2026-10-01T16:20:05+02:00",
+                  "comment": "October payroll master from Human Capital",
+                  "comparedFields": ["fullName", "grade", "department", "employmentStatus"],
+                  "payrollRows": 6,
+                  "registerMembers": 3,
+                  "matched": 0,
+                  "different": 1,
+                  "leftOnPayroll": 1,
+                  "leftOnPayrollEligible": 1,
+                  "notOnRegister": 1,
+                  "notOnPayroll": 1,
+                  "notOnPayrollEligible": 1,
+                  "duplicatesOnPayroll": 1,
+                  "unreadableRows": 1,
+                  "variances": 6""";
+
+    public static final String STAFF_RECONCILED = """
+            {
+              "code": "CREATED",
+              "message": "Payroll master reconciled: 6 variances",
+              "data": {
+            """ + STAFF_RECONCILIATION_1_FIELDS + """
+            ,
+                  "ignoredColumns": ["Pay Point"]
+              }
+            }""";
+
+    public static final String STAFF_RECONCILIATIONS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+            """ + STAFF_RECONCILIATION_1_FIELDS + """
+
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_RECONCILIATION_1 = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+            """ + STAFF_RECONCILIATION_1_FIELDS + """
+
+              }
+            }""";
+
+    public static final String STAFF_RECONCILIATION_VARIANCES = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  {
+                    "id": 1,
+                    "kind": "LEFT_ON_PAYROLL",
+                    "employeeNumber": "E1001",
+                    "fullName": "Nyasha Dube",
+                    "rowNumbers": [2],
+                    "eligible": true,
+                    "differences": [
+                      { "field": "employmentStatus", "register": "ACTIVE", "payroll": "RESIGNED" }
+                    ]
+                  },
+                  {
+                    "id": 2,
+                    "kind": "NOT_ON_PAYROLL",
+                    "employeeNumber": "E1012",
+                    "fullName": "Chipo Banda",
+                    "eligible": true,
+                    "register": {
+                      "employeeNumber": "E1012",
+                      "fullName": "Chipo Banda",
+                      "nationalId": "632223334C55",
+                      "mobileNumber": "263773456789",
+                      "grade": "C4",
+                      "department": "Treasury",
+                      "employmentStatus": "ACTIVE",
+                      "engagementDate": "2017-03-01",
+                      "walletAccountNumber": "263773456789"
+                    }
+                  },
+                  {
+                    "id": 3,
+                    "kind": "DIFFERENT",
+                    "employeeNumber": "E1043",
+                    "fullName": "Tendai Moyo",
+                    "rowNumbers": [3],
+                    "differences": [
+                      { "field": "grade", "register": "C4", "payroll": "C5", "note": "Grade C5 is not in the grade-to-limit matrix" },
+                      { "field": "employmentStatus", "register": "RESIGNED", "payroll": "ACTIVE" }
+                    ]
+                  },
+                  {
+                    "id": 4,
+                    "kind": "NOT_ON_REGISTER",
+                    "employeeNumber": "E1050",
+                    "fullName": "Farai Ncube",
+                    "rowNumbers": [4],
+                    "payroll": {
+                      "employeeNumber": "E1050",
+                      "fullName": "Farai Ncube",
+                      "grade": "C3",
+                      "department": "Operations",
+                      "employmentStatus": "Active"
+                    }
+                  },
+                  {
+                    "id": 5,
+                    "kind": "DUPLICATE_ON_PAYROLL",
+                    "employeeNumber": "E1052",
+                    "fullName": "Rufaro Sibanda",
+                    "rowNumbers": [5, 7]
+                  },
+                  {
+                    "id": 6,
+                    "kind": "UNREADABLE",
+                    "fullName": "Kudzai Phiri",
+                    "rowNumbers": [6],
+                    "payroll": {
+                      "employeeNumber": "",
+                      "fullName": "Kudzai Phiri",
+                      "grade": "C3",
+                      "department": "Operations",
+                      "employmentStatus": "Active"
+                    },
+                    "errors": {
+                      "employeeNumber": "Employee number is required"
+                    }
+                  }
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 6,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_RECONCILIATION_NOT_FOUND = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Staff register reconciliation 99 not found"
             }""";
 }
