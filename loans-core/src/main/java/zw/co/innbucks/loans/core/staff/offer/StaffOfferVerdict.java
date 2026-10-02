@@ -10,7 +10,10 @@ public enum StaffOfferVerdict {
     NOT_ACTIVE,
     /** Their grade has no limit above zero in force today (FR-SGL-005). */
     NO_LIMIT,
-    /** Overdue or written off on a Staff Grocery Loan (FR-SGL-014, FR-SGL-017). */
+    /**
+     * Overdue on a Staff Grocery Loan, or owes a written-off one that Credit has not overridden (FR-SGL-014,
+     * FR-SGL-017).
+     */
     ARREARS,
     /** Already holds a Staff Grocery Loan (FR-SGL-013, FR-SGL-017). */
     ACTIVE_LOAN,

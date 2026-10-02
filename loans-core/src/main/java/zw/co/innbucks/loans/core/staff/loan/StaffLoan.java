@@ -132,6 +132,10 @@ public class StaffLoan {
     @Column(name = "employment_flag_batch_id")
     private Long employmentFlagBatchId;
 
+    /** Credit's arrears override it was accepted under, when the borrower owed a written-off loan (FR-SGL-014). */
+    @Column(name = "arrears_override_id", updatable = false)
+    private Long arrearsOverrideId;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -159,6 +163,18 @@ public class StaffLoan {
         this.cancelledAt = at;
         this.cancelledBy = by;
         this.cancellationReason = reason;
+    }
+
+    /** Writes it off with its balance still owed (FR-GEN-011). The caller checks it is DISBURSED. */
+    void writeOff(LocalDateTime at) {
+        this.status = StaffLoanStatus.WRITTEN_OFF;
+        this.settledAt = at;
+    }
+
+    /** Puts back a loan written off in error: owed and being recovered again. The caller checks it is WRITTEN_OFF. */
+    void reinstate() {
+        this.status = StaffLoanStatus.DISBURSED;
+        this.settledAt = null;
     }
 
     /** Records that its borrower is now {@code to}: flagged when not ACTIVE, the flag cleared when ACTIVE again. */

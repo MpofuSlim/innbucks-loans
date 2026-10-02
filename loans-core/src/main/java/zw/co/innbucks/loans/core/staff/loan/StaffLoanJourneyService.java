@@ -30,6 +30,7 @@ import zw.co.innbucks.loans.core.merchant.StaffLoanMerchantService;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
+import zw.co.innbucks.loans.core.staff.offer.StaffArrearsOverride;
 import zw.co.innbucks.loans.core.staff.offer.StaffOffer;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferApplication;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferAssessment;
@@ -37,6 +38,7 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRepository;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
 
 import java.math.BigDecimal;
@@ -90,6 +92,7 @@ public class StaffLoanJourneyService {
     private final StaffLoanAgreementRepository agreementRepository;
     private final StaffLoanPolicy policy;
     private final StaffLoanMerchantService merchants;
+    private final StaffArrearsOverrideService arrearsOverrides;
     private final InstrumentTemplateService templateService;
     private final MiddlewareAssertionVerifier verifier;
     private final AssertionUses assertionUses;
@@ -186,7 +189,9 @@ public class StaffLoanJourneyService {
      * checked again first: the offer is still open, they may still borrow (one loan at a time, no arrears), the
      * amount, and that the agreement is the one that would be signed now. Then, in one transaction, the assertion is
      * spent, the loan made AWAITING_DISBURSEMENT, the offer taken up, and the agreement recorded with its evidence.
-     * Under the register's lock, so neither a second acceptance nor a register change lands in the middle.
+     * A borrower who owes a written-off loan may borrow only under Credit's arrears override, which the loan names and
+     * uses up (FR-SGL-014). Under the register's lock, so neither a second acceptance nor a register change or
+     * override decision lands in the middle.
      *
      * @throws StaffLoanDeclinedException         the offer cannot be taken up, or they may not borrow now
      * @throws StaffLoanRequestInvalidException   the amount, or the device id
@@ -211,7 +216,7 @@ public class StaffLoanJourneyService {
         LocalDateTime now = marketTimeZone.nowUtc().truncatedTo(ChronoUnit.MICROS);
         LocalDate today = marketTimeZone.localDay(now);
         StaffOffer offer = offerToTakeUp(member, request.offerId(), now);
-        requireEligible(member);
+        StaffArrearsOverride arrearsOverride = requireEligible(member).arrearsOverride();
         requireAmount(offer, request.amount());
         Merchant merchant = merchantForNewLoan();
         StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today, merchant.getCompanyName());
@@ -244,7 +249,11 @@ public class StaffLoanJourneyService {
                 .unredeemedVoucherTreatment(policy.unredeemedVoucherTreatment())
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT)
                 .acceptedAt(now)
+                .arrearsOverrideId(arrearsOverride == null ? null : arrearsOverride.getId())
                 .build());
+        if (arrearsOverride != null) {
+            arrearsOverrides.use(arrearsOverride, loan, borrower);
+        }
         offer.takeUp(now, reference);
         StaffLoanAgreement unsealed = StaffLoanAgreement.builder()
                 .staffLoanId(loan.getId())
@@ -271,6 +280,7 @@ public class StaffLoanJourneyService {
                 .detail("reference:" + reference + ";offer:" + offer.getId() + ";amount:" + loan.getAmount()
                         + ";dueDate:" + loan.getDueDate() + ";merchant:" + merchant.getMerchantCode()
                         + ";agreement:v" + template.getVersion()
+                        + (arrearsOverride == null ? "" : ";arrearsOverride:" + arrearsOverride.getId())
                         + ";assertion:" + assertion.jti()));
         log.info("Staff member {} accepted Staff Grocery Loan {} for {} {}, due {}", member.getEmployeeNumber(),
                 reference, loan.getCurrency(), loan.getAmount(), loan.getDueDate());
@@ -299,11 +309,13 @@ public class StaffLoanJourneyService {
         });
     }
 
-    private void requireEligible(StaffMember member) {
-        StaffOfferVerdict verdict = offerService.assess(member).verdict();
-        if (verdict != StaffOfferVerdict.ELIGIBLE) {
-            throw new StaffLoanDeclinedException(StaffLoanDecline.of(verdict));
+    /** @return their assessment, ELIGIBLE */
+    private StaffOfferAssessment requireEligible(StaffMember member) {
+        StaffOfferAssessment assessment = offerService.assess(member);
+        if (assessment.verdict() != StaffOfferVerdict.ELIGIBLE) {
+            throw new StaffLoanDeclinedException(StaffLoanDecline.of(assessment.verdict()));
         }
+        return assessment;
     }
 
     private void requireAmount(StaffOffer offer, BigDecimal amount) {
@@ -365,13 +377,13 @@ public class StaffLoanJourneyService {
     }
 
     private StaffLoanView view(StaffLoan loan) {
-        String merchantName = loan.getMerchant().getCompanyName();
+        BorrowerVoucherResponse voucher = PAID_OUT.contains(loan.getStatus())
+                ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
+                : null;
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
-                StaffLoanView.message(loan.getStatus(), merchantName), loan.getAmount(), loan.getCurrency(),
-                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), merchantName,
-                loan.getAcceptedAt(), PAID_OUT.contains(loan.getStatus())
-                        ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
-                        : null);
+                StaffLoanView.message(loan, voucher, marketTimeZone.today()), loan.getAmount(), loan.getCurrency(),
+                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), loan.getMerchant().getCompanyName(),
+                loan.getAcceptedAt(), voucher);
     }
 
     private static String collection(StaffLoanTerms.Signing terms) {

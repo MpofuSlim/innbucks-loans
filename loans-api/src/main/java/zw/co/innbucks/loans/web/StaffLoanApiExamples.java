@@ -65,7 +65,7 @@ public final class StaffLoanApiExamples {
     private static final String LOAN_143_DISBURSED = LOAN_143_HEAD + """
 
                   "status": "DISBURSED",
-                  "statusMessage": "Your voucher is ready to spend at GetMore Groceries.",
+                  "statusMessage": "You have USD 120.00 left to spend at GetMore Groceries.",
             """ + LOAN_143_TERMS + """
 
                   "voucher": {
@@ -389,7 +389,8 @@ public final class StaffLoanApiExamples {
                   "cancelledAt": null,
                   "cancelledBy": null,
                   "cancellationReason": null,
-                  "employmentFlag": null
+                  "employmentFlag": null,
+                  "arrearsOverrideId": null
                 }""";
 
     // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151 on 8 October; it was paid out and voucher 8 issued
@@ -427,7 +428,8 @@ public final class StaffLoanApiExamples {
                     "action": "RECOVER_FROM_TERMINAL_BENEFITS",
                     "flaggedAt": "2026-10-28T10:14:03+02:00",
                     "registerBatchId": 21
-                  }
+                  },
+                  "arrearsOverrideId": null
                 }""";
 
     public static final String STAFF_LOANS_FLAGGED = """
@@ -511,7 +513,8 @@ public final class StaffLoanApiExamples {
                   "cancelledAt": "2026-10-06T11:02:17+02:00",
                   "cancelledBy": "cmanager",
                   "cancellationReason": "Accepted in error: the borrower asked to cancel before payout",
-                  "employmentFlag": null
+                  "employmentFlag": null,
+                  "arrearsOverrideId": null
                 }
             }""";
 

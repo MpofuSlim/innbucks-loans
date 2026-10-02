@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,9 +66,10 @@ class StaffOfferRunServiceTest {
     private final List<StaffOfferRun> runs = new ArrayList<>();
     private final List<StaffRegisterReconciliation> reconciliations = new ArrayList<>();
     private final Map<Long, List<String>> flagged = new HashMap<>();
-    private final Map<Long, StaffLoanStanding.Standing> standings = new HashMap<>();
+    private final Map<Long, Set<StaffLoanStanding.Standing>> standings = new HashMap<>();
     private Clock clock = Clock.fixed(MONDAY_8AM, ZoneOffset.UTC);
     private final List<StaffLimitOverride> overrides = new ArrayList<>();
+    private final List<StaffArrearsOverride> arrearsOverrides = new ArrayList<>();
     private boolean lockFree = true;
     private StaffMemberRepository memberRepository;
     private StaffOfferRepository offerRepository;
@@ -168,6 +170,12 @@ class StaffOfferRunServiceTest {
                 .findFirst());
         when(overrideRepository.findByStatus(any())).thenAnswer(i -> overrides.stream()
                 .filter(o -> o.getStatus() == i.getArgument(0)).toList());
+        StaffArrearsOverrideRepository arrearsOverrideRepository = mock(StaffArrearsOverrideRepository.class);
+        when(arrearsOverrideRepository.findByStaffMemberIdAndStatus(anyLong(), any())).thenAnswer(i ->
+                arrearsOverrides.stream().filter(o -> o.getStaffMemberId().equals(i.getArgument(0))
+                        && o.getStatus() == i.getArgument(1)).findFirst());
+        when(arrearsOverrideRepository.findByStatus(any())).thenAnswer(i -> arrearsOverrides.stream()
+                .filter(o -> o.getStatus() == i.getArgument(0)).toList());
         StaffOfferProperties properties = new StaffOfferProperties();
         StaffNotificationService notificationService = mock(StaffNotificationService.class);
         doAnswer(i -> {
@@ -181,8 +189,9 @@ class StaffOfferRunServiceTest {
             return null;
         }).when(notificationService).notifyOffers(any(), any());
         service = new StaffOfferRunService(offerRepository, runRepository, memberRepository, reconciliationRepository,
-                varianceRepository, gradeLimitService, members -> standings, overrideRepository, properties,
-                notificationService, auditService, new MarketTimeZone("ZW", clockProxy()), jobsSwitch);
+                varianceRepository, gradeLimitService, members -> standings, overrideRepository,
+                arrearsOverrideRepository, properties, notificationService, auditService,
+                new MarketTimeZone("ZW", clockProxy()), jobsSwitch);
     }
 
     /** The clock the service reads, which a test can move. */
@@ -348,8 +357,9 @@ class StaffOfferRunServiceTest {
 
         reconciled(LocalDateTime.of(2026, 10, 2, 9, 40), "E1003", "E1004");
         corrected.setUpdatedAt(LocalDateTime.of(2026, 10, 2, 14, 0));
-        standings.put(withLoan.getId(), StaffLoanStanding.Standing.ACTIVE_LOAN);
-        standings.put(inArrears.getId(), StaffLoanStanding.Standing.ARREARS);
+        standings.put(withLoan.getId(), Set.of(StaffLoanStanding.Standing.ACTIVE_LOAN));
+        standings.put(inArrears.getId(), Set.of(StaffLoanStanding.Standing.ACTIVE_LOAN,
+                StaffLoanStanding.Standing.ARREARS));
         at("2026-10-05T06:00:00Z");
 
         StaffOfferRunResponse run = service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
@@ -364,10 +374,90 @@ class StaffOfferRunServiceTest {
         assertThat(offers.subList(0, 3)).extracting(StaffOffer::getStatus, StaffOffer::getClosedReason)
                 .containsExactly(
                         tuple(StaffOfferStatus.WITHDRAWN, "Holds an active Staff Grocery Loan"),
-                        tuple(StaffOfferStatus.WITHDRAWN, "In arrears on a Staff Grocery Loan"),
+                        tuple(StaffOfferStatus.WITHDRAWN, "In arrears on a Staff Grocery Loan, or owes a written-off"
+                                + " one"),
                         tuple(StaffOfferStatus.WITHDRAWN, "Payroll reconciliation 2 lists them as having left or"
                                 + " not on the payroll"));
         assertThat(activeOffers()).extracting(StaffOffer::getStaffMemberId).containsExactly(4L, 5L);
+    }
+
+    private StaffArrearsOverride arrearsOverride(StaffMember member, LocalDate validUntil,
+                                                 StaffArrearsOverrideStatus status) {
+        StaffArrearsOverride override = StaffArrearsOverride.builder().id((long) arrearsOverrides.size() + 1)
+                .staffMemberId(member.getId()).reason("Repayment plan agreed").validUntil(validUntil).status(status)
+                .proposedBy("credit1").proposedAt(NOW).decidedBy(status == StaffArrearsOverrideStatus.PENDING ? null
+                        : "credit2").decidedAt(status == StaffArrearsOverrideStatus.PENDING ? null : NOW).build();
+        arrearsOverrides.add(override);
+        return override;
+    }
+
+    @Test
+    @DisplayName("a written-off loan excludes a member unless Credit's arrears override is in force (FR-SGL-014); the"
+            + " override never lifts an overdue or open loan (FR-SGL-013)")
+    void writtenOffBalances() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember writtenOff = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember overridden = member("E1002", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember lastDay = member("E1003", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember lapsed = member("E1004", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember pending = member("E1005", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember overdue = member("E1006", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember holding = member("E1007", "C4", StaffEmploymentStatus.ACTIVE);
+        Set<StaffLoanStanding.Standing> owes = Set.of(StaffLoanStanding.Standing.WRITTEN_OFF);
+        for (StaffMember member : List.of(writtenOff, overridden, lastDay, lapsed, pending)) {
+            standings.put(member.getId(), owes);
+        }
+        standings.put(overdue.getId(), Set.of(StaffLoanStanding.Standing.WRITTEN_OFF,
+                StaffLoanStanding.Standing.ACTIVE_LOAN, StaffLoanStanding.Standing.ARREARS));
+        standings.put(holding.getId(), Set.of(StaffLoanStanding.Standing.WRITTEN_OFF,
+                StaffLoanStanding.Standing.ACTIVE_LOAN));
+        LocalDate today = LocalDate.of(2026, 10, 5);
+        arrearsOverride(overridden, today.plusDays(26), StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(lastDay, today, StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(lapsed, today.minusDays(1), StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(pending, today.plusDays(26), StaffArrearsOverrideStatus.PENDING);
+        arrearsOverride(overdue, today.plusDays(26), StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(holding, today.plusDays(26), StaffArrearsOverrideStatus.APPROVED);
+
+        StaffOfferRunResponse run = service.run(StaffOfferRunTrigger.SCHEDULED, "scheduler");
+
+        assertThat(run.excludedArrears()).as("written off, lapsed, pending, overdue").isEqualTo(4);
+        assertThat(run.excludedActiveLoan()).as("the override does not let them hold two loans").isEqualTo(1);
+        assertThat(run.offered()).isEqualTo(2);
+        assertThat(activeOffers()).extracting(StaffOffer::getStaffMemberId)
+                .containsExactly(overridden.getId(), lastDay.getId());
+        assertThat(activeOffers()).extracting(StaffOffer::getAmount)
+                .as("at the grade's limit, as for anyone").containsOnly(new BigDecimal("300.00"));
+    }
+
+    @Test
+    @DisplayName("the assessment names the arrears override only when it is what lets the member borrow")
+    void assessmentNamesTheArrearsOverrideThatLiftsTheBlock() {
+        reconciled(LocalDateTime.of(2026, 10, 2, 9, 40));
+        StaffMember owes = member("E1001", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember clear = member("E1002", "C4", StaffEmploymentStatus.ACTIVE);
+        StaffMember holding = member("E1003", "C4", StaffEmploymentStatus.ACTIVE);
+        standings.put(owes.getId(), Set.of(StaffLoanStanding.Standing.WRITTEN_OFF));
+        standings.put(holding.getId(), Set.of(StaffLoanStanding.Standing.WRITTEN_OFF,
+                StaffLoanStanding.Standing.ACTIVE_LOAN));
+        LocalDate lastDay = LocalDate.of(2026, 10, 9);
+        StaffArrearsOverride lifting = arrearsOverride(owes, lastDay, StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(clear, lastDay, StaffArrearsOverrideStatus.APPROVED);
+        arrearsOverride(holding, lastDay, StaffArrearsOverrideStatus.APPROVED);
+
+        StaffOfferAssessment lifted = service.assess(owes);
+        assertThat(lifted.verdict()).isEqualTo(StaffOfferVerdict.ELIGIBLE);
+        assertThat(lifted.arrearsOverride()).isSameAs(lifting);
+        assertThat(service.assess(clear).verdict()).isEqualTo(StaffOfferVerdict.ELIGIBLE);
+        assertThat(service.assess(clear).arrearsOverride()).as("nothing to lift").isNull();
+        assertThat(service.assess(holding).verdict()).isEqualTo(StaffOfferVerdict.ACTIVE_LOAN);
+        assertThat(service.assess(holding).arrearsOverride()).isNull();
+
+        at("2026-10-09T21:59:59Z");
+        assertThat(service.assess(owes).arrearsOverride()).as("still its last day in Harare").isSameAs(lifting);
+        at("2026-10-09T22:00:00Z");
+        assertThat(service.assess(owes).verdict()).as("the next day in Harare").isEqualTo(StaffOfferVerdict.ARREARS);
+        assertThat(service.assess(owes).arrearsOverride()).isNull();
     }
 
     private StaffLimitOverride override(StaffMember member, String grade, String amount) {
@@ -641,8 +731,9 @@ class StaffOfferRunServiceTest {
         StaffMember holding = member("E1004", "C4", StaffEmploymentStatus.ACTIVE);
         StaffMember flaggedMember = member("E1005", "C4", StaffEmploymentStatus.ACTIVE);
         StaffMember blocked = member("E1006", "C4", StaffEmploymentStatus.ACTIVE);
-        standings.put(arrears.getId(), StaffLoanStanding.Standing.ARREARS);
-        standings.put(holding.getId(), StaffLoanStanding.Standing.ACTIVE_LOAN);
+        standings.put(arrears.getId(), Set.of(StaffLoanStanding.Standing.ACTIVE_LOAN,
+                StaffLoanStanding.Standing.ARREARS));
+        standings.put(holding.getId(), Set.of(StaffLoanStanding.Standing.ACTIVE_LOAN));
         override(blocked, "C4", "0.00");
 
         assertThat(List.of(resigned, noLimit, arrears, holding, flaggedMember, blocked))
