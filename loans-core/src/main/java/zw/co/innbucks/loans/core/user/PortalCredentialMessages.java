@@ -3,6 +3,7 @@ package zw.co.innbucks.loans.core.user;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
+import zw.co.innbucks.loans.core.notifications.BrandedEmailRenderer;
 import zw.co.innbucks.loans.core.notifications.SmsTextSanitizer;
 
 /**
@@ -83,7 +84,22 @@ public class PortalCredentialMessages {
         return greeting(firstName) + "\n\n" + StringUtils.capitalize(event(reason)) + ".\n\n"
                 + "Use these to sign in.\n" + credentials(username, temporaryPassword)
                 + "\nFor your security, you will be asked to choose your own password when you sign in."
-                + afterword(reason) + "\n\nThe InnBucks Lending Team";
+                + afterword(reason);
+    }
+
+    /**
+     * The email's "Sign in" button: the sign-in address, when it is an {@code https} one the branded email can link
+     * (the text carries the address too); null otherwise. The email's sign-off comes with its footer.
+     */
+    public BrandedEmailRenderer.CallToAction signInButton() {
+        if (signInUrl == null) {
+            return null;
+        }
+        try {
+            return new BrandedEmailRenderer.CallToAction("Sign in to " + PORTAL, signInUrl);
+        } catch (IllegalArgumentException notHttps) {
+            return null;
+        }
     }
 
     private String credentials(String username, String temporaryPassword) {

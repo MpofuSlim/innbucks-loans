@@ -74,6 +74,26 @@ spring:
     scheduling:
       pool:
         size: 1
+  # Email over SMTP (Amazon SES), as the ticketing fleet sends Foundry's: loans writes its own From header, so the
+  # inbox shows loans.mail.sender-name rather than the notification API's name. Off twice by default: Spring builds
+  # a mail sender only when MAIL_HOST is set, and loans uses it only with MAIL_ENABLED=true. Off, or when a send
+  # fails, email goes through the notification API (innbucks-notify) as before. In the cell, the MAIL_* values are
+  # the cell's own (the Deployment names each one).
+  mail:
+    host: "${MAIL_HOST:}"
+    port: "${MAIL_PORT:587}"
+    username: "${MAIL_USERNAME:}"
+    password: "${MAIL_PASSWORD:}"
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
 
 # --- Self-issued JWT authentication ----------------------------------------
 # Tokens are signed and validated with a shared HS256 secret; the platform is
@@ -126,6 +146,12 @@ http:
 # The defaults refuse what cannot be read, not what is merely imperfect. Accepted images are logged with
 # their measured contrast and sharpness, which is what to tune these against.
 loans:
+  # Who loans' email says it is from when it goes over SMTP (spring.mail above). MAIL_FROM must be an SES-verified
+  # identity in the region; the name is loans' own, never the cell's MAIL_SENDER_NAME ("Foundry").
+  mail:
+    enabled: "${MAIL_ENABLED:false}"
+    from: "${MAIL_FROM:banking@innbucks.co.zw}"
+    sender-name: "${LOANS_MAIL_SENDER_NAME:InnBucks Lending}"
   # The lending portal, as its users are told about it: the message that gives someone a temporary password (a new
   # account, a reset) links to sign-in-url, e.g. https://lending.innbucks.co.zw. SMS carries it only as a bare host
   # (the gateway refuses : and /); WhatsApp and email carry it whole. Blank: the message names the portal, no link.
@@ -304,6 +330,10 @@ innbucks-notify:
   api-key: "${INNBUCKS_NOTIFY_API_KEY:}"
   username: "${INNBUCKS_NOTIFY_USERNAME:}"
   password: "${INNBUCKS_NOTIFY_PASSWORD:}"
+  # Email as the InnBucks branded HTML, as Foundry's is (false: plain text with the InnBucks footer). The logo is a
+  # hosted image URL (clients block data: URIs); blank draws it in CSS.
+  html-enabled: "${INNBUCKS_NOTIFY_HTML_ENABLED:true}"
+  logo-url: "${INNBUCKS_NOTIFY_LOGO_URL:}"
 
 # WhatsApp is delivered through the external WhatsApp notification gateway
 # (x-api-key auth). Uses the same key names as the ticketing platform so one set
@@ -338,3 +368,9 @@ management:
       probes:
         enabled: true
       show-details: never
+  # Mail must never decide readiness: Boot's mail health check opens a real SMTP connection, which is DOWN on a cell
+  # without SES and would keep the pod out of service (it took the ticketing user-service down on 2026-07-29). Email
+  # is best-effort with a notification API fallback.
+  health:
+    mail:
+      enabled: false

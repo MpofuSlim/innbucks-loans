@@ -14,7 +14,7 @@ import java.time.Duration;
  * {@link NotificationApiAuthenticator}.
  */
 @Configuration
-@EnableConfigurationProperties(InnbucksNotifyProperties.class)
+@EnableConfigurationProperties({InnbucksNotifyProperties.class, MailProperties.class})
 public class InnbucksNotifyClientConfig {
 
     @Bean("innbucksNotifyRestClient")

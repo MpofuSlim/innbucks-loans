@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import zw.co.innbucks.loans.core.merchant.Merchant;
+import zw.co.innbucks.loans.core.notifications.BrandedEmailRenderer;
 import zw.co.innbucks.loans.core.notifications.EmailNotificationClient;
 import zw.co.innbucks.loans.core.notifications.NotificationChannel;
 import zw.co.innbucks.loans.core.notifications.NotificationDeliveryException;
@@ -102,7 +103,8 @@ class AdminPasswordResetDeliveryTest {
     }
 
     @Test
-    @DisplayName("SMS or EMAIL named: that channel only; the email subject carries no colon")
+    @DisplayName("SMS or EMAIL named: that channel only; the email has a sign-in button and its replies are"
+            + " never logged")
     void namedChannels() {
         assertThat(service.resetPassword(5L, NotificationChannel.SMS).sentBy()).isEqualTo(NotificationChannel.SMS);
         assertThat(service.resetPassword(5L, NotificationChannel.EMAIL).sentBy()).isEqualTo(NotificationChannel.EMAIL);
@@ -110,10 +112,12 @@ class AdminPasswordResetDeliveryTest {
         verify(sms).sendSms(eq("+263772123123"), anyString(), eq(null), eq(true));
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         verify(email).sendEmail(eq("tawanda@innbucks.co.zw"), eq("Your InnBucks Lending password has been reset"),
-                body.capture(), eq(null));
+                body.capture(), eq(null),
+                eq(new BrandedEmailRenderer.CallToAction("Sign in to InnBucks Lending", "https://lending.innbucks.co.zw/")),
+                eq(true));
         assertThat(body.getValue()).startsWith("Hi Tawanda,\n\nYour InnBucks Lending password has been reset")
                 .contains("Username: mpofuslim\n", "Sign in at: https://lending.innbucks.co.zw/\n")
-                .endsWith("The InnBucks Lending Team");
+                .endsWith("you will be asked to choose your own password when you sign in.");
         verifyNoInteractions(whatsApp);
     }
 }
