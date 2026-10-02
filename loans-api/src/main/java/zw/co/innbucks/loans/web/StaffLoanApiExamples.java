@@ -65,7 +65,7 @@ public final class StaffLoanApiExamples {
     private static final String LOAN_143_DISBURSED = LOAN_143_HEAD + """
 
                   "status": "DISBURSED",
-                  "statusMessage": "Your voucher is ready to spend at GetMore Groceries.",
+                  "statusMessage": "You have USD 120.00 left to spend at GetMore Groceries.",
             """ + LOAN_143_TERMS + """
 
                   "voucher": {

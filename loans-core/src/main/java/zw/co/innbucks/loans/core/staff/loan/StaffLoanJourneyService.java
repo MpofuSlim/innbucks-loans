@@ -38,6 +38,7 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRepository;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
 
 import java.math.BigDecimal;
@@ -376,13 +377,13 @@ public class StaffLoanJourneyService {
     }
 
     private StaffLoanView view(StaffLoan loan) {
-        String merchantName = loan.getMerchant().getCompanyName();
+        BorrowerVoucherResponse voucher = PAID_OUT.contains(loan.getStatus())
+                ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
+                : null;
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
-                StaffLoanView.message(loan.getStatus(), merchantName), loan.getAmount(), loan.getCurrency(),
-                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), merchantName,
-                loan.getAcceptedAt(), PAID_OUT.contains(loan.getStatus())
-                        ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
-                        : null);
+                StaffLoanView.message(loan, voucher, marketTimeZone.today()), loan.getAmount(), loan.getCurrency(),
+                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), loan.getMerchant().getCompanyName(),
+                loan.getAcceptedAt(), voucher);
     }
 
     private static String collection(StaffLoanTerms.Signing terms) {
