@@ -176,7 +176,7 @@ public class VoucherSettlementService {
      * A field made safe for a spreadsheet: quoted when it holds a comma, quote or line break, and with a leading
      * {@code = + - @} neutralised, so a value a merchant's till typed cannot run as a formula when the file is opened.
      */
-    static String cell(String value) {
+    public static String cell(String value) {
         if (value == null) {
             return "";
         }
