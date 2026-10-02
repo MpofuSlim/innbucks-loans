@@ -15,8 +15,8 @@ public class StaffOfferProperties {
 
     /**
      * When the weekly run fires, as a Spring cron (second minute hour day month weekday) read on the market's clock:
-     * Mondays at 08:00 Harare time by default. It fires only where the scheduled-tasks profile is on; a run can always
-     * be started from the admin portal.
+     * Mondays at 08:00 Harare time by default. It fires only where the Staff Grocery Loan jobs run
+     * (STAFF_LOANS_JOBS_ENABLED or the scheduled-tasks profile); a run can always be started from the admin portal.
      */
     private String runCron = "0 0 8 * * MON";
 

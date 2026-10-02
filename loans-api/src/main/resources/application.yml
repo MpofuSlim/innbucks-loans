@@ -218,6 +218,10 @@ loans:
     # Payroll's mailboxes, comma-separated: told, with Human Capital, when a borrower leaves owing a paid-out loan, so it
     # is recovered from their terminal benefits (FR-SGL-007, BRD 3.8). Blank: Human Capital alone is told.
     payroll-emails: "${STAFF_LOANS_PAYROLL_EMAILS:}"
+    # The Staff Grocery Loan jobs (the weekly offer run and its messages, retrying staff messages left pending, voucher
+    # upkeep) without the scheduled-tasks profile, which also starts the jobs that pay and lodge. These move no money.
+    # true: the weekly run fires on loans.staff-offers.run-cron and messages every eligible staff member.
+    jobs-enabled: "${STAFF_LOANS_JOBS_ENABLED:false}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
   # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
   # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a

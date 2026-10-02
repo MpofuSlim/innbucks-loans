@@ -7,9 +7,10 @@ import java.time.LocalDateTime;
 /**
  * The weekly offer run's settings and whether a run would go ahead now.
  *
- * @param runCron                  when the run fires, read on the market's clock ({@code zone}); only where the
- *                                 scheduled-tasks profile is on
- * @param nextScheduledRunAt       the schedule's next firing
+ * @param runCron                  when the run fires, read on the market's clock ({@code zone})
+ * @param nextScheduledRunAt       the schedule's next firing, which happens only if {@code automaticRuns}
+ * @param automaticRuns            whether the run fires by itself here (STAFF_LOANS_JOBS_ENABLED); when false, runs
+ *                                 are started from the portal
  * @param lastReconciliationId     the latest payroll reconciliation, absent when there has been none
  * @param reconciliationAgeDays    how many market days ago it ran
  * @param readyToRun               whether a run now would go ahead; when not, {@code notReadyReason} says why
@@ -20,6 +21,7 @@ public record StaffOfferScheduleResponse(
         String runCron,
         String zone,
         LocalDateTime nextScheduledRunAt,
+        boolean automaticRuns,
         int validityDays,
         int maxReconciliationAgeDays,
         Long lastReconciliationId,
