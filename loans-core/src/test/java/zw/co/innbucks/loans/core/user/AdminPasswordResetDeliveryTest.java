@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notifications.BrandedEmailRenderer;
 import zw.co.innbucks.loans.core.notifications.EmailNotificationClient;
@@ -33,6 +34,7 @@ class AdminPasswordResetDeliveryTest {
     private final SmsNotificationClient sms = mock(SmsNotificationClient.class);
     private final EmailNotificationClient email = mock(EmailNotificationClient.class);
     private final WhatsAppNotificationClient whatsApp = mock(WhatsAppNotificationClient.class);
+    private final RecordingTransactionManager transactions = new RecordingTransactionManager();
     private User user;
     private AdminPasswordResetServiceImpl service;
 
@@ -50,7 +52,7 @@ class AdminPasswordResetDeliveryTest {
         PortalProperties portal = new PortalProperties();
         portal.setSignInUrl("https://lending.innbucks.co.zw/");
         service = new AdminPasswordResetServiceImpl(users, new BCryptPasswordEncoder(4), sms, email, whatsApp,
-                new PortalCredentialMessages(portal));
+                new PortalCredentialMessages(portal), transactions);
     }
 
     @Test
@@ -100,6 +102,100 @@ class AdminPasswordResetDeliveryTest {
                 .hasMessage("Notification API rejected SMS: HTTP 503");
         assertThat(user.getPassword()).isEqualTo("old-hash");
         verify(users, never()).save(any());
+        assertThat(transactions.begun()).as("no transaction is opened for a reset that was never delivered").isZero();
+    }
+
+    @Test
+    @DisplayName("no transaction is open while any gateway is called; the change is saved inside one")
+    void sendsRunOutsideTheTransaction_andTheSaveInsideOne() {
+        doAnswer(inv -> {
+            assertThat(transactions.active()).as("WhatsApp send inside a transaction").isFalse();
+            throw new NotificationDeliveryException("WhatsApp gateway rejected the message: HTTP 400");
+        }).when(whatsApp).sendCustomNotification(anyString(), anyString(), anyBoolean());
+        doAnswer(inv -> {
+            assertThat(transactions.active()).as("SMS send inside a transaction").isFalse();
+            return null;
+        }).when(sms).sendSms(anyString(), anyString(), any(), anyBoolean());
+        doAnswer(inv -> {
+            assertThat(transactions.active()).as("email send inside a transaction").isFalse();
+            return null;
+        }).when(email).sendEmail(anyString(), anyString(), anyString(), any(), any(), anyBoolean());
+        when(users.save(any())).thenAnswer(inv -> {
+            assertThat(transactions.active()).as("the save runs inside the transaction").isTrue();
+            return inv.getArgument(0);
+        });
+
+        service.resetPassword(5L, null);                       // WhatsApp refused, then SMS
+        service.resetPassword(5L, NotificationChannel.EMAIL);
+
+        verify(whatsApp).sendCustomNotification(anyString(), anyString(), anyBoolean());
+        verify(sms).sendSms(anyString(), anyString(), any(), anyBoolean());
+        verify(email).sendEmail(anyString(), anyString(), anyString(), any(), any(), anyBoolean());
+        verify(users, times(2)).save(any());
+        assertThat(transactions.committed()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("no destination on file: refused before anything is sent or written")
+    void missingDestination_isRefusedBeforeAnything() {
+        user.setEmail(null);
+        user.setMobileNumber(null);
+
+        assertThatThrownBy(() -> service.resetPassword(5L, NotificationChannel.EMAIL))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("no email address");
+        assertThatThrownBy(() -> service.resetPassword(5L, null))
+                .isInstanceOf(ValidationException.class).hasMessageContaining("no mobile number");
+
+        verifyNoInteractions(sms, email, whatsApp);
+        verify(users, never()).save(any());
+        assertThat(transactions.begun()).isZero();
+    }
+
+    @Test
+    @DisplayName("the change is applied to a fresh read: a concurrent edit is kept and the token version moves"
+            + " on from the current value")
+    void theSaveIsAppliedToAFreshRead() {
+        User current = new User();
+        current.setId(5L);
+        current.setUsername("mpofuslim");
+        current.setMerchant(new Merchant());
+        current.setPassword("old-hash");
+        current.setTokenVersion(5L);
+        current.setFirstName("Changed during the send");
+        when(users.findById(5L)).thenReturn(Optional.of(user), Optional.of(current));
+
+        service.resetPassword(5L, NotificationChannel.SMS);
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        assertThat(saved.getValue()).isSameAs(current);
+        assertThat(current.getTokenVersion()).isEqualTo(6L);
+        assertThat(current.getFirstName()).isEqualTo("Changed during the send");
+        assertThat(current.getTemporaryPassword()).isTrue();
+        assertThat(user.getPassword()).as("the stale read is never written").isEqualTo("old-hash");
+    }
+
+    @Test
+    @DisplayName("delivered but the save fails: the failure surfaces and the transaction rolls back")
+    void deliveredButNotSaved_surfacesAndRollsBack() {
+        when(users.save(any())).thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThatThrownBy(() -> service.resetPassword(5L, NotificationChannel.SMS))
+                .isInstanceOf(IllegalStateException.class).hasMessage("database unavailable");
+
+        verify(sms).sendSms(anyString(), anyString(), any(), anyBoolean());
+        assertThat(transactions.rolledBack()).isEqualTo(1);
+        assertThat(transactions.committed()).isZero();
+    }
+
+    @Test
+    @DisplayName("resetPassword carries no @Transactional, so no transaction can be wrapped round the send again")
+    void resetPasswordIsNotTransactional() throws Exception {
+        assertThat(AdminPasswordResetServiceImpl.class
+                .getMethod("resetPassword", Long.class, NotificationChannel.class)
+                .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
+        assertThat(AdminPasswordResetServiceImpl.class
+                .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
     }
 
     @Test

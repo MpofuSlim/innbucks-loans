@@ -40,7 +40,7 @@ class AdminPasswordResetSessionsTest {
         when(users.findById(5L)).thenReturn(Optional.of(user));
         AdminPasswordResetServiceImpl service = new AdminPasswordResetServiceImpl(users, new BCryptPasswordEncoder(4),
                 sms, mock(EmailNotificationClient.class), mock(WhatsAppNotificationClient.class),
-                new PortalCredentialMessages(new PortalProperties()));
+                new PortalCredentialMessages(new PortalProperties()), new RecordingTransactionManager());
 
         service.resetPassword(5L, NotificationChannel.SMS);
 
