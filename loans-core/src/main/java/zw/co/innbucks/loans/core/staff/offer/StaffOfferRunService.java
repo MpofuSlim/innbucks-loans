@@ -20,6 +20,7 @@ import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitService;
+import zw.co.innbucks.loans.core.staff.StaffLoanJobsSwitch;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffMemberResponse;
@@ -99,6 +100,7 @@ public class StaffOfferRunService {
     private final StaffNotificationService notificationService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
+    private final StaffLoanJobsSwitch jobsSwitch;
 
     /**
      * Runs the current cycle: offers every eligible member still without this cycle's offer.
@@ -358,7 +360,7 @@ public class StaffOfferRunService {
                 .orElseThrow(() -> new NotFoundException("Staff offer run " + runId + " not found")));
     }
 
-    /** The run's settings, when it next fires, and whether a run now would go ahead. */
+    /** The run's settings, when it next fires, whether it fires by itself, and whether a run now would go ahead. */
     @Transactional(readOnly = true)
     public StaffOfferScheduleResponse schedule() {
         LocalDate today = marketTimeZone.today();
@@ -368,6 +370,7 @@ public class StaffOfferRunService {
                 .map(at -> at.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime())
                 .orElse(null);
         return new StaffOfferScheduleResponse(properties.getRunCron(), marketTimeZone.zone().getId(), next,
+                jobsSwitch.on(),
                 properties.getValidityDays(), properties.getMaxReconciliationAgeDays(),
                 latest == null ? null : latest.getId(), latest == null ? null : latest.getRunAt(),
                 latest == null ? null : gate.ageDays(), gate.refusal() == null, gate.refusal(),

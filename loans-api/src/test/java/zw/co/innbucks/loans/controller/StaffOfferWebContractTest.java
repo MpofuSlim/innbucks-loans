@@ -165,8 +165,8 @@ class StaffOfferWebContractTest {
         when(runService.run(2L)).thenReturn(COMPLETED);
         when(runService.run(99L)).thenThrow(new NotFoundException("Staff offer run 99 not found"));
         when(runService.schedule()).thenReturn(new StaffOfferScheduleResponse("0 0 8 * * MON", "Africa/Harare",
-                LocalDateTime.of(2026, 10, 12, 6, 0), 7, 35, 2L, LocalDateTime.of(2026, 10, 2, 9, 40), 3L, true, null,
-                COMPLETED));
+                LocalDateTime.of(2026, 10, 12, 6, 0), true, 7, 35, 2L, LocalDateTime.of(2026, 10, 2, 9, 40), 3L, true,
+                null, COMPLETED));
         when(offerService.offers(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(
                 new StaffOfferResponse(1L, "E1001", "Nyasha Dube", "C4", "Band C", new BigDecimal("300.00"), 1L,
                         null, LocalDate.of(2026, 10, 5), 1L, StaffOfferOrigin.RUN, StaffOfferStatus.ACTIVE, AT, AT.plusDays(7), null, null,

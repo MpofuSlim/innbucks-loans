@@ -16,6 +16,7 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimitService;
+import zw.co.innbucks.loans.core.staff.StaffLoanJobsSwitch;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterReconciliation;
@@ -71,6 +72,7 @@ class StaffOfferRunServiceTest {
     private StaffMemberRepository memberRepository;
     private StaffOfferRepository offerRepository;
     private AuditService auditService;
+    private final StaffLoanJobsSwitch jobsSwitch = mock(StaffLoanJobsSwitch.class);
     /** Each call's offers, as the run handed them over to be notified. */
     private final List<List<StaffOffer>> notified = new ArrayList<>();
     private StaffOfferRunService service;
@@ -180,7 +182,7 @@ class StaffOfferRunServiceTest {
         }).when(notificationService).notifyOffers(any(), any());
         service = new StaffOfferRunService(offerRepository, runRepository, memberRepository, reconciliationRepository,
                 varianceRepository, gradeLimitService, members -> standings, overrideRepository, properties,
-                notificationService, auditService, new MarketTimeZone("ZW", clockProxy()));
+                notificationService, auditService, new MarketTimeZone("ZW", clockProxy()), jobsSwitch);
     }
 
     /** The clock the service reads, which a test can move. */
@@ -512,6 +514,7 @@ class StaffOfferRunServiceTest {
         assertThat(before.zone()).isEqualTo("Africa/Harare");
         assertThat(before.nextScheduledRunAt()).as("08:00 Harare next Monday, stored as UTC")
                 .isEqualTo(LocalDateTime.of(2026, 10, 12, 6, 0));
+        assertThat(before.automaticRuns()).as("the jobs are off here: runs are started from the portal").isFalse();
         assertThat(before.readyToRun()).isFalse();
         assertThat(before.notReadyReason()).isEqualTo(StaffOfferRunService.NEVER_RECONCILED);
         assertThat(before.lastReconciliationId()).isNull();
@@ -529,6 +532,14 @@ class StaffOfferRunServiceTest {
         assertThat(after.validityDays()).isEqualTo(7);
         assertThat(after.maxReconciliationAgeDays()).isEqualTo(35);
         assertThat(after.lastRun().id()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("where the Staff Grocery Loan jobs run, the schedule says the weekly run fires by itself")
+    void scheduleWithTheJobsOn() {
+        when(jobsSwitch.on()).thenReturn(true);
+
+        assertThat(service.schedule().automaticRuns()).isTrue();
     }
 
     @Test

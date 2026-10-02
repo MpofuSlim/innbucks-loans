@@ -202,7 +202,7 @@ What this asks of loans, all in this repo:
 ## 6. Scheduled jobs: OFF in the cell
 
 `SPRING_PROFILES_ACTIVE` is `api` and nothing else. Every `@Scheduled` job in
-loans is `@Profile("scheduled-tasks")`: Ndasenda lodgement (irreversible),
+loans but the Staff Grocery Loan ones (below) is `@Profile("scheduled-tasks")`: Ndasenda lodgement (irreversible),
 InnBucks booking (which PAYS on the apply call), disbursement status, the saga,
 the Ndasenda batch commit and responses, draft expiry and workflow escalation.
 Turning the profile on acts on whatever backlog the database holds at the first
@@ -220,6 +220,15 @@ go-live step sets both the profile and the opt-in, as explicit `env:` entries in
 the Deployment where a review sees them, never in the Secret. Outside Kubernetes
 (the staging box, a developer's machine) nothing changes.
 `ScheduledTasksKubernetesGuardTest` pins it.
+
+**The Staff Grocery Loan jobs have their own switch.** The weekly offer run
+(FR-SGL-015) and its messages, the retry of staff messages left pending, and
+voucher upkeep move no money, so they run where `STAFF_LOANS_JOBS_ENABLED` is
+`true` without `scheduled-tasks` (`@StaffLoanJobs`). It is one key in loans' own
+Secret: no manifest change and no `kubectl apply`, just the Secret and a
+restart. Turning it on starts the Monday run (`STAFF_OFFERS_RUN_CRON`), which
+messages every eligible staff member. `StaffLoanJobsWiringTest` fails if a job
+that pays, books or lodges is ever put behind this switch.
 
 The jobs are only safe run serially in ONE process (`application.yml`,
 `spring.task.scheduling`; there is no ShedLock). That is why the Deployment

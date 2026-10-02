@@ -3253,6 +3253,7 @@ public final class ApiExamples {
                 "runCron": "0 0 8 * * MON",
                 "zone": "Africa/Harare",
                 "nextScheduledRunAt": "2026-10-12T08:00:00+02:00",
+                "automaticRuns": true,
                 "validityDays": 7,
                 "maxReconciliationAgeDays": 35,
                 "lastReconciliationId": 2,
