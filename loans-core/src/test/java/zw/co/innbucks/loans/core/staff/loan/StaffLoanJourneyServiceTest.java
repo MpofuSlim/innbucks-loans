@@ -208,7 +208,8 @@ class StaffLoanJourneyServiceTest {
         StaffLoanView view = journey.home(2L).loan();
 
         assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
-        assertThat(view.statusMessage()).isEqualTo("Your voucher is ready to spend at GetMore Groceries.");
+        assertThat(view.statusMessage()).as("paid out, voucher not issued yet")
+                .isEqualTo("Your loan has been paid out to GetMore Groceries. Your voucher will be sent to you.");
     }
 
     @Test

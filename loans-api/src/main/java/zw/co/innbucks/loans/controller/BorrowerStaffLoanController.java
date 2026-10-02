@@ -83,8 +83,10 @@ public class BorrowerStaffLoanController {
             description = "BORROWER. Every Staff Grocery Loan the session's own staff member has taken, newest first,"
                     + " whatever became of it (FR-SGL-030): the one the tile shows and those before it, repaid,"
                     + " cancelled before payout or written off. Each has the tile's loan shape: statusMessage says where"
-                    + " it stands in words to show as they are, and voucher is set once it was paid out, with its code"
-                    + " only while it can still be spent. No items: they have never borrowed.")
+                    + " it stands in words to show as they are (once paid out they follow the voucher: what is left to"
+                    + " spend, spent, expired or cancelled, then when it is collected or that it is overdue), and"
+                    + " voucher is set once it was paid out, with its code only while it can still be spent. No items:"
+                    + " they have never borrowed.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "A loan awaiting payout, and one repaid", value =
