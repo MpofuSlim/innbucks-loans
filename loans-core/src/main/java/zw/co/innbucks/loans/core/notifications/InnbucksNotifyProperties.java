@@ -30,4 +30,12 @@ public class InnbucksNotifyProperties {
     private int readTimeoutMs = 20000;
     /** Fallback token lifetime when the JWT carries no parseable exp. */
     private Duration tokenTtl = Duration.ofMinutes(8);
+    /**
+     * Email as the InnBucks branded HTML ({@link BrandedEmailRenderer}), as the ticketing fleet sends Foundry's: on by
+     * default, the gateway renders it. False sends plain text closed with {@link EmailSignature}. Either way the same
+     * body goes over SMTP when that is on.
+     */
+    private boolean htmlEnabled = true;
+    /** A hosted logo for the branded header (clients block data: URIs); blank draws the logo in CSS. */
+    private String logoUrl;
 }

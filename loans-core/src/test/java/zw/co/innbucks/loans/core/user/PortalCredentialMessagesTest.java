@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import zw.co.innbucks.loans.core.notifications.BrandedEmailRenderer;
 import zw.co.innbucks.loans.core.notifications.SmsTextSanitizer;
 import zw.co.innbucks.loans.core.user.PortalCredentialMessages.Reason;
 
@@ -98,6 +99,19 @@ class PortalCredentialMessagesTest {
                 + " Lending password has been reset by an administrator. Your temporary password is"
                 + " Kp7rQ-n4mTx. Please sign in and change it immediately.");
         assertThat(messages.whatsApp(Reason.ADMIN_RESET, "Tendai", "t_moyo", PASSWORD)).contains("Username: t_moyo\n");
+    }
+
+    @Test
+    @DisplayName("the email's sign-in button: an https address only; its sign-off comes with the branded footer")
+    void signInButton() {
+        assertThat(messages("https://dtx-staging.innbucks.co.zw/lending/").signInButton())
+                .isEqualTo(new BrandedEmailRenderer.CallToAction("Sign in to InnBucks Lending",
+                        "https://dtx-staging.innbucks.co.zw/lending/"));
+        assertThat(messages("http://dtx-staging.innbucks.co.zw/lending/").signInButton()).isNull();
+        assertThat(messages("").signInButton()).isNull();
+        assertThat(messages("").email(Reason.ADMIN_RESET, "Tawanda", "mpofuslim", PASSWORD))
+                .endsWith("you will be asked to choose your own password when you sign in.")
+                .doesNotContain("Team");
     }
 
     @Test

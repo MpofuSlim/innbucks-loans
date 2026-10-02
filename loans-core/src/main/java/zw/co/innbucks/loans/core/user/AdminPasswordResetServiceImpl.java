@@ -77,7 +77,8 @@ public class AdminPasswordResetServiceImpl implements AdminPasswordResetService 
                 throw new ValidationException("User %s has no email address on file".formatted(user.getUsername()));
             }
             emailNotificationClient.sendEmail(user.getEmail(), messages.emailSubject(REASON),
-                    messages.email(REASON, firstName, username, temporaryPassword), null);
+                    messages.email(REASON, firstName, username, temporaryPassword), null, messages.signInButton(),
+                    true);
             return NotificationChannel.EMAIL;
         }
         if (!StringUtils.hasText(user.getMobileNumber())) {

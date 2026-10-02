@@ -177,7 +177,10 @@ What this asks of loans, all in this repo:
     `SERVER_PORT=8088`, `DB_URL`, `DB_USERNAME` / `DB_PASSWORD` (from the cell's
     postgres keys), `DB_POOL_MAX` / `DB_POOL_MIN`, and from the cell's ConfigMap
     `INNBUCKS_COUNTRY`, `PUBLIC_API_PREFIX` and `WHATSAPP_GATEWAY_URL` (the
-    WhatsApp key stays in loans' own Secret).
+    WhatsApp key stays in loans' own Secret), and the cell's SES settings for
+    email, `MAIL_ENABLED`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` (ConfigMap) and
+    `MAIL_USERNAME` / `MAIL_PASSWORD` (Secret), each optional (section 8).
+    Never `MAIL_SENDER_NAME`: the cell's is `Foundry`, loans' is its own.
 
 - **The Secret holds only the keys `loans.example.env` lists.** An explicit
   `env:` entry wins over `envFrom` for the SAME key only. Spring reaches one
@@ -247,7 +250,7 @@ the host's `cell.zw.local.env`, because `cell.zw.env` is shared with production.
 
 Loans sends SMS through the InnBucks notification API
 (`POST /api/notification/sms`), the same API, credentials and wire body as the
-ticketing fleet's SMS client; email goes through the same API. The credentials
+ticketing fleet's SMS client. The credentials
 are loans' own `INNBUCKS_NOTIFY_URL` / `_API_KEY` / `_USERNAME` / `_PASSWORD`
 in its Secret, set to the values the fleet keeps as `BANK_API_*` (loans never
 reads the cell's names, section 5). Without them every loans SMS and email fails
@@ -255,6 +258,24 @@ and is logged. Staff Grocery Loan messages (offers, the launch, vouchers) and
 portal users' temporary passwords go by WhatsApp first and fall back to SMS, so
 they need `WHATSAPP_API_KEY` in the Secret too (the URL comes from the cell);
 without it they all go by SMS.
+
+**Email goes the way the ticketing fleet sends Foundry's.** Every loans email
+(a temporary password, an escalation, a credit-authority notice, a Staff Grocery
+Loan employment flag) is the InnBucks branded HTML, signed "The InnBucks Lending
+Team" (`INNBUCKS_NOTIFY_HTML_ENABLED=false` sends plain text with the same
+footer; `INNBUCKS_NOTIFY_LOGO_URL` is an optional hosted logo). It goes:
+
+1. over SMTP (Amazon SES) when the cell has it on (`MAIL_ENABLED=true` with
+   `MAIL_HOST`, `MAIL_FROM` and the SES SMTP credentials), from
+   `InnBucks Lending <MAIL_FROM>` (`LOANS_MAIL_SENDER_NAME` changes the name), so
+   the inbox shows loans' own name rather than the notification API's;
+2. otherwise, or when the SMTP send fails, through the notification API, as
+   before.
+
+A temporary-password email also carries a "Sign in to InnBucks Lending" button
+when `LOANS_PORTAL_SIGN_IN_URL` is an `https` address, and nothing an upstream
+sends back about it is logged (a refusal can quote the password). The mail
+health check is off: an unreachable SMTP host never takes loans out of service.
 
 It used to post to the InnBucks core gateway adapter (`INNBUCKS_GATEWAY_URL`), a
 retired host, so no loans SMS reached anyone in the cell. Two flows deliver a
@@ -478,9 +499,9 @@ Human Capital and the Payroll mailboxes for RESIGNED or TERMINATED (recover it
 from terminal benefits), CREDIT_MANAGER users for SUSPENDED or UNPAID_LEAVE
 (Credit decides the due date). The flag moves with each later change and clears
 when they are ACTIVE again, and whoever was told about it hears that too. The
-emails go through the InnBucks notification API (`INNBUCKS_NOTIFY_*`) to the
-email addresses on the portal users, so each Human Capital and Credit user needs
-one.
+emails go as every loans email does (section 8: SES when the cell has it, else
+the notification API) to the email addresses on the portal users, so each Human
+Capital and Credit user needs one.
 
 Arrears and active loans come from loans' own records for now. Other InnBucks
 facilities, and the balance once disbursed, are the core banking system's to
