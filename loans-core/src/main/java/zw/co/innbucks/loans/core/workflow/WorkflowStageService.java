@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 public class WorkflowStageService {
 
     /** Roles that work on grocery vouchers only: never given a loan workflow stage or sent its escalations. */
-    private static final Set<UserGroup> VOUCHER_ROLES = EnumSet.of(UserGroup.GETMORE, UserGroup.VOUCHER_SUPPORT);
+    private static final Set<UserGroup> VOUCHER_ROLES = EnumSet.of(UserGroup.MERCHANT_TILL, UserGroup.VOUCHER_SUPPORT);
 
     static final String WORKFLOW_STAGE_CHANGED = "WORKFLOW_STAGE_CHANGED";
     static final String WORKFLOW_STAGE_CREATED = "WORKFLOW_STAGE_CREATED";

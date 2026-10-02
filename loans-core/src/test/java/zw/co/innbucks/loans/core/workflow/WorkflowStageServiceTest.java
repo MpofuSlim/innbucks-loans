@@ -156,12 +156,12 @@ class WorkflowStageServiceTest {
     }
 
     @Test
-    @DisplayName("the voucher roles, GETMORE and VOUCHER_SUPPORT, can be given no loan stage and sent no escalation")
+    @DisplayName("the voucher roles, MERCHANT_TILL and VOUCHER_SUPPORT, get no loan stage and no escalation")
     void voucherRolesRefused() {
         when(repository.findById("CREDIT_DECISION"))
                 .thenReturn(Optional.of(WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL)));
 
-        for (UserGroup role : List.of(UserGroup.GETMORE, UserGroup.VOUCHER_SUPPORT)) {
+        for (UserGroup role : List.of(UserGroup.MERCHANT_TILL, UserGroup.VOUCHER_SUPPORT)) {
             assertThatThrownBy(() -> service.update("CREDIT_DECISION",
                     tightened().workRoles(Set.of(role)).build()))
                     .isInstanceOf(IllegalArgumentException.class)

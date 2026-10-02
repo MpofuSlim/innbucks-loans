@@ -4,9 +4,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
@@ -14,14 +17,15 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.merchant.Merchant;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * A grocery voucher: one per disbursement, worth what was disbursed, spent at GetMore's tills until it runs out or
- * expires (FR-SGL-035). Its code is held only as a keyed fingerprint, a sealed copy and its last four digits
- * ({@link VoucherCodeVault}), and never appears in {@link #toString()}.
+ * A grocery voucher: one per disbursement, worth what was disbursed, spent at its merchant's tills, and no other's,
+ * until it runs out or expires (FR-SGL-035). Its code is held only as a keyed fingerprint, a sealed copy and its last
+ * four digits ({@link VoucherCodeVault}), and never appears in {@link #toString()}.
  */
 @Entity
 @Table(name = "vouchers")
@@ -46,6 +50,11 @@ public class Voucher {
 
     @Column(name = "loan_account", length = 64, nullable = false)
     private String loanAccount;
+
+    /** The merchant whose tills alone may take it, and who is paid for what is spent. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "merchant_id", nullable = false, updatable = false)
+    private Merchant merchant;
 
     /** The staff member it was issued to, for a Staff Grocery Loan. */
     @Column(name = "staff_member_id")

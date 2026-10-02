@@ -213,7 +213,6 @@ loans:
     repayment-day: "${STAFF_LOANS_REPAYMENT_DAY:20}"
     arrears-grace-days: "${STAFF_LOANS_ARREARS_GRACE_DAYS:0}"
     currency: "${STAFF_LOANS_CURRENCY:USD}"
-    merchant-name: "${STAFF_LOANS_MERCHANT_NAME:GetMore Groceries}"
     unredeemed-voucher-treatment: "${STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT:DEBT_STANDS}"
     # Payroll's mailboxes, comma-separated: told, with Human Capital, when a borrower leaves owing a paid-out loan, so it
     # is recovered from their terminal benefits (FR-SGL-007, BRD 3.8). Blank: Human Capital alone is told.

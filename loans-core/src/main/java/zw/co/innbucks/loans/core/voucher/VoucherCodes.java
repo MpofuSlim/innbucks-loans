@@ -6,7 +6,7 @@ import java.util.Optional;
  * The voucher code's shapes (FR-SGL-033). The code is all digits, the last a {@link Damm} check digit, in groups of
  * four however long it is:
  * <ul>
- *   <li>{@link #scanValue}, digits only ({@code 1234567890123452}): what GetMore's till receives and what the SuperApp
+ *   <li>{@link #scanValue}, digits only ({@code 1234567890123452}): what a merchant's till receives and what the SuperApp
  *       puts in the QR code, so a scanner types it exactly as if it were keyed;</li>
  *   <li>{@link #display}, {@code 1234 5678 9012 3452}: on screen;</li>
  *   <li>{@link #forMessage}, {@code 1234-5678-9012-3452}: in the SMS and WhatsApp, where a space can wrap;</li>

@@ -42,7 +42,7 @@ public class VoucherRedemptionRequest {
     @Size(max = 120, message = "outletName must be at most 120 characters")
     private String outletName;
 
-    /** GetMore's own reference for this sale: unique, and what makes a retried redemption safe. */
+    /** The merchant's own reference for this sale: unique among its sales, and what makes a retried redemption safe. */
     @NotBlank(message = "reference is required")
     @Size(max = 64, message = "reference must be at most 64 characters")
     private String reference;

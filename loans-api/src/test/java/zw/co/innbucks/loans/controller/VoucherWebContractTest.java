@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.ConflictException;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.voucher.VoucherCodeResponse;
 import zw.co.innbucks.loans.core.voucher.VoucherDeliveryStatus;
 import zw.co.innbucks.loans.core.voucher.VoucherProduct;
@@ -24,6 +25,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherRefusal;
 import zw.co.innbucks.loans.core.voucher.VoucherRefusedException;
 import zw.co.innbucks.loans.core.voucher.VoucherResponse;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
+import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementService;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 import zw.co.innbucks.loans.core.voucher.VouchersUnavailableException;
@@ -52,13 +54,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The voucher endpoints (FR-SGL-033 to FR-SGL-040): who may read, reveal, cancel, resend and report; GetMore's validate
- * and redeem with every refusal by its own code; and the settlement CSV download.
+ * The voucher endpoints (FR-SGL-033 to FR-SGL-040): who may read, reveal, cancel, resend and report; a merchant till's
+ * validate and redeem with every refusal by its own code; and the settlement report, for all merchants or one.
  */
 class VoucherWebContractTest {
 
     private static final VoucherResponse VOUCHER_8 = new VoucherResponse(8L, VoucherProduct.STAFF_GROCERY_LOAN,
-            "SGL-2026-000151", "BRNET-20261003-0002", "E1001", "Nyasha Dube", "****4471", "**** **** **** 2151",
+            "getmore-groceries", "GetMore Groceries", "SGL-2026-000151", "BRNET-20261003-0002", "E1001", "Nyasha Dube", "****4471", "**** **** **** 2151",
             new BigDecimal("250.00"), new BigDecimal("0.00"), new BigDecimal("250.00"), "USD",
             LocalDateTime.of(2026, 10, 3, 6, 5, 41), LocalDateTime.of(2026, 11, 2, 21, 59, 59), VoucherStatus.ISSUED,
             null, null, null, null, null, VoucherDeliveryStatus.PENDING, null, LocalDateTime.of(2026, 10, 4, 7, 2, 17));
@@ -119,7 +121,7 @@ class VoucherWebContractTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items[0].maskedCode").value("**** **** **** 2151"));
         }
-        for (String role : List.of("AGENTS", "HUMAN_CAPITAL", "GETMORE")) {
+        for (String role : List.of("AGENTS", "HUMAN_CAPITAL", "MERCHANT_TILL")) {
             mvc.perform(get("/lending/v1/vouchers").with(as(role))).andExpect(status().isForbidden());
         }
     }
@@ -176,7 +178,7 @@ class VoucherWebContractTest {
     }
 
     @Test
-    @DisplayName("the till redeems (201), a retry is answered as before (200), and only GETMORE may")
+    @DisplayName("the till redeems (201), a retry is answered as before (200), and only MERCHANT_TILL may")
     void redeem() throws Exception {
         when(redemptions.redeem(any())).thenReturn(REDEEMED);
 
@@ -185,7 +187,7 @@ class VoucherWebContractTest {
                             .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REDEMPTION_REQUEST))
                     .andExpect(status().isForbidden());
         }
-        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("GETMORE"))
+        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("MERCHANT_TILL"))
                         .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REDEMPTION_REQUEST))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("CREATED"))
@@ -196,7 +198,7 @@ class VoucherWebContractTest {
         when(redemptions.redeem(any())).thenReturn(new VoucherRedemptionResult("GM-POS-88412", "**** **** **** 8406",
                 new BigDecimal("180.00"), new BigDecimal("120.00"), "USD", VoucherStatus.PARTIALLY_REDEEMED,
                 "GM-AVD-01", LocalDateTime.of(2026, 10, 3, 15, 42, 10), true));
-        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("GETMORE"))
+        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("MERCHANT_TILL"))
                         .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REDEMPTION_REQUEST))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Already redeemed under reference GM-POS-88412; nothing more"
@@ -209,18 +211,18 @@ class VoucherWebContractTest {
     void refusals() throws Exception {
         for (VoucherRefusal refusal : VoucherRefusal.values()) {
             doThrow(new VoucherRefusedException(refusal)).when(redemptions).redeem(any());
-            mvc.perform(post("/lending/v1/voucher-redemptions").with(as("GETMORE"))
+            mvc.perform(post("/lending/v1/voucher-redemptions").with(as("MERCHANT_TILL"))
                             .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REDEMPTION_REQUEST))
                     .andExpect(status().is(refusal.httpStatus()))
                     .andExpect(jsonPath("$.code").value(refusal.name()))
                     .andExpect(jsonPath("$.message").value(refusal.message()));
         }
         when(redemptions.validate(any())).thenThrow(new VouchersUnavailableException());
-        mvc.perform(post("/lending/v1/voucher-validations").with(as("GETMORE"))
+        mvc.perform(post("/lending/v1/voucher-validations").with(as("MERCHANT_TILL"))
                         .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.VALIDATION_REQUEST))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("VOUCHERS_UNAVAILABLE"));
-        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("GETMORE"))
+        mvc.perform(post("/lending/v1/voucher-redemptions").with(as("MERCHANT_TILL"))
                         .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REDEMPTION_REQUEST
                                 .replace("180.00", "180.005")))
                 .andExpect(status().isBadRequest())
@@ -230,7 +232,7 @@ class VoucherWebContractTest {
     @Test
     @DisplayName("the settlement report as JSON, or as a CSV download named for its day; Finance yes, support no")
     void settlementReport() throws Exception {
-        when(settlement.csv(LocalDate.of(2026, 10, 3))).thenReturn("event,at\r\n");
+        when(settlement.csv(LocalDate.of(2026, 10, 3), null)).thenReturn("event,at\r\n");
 
         mvc.perform(get("/lending/v1/voucher-settlement-reports/2026-10-03").param("format", "csv")
                         .with(as("VOUCHER_SUPPORT")))
@@ -249,5 +251,31 @@ class VoucherWebContractTest {
         mvc.perform(get("/lending/v1/voucher-settlement-reports/2026-10-03").with(as("CREDIT_MANAGER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"));
+    }
+
+    @Test
+    @DisplayName("one merchant's settlement: the filter reaches the report, the CSV names the merchant, an unknown one"
+            + " is a 404")
+    void settlementForOneMerchant() throws Exception {
+        when(settlement.report(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn(
+                new VoucherSettlementReport(LocalDate.of(2026, 10, 3), "getmore-groceries",
+                        LocalDateTime.of(2026, 10, 4, 4, 30), List.of(), List.of(), List.of(), List.of()));
+        when(settlement.csv(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn("event,at\r\n");
+        when(settlement.report(LocalDate.of(2026, 10, 3), "nobody"))
+                .thenThrow(new NotFoundException("Merchant nobody not found"));
+
+        mvc.perform(get("/lending/v1/voucher-settlement-reports/2026-10-03")
+                        .param("merchantCode", "getmore-groceries").with(as("FINANCE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.merchantCode").value("getmore-groceries"));
+        mvc.perform(get("/lending/v1/voucher-settlement-reports/2026-10-03").param("format", "csv")
+                        .param("merchantCode", "getmore-groceries").with(as("FINANCE")))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        "attachment; filename=\"voucher-settlement-2026-10-03-getmore-groceries.csv\""));
+        mvc.perform(get("/lending/v1/voucher-settlement-reports/2026-10-03").param("merchantCode", "nobody")
+                        .with(as("FINANCE")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Merchant nobody not found"));
     }
 }

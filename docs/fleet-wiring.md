@@ -346,7 +346,7 @@ The follow-up, in order:
 
 The box's own workflow is kept off the cell's tags meanwhile (section 7).
 
-## 10. Vouchers: two keys, and GetMore's account
+## 10. Vouchers: two keys, the merchant, and its till accounts
 
 Staff Grocery Loan vouchers (FR-SGL-033 to 040) need two keys in loans' Secret,
 both generated with `openssl rand -base64 32`, both different:
@@ -369,13 +369,26 @@ voucher lapses at the end of that market day), `VOUCHER_PARTIAL_REDEMPTION_ALLOW
 (true) and `VOUCHER_DELIVERY_CHANNELS` (`WHATSAPP,SMS`, tried in that order).
 Validity and partial redemption are OQ-08, still to be agreed with GetMore.
 
-**GetMore's till integration signs in as a loans user in group `GETMORE`**,
-created by a super-admin like any other user, and reaches
+**The merchant is a record, not a setting.** The Staff Grocery Loan is for one
+of loans' merchants (`GET /lending/v1/staff-loan-merchant`); a super-admin
+changes which with `PUT` (audited `STAFF_LOAN_MERCHANT_CHANGED`). It must be paid
+to its own account (`MERCHANT_MOBILE_WALLET`). A loan keeps the merchant it was
+accepted for, and so does its voucher. V29 created GetMore Groceries
+(`getmore-groceries`) as that merchant, with no account yet: set its settlement
+account with `PUT /lending/v1/merchants/getmore-groceries` once it is known.
+`STAFF_LOANS_MERCHANT_NAME` is gone.
+
+**A merchant's till integration signs in as a loans user in group
+`MERCHANT_TILL`** (formerly `GETMORE`), created by a super-admin under that
+merchant (`POST /lending/v1/merchants/{merchantCode}/users`), and reaches
 `POST /lending/v1/voucher-validations` and `/voucher-redemptions` through the
-existing `/lending/**` route (no gateway change). A `GETMORE` token is refused
-everywhere else, whatever other group it holds (`VoucherRoleFilter`), so the
-credential GetMore holds can never read a loan or submit one. Staff who may see
-a code in full are in group `VOUCHER_SUPPORT`; on its own that group reaches
+existing `/lending/**` route (no gateway change). It takes only its own
+merchant's vouchers: another merchant's is answered as an unknown code. A
+`MERCHANT_TILL` token is refused everywhere else, whatever other group it holds
+(`VoucherRoleFilter`), so the credential a merchant holds can never read a loan
+or submit one. V29 moved the existing `GETMORE` accounts to GetMore Groceries
+under the new name and ended their sessions: they sign in again. Staff who may
+see a code in full are in group `VOUCHER_SUPPORT`; on its own that group reaches
 the voucher screens and nothing more.
 
 Vouchers are issued by the disbursement (FR-SGL-032, BR.NET), never from a
@@ -467,7 +480,7 @@ With a borrower signed in (§11), the SuperApp takes the loan through
 4. acceptance with a fresh PIN or biometric assertion (`POST /loans`).
 
 An accepted loan is `AWAITING_DISBURSEMENT` until the bank's system (BR.NET)
-pays GetMore and issues the voucher. That integration is not wired yet, so no
+pays the merchant and issues the voucher. That integration is not wired yet, so no
 loan goes further. Credit, Finance and Human Capital see accepted loans at
 `/lending/v1/staff-loans`; Credit can cancel one before payout.
 
@@ -497,7 +510,6 @@ default:
 | `STAFF_LOANS_ARREARS_GRACE_DAYS` | `0` | Days past due before a disbursed loan counts as arrears. |
 | `STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT` | `DEBT_STANDS` | Or `REDUCED_TO_AMOUNT_SPENT` (OQ-09). Shown to the borrower and kept on each loan. |
 | `STAFF_LOANS_CURRENCY` | `USD` | |
-| `STAFF_LOANS_MERCHANT_NAME` | `GetMore Groceries` | |
 | `STAFF_LOANS_PAYROLL_EMAILS` | blank | Payroll's mailboxes, comma-separated: emailed with Human Capital when a borrower leaves owing a paid-out loan. Blank: Human Capital alone, and the boot log warns. |
 
 When Human Capital moves a borrower off ACTIVE, a loan still awaiting payout is

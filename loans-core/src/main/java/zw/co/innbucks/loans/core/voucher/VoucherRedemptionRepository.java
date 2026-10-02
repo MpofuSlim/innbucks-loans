@@ -8,7 +8,7 @@ import java.util.Optional;
 
 public interface VoucherRedemptionRepository extends JpaRepository<VoucherRedemption, Long> {
 
-    Optional<VoucherRedemption> findByMerchantReference(String merchantReference);
+    Optional<VoucherRedemption> findByMerchantIdAndMerchantReference(Long merchantId, String merchantReference);
 
     List<VoucherRedemption> findByVoucherIdOrderByIdAsc(Long voucherId);
 

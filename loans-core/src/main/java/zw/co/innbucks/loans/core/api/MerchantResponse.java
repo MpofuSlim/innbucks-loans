@@ -31,4 +31,6 @@ public class MerchantResponse implements Serializable {
     private String contactPersonName;
     private String contactPersonMobileNumber;
     private String contactPersonEmail;
+    /** Whether this is the Staff Grocery Loan's merchant (GET /staff-loan-merchant). */
+    private boolean staffLoanMerchant;
 }

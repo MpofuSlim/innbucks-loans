@@ -12,12 +12,14 @@ import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.commission.CommissionGroupRepository;
 import zw.co.innbucks.loans.core.commission.CommissionStructure;
+import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -89,6 +91,22 @@ class MerchantServiceTest {
         service.updateMerchant("acme", update(DisbursementType.MERCHANT_MOBILE_WALLET, "263772222222"), "admin-sub");
 
         assertThat(recordedAudit().getDetail()).endsWith("accountNumber ****1111 -> ****2222");
+    }
+
+    @Test
+    @DisplayName("the Staff Grocery Loan's merchant cannot be switched to paying the borrower; other edits still work")
+    void staffLoanMerchantKeepsBeingPaid() {
+        Merchant merchant = existing(DisbursementType.MERCHANT_MOBILE_WALLET, "0771234521");
+        merchant.setStaffLoanMerchant(true);
+
+        assertThatThrownBy(() -> service.updateMerchant("acme",
+                update(DisbursementType.CUSTOMER_MOBILE_WALLET, null), "admin"))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageStartingWith("Merchant acme is the Staff Grocery Loan's merchant");
+        verify(merchantRepository, never()).save(any());
+
+        service.updateMerchant("acme", update(DisbursementType.MERCHANT_MOBILE_WALLET, "0771999888"), "admin");
+        assertThat(merchant.getAccountNumber()).isEqualTo("0771999888");
     }
 
     @Test

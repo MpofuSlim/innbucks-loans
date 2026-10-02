@@ -19,6 +19,8 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.merchant.Merchant;
+import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,7 +35,7 @@ import java.util.Set;
 
 /**
  * Grocery vouchers (FR-SGL-033 to FR-SGL-040): issuing one for a disbursement, and what staff can see and do with them.
- * GetMore's side is {@link VoucherRedemptionService}; the daily report {@link VoucherSettlementService}.
+ * The merchant's side is {@link VoucherRedemptionService}; the daily report {@link VoucherSettlementService}.
  *
  * <p>Staff see a code masked. Only a VOUCHER_SUPPORT user sees it in full, one voucher at a time, with a reason that
  * goes on the audit record with their name (FR-SGL-040). A voucher is only ever sent to the number it was issued to:
@@ -51,6 +53,7 @@ public class VoucherService {
     private static final Set<VoucherStatus> OPEN = EnumSet.of(VoucherStatus.ISSUED, VoucherStatus.PARTIALLY_REDEEMED);
 
     private final VoucherRepository voucherRepository;
+    private final MerchantRepository merchantRepository;
     private final VoucherRedemptionRepository redemptionRepository;
     private final VoucherDeliveryRepository deliveryRepository;
     private final VoucherCodeVault vault;
@@ -67,20 +70,25 @@ public class VoucherService {
      * issued, and sends nothing.
      *
      * @throws VouchersUnavailableException the voucher code keys are not configured
-     * @throws ConflictException            the disbursement already has a voucher, for a different loan or amount
+     * @throws ValidationException          the command is incomplete, or names no merchant there is
+     * @throws ConflictException            the disbursement already has a voucher, for a different loan, merchant or
+     *                                      amount
      */
     @Transactional
     public VoucherResponse issue(IssueVoucherCommand command) {
         vault.requireConfigured();
         check(command);
+        Merchant merchant = merchantRepository.findById(command.merchantId()).orElseThrow(() ->
+                new ValidationException("merchantId " + command.merchantId() + " is not a merchant"));
         LocalDateTime now = marketTimeZone.nowUtc();
         String disbursement = command.disbursementReference().strip();
         Voucher earlier = voucherRepository.findByDisbursementReference(disbursement).orElse(null);
         if (earlier != null) {
             if (!earlier.getLoanAccount().equals(command.loanAccount().strip())
+                    || !earlier.getMerchant().getId().equals(merchant.getId())
                     || earlier.getFaceValue().compareTo(command.faceValue()) != 0) {
                 throw new ConflictException("Disbursement " + disbursement + " already has voucher " + earlier.getId()
-                        + ", for a different loan or amount");
+                        + ", for a different loan, merchant or amount");
             }
             log.info("Voucher {} already issued for disbursement {}; not issued again", earlier.getId(), disbursement);
             return VoucherResponse.of(earlier, now);
@@ -92,6 +100,7 @@ public class VoucherService {
                     .product(command.product())
                     .disbursementReference(disbursement)
                     .loanAccount(command.loanAccount().strip())
+                    .merchant(merchant)
                     .staffMemberId(command.staffMemberId())
                     .customerReference(command.customerReference().strip())
                     .customerName(command.customerName().strip())
@@ -117,8 +126,9 @@ public class VoucherService {
                 .eventType("VOUCHER_ISSUED")
                 .entityType(ENTITY).entityId(String.valueOf(voucher.getId()))
                 .actorId(authService.getLoggedInUsername()).channelUsed("system")
-                .detail("disbursement:" + disbursement + ";loanAccount:" + voucher.getLoanAccount() + ";faceValue:"
-                        + voucher.getFaceValue() + " " + voucher.getCurrency() + ";code:" + voucher.maskedCode()
+                .detail("disbursement:" + disbursement + ";loanAccount:" + voucher.getLoanAccount() + ";merchant:"
+                        + merchant.getMerchantCode() + ";faceValue:" + voucher.getFaceValue() + " "
+                        + voucher.getCurrency() + ";code:" + voucher.maskedCode()
                         + ";expiresAt:" + voucher.getExpiresAt()));
         log.info("Voucher {} ({}) issued for disbursement {} on loan {}: {} {}, until {}", voucher.getId(),
                 voucher.maskedCode(), disbursement, voucher.getLoanAccount(), voucher.getFaceValue(),
@@ -227,7 +237,8 @@ public class VoucherService {
 
     /**
      * Stops a voucher before anything is spent with it (FR-SGL-035): a lost phone, a mistaken payout. What becomes of
-     * the loan and the money paid to GetMore is a separate decision (OQ-09, and BRD 3.8's reversal under maker-checker).
+     * the loan and the money paid to the merchant is a separate decision (OQ-09, and BRD 3.8's reversal under
+     * maker-checker).
      *
      * @throws ConflictException it has been spent from, has lapsed, or is already closed
      */
@@ -315,6 +326,9 @@ public class VoucherService {
     private static void check(IssueVoucherCommand command) {
         if (command.product() == null) {
             throw new ValidationException("product is required");
+        }
+        if (command.merchantId() == null) {
+            throw new ValidationException("merchantId is required");
         }
         for (String[] field : new String[][]{{"disbursementReference", command.disbursementReference()},
                 {"loanAccount", command.loanAccount()}, {"customerReference", command.customerReference()},

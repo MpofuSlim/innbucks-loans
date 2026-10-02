@@ -24,9 +24,9 @@ import java.util.Set;
  * the reports, a draft), and a role check on each would have to be remembered on every new one; this answers the
  * question once, by path, before any controller runs.
  * <ul>
- *   <li>A token holding GETMORE, GetMore's till integration, reaches the validation and redemption endpoints and its
- *       own password change, and nothing else, whatever other role it holds: an outside party's credential is never
- *       also a staff one.</li>
+ *   <li>A token holding MERCHANT_TILL, a merchant's till integration, reaches the validation and redemption endpoints
+ *       and its own password change, and nothing else, whatever other role it holds: an outside party's credential is
+ *       never also a staff one.</li>
  *   <li>A token holding VOUCHER_SUPPORT and no other role reaches the voucher screens and its own password change.
  *       Held with another role, that role's endpoints are open to it as usual.</li>
  * </ul>
@@ -39,7 +39,7 @@ final class VoucherRoleFilter extends OncePerRequestFilter {
     private static final PathPatternRequestMatcher.Builder PATHS = PathPatternRequestMatcher.withDefaults();
     private static final RequestMatcher CHANGE_PASSWORD = PATHS.matcher(HttpMethod.PUT, ApiPaths.BASE + "/me/password");
 
-    private static final RequestMatcher GETMORE = new OrRequestMatcher(CHANGE_PASSWORD,
+    private static final RequestMatcher MERCHANT_TILL = new OrRequestMatcher(CHANGE_PASSWORD,
             PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/voucher-validations"),
             PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/voucher-redemptions"));
 
@@ -55,7 +55,7 @@ final class VoucherRoleFilter extends OncePerRequestFilter {
         Authentication authentication = SecurityContextHolder.getContextHolderStrategy().getContext().getAuthentication();
         if (authentication != null) {
             Set<UserGroup> groups = UserGrantPolicy.callerGroups(authentication.getAuthorities());
-            boolean confined = groups.contains(UserGroup.GETMORE) ? !GETMORE.matches(request)
+            boolean confined = groups.contains(UserGroup.MERCHANT_TILL) ? !MERCHANT_TILL.matches(request)
                     : groups.equals(Set.of(UserGroup.VOUCHER_SUPPORT)) && !VOUCHER_SUPPORT.matches(request);
             if (confined) {
                 log.warn("Refused {} {} for {}: a voucher role reaches the voucher endpoints only", request.getMethod(),

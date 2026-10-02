@@ -28,8 +28,10 @@ import zw.co.innbucks.loans.web.VoucherApiExamples;
 
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
-@Tag(name = "Voucher redemption (GetMore)", description = "GetMore's till integration (FR-SGL-036), signed in as a"
-        + " GETMORE user, which reaches these two endpoints and nothing else. Send the code as keyed or scanned: digits,"
+@Tag(name = "Voucher redemption (merchant tills)", description = "A merchant's till integration (FR-SGL-036), signed in"
+        + " as a MERCHANT_TILL user of that merchant, which reaches these two endpoints and nothing else. A till takes"
+        + " only its own merchant's vouchers: another merchant's is answered exactly as an unknown code (404"
+        + " VOUCHER_NOT_FOUND). Send the code as keyed or scanned: digits,"
         + " with or without spaces or dashes (the SuperApp's QR code holds the digits only). A code with a wrong check"
         + " digit is refused at once (INVALID_VOUCHER_CODE), so a mistyped digit never matches someone else's voucher."
         + " A redemption is safe to retry with the same reference: it is answered as the first time and nothing more"
@@ -54,9 +56,10 @@ public class VoucherRedemptionController {
     private final VoucherRedemptionService redemptionService;
 
     @Operation(summary = "Check a voucher",
-            description = "GETMORE. Before the sale: whether the voucher can be spent now (redeemable), what is left,"
-                    + " until when, and the holder's name for the receipt. A voucher that exists is answered whatever"
-                    + " its status; only a malformed or unknown code is refused. Nothing is spent.")
+            description = "MERCHANT_TILL. Before the sale: whether the voucher can be spent now (redeemable), what is"
+                    + " left, until when, and the holder's name for the receipt. A voucher of the till's merchant is"
+                    + " answered whatever its status; a malformed code, an unknown one, or another merchant's voucher"
+                    + " is refused. Nothing is spent.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.VALIDATION))),
@@ -64,15 +67,15 @@ public class VoucherRedemptionController {
                     content = @Content(examples = @ExampleObject(INVALID_CODE))),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not GETMORE",
+            @ApiResponse(responseCode = "403", description = "Not MERCHANT_TILL",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
-            @ApiResponse(responseCode = "404", description = "No voucher has that code",
+            @ApiResponse(responseCode = "404", description = "No voucher of this merchant has that code",
                     content = @Content(examples = @ExampleObject(NOT_FOUND))),
             @ApiResponse(responseCode = "503", description = "Vouchers are not configured on this server",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.UNAVAILABLE)))
     })
     @PostMapping("/voucher-validations")
-    @PreAuthorize("hasRole('GETMORE')")
+    @PreAuthorize("hasRole('MERCHANT_TILL')")
     public ApiResult<VoucherValidationResponse> validate(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(content =
             @Content(examples = @ExampleObject(VoucherApiExamples.VALIDATION_REQUEST)))
@@ -81,10 +84,11 @@ public class VoucherRedemptionController {
     }
 
     @Operation(summary = "Redeem a voucher",
-            description = "GETMORE. Spends amount (major units, at most 2 decimals, in the voucher's currency) at the"
-                    + " till. reference is GetMore's own transaction reference: unique per sale. 201 when spent; 200"
-                    + " with replayed true when that reference was already redeemed for the same voucher and amount"
-                    + " (nothing more spent); 409 REFERENCE_REUSED when it was used for anything else.")
+            description = "MERCHANT_TILL. Spends amount (major units, at most 2 decimals, in the voucher's currency)"
+                    + " at the till. reference is the merchant's own transaction reference: unique per sale among its"
+                    + " own sales. 201 when spent; 200 with replayed true when that reference was already redeemed for"
+                    + " the same voucher and amount (nothing more spent); 409 REFERENCE_REUSED when it was used for"
+                    + " anything else.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Redeemed",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.REDEEMED))),
@@ -103,9 +107,9 @@ public class VoucherRedemptionController {
                                     }""")})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
-            @ApiResponse(responseCode = "403", description = "Not GETMORE",
+            @ApiResponse(responseCode = "403", description = "Not MERCHANT_TILL",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
-            @ApiResponse(responseCode = "404", description = "No voucher has that code",
+            @ApiResponse(responseCode = "404", description = "No voucher of this merchant has that code",
                     content = @Content(examples = @ExampleObject(NOT_FOUND))),
             @ApiResponse(responseCode = "409", description = "The voucher cannot be spent so; nothing was spent",
                     content = @Content(examples = {
@@ -148,7 +152,7 @@ public class VoucherRedemptionController {
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.UNAVAILABLE)))
     })
     @PostMapping("/voucher-redemptions")
-    @PreAuthorize("hasRole('GETMORE')")
+    @PreAuthorize("hasRole('MERCHANT_TILL')")
     public ResponseEntity<ApiResult<VoucherRedemptionResult>> redeem(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(content =
             @Content(examples = @ExampleObject(VoucherApiExamples.REDEMPTION_REQUEST)))

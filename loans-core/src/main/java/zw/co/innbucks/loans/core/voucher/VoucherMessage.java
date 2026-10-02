@@ -13,25 +13,34 @@ import java.util.Locale;
  * SMS, which {@code VoucherMessageTest} pins. A new wording is a new version.
  *
  * <p>It states what is left to spend, which on a voucher sent the first time is its face value, so a resend after a
- * partial purchase does not promise the whole amount again.
+ * partial purchase does not promise the whole amount again.</p>
+ *
+ * <p>It names the merchant the voucher can be spent at. A name too long to fit one SMS is left out rather than split
+ * the message in two: the borrower already saw it on the quote and in their loan.</p>
  */
 public final class VoucherMessage {
 
     public static final String TEMPLATE = "VOUCHER_ISSUED";
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
+    static final int MAX_LENGTH = 160;
 
     private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH);
-    private static final String TEXT = "InnBucks Staff Grocery Loan. Your GetMore voucher is %s, worth %s %s, valid"
-            + " until %s. Show it at any GetMore till.";
+    private static final String TEXT = "InnBucks Staff Grocery Loan. Your voucher is %s, worth %s %s, valid until %s.";
+    private static final String AT_MERCHANT = " Spend it at %s.";
+    private static final String AT_TILL = " Show it at the till.";
 
     private VoucherMessage() {
     }
 
     /**
-     * @param validUntil when the voucher lapses, on the market's clock: it is good for the whole of that day
+     * @param validUntil   when the voucher lapses, on the market's clock: it is good for the whole of that day
+     * @param merchantName where it can be spent
      */
-    public static String text(String code, String currency, BigDecimal balance, OffsetDateTime validUntil) {
-        return String.format(Locale.ROOT, TEXT, VoucherCodes.forMessage(code), currency,
+    public static String text(String code, String currency, BigDecimal balance, OffsetDateTime validUntil,
+                              String merchantName) {
+        String text = String.format(Locale.ROOT, TEXT, VoucherCodes.forMessage(code), currency,
                 balance.setScale(2, RoundingMode.HALF_UP).toPlainString(), UNTIL.format(validUntil));
+        String named = text + String.format(Locale.ROOT, AT_MERCHANT, merchantName.strip());
+        return named.length() <= MAX_LENGTH ? named : text + AT_TILL;
     }
 }

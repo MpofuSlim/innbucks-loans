@@ -10,18 +10,21 @@ import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.merchant.Merchant;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 /**
- * GetMore's side of a voucher (FR-SGL-036): checking one at the till, and spending it.
+ * A merchant's side of a voucher (FR-SGL-036): checking one at the till, and spending it. A till takes only its own
+ * merchant's vouchers.
  *
  * <p>A redemption locks the voucher's row until it commits, so two tills presenting the same code are served one after
- * the other and can never spend the same balance twice. GetMore's transaction reference makes a retry safe: the same
- * reference for the same voucher and amount returns the first answer and spends nothing more; the same reference for
- * anything else is refused. A code is never logged; the masked form is.
+ * the other and can never spend the same balance twice. The merchant's own transaction reference makes a retry safe:
+ * the same reference for the same voucher and amount returns the first answer and spends nothing more; the same
+ * reference for anything else is refused. References are the merchant's, so another merchant may use the same one. A
+ * code is never logged; the masked form is.
  */
 @Slf4j
 @Service
@@ -37,16 +40,20 @@ public class VoucherRedemptionService {
     private final MarketTimeZone marketTimeZone;
 
     /**
-     * What a till is told about a voucher before the sale. Any voucher that exists is answered, spendable or not
-     * ({@code redeemable} says which); only a code that is not a voucher code, or that no voucher has, is refused.
+     * What a till is told about a voucher before the sale. Any voucher of the till's own merchant is answered,
+     * spendable or not ({@code redeemable} says which). A code that is not a voucher code, that no voucher has, or
+     * whose voucher is another merchant's, is refused alike, so a till learns nothing of any voucher but its own
+     * merchant's.
      */
     @Transactional(readOnly = true)
     public VoucherValidationResponse validate(VoucherValidationRequest request) {
         vault.requireConfigured();
         String username = authService.getLoggedInUsername();
+        Merchant till = tillMerchant();
         String code = codeOf(request.getCode(), username, request.getOutletId());
         Voucher voucher = voucherRepository.findByCodeHmac(vault.fingerprint(code))
                 .orElseThrow(() -> unknown(code, username, request.getOutletId()));
+        requireOwnMerchant(voucher, till, username, request.getOutletId());
         VoucherValidationResponse answer = VoucherValidationResponse.of(voucher, marketTimeZone.nowUtc(),
                 properties.isPartialRedemptionAllowed());
         log.info("Voucher {} ({}) checked by {} at outlet {}: {}, {} {} left", voucher.getId(), voucher.maskedCode(),
@@ -55,21 +62,25 @@ public class VoucherRedemptionService {
     }
 
     /**
-     * Spends {@code amount} of a voucher at a till.
+     * Spends {@code amount} of a voucher at a till of its merchant.
      *
-     * @throws VoucherRefusedException the code, the voucher's state or the amount does not allow it; nothing was spent
+     * @throws VoucherRefusedException the code, the voucher's merchant or state, or the amount does not allow it;
+     *                                 nothing was spent
      */
     @Transactional
     public VoucherRedemptionResult redeem(VoucherRedemptionRequest request) {
         vault.requireConfigured();
         String username = authService.getLoggedInUsername();
+        Merchant till = tillMerchant();
         String outletId = request.getOutletId().strip();
         String reference = request.getReference().strip();
         String code = codeOf(request.getCode(), username, outletId);
         Voucher voucher = voucherRepository.lockByCodeHmac(vault.fingerprint(code))
                 .orElseThrow(() -> unknown(code, username, outletId));
+        requireOwnMerchant(voucher, till, username, outletId);
         BigDecimal amount = request.getAmount();
-        VoucherRedemption earlier = redemptionRepository.findByMerchantReference(reference).orElse(null);
+        VoucherRedemption earlier = redemptionRepository.findByMerchantIdAndMerchantReference(till.getId(), reference)
+                .orElse(null);
         if (earlier != null) {
             if (earlier.getVoucherId().equals(voucher.getId()) && earlier.getAmount().compareTo(amount) == 0) {
                 log.info("Redemption {} of voucher {} sent again by {}; answered as before, nothing more spent",
@@ -108,6 +119,7 @@ public class VoucherRedemptionService {
         try {
             redemption = redemptionRepository.saveAndFlush(VoucherRedemption.builder()
                     .voucherId(voucher.getId())
+                    .merchantId(till.getId())
                     .merchantReference(reference)
                     .amount(spent)
                     .balanceAfter(voucher.balance())
@@ -117,19 +129,37 @@ public class VoucherRedemptionService {
                     .redeemedAt(now)
                     .build());
         } catch (DataIntegrityViolationException race) {
-            // Another voucher's redemption took the same reference at the same moment; this one is rolled back.
+            // Another of the merchant's redemptions took the same reference at the same moment; this one rolls back.
             throw refused(VoucherRefusal.REFERENCE_REUSED, voucher, username, outletId);
         }
         auditService.record(AuditLog.builder()
                 .eventType("VOUCHER_REDEEMED")
                 .entityType(VoucherService.ENTITY).entityId(String.valueOf(voucher.getId()))
-                .actorId(username).channelUsed("getmore")
-                .detail("reference:" + reference + ";amount:" + redemption.getAmount() + " " + voucher.getCurrency()
+                .actorId(username).channelUsed("merchant-till")
+                .detail("merchant:" + till.getMerchantCode() + ";reference:" + reference + ";amount:"
+                        + redemption.getAmount() + " " + voucher.getCurrency()
                         + ";balanceAfter:" + redemption.getBalanceAfter() + ";outlet:" + outletId));
         log.info("Voucher {} ({}) redeemed by {} at outlet {}: {} {}, {} left, reference {}", voucher.getId(),
                 voucher.maskedCode(), username, outletId, redemption.getAmount(), voucher.getCurrency(),
                 redemption.getBalanceAfter(), reference);
         return VoucherRedemptionResult.of(redemption, voucher, false);
+    }
+
+    /** The merchant the signed-in till belongs to: the one whose vouchers alone it may take. */
+    private Merchant tillMerchant() {
+        return authService.getLoggedInUser().getMerchant();
+    }
+
+    /**
+     * Refuses a voucher of another merchant exactly as a code no voucher has: its till must not learn that the voucher
+     * exists, let alone its balance.
+     */
+    private static void requireOwnMerchant(Voucher voucher, Merchant till, String username, String outletId) {
+        if (!voucher.getMerchant().getId().equals(till.getId())) {
+            log.warn("Voucher {} ({}) is not for merchant {}: refused to {} at outlet {}", voucher.getId(),
+                    voucher.maskedCode(), till.getMerchantCode(), username, outletId);
+            throw new VoucherRefusedException(VoucherRefusal.VOUCHER_NOT_FOUND);
+        }
     }
 
     /** The code as digits, or a refusal when it cannot be one; nothing is looked up for a malformed code. */

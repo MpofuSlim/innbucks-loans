@@ -122,7 +122,8 @@ public class VoucherDeliverySender {
         Voucher voucher = voucherRepository.findById(voucherId).orElseThrow();
         String code = vault.decrypt(voucher.getCodeCiphertext());
         return new Claim(voucherId, voucher.getCustomerMsisdn(), VoucherMessage.text(code, voucher.getCurrency(),
-                voucher.balance(), marketTimeZone.atMarketFromUtc(voucher.getExpiresAt())));
+                voucher.balance(), marketTimeZone.atMarketFromUtc(voucher.getExpiresAt()),
+                voucher.getMerchant().getCompanyName()));
     }
 
     private VoucherDelivery attempt(Claim claim, VoucherChannel channel, String reference, String requestedBy,

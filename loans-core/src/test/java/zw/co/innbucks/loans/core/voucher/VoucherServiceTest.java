@@ -11,6 +11,7 @@ import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -36,11 +37,12 @@ import static org.mockito.Mockito.when;
 class VoucherServiceTest {
 
     private static final IssueVoucherCommand COMMAND = new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN,
-            " BRNET-20261001-0007 ", "SGL-2026-000143", 12L, "E1012", "Chipo Banda", "0772123123",
+            " BRNET-20261001-0007 ", "SGL-2026-000143", 3L, 12L, "E1012", "Chipo Banda", "0772123123",
             new BigDecimal("300"), "USD");
 
     private final VoucherCodeVault vault = VoucherCodeVaultTest.vault();
     private VoucherRepository vouchers;
+    private MerchantRepository merchants;
     private VoucherDeliveryDispatcher dispatcher;
     private AuditService audit;
     private VoucherService service;
@@ -54,6 +56,8 @@ class VoucherServiceTest {
             return voucher;
         });
         when(vouchers.save(any())).thenAnswer(i -> i.getArgument(0));
+        merchants = mock(MerchantRepository.class);
+        when(merchants.findById(3L)).thenAnswer(i -> Optional.of(TestVouchers.getMore()));
         dispatcher = mock(VoucherDeliveryDispatcher.class);
         audit = mock(AuditService.class);
     }
@@ -61,7 +65,7 @@ class VoucherServiceTest {
     private VoucherService withClock(LocalDateTime utc) {
         AuthService auth = mock(AuthService.class);
         when(auth.getLoggedInUsername()).thenReturn("support1");
-        return new VoucherService(vouchers, mock(VoucherRedemptionRepository.class),
+        return new VoucherService(vouchers, merchants, mock(VoucherRedemptionRepository.class),
                 mock(VoucherDeliveryRepository.class), vault, new VoucherCodeGenerator(new Random(7)), dispatcher,
                 new VoucherProperties(), auth, audit,
                 new MarketTimeZone("ZW", Clock.fixed(utc.toInstant(ZoneOffset.UTC), ZoneOffset.UTC)));
@@ -84,6 +88,7 @@ class VoucherServiceTest {
         assertThat(voucher.getCodeLast4()).isEqualTo(code.substring(12));
         assertThat(voucher.getCodeLength()).isEqualTo(16);
         assertThat(voucher.getDisbursementReference()).isEqualTo("BRNET-20261001-0007");
+        assertThat(voucher.getMerchant().getMerchantCode()).isEqualTo("getmore-groceries");
         assertThat(voucher.getCustomerMsisdn()).isEqualTo("+263772123123");
         assertThat(voucher.getFaceValue()).isEqualTo(new BigDecimal("300.00"));
         assertThat(voucher.getRedeemedAmount()).isEqualTo(new BigDecimal("0.00"));
@@ -93,12 +98,15 @@ class VoucherServiceTest {
         assertThat(voucher.getExpiresAt()).isEqualTo(TestVouchers.EXPIRES_AT);
         assertThat(response.maskedCode()).isEqualTo("**** **** **** " + code.substring(12));
         assertThat(response.customerMsisdn()).isEqualTo("****3123");
+        assertThat(response.merchantCode()).isEqualTo("getmore-groceries");
+        assertThat(response.merchantName()).isEqualTo("GetMore Groceries");
         verify(dispatcher).afterCommit(7L, "system");
         ArgumentCaptor<AuditLog.AuditLogBuilder> audited = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
         verify(audit).record(audited.capture());
         AuditLog row = audited.getValue().build();
         assertThat(row.getEventType()).isEqualTo("VOUCHER_ISSUED");
-        assertThat(row.getDetail()).doesNotContain(code).contains("faceValue:300.00 USD");
+        assertThat(row.getDetail()).doesNotContain(code).contains("merchant:getmore-groceries")
+                .contains("faceValue:300.00 USD");
     }
 
     @Test
@@ -115,30 +123,44 @@ class VoucherServiceTest {
     }
 
     @Test
-    @DisplayName("the same disbursement for a different loan or amount is a 409, not a second voucher")
+    @DisplayName("the same disbursement for a different loan, merchant or amount is a 409, not a second voucher")
     void sameDisbursementDifferentPayout() {
         service = withClock(TestVouchers.ISSUED_AT);
         when(vouchers.findByDisbursementReference("BRNET-20261001-0007"))
                 .thenReturn(Optional.of(TestVouchers.issued(vault).faceValue(new BigDecimal("250.00")).build()));
 
         assertThatThrownBy(() -> service.issue(COMMAND)).isInstanceOf(ConflictException.class)
-                .hasMessage("Disbursement BRNET-20261001-0007 already has voucher 7, for a different loan or amount");
+                .hasMessage("Disbursement BRNET-20261001-0007 already has voucher 7, for a different loan, merchant"
+                        + " or amount");
+
+        when(vouchers.findByDisbursementReference("BRNET-20261001-0007")).thenReturn(Optional.of(TestVouchers
+                .issued(vault).merchant(TestVouchers.merchant(9L, "pick-n-pay", "Pick n Pay")).build()));
+
+        assertThatThrownBy(() -> service.issue(COMMAND)).isInstanceOf(ConflictException.class);
+        verify(vouchers, never()).saveAndFlush(any());
     }
 
     @Test
-    @DisplayName("an unreachable number, a zero or fractional-cent amount, or no keys: nothing is issued")
+    @DisplayName("an unreachable number, a zero or fractional-cent amount, no merchant or an unknown one, or no keys:"
+            + " nothing is issued")
     void issueRefusals() {
         service = withClock(TestVouchers.ISSUED_AT);
         assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
-                null, "E1", "Name", "0242700000", BigDecimal.TEN, "USD"))).isInstanceOf(ValidationException.class)
+                null, null, "E1", "Name", "0772123123", BigDecimal.TEN, "USD"))).isInstanceOf(ValidationException.class)
+                .hasMessage("merchantId is required");
+        assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
+                99L, null, "E1", "Name", "0772123123", BigDecimal.TEN, "USD"))).isInstanceOf(ValidationException.class)
+                .hasMessage("merchantId 99 is not a merchant");
+        assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
+                3L, null, "E1", "Name", "0242700000", BigDecimal.TEN, "USD"))).isInstanceOf(ValidationException.class)
                 .hasMessageStartingWith("customerMsisdn");
         assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
-                null, "E1", "Name", "0772123123", new BigDecimal("10.005"), "USD")))
+                3L, null, "E1", "Name", "0772123123", new BigDecimal("10.005"), "USD")))
                 .isInstanceOf(ValidationException.class);
         assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
-                null, "E1", "Name", "0772123123", BigDecimal.ZERO, "USD"))).isInstanceOf(ValidationException.class);
+                3L, null, "E1", "Name", "0772123123", BigDecimal.ZERO, "USD"))).isInstanceOf(ValidationException.class);
         assertThatThrownBy(() -> service.issue(new IssueVoucherCommand(VoucherProduct.STAFF_GROCERY_LOAN, "D1", "L1",
-                null, "E1", "Name", "0772123123", BigDecimal.TEN, "usd"))).isInstanceOf(ValidationException.class);
+                3L, null, "E1", "Name", "0772123123", BigDecimal.TEN, "usd"))).isInstanceOf(ValidationException.class);
         verify(vouchers, never()).saveAndFlush(any());
     }
 

@@ -12,6 +12,8 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
+import zw.co.innbucks.loans.core.loan.DisbursementType;
+import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatusChanged;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
@@ -57,7 +59,7 @@ class StaffLoanServiceTest {
             .totalRepayable(new BigDecimal("300.00")).dueDate(LocalDate.of(2026, 11, 20))
             .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
             .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41))
-            .build();
+            .merchant(getMore()).build();
 
     /** Nyasha Dube's loan, paid out on 8 October. */
     private final StaffLoan paidOut = paidOutLoan(StaffLoanStatus.DISBURSED);
@@ -70,7 +72,14 @@ class StaffLoanServiceTest {
                 .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(status).acceptedAt(LocalDateTime.of(2026, 10, 8, 5, 58, 30))
                 .disbursedAt(LocalDateTime.of(2026, 10, 8, 6, 5, 38)).disbursementReference("BRNET-20261008-0002")
-                .build();
+                .merchant(getMore()).build();
+    }
+
+    private static Merchant getMore() {
+        Merchant merchant = Merchant.builder().merchantCode("getmore-groceries").companyName("GetMore Groceries")
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).staffLoanMerchant(true).build();
+        merchant.setId(3L);
+        return merchant;
     }
 
     {

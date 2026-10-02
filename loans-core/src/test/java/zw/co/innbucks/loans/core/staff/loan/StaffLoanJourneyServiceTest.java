@@ -25,6 +25,9 @@ import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
+import zw.co.innbucks.loans.core.loan.DisbursementType;
+import zw.co.innbucks.loans.core.merchant.Merchant;
+import zw.co.innbucks.loans.core.merchant.StaffLoanMerchantService;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffMember;
@@ -99,14 +102,17 @@ class StaffLoanJourneyServiceTest {
     private final BorrowerProperties borrowerProperties = testAssertions();
     private final TestAssertionSigner signer = new TestAssertionSigner(borrowerProperties, ZW);
     private final StaffLoanPolicy policy = new StaffLoanPolicy(new StaffLoanProperties(), new VoucherProperties());
+    private final StaffLoanMerchantService merchants = mock(StaffLoanMerchantService.class);
+    private Merchant merchant = merchant(3L, "getmore-groceries", "GetMore Groceries");
     private final List<StaffLoan> saved = new ArrayList<>();
     private StaffOfferVerdict verdict = StaffOfferVerdict.ELIGIBLE;
     private String unavailable;
     private final StaffLoanJourneyService journey = new StaffLoanJourneyService(members, offers, offerService, loans,
-            agreements, policy, templates, new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
+            agreements, policy, merchants, templates, new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
             assertionUses, vouchers, audit, ZW);
 
     {
+        when(merchants.current()).thenAnswer(i -> Optional.ofNullable(merchant));
         when(members.findById(2L)).thenReturn(Optional.of(chipo));
         when(offers.findById(31L)).thenReturn(Optional.of(offer));
         when(offers.findByStaffMemberIdAndStatus(2L, StaffOfferStatus.ACTIVE)).thenReturn(Optional.of(offer));
@@ -192,6 +198,34 @@ class StaffLoanJourneyServiceTest {
         assertThat(journey.home(2L).loan().voucher()).isEqualTo(voucher);
     }
 
+    @Test
+    @DisplayName("a loan keeps the merchant it was accepted for, whichever is set for new loans since")
+    void loanKeepsItsMerchant() {
+        merchant = merchant(9L, "pick-n-pay", "Pick n Pay");
+        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
+                .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
+
+        StaffLoanView view = journey.home(2L).loan();
+
+        assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
+        assertThat(view.statusMessage()).isEqualTo("Your voucher is ready to spend at GetMore Groceries.");
+    }
+
+    @Test
+    @DisplayName("with no merchant set, a borrower without a loan is told loans are unavailable, and none can be taken")
+    void noMerchantSet() {
+        merchant = null;
+
+        assertThat(journey.home(2L).unavailable().reason()).isEqualTo(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
+        assertThatThrownBy(() -> journey.apply(2L)).isInstanceOf(StaffLoanDeclinedException.class)
+                .hasMessage(StaffLoanDecline.TEMPORARILY_UNAVAILABLE.message());
+        assertThatThrownBy(() -> journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300"))))
+                .isInstanceOf(StaffLoanDeclinedException.class)
+                .hasMessage(StaffLoanDecline.TEMPORARILY_UNAVAILABLE.message());
+        verify(offerService, never()).apply(anyLong());
+        assertThat(saved).isEmpty();
+    }
+
     // --- Their loans ---
 
     @Test
@@ -252,6 +286,28 @@ class StaffLoanJourneyServiceTest {
     }
 
     // --- The quote ---
+
+    @Test
+    @DisplayName("the quote names the merchant set now; changing it changes the agreement, so an old quote is refused")
+    void quoteNamesTheMerchantSetNow() {
+        StaffLoanQuote getMore = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+        when(templates.currentTemplate(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)).thenReturn(Optional.of(
+                InstrumentTemplate.builder().id(2L).instrumentType(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)
+                        .version(1).title("Staff Grocery Loan Agreement")
+                        .body("I, {{borrowerName}}, spend it at {{merchantName}}.").publishedBy("admin")
+                        .publishedAt(LocalDateTime.of(2026, 9, 30, 8, 0)).build()));
+        StaffLoanQuote atGetMore = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+        merchant = merchant(9L, "pick-n-pay", "Pick n Pay");
+
+        StaffLoanQuote atPickNPay = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+
+        assertThat(getMore.merchantName()).isEqualTo("GetMore Groceries");
+        assertThat(atPickNPay.merchantName()).isEqualTo("Pick n Pay");
+        assertThat(atPickNPay.agreement().content()).isEqualTo("I, Chipo Banda, spend it at Pick n Pay.");
+        assertThatThrownBy(() -> journey.accept(2L, request(atGetMore, signer.sign("+263773456789", List.of("pin"))
+                .assertion()), signing("a1f3c9e2-7b4d"))).isInstanceOf(StaffLoanTermsChangedException.class);
+        assertThat(saved).isEmpty();
+    }
 
     @Test
     @DisplayName("the quote discloses the terms (FR-SGL-026) and fills the agreement with them, fingerprinted")
@@ -330,8 +386,10 @@ class StaffLoanJourneyServiceTest {
             assertThat(loan.getUnredeemedVoucherTreatment()).isEqualTo(UnredeemedVoucherTreatment.DEBT_STANDS);
             assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
             assertThat(loan.getAcceptedAt()).isEqualTo(NOW_UTC);
+            assertThat(loan.getMerchant().getMerchantCode()).isEqualTo("getmore-groceries");
         });
         assertThat(view.status()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
         assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.TAKEN_UP);
         assertThat(offer.getClosedReason()).isEqualTo("Taken up as SGL-2026-000143");
 
@@ -447,7 +505,7 @@ class StaffLoanJourneyServiceTest {
     void acceptWithoutAKey() {
         BorrowerProperties off = new BorrowerProperties();
         StaffLoanJourneyService unconfigured = new StaffLoanJourneyService(members, offers, offerService, loans,
-                agreements, policy, templates,
+                agreements, policy, merchants, templates,
                 new MiddlewareAssertionVerifier(off, ZW, new TestAssertionSigner(off, ZW)),
                 assertionUses, vouchers, audit, ZW);
         StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
@@ -487,13 +545,21 @@ class StaffLoanJourneyServiceTest {
                 .amount(new BigDecimal("300.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("300.00")).dueDate(LocalDate.of(2026, 11, 20))
                 .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS).status(status)
-                .acceptedAt(NOW_UTC).build();
+                .acceptedAt(NOW_UTC).merchant(merchant(3L, "getmore-groceries", "GetMore Groceries")).build();
+    }
+
+    private static Merchant merchant(long id, String code, String name) {
+        Merchant merchant = Merchant.builder().merchantCode(code).companyName(name)
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).staffLoanMerchant(true).build();
+        merchant.setId(id);
+        return merchant;
     }
 
     private static StaffLoan copyWithId(StaffLoan loan, long id) {
         return StaffLoan.builder().id(id).reference(loan.getReference()).staffMemberId(loan.getStaffMemberId())
                 .offerId(loan.getOfferId()).employeeNumber(loan.getEmployeeNumber()).fullName(loan.getFullName())
-                .msisdn(loan.getMsisdn()).grade(loan.getGrade()).amount(loan.getAmount()).currency(loan.getCurrency())
+                .msisdn(loan.getMsisdn()).grade(loan.getGrade()).merchant(loan.getMerchant()).amount(loan.getAmount())
+                .currency(loan.getCurrency())
                 .interestRate(loan.getInterestRate()).totalRepayable(loan.getTotalRepayable())
                 .dueDate(loan.getDueDate()).unredeemedVoucherTreatment(loan.getUnredeemedVoucherTreatment())
                 .status(loan.getStatus()).acceptedAt(loan.getAcceptedAt()).build();

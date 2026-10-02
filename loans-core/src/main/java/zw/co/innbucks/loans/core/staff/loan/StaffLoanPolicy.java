@@ -68,10 +68,6 @@ public class StaffLoanPolicy {
         return properties.getCurrency();
     }
 
-    public String merchantName() {
-        return properties.getMerchantName();
-    }
-
     public int voucherValidityDays() {
         return voucherProperties.getValidityDays();
     }
@@ -85,13 +81,14 @@ public class StaffLoanPolicy {
     }
 
     /**
-     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, as the agreement names
-     * them.
+     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, for a voucher spent at
+     * {@code merchantName}, as the agreement names them.
      */
-    public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay) {
+    public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay,
+                                          String merchantName) {
         return new StaffLoanTerms.Signing(member.getFullName(), member.getEmployeeNumber(), member.getNationalId(),
                 member.getMsisdn(), member.getDepartment(), money(amount), currency(), INTEREST_RATE,
-                totalRepayable(amount), dueDate(acceptedDay), merchantName(), voucherValidityDays(),
+                totalRepayable(amount), dueDate(acceptedDay), merchantName, voucherValidityDays(),
                 unredeemedVoucherTreatment().terms(), acceptedDay);
     }
 

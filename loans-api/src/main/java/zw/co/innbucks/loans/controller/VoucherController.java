@@ -47,11 +47,12 @@ import java.time.LocalDate;
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Vouchers", description = "Staff Grocery Loan vouchers (FR-SGL-033 to FR-SGL-040). A loan is paid out as a"
-        + " GetMore voucher, never as cash: one per disbursement, worth what was disbursed, sent to the customer by"
-        + " WhatsApp (SMS when WhatsApp fails), spent at GetMore's tills in one go or over several purchases, until it"
-        + " expires. The code is 16 digits, the last a check digit, shown as 4829 1506 7331 8406 and sent as"
-        + " 4829-1506-7331-8406. Everywhere here it is masked; only a VOUCHER_SUPPORT user can see it in full, one"
-        + " voucher at a time and on the record. Vouchers are issued by the disbursement, never from a screen.")
+        + " voucher of the merchant it was accepted for (GET /staff-loan-merchant), never as cash: one per"
+        + " disbursement, worth what was disbursed, sent to the customer by WhatsApp (SMS when WhatsApp fails), spent"
+        + " at that merchant's tills only, in one go or over several purchases, until it expires. The code is 16"
+        + " digits, the last a check digit, shown as 4829 1506 7331 8406 and sent as 4829-1506-7331-8406. Everywhere"
+        + " here it is masked; only a VOUCHER_SUPPORT user can see it in full, one voucher at a time and on the"
+        + " record. Vouchers are issued by the disbursement, never from a screen.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -161,8 +162,8 @@ public class VoucherController {
 
     @Operation(summary = "Cancel a voucher",
             description = "CREDIT_MANAGER or SUPER_ADMIN. Only before anything has been spent with it, and before it"
-                    + " expires; audited with the reason. What becomes of the loan and the money paid to GetMore is a"
-                    + " separate decision.")
+                    + " expires; audited with the reason. What becomes of the loan and the money paid to the merchant"
+                    + " is a separate decision.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cancelled",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.VOUCHER_8_CANCELLED))),
@@ -229,10 +230,12 @@ public class VoucherController {
 
     @Operation(summary = "Daily settlement and reconciliation report",
             description = "FINANCE, CREDIT_MANAGER or SUPER_ADMIN (FR-SGL-038). One market day: vouchers issued (the"
-                    + " value paid to GetMore's settlement account at disbursement), redeemed (by outlet), cancelled,"
-                    + " and lapsed with something left (expiredUnredeemedValue), with totals per currency and every"
-                    + " event as a line, codes masked. Today's report covers the day so far. format=csv downloads the"
-                    + " lines as a spreadsheet, voucher-settlement-<date>.csv.")
+                    + " value paid to the merchant's settlement account at disbursement), redeemed (by outlet),"
+                    + " cancelled, and lapsed with something left (expiredUnredeemedValue), with totals per currency,"
+                    + " the same per merchant (byMerchant: what each merchant is settled on), and every event as a"
+                    + " line, codes masked. merchantCode limits it to one merchant. Today's report covers the day so"
+                    + " far. format=csv downloads the lines as a spreadsheet, voucher-settlement-<date>.csv, or"
+                    + " voucher-settlement-<date>-<merchantCode>.csv for one merchant.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = {@Content(mediaType = "application/json",
@@ -247,7 +250,13 @@ public class VoucherController {
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not FINANCE, CREDIT_MANAGER or SUPER_ADMIN",
-                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN)))
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "404", description = "No merchant has that merchantCode",
+                    content = @Content(examples = @ExampleObject("""
+                            {
+                              "code": "NOT_FOUND",
+                              "message": "Merchant pick-n-pay not found"
+                            }""")))
     })
     @GetMapping("/voucher-settlement-reports/{date}")
     @PreAuthorize(REPORT_READERS)
@@ -255,9 +264,11 @@ public class VoucherController {
             @Parameter(description = "The market day", example = "2026-10-08")
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Parameter(description = "json (the default) or csv", example = "csv")
-            @RequestParam(required = false) String format) {
+            @RequestParam(required = false) String format,
+            @Parameter(description = "One merchant only; every merchant when absent", example = "getmore-groceries")
+            @RequestParam(required = false) String merchantCode) {
         if (format == null || format.equalsIgnoreCase("json")) {
-            return ResponseEntity.ok(ApiResult.ok(settlementService.report(date)));
+            return ResponseEntity.ok(ApiResult.ok(settlementService.report(date, merchantCode)));
         }
         if (!format.equalsIgnoreCase("csv")) {
             throw new ValidationException("format must be json or csv");
@@ -265,7 +276,13 @@ public class VoucherController {
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename("voucher-settlement-" + date + ".csv").build().toString())
-                .body(settlementService.csv(date));
+                        .filename(csvName(date, merchantCode)).build().toString())
+                .body(settlementService.csv(date, merchantCode));
+    }
+
+    /** The day in the name, and the merchant when the report is one merchant's, letters, digits and hyphens only. */
+    private static String csvName(LocalDate date, String merchantCode) {
+        String merchant = merchantCode == null ? "" : merchantCode.strip().replaceAll("[^A-Za-z0-9-]", "");
+        return "voucher-settlement-" + date + (merchant.isEmpty() ? "" : "-" + merchant) + ".csv";
     }
 }
