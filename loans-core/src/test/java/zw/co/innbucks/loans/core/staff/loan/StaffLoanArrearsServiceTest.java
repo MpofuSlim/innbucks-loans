@@ -282,6 +282,18 @@ class StaffLoanArrearsServiceTest {
     }
 
     @Test
+    @DisplayName("the email's schedule must be a cron expression: a bad, blank or missing one fails the boot")
+    void scheduleSetting() {
+        StaffLoanProperties settings = new StaffLoanProperties();
+        assertThat(settings.getArrearsReportCron()).isEqualTo("0 0 7 * * *");
+        assertThat(settings.isArrearsReportCronValid()).isTrue();
+        for (String bad : new String[]{"every morning", " ", null}) {
+            settings.setArrearsReportCron(bad);
+            assertThat(settings.isArrearsReportCronValid()).as(String.valueOf(bad)).isFalse();
+        }
+    }
+
+    @Test
     @DisplayName("a long report lists the first loans in the email and points to the portal for the rest")
     void longReport() {
         IntStream.rangeClosed(1, StaffLoanArrearsService.EMAIL_LINE_LIMIT + 2).forEach(i -> loan(1000 + i,

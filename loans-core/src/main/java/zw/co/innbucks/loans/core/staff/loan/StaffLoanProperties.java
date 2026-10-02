@@ -92,7 +92,7 @@ public class StaffLoanProperties {
     @AssertTrue(message = "loans.staff-loans.arrears-report-cron is not a valid cron expression (second minute hour"
             + " day month weekday, e.g. 0 0 7 * * *)")
     public boolean isArrearsReportCronValid() {
-        return arrearsReportCron != null && CronExpression.isValidExpression(arrearsReportCron);
+        return CronExpression.isValidExpression(arrearsReportCron);
     }
 
     @AssertTrue(message = "loans.staff-loans.minimum-draw must be a multiple of loans.staff-loans.draw-increment")
