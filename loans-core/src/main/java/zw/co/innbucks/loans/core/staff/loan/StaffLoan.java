@@ -132,6 +132,10 @@ public class StaffLoan {
     @Column(name = "employment_flag_batch_id")
     private Long employmentFlagBatchId;
 
+    /** Credit's arrears override it was accepted under, when the borrower owed a written-off loan (FR-SGL-014). */
+    @Column(name = "arrears_override_id", updatable = false)
+    private Long arrearsOverrideId;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;

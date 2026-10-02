@@ -19,6 +19,9 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
     List<StaffLoan> findByStaffMemberIdInAndStatusIn(Collection<Long> staffMemberIds,
                                                     Collection<StaffLoanStatus> statuses);
 
+    /** Whether the member has a loan in {@code status}: a written-off one, say. */
+    boolean existsByStaffMemberIdAndStatus(Long staffMemberId, StaffLoanStatus status);
+
     /** One member's loans, whatever became of them. */
     Page<StaffLoan> findByStaffMemberId(Long staffMemberId, Pageable pageable);
 

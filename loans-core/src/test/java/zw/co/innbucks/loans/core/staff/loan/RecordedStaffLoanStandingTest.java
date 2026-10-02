@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,8 +27,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * A member's standing from loans' own records (FR-SGL-013, FR-SGL-014, FR-SGL-017): a loan awaiting disbursement or
- * disbursed is an active loan; one disbursed and unpaid past its due date and the grace, or written off, is arrears.
- * The clock stands at 2026-11-23, three days after a 20 November due date.
+ * disbursed is an active loan, and also arrears once it is disbursed and unpaid past its due date and the grace; a
+ * written-off one is a written-off balance, which only Credit's override lifts. The clock stands at 2026-11-23, three
+ * days after a 20 November due date.
  */
 class RecordedStaffLoanStandingTest {
 
@@ -65,11 +67,12 @@ class RecordedStaffLoanStandingTest {
         loan(4, StaffLoanStatus.CANCELLED, LocalDate.of(2026, 11, 20));
 
         assertThat(standing.of(List.of(member(1), member(2), member(3), member(4), member(5))))
-                .isEqualTo(Map.of(1L, Standing.ACTIVE_LOAN, 2L, Standing.ACTIVE_LOAN));
+                .isEqualTo(Map.of(1L, Set.of(Standing.ACTIVE_LOAN), 2L, Set.of(Standing.ACTIVE_LOAN)));
     }
 
     @Test
-    @DisplayName("disbursed and past the due date: arrears; awaiting disbursement past it is not (nothing was lent)")
+    @DisplayName("disbursed and past the due date: arrears on an active loan; awaiting disbursement past it is not"
+            + " (nothing was lent); written off: a written-off balance")
     void arrears() {
         loan(1, StaffLoanStatus.DISBURSED, LocalDate.of(2026, 11, 20));
         loan(2, StaffLoanStatus.AWAITING_DISBURSEMENT, LocalDate.of(2026, 11, 20));
@@ -77,20 +80,24 @@ class RecordedStaffLoanStandingTest {
         loan(4, StaffLoanStatus.DISBURSED, LocalDate.of(2026, 11, 23));
 
         assertThat(standing.of(List.of(member(1), member(2), member(3), member(4))))
-                .isEqualTo(Map.of(1L, Standing.ARREARS, 2L, Standing.ACTIVE_LOAN, 3L, Standing.ARREARS,
-                        4L, Standing.ACTIVE_LOAN));
+                .isEqualTo(Map.of(1L, Set.of(Standing.ACTIVE_LOAN, Standing.ARREARS), 2L, Set.of(Standing.ACTIVE_LOAN),
+                        3L, Set.of(Standing.WRITTEN_OFF), 4L, Set.of(Standing.ACTIVE_LOAN)));
     }
 
     @Test
-    @DisplayName("the grace keeps a loan a few days past due out of arrears; arrears wins over an active loan")
-    void graceAndPrecedence() {
+    @DisplayName("the grace keeps a loan a few days past due out of arrears; every standing that applies is kept")
+    void graceAndEveryStanding() {
         properties.setArrearsGraceDays(3);
         loan(1, StaffLoanStatus.DISBURSED, LocalDate.of(2026, 11, 20));
         loan(2, StaffLoanStatus.WRITTEN_OFF, LocalDate.of(2026, 6, 20));
         loan(2, StaffLoanStatus.AWAITING_DISBURSEMENT, LocalDate.of(2026, 12, 20));
+        loan(3, StaffLoanStatus.WRITTEN_OFF, LocalDate.of(2026, 6, 20));
+        loan(3, StaffLoanStatus.DISBURSED, LocalDate.of(2026, 11, 19));
 
-        assertThat(standing.of(List.of(member(1), member(2))))
-                .isEqualTo(Map.of(1L, Standing.ACTIVE_LOAN, 2L, Standing.ARREARS));
+        assertThat(standing.of(List.of(member(1), member(2), member(3))))
+                .isEqualTo(Map.of(1L, Set.of(Standing.ACTIVE_LOAN),
+                        2L, Set.of(Standing.WRITTEN_OFF, Standing.ACTIVE_LOAN),
+                        3L, Set.of(Standing.WRITTEN_OFF, Standing.ACTIVE_LOAN, Standing.ARREARS)));
     }
 
     @Test
