@@ -56,7 +56,8 @@ public class StaffLoanController {
                     + " the register: RECOVER_FROM_TERMINAL_BENEFITS when they left (RESIGNED, TERMINATED; Human"
                     + " Capital and the Payroll mailboxes were emailed), CREDIT_TO_DECIDE when they are SUSPENDED or"
                     + " on UNPAID_LEAVE (Credit was emailed). It clears when they are ACTIVE again. flagged=true lists"
-                    + " only those.")
+                    + " only those. arrearsOverrideId is set on a loan accepted under Credit's arrears override"
+                    + " (FR-SGL-014), when the borrower owed a written-off loan.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "All", value = StaffLoanApiExamples.STAFF_LOANS),

@@ -56,11 +56,11 @@ import java.util.stream.Collectors;
  * record or a later reconciliation no longer lists them.</p>
  *
  * <p><b>The run.</b> Offers past their expiry are closed. Then every member of the register is either ineligible (not
- * ACTIVE, or their grade has no limit above zero today), excluded (an active loan or arrears under this product,
- * flagged by the reconciliation, or a limit of 0 set by Credit), or eligible. An eligible member without this cycle's
- * offer gets one at their grade's limit, or at the limit Credit's override sets for them (FR-SGL-011), valid for
- * {@code validity-days} and replacing any offer they still hold; an ineligible or excluded member's open offer is
- * withdrawn with the reason.</p>
+ * ACTIVE, or their grade has no limit above zero today), excluded (an active loan or arrears under this product, a
+ * written-off balance Credit has not overridden (FR-SGL-014), flagged by the reconciliation, or a limit of 0 set by
+ * Credit), or eligible. An eligible member without this cycle's offer gets one at their grade's limit, or at the
+ * limit Credit's override sets for them (FR-SGL-011), valid for {@code validity-days} and replacing any offer they
+ * still hold; an ineligible or excluded member's open offer is withdrawn with the reason.</p>
  *
  * <p><b>Re-running.</b> A run belongs to a cycle, the market week it falls in, and a member gets at most one offer per
  * cycle (the database enforces it). A whole run is one transaction under two locks: one that refuses a second run
@@ -96,6 +96,7 @@ public class StaffOfferRunService {
     private final StaffGradeLimitService gradeLimitService;
     private final StaffLoanStanding loanStanding;
     private final StaffLimitOverrideRepository overrideRepository;
+    private final StaffArrearsOverrideRepository arrearsOverrideRepository;
     private final StaffOfferProperties properties;
     private final StaffNotificationService notificationService;
     private final AuditService auditService;
@@ -157,7 +158,11 @@ public class StaffOfferRunService {
         List<StaffMember> eligibleByRegister = members.stream()
                 .filter(member -> StaffMemberResponse.ineligibleReason(member, limits.get(member.getGrade())) == null)
                 .toList();
-        Map<Long, StaffLoanStanding.Standing> standings = loanStanding.of(eligibleByRegister);
+        Map<Long, Set<StaffLoanStanding.Standing>> standings = loanStanding.of(eligibleByRegister);
+        Map<Long, StaffArrearsOverride> arrearsOverrides = arrearsOverrideRepository
+                .findByStatus(StaffArrearsOverrideStatus.APPROVED).stream()
+                .filter(candidate -> candidate.inForceOn(today))
+                .collect(Collectors.toMap(StaffArrearsOverride::getStaffMemberId, Function.identity()));
 
         Counts counts = new Counts();
         List<StaffOffer> issue = new ArrayList<>();
@@ -166,8 +171,8 @@ public class StaffOfferRunService {
             StaffGradeLimit limit = limits.get(member.getGrade());
             StaffLimitOverride override = Optional.ofNullable(overrides.get(member.getId()))
                     .filter(candidate -> candidate.appliesTo(member)).orElse(null);
-            StaffOfferVerdict verdict = classify(member, limit, standings.get(member.getId()), flagged,
-                    gate.reconciliation(), override);
+            StaffOfferVerdict verdict = classify(member, limit, standings.getOrDefault(member.getId(), Set.of()),
+                    flagged, gate.reconciliation(), override, arrearsOverrides.get(member.getId()));
             if (verdict != StaffOfferVerdict.ELIGIBLE) {
                 counts.count(verdict);
                 if (held != null) {
@@ -317,10 +322,18 @@ public class StaffOfferRunService {
         StaffLimitOverride override = overrideRepository
                 .findByStaffMemberIdAndStatus(member.getId(), StaffLimitOverrideStatus.APPROVED)
                 .filter(candidate -> candidate.appliesTo(member)).orElse(null);
-        StaffLoanStanding.Standing standing = loanStanding.of(List.of(member)).get(member.getId());
+        Set<StaffLoanStanding.Standing> standing = loanStanding.of(List.of(member))
+                .getOrDefault(member.getId(), Set.of());
+        StaffArrearsOverride arrearsOverride = arrearsOverrideRepository
+                .findByStaffMemberIdAndStatus(member.getId(), StaffArrearsOverrideStatus.APPROVED)
+                .filter(candidate -> candidate.inForceOn(today)).orElse(null);
         Set<String> flagged = gate.reconciliation() == null ? Set.of() : flagged(gate.reconciliation());
-        return new StaffOfferAssessment(classify(member, limit, standing, flagged, gate.reconciliation(), override),
-                gate.refusal(), limit, override);
+        StaffOfferVerdict verdict = classify(member, limit, standing, flagged, gate.reconciliation(), override,
+                arrearsOverride);
+        // Named only when it is what lets them borrow, so that the loan they accept uses it up.
+        boolean lifted = verdict == StaffOfferVerdict.ELIGIBLE
+                && standing.contains(StaffLoanStanding.Standing.WRITTEN_OFF);
+        return new StaffOfferAssessment(verdict, gate.refusal(), limit, override, lifted ? arrearsOverride : null);
     }
 
     /**
@@ -409,23 +422,28 @@ public class StaffOfferRunService {
 
     /**
      * Whether {@code member} may be offered, and if not why: the one rule for the run, a borrower applying, and one
-     * accepting. {@code standing} is their Staff Grocery Loan standing (null when clear), {@code flagged} the employee
-     * numbers the latest reconciliation lists as having left or not on the payroll, and {@code override} Credit's
-     * limit override in force for them, if any.
+     * accepting. {@code standing} is their Staff Grocery Loan standing (empty when clear), {@code flagged} the employee
+     * numbers the latest reconciliation lists as having left or not on the payroll, {@code override} Credit's limit
+     * override in force for them, and {@code arrearsOverride} Credit's arrears override in force for them, if any.
+     *
+     * <p>The arrears override lifts a written-off balance only (FR-SGL-014). A loan that is overdue is still open, and
+     * nobody may hold a second one beside it (FR-SGL-013), override or not.</p>
      */
-    static StaffOfferVerdict classify(StaffMember member, StaffGradeLimit limit, StaffLoanStanding.Standing standing,
-                                      Set<String> flagged, StaffRegisterReconciliation reconciliation,
-                                      StaffLimitOverride override) {
+    static StaffOfferVerdict classify(StaffMember member, StaffGradeLimit limit,
+                                      Set<StaffLoanStanding.Standing> standing, Set<String> flagged,
+                                      StaffRegisterReconciliation reconciliation, StaffLimitOverride override,
+                                      StaffArrearsOverride arrearsOverride) {
         if (member.getEmploymentStatus() != StaffEmploymentStatus.ACTIVE) {
             return StaffOfferVerdict.NOT_ACTIVE;
         }
         if (limit == null || !limit.lends()) {
             return StaffOfferVerdict.NO_LIMIT;
         }
-        if (standing == StaffLoanStanding.Standing.ARREARS) {
+        if (standing.contains(StaffLoanStanding.Standing.ARREARS)
+                || standing.contains(StaffLoanStanding.Standing.WRITTEN_OFF) && arrearsOverride == null) {
             return StaffOfferVerdict.ARREARS;
         }
-        if (standing == StaffLoanStanding.Standing.ACTIVE_LOAN) {
+        if (standing.contains(StaffLoanStanding.Standing.ACTIVE_LOAN)) {
             return StaffOfferVerdict.ACTIVE_LOAN;
         }
         // A record Human Capital has changed since the reconciliation is taken as dealt with.
@@ -444,7 +462,7 @@ public class StaffOfferRunService {
                                  StaffRegisterReconciliation reconciliation, StaffLimitOverride override) {
         return switch (verdict) {
             case NOT_ACTIVE, NO_LIMIT -> "No longer eligible: " + StaffMemberResponse.ineligibleReason(member, limit);
-            case ARREARS -> "In arrears on a Staff Grocery Loan";
+            case ARREARS -> "In arrears on a Staff Grocery Loan, or owes a written-off one";
             case ACTIVE_LOAN -> "Holds an active Staff Grocery Loan";
             case PAYROLL_FLAGGED -> "Payroll reconciliation " + reconciliation.getId() + " lists them as having left or"
                     + " not on the payroll";

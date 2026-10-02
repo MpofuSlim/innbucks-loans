@@ -33,6 +33,8 @@ import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
+import zw.co.innbucks.loans.core.staff.offer.StaffArrearsOverride;
+import zw.co.innbucks.loans.core.staff.offer.StaffArrearsOverrideStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOffer;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferApplication;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferAssessment;
@@ -103,12 +105,15 @@ class StaffLoanJourneyServiceTest {
     private final TestAssertionSigner signer = new TestAssertionSigner(borrowerProperties, ZW);
     private final StaffLoanPolicy policy = new StaffLoanPolicy(new StaffLoanProperties(), new VoucherProperties());
     private final StaffLoanMerchantService merchants = mock(StaffLoanMerchantService.class);
+    private final StaffArrearsOverrideService arrearsOverrides = mock(StaffArrearsOverrideService.class);
     private Merchant merchant = merchant(3L, "getmore-groceries", "GetMore Groceries");
     private final List<StaffLoan> saved = new ArrayList<>();
     private StaffOfferVerdict verdict = StaffOfferVerdict.ELIGIBLE;
     private String unavailable;
+    private StaffArrearsOverride arrearsOverride;
     private final StaffLoanJourneyService journey = new StaffLoanJourneyService(members, offers, offerService, loans,
-            agreements, policy, merchants, templates, new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
+            agreements, policy, merchants, arrearsOverrides, templates,
+            new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
             assertionUses, vouchers, audit, ZW);
 
     {
@@ -116,7 +121,8 @@ class StaffLoanJourneyServiceTest {
         when(members.findById(2L)).thenReturn(Optional.of(chipo));
         when(offers.findById(31L)).thenReturn(Optional.of(offer));
         when(offers.findByStaffMemberIdAndStatus(2L, StaffOfferStatus.ACTIVE)).thenReturn(Optional.of(offer));
-        when(offerService.assess(any())).thenAnswer(i -> new StaffOfferAssessment(verdict, unavailable, C4, null));
+        when(offerService.assess(any())).thenAnswer(i -> new StaffOfferAssessment(verdict, unavailable, C4, null,
+                arrearsOverride));
         when(templates.currentTemplate(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT))
                 .thenReturn(Optional.of(template(1)));
         when(loans.nextReferenceNumber()).thenReturn(143L);
@@ -387,7 +393,9 @@ class StaffLoanJourneyServiceTest {
             assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
             assertThat(loan.getAcceptedAt()).isEqualTo(NOW_UTC);
             assertThat(loan.getMerchant().getMerchantCode()).isEqualTo("getmore-groceries");
+            assertThat(loan.getArrearsOverrideId()).isNull();
         });
+        verify(arrearsOverrides, never()).use(any(), any(), any());
         assertThat(view.status()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
         assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
         assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.TAKEN_UP);
@@ -415,6 +423,25 @@ class StaffLoanJourneyServiceTest {
             assertThat(a.getEvidenceSha256()).isEqualTo(StaffLoanJourneyService.evidenceSha256(a));
         });
         assertThat(events()).containsExactly(StaffLoanJourneyService.ACCEPTED);
+    }
+
+    @Test
+    @DisplayName("a borrower who owes a written-off loan borrows under Credit's arrears override, which the loan names"
+            + " and uses up (FR-SGL-014)")
+    void acceptUnderAnArrearsOverride() {
+        arrearsOverride = StaffArrearsOverride.builder().id(5L).staffMemberId(2L).reason("Repayment plan agreed")
+                .validUntil(LocalDate.of(2026, 10, 31)).status(StaffArrearsOverrideStatus.APPROVED)
+                .proposedBy("credit1").proposedAt(NOW_UTC).decidedBy("credit2").decidedAt(NOW_UTC).build();
+        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+
+        journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin")).assertion()),
+                signing("a1f3c9e2-7b4d"));
+
+        assertThat(saved).singleElement().satisfies(loan -> assertThat(loan.getArrearsOverrideId()).isEqualTo(5L));
+        verify(arrearsOverrides).use(arrearsOverride, saved.getFirst(), "borrower:E1012");
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(audit).record(captor.capture());
+        assertThat(captor.getValue().build().getDetail()).contains(";arrearsOverride:5;");
     }
 
     @Test
@@ -505,7 +532,7 @@ class StaffLoanJourneyServiceTest {
     void acceptWithoutAKey() {
         BorrowerProperties off = new BorrowerProperties();
         StaffLoanJourneyService unconfigured = new StaffLoanJourneyService(members, offers, offerService, loans,
-                agreements, policy, merchants, templates,
+                agreements, policy, merchants, arrearsOverrides, templates,
                 new MiddlewareAssertionVerifier(off, ZW, new TestAssertionSigner(off, ZW)),
                 assertionUses, vouchers, audit, ZW);
         StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
@@ -562,7 +589,8 @@ class StaffLoanJourneyServiceTest {
                 .currency(loan.getCurrency())
                 .interestRate(loan.getInterestRate()).totalRepayable(loan.getTotalRepayable())
                 .dueDate(loan.getDueDate()).unredeemedVoucherTreatment(loan.getUnredeemedVoucherTreatment())
-                .status(loan.getStatus()).acceptedAt(loan.getAcceptedAt()).build();
+                .status(loan.getStatus()).acceptedAt(loan.getAcceptedAt())
+                .arrearsOverrideId(loan.getArrearsOverrideId()).build();
     }
 
     private static StaffOfferApplication application(StaffOffer offer, boolean created, StaffOfferVerdict verdict,
