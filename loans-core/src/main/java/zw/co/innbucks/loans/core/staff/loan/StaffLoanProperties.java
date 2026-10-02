@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -58,6 +59,20 @@ public class StaffLoanProperties {
     @Max(value = 60, message = "loans.staff-loans.arrears-grace-days must be at most 60")
     private int arrearsGraceDays = 0;
 
+    /**
+     * Days past the due date after which a loan still unpaid is escalated to Credit in the daily arrears report
+     * (BRD 3.8: "escalation to Credit after a configurable number of days").
+     */
+    @Min(value = 1, message = "loans.staff-loans.arrears-escalation-days must be at least 1")
+    @Max(value = 365, message = "loans.staff-loans.arrears-escalation-days must be at most 365")
+    private int arrearsEscalationDays = 30;
+
+    /**
+     * When the daily arrears report is emailed to Credit and Human Capital (FR-SGL-045), on the market's clock: 07:00
+     * by default. Only where the Staff Grocery Loan jobs run; the report can always be read in the portal.
+     */
+    private String arrearsReportCron = "0 0 7 * * *";
+
     @NotBlank
     @Pattern(regexp = "[A-Z]{3}", message = "loans.staff-loans.currency must be a 3-letter ISO code, such as USD")
     private String currency = "USD";
@@ -73,6 +88,12 @@ public class StaffLoanProperties {
     @NotNull
     private List<@Email(message = "loans.staff-loans.payroll-emails must be email addresses") String> payrollEmails =
             new ArrayList<>();
+
+    @AssertTrue(message = "loans.staff-loans.arrears-report-cron is not a valid cron expression (second minute hour"
+            + " day month weekday, e.g. 0 0 7 * * *)")
+    public boolean isArrearsReportCronValid() {
+        return CronExpression.isValidExpression(arrearsReportCron);
+    }
 
     @AssertTrue(message = "loans.staff-loans.minimum-draw must be a multiple of loans.staff-loans.draw-increment")
     public boolean isMinimumDrawAStep() {

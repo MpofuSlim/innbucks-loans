@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ClassUtils;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanArrearsReportJob;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationSweepJob;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunJob;
 import zw.co.innbucks.loans.core.voucher.VoucherExpiryJob;
@@ -33,7 +34,8 @@ class StaffLoanJobsWiringTest {
 
     /** The jobs STAFF_LOANS_JOBS_ENABLED may switch on. Add one only if it moves no money. */
     private static final Set<Class<?>> STAFF_LOAN_JOBS = Set.of(
-            StaffOfferRunJob.class, StaffNotificationSweepJob.class, VoucherExpiryJob.class);
+            StaffOfferRunJob.class, StaffNotificationSweepJob.class, VoucherExpiryJob.class,
+            StaffLoanArrearsReportJob.class);
 
     @Test
     @DisplayName("the Staff Grocery Loan jobs are behind the switch, and not behind the scheduled-tasks profile alone")

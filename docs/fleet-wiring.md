@@ -222,8 +222,8 @@ the Deployment where a review sees them, never in the Secret. Outside Kubernetes
 `ScheduledTasksKubernetesGuardTest` pins it.
 
 **The Staff Grocery Loan jobs have their own switch.** The weekly offer run
-(FR-SGL-015) and its messages, the retry of staff messages left pending, and
-voucher upkeep move no money, so they run where `STAFF_LOANS_JOBS_ENABLED` is
+(FR-SGL-015) and its messages, the retry of staff messages left pending,
+voucher upkeep and the daily arrears email (FR-SGL-045) move no money, so they run where `STAFF_LOANS_JOBS_ENABLED` is
 `true` without `scheduled-tasks` (`@StaffLoanJobs`). It is one key in loans' own
 Secret: no manifest change and no `kubectl apply`, just the Secret and a
 restart. Turning it on starts the Monday run (`STAFF_OFFERS_RUN_CRON`), which
@@ -508,6 +508,8 @@ default:
 | `STAFF_LOANS_DRAW_INCREMENT` | `5.00` | Steps below the full offer (OQ-03). The minimum must be a multiple of it. |
 | `STAFF_LOANS_REPAYMENT_DAY` | `20` | Day of the following month it is due: the salary day (OQ-02, BRD 3.7). At most 28. |
 | `STAFF_LOANS_ARREARS_GRACE_DAYS` | `0` | Days past due before a disbursed loan counts as arrears. |
+| `STAFF_LOANS_ARREARS_ESCALATION_DAYS` | `30` | Days past due before an unpaid loan is escalated to Credit in the daily arrears report (BRD 3.8). |
+| `STAFF_LOANS_ARREARS_REPORT_CRON` | `0 0 7 * * *` | When the daily arrears report is emailed to Credit and Human Capital, on the market's clock (FR-SGL-045). Only where the Staff Grocery Loan jobs run. |
 | `STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT` | `DEBT_STANDS` | Or `REDUCED_TO_AMOUNT_SPENT` (OQ-09). Shown to the borrower and kept on each loan. |
 | `STAFF_LOANS_CURRENCY` | `USD` | |
 | `STAFF_LOANS_PAYROLL_EMAILS` | blank | Payroll's mailboxes, comma-separated: emailed with Human Capital when a borrower leaves owing a paid-out loan. Blank: Human Capital alone, and the boot log warns. |

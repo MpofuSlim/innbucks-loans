@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +22,16 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
 
     /** Whether the member has a loan in {@code status}: a written-off one, say. */
     boolean existsByStaffMemberIdAndStatus(Long staffMemberId, StaffLoanStatus status);
+
+    /**
+     * Paid-out loans not recovered in full on {@code today} (FR-SGL-045): written off; or still DISBURSED and past their
+     * due date, or with a borrower no longer ACTIVE. With their merchant.
+     */
+    @Query("select l from StaffLoan l join fetch l.merchant where l.status = :writtenOff or (l.status = :disbursed"
+            + " and (l.dueDate < :today or l.employmentFlag is not null))")
+    List<StaffLoan> findNotRecovered(@Param("today") LocalDate today,
+                                     @Param("disbursed") StaffLoanStatus disbursed,
+                                     @Param("writtenOff") StaffLoanStatus writtenOff);
 
     /** One member's loans, whatever became of them. */
     Page<StaffLoan> findByStaffMemberId(Long staffMemberId, Pageable pageable);

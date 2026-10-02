@@ -212,13 +212,19 @@ loans:
     draw-increment: "${STAFF_LOANS_DRAW_INCREMENT:5.00}"
     repayment-day: "${STAFF_LOANS_REPAYMENT_DAY:20}"
     arrears-grace-days: "${STAFF_LOANS_ARREARS_GRACE_DAYS:0}"
+    # Days past the due date after which an unpaid loan is escalated to Credit in the daily arrears report (BRD 3.8).
+    arrears-escalation-days: "${STAFF_LOANS_ARREARS_ESCALATION_DAYS:30}"
+    # When the daily arrears report is emailed to Credit and Human Capital (FR-SGL-045), on the market's clock. Only
+    # where the Staff Grocery Loan jobs run; the report can always be read in the portal.
+    arrears-report-cron: "${STAFF_LOANS_ARREARS_REPORT_CRON:0 0 7 * * *}"
     currency: "${STAFF_LOANS_CURRENCY:USD}"
     unredeemed-voucher-treatment: "${STAFF_LOANS_UNREDEEMED_VOUCHER_TREATMENT:DEBT_STANDS}"
     # Payroll's mailboxes, comma-separated: told, with Human Capital, when a borrower leaves owing a paid-out loan, so it
     # is recovered from their terminal benefits (FR-SGL-007, BRD 3.8). Blank: Human Capital alone is told.
     payroll-emails: "${STAFF_LOANS_PAYROLL_EMAILS:}"
     # The Staff Grocery Loan jobs (the weekly offer run and its messages, retrying staff messages left pending, voucher
-    # upkeep) without the scheduled-tasks profile, which also starts the jobs that pay and lodge. These move no money.
+    # upkeep, the daily arrears email) without the scheduled-tasks profile, which also starts the jobs that pay and
+    # lodge. These move no money.
     # true: the weekly run fires on loans.staff-offers.run-cron and messages every eligible staff member.
     jobs-enabled: "${STAFF_LOANS_JOBS_ENABLED:false}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
