@@ -28,6 +28,9 @@ spring:
     hikari:
       maximum-pool-size: ${DB_POOL_MAX:19}
       minimum-idle: ${DB_POOL_MIN:7}
+      # How long a caller waits for a free connection before failing. Hikari's default is 30s, which turns
+      # an exhausted pool into requests that hang for half a minute; 5s fails them while the cause is visible.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:5000}
       data-source-properties:
         stringtype: unspecified
 
@@ -42,8 +45,16 @@ spring:
     open-in-view: false
     properties:
       hibernate:
+        # 50 is the fleet's size. It batches UPDATEs (order_updates groups them by entity); INSERTs do not
+        # batch while the entities use IDENTITY ids, because Hibernate must read each id back one row at a time.
         jdbc:
-          batch_size: 1000
+          batch_size: ${HIBERNATE_JDBC_BATCH_SIZE:50}
+        order_inserts: true
+        order_updates: true
+        # Loads lazy and EAGER associations of up to 100 parents in one IN query, instead of one SELECT per
+        # parent. Loan's EAGER merchant, createdByUser and channel otherwise cost a query per distinct id on
+        # every list and queue.
+        default_batch_fetch_size: 100
 
   # --- @Scheduled jobs: ONE thread, deliberately --------------------------
   # Boot's default, pinned so it is not raised without redoing this audit. A
@@ -74,6 +85,12 @@ spring:
     scheduling:
       pool:
         size: 1
+  # The three caches (parameterCache and the InnBucks and Ndasenda access tokens) are Boot's Caffeine caches,
+  # which have no bound unless a spec sets one. No TTL: the token caches are evicted on a 401 and parameterCache
+  # on every save.
+  cache:
+    caffeine:
+      spec: maximumSize=500
   # Email over SMTP (Amazon SES), as the ticketing fleet sends Foundry's: loans writes its own From header, so the
   # inbox shows loans.mail.sender-name rather than the notification API's name. Off twice by default: Spring builds
   # a mail sender only when MAIL_HOST is set, and loans uses it only with MAIL_ENABLED=true. Off, or when a send
@@ -362,8 +379,8 @@ springdoc:
     path: /swagger-ui.html
 
 # --- Actuator: health only -------------------------------------------------
-# For the cell's probes: readiness on /actuator/health, liveness on /actuator/health/liveness, on the
-# app port like the other fleet services. Health is the ONLY endpoint exposed over HTTP, and it answers
+# For the cell's probes: readiness on /actuator/health/readiness, liveness on /actuator/health/liveness,
+# on the app port like the other fleet services. Health is the ONLY endpoint exposed over HTTP, and it answers
 # UP or DOWN with no details, so an anonymous caller learns nothing about the database or the disk.
 # ApiSecurityConfig permits exactly /actuator/health and its subpaths; anything else under /actuator is
 # not mapped at all.
@@ -377,6 +394,12 @@ management:
       probes:
         enabled: true
       show-details: never
+      # Readiness is the app's own state plus the database, nothing else. The aggregate /actuator/health also
+      # counts the disk-space check, so a full /tmp would take the only loans pod out of service. Liveness
+      # stays livenessState alone.
+      group:
+        readiness:
+          include: readinessState,db
   # Mail must never decide readiness: Boot's mail health check opens a real SMTP connection, which is DOWN on a cell
   # without SES and would keep the pod out of service (it took the ticketing user-service down on 2026-07-29). Email
   # is best-effort with a notification API fallback.
