@@ -1,5 +1,8 @@
 package zw.co.innbucks.loans.core.voucher;
 
+import zw.co.innbucks.loans.core.loan.DisbursementType;
+import zw.co.innbucks.loans.core.merchant.Merchant;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -15,10 +18,23 @@ final class TestVouchers {
     private TestVouchers() {
     }
 
+    /** GetMore Groceries, the Staff Grocery Loan's merchant: a new instance each time, so no test sees another's. */
+    static Merchant getMore() {
+        return merchant(3L, "getmore-groceries", "GetMore Groceries");
+    }
+
+    static Merchant merchant(long id, String code, String name) {
+        Merchant merchant = Merchant.builder().merchantCode(code).companyName(name)
+                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).build();
+        merchant.setId(id);
+        return merchant;
+    }
+
     static Voucher.VoucherBuilder issued(VoucherCodeVault vault) {
         return Voucher.builder()
                 .id(7L)
                 .product(VoucherProduct.STAFF_GROCERY_LOAN)
+                .merchant(getMore())
                 .disbursementReference("BRNET-20261001-0007")
                 .loanAccount("SGL-2026-000143")
                 .staffMemberId(12L)

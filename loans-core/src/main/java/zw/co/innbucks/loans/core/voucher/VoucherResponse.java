@@ -9,7 +9,8 @@ import java.time.LocalDateTime;
  * A voucher as staff see it (FR-SGL-035): its code masked (FR-SGL-040), its status as of now (an open voucher past its
  * expiry reads EXPIRED even before the expiry job marks it), and where sending it stands.
  */
-public record VoucherResponse(Long id, VoucherProduct product, String loanAccount, String disbursementReference,
+public record VoucherResponse(Long id, VoucherProduct product, String merchantCode, String merchantName,
+                              String loanAccount, String disbursementReference,
                               String customerReference, String customerName, String customerMsisdn,
                               String maskedCode, BigDecimal faceValue, BigDecimal redeemedAmount, BigDecimal balance,
                               String currency, LocalDateTime issuedAt, LocalDateTime expiresAt, VoucherStatus status,
@@ -19,7 +20,8 @@ public record VoucherResponse(Long id, VoucherProduct product, String loanAccoun
                               LocalDateTime deliveryUpdatedAt) {
 
     public static VoucherResponse of(Voucher voucher, LocalDateTime now) {
-        return new VoucherResponse(voucher.getId(), voucher.getProduct(), voucher.getLoanAccount(),
+        return new VoucherResponse(voucher.getId(), voucher.getProduct(), voucher.getMerchant().getMerchantCode(),
+                voucher.getMerchant().getCompanyName(), voucher.getLoanAccount(),
                 voucher.getDisbursementReference(), voucher.getCustomerReference(), voucher.getCustomerName(),
                 MsisdnUtils.mask(voucher.getCustomerMsisdn()), voucher.maskedCode(), voucher.getFaceValue(),
                 voucher.getRedeemedAmount(), voucher.balance(), voucher.getCurrency(), voucher.getIssuedAt(),

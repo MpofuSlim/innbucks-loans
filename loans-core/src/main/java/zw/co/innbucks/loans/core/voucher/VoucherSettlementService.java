@@ -1,13 +1,17 @@
 package zw.co.innbucks.loans.core.voucher;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.CurrencyTotals;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.Event;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.Line;
+import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.MerchantTotals;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.OutletTotals;
 
 import java.math.BigDecimal;
@@ -26,7 +30,8 @@ import java.util.stream.Collectors;
 
 /**
  * The daily settlement and reconciliation report (FR-SGL-038): one market day's vouchers issued, redeemed by outlet,
- * cancelled and lapsed, as JSON or as a CSV of every event. Codes are masked (FR-SGL-040).
+ * cancelled and lapsed, as JSON or as a CSV of every event, for every merchant or for one. Codes are masked
+ * (FR-SGL-040).
  */
 @Service
 @RequiredArgsConstructor
@@ -34,62 +39,89 @@ public class VoucherSettlementService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
     private static final String[] CSV_HEADER = {"event", "at", "voucherId", "maskedCode", "loanAccount",
-            "customerReference", "currency", "amount", "outletId", "outletName", "merchantReference"};
+            "customerReference", "currency", "amount", "outletId", "outletName", "merchantReference", "merchantCode"};
 
     private final VoucherRepository voucherRepository;
+    private final MerchantRepository merchantRepository;
     private final VoucherRedemptionRepository redemptionRepository;
     private final MarketTimeZone marketTimeZone;
 
-    /** The report for a market day, today's so far included; a day still to come is refused. */
+    /**
+     * The report for a market day, today's so far included; a day still to come is refused.
+     *
+     * @param merchantCode the one merchant to report on; blank for every merchant
+     * @throws NotFoundException no merchant has {@code merchantCode}
+     */
     @Transactional(readOnly = true)
-    public VoucherSettlementReport report(LocalDate day) {
+    public VoucherSettlementReport report(LocalDate day, String merchantCode) {
         if (day.isAfter(marketTimeZone.today())) {
             throw new ValidationException("date (" + day + ") is in the future");
+        }
+        String merchant = StringUtils.trimToNull(merchantCode);
+        if (merchant != null && !merchantRepository.existsByMerchantCode(merchant)) {
+            throw new NotFoundException("Merchant " + merchant + " not found");
         }
         LocalDateTime now = marketTimeZone.nowUtc();
         LocalDateTime from = marketTimeZone.startOfDayUtc(day);
         LocalDateTime to = marketTimeZone.endOfDayUtc(day);
         List<Line> lines = new ArrayList<>();
+        Map<String, String> merchantNames = new TreeMap<>();
         voucherRepository.findByIssuedAtBetweenOrderByIdAsc(from, to).forEach(voucher ->
-                lines.add(line(Event.ISSUED, voucher.getIssuedAt(), voucher, voucher.getFaceValue())));
+                lines.add(line(Event.ISSUED, voucher.getIssuedAt(), voucher, voucher.getFaceValue(), merchantNames)));
         List<VoucherRedemption> redemptions = redemptionRepository.findByRedeemedAtBetweenOrderByIdAsc(from, to);
         Map<Long, Voucher> redeemed = voucherRepository.findAllById(redemptions.stream()
                         .map(VoucherRedemption::getVoucherId).distinct().toList()).stream()
                 .collect(Collectors.toMap(Voucher::getId, Function.identity()));
         redemptions.forEach(redemption -> {
             Voucher voucher = redeemed.get(redemption.getVoucherId());
-            lines.add(new Line(Event.REDEEMED, redemption.getRedeemedAt(), voucher.getId(), voucher.maskedCode(),
-                    voucher.getLoanAccount(), voucher.getCustomerReference(), voucher.getCurrency(),
-                    redemption.getAmount(), redemption.getOutletId(), redemption.getOutletName(),
-                    redemption.getMerchantReference()));
+            lines.add(new Line(Event.REDEEMED, redemption.getRedeemedAt(), voucher.getId(),
+                    named(voucher, merchantNames), voucher.maskedCode(), voucher.getLoanAccount(),
+                    voucher.getCustomerReference(), voucher.getCurrency(), redemption.getAmount(),
+                    redemption.getOutletId(), redemption.getOutletName(), redemption.getMerchantReference()));
         });
         voucherRepository.findByCancelledAtBetweenOrderByIdAsc(from, to).forEach(voucher ->
-                lines.add(line(Event.CANCELLED, voucher.getCancelledAt(), voucher, voucher.getFaceValue())));
+                lines.add(line(Event.CANCELLED, voucher.getCancelledAt(), voucher, voucher.getFaceValue(),
+                        merchantNames)));
         voucherRepository.findByExpiresAtBetweenAndStatusInOrderByIdAsc(from, to, EnumSet.of(VoucherStatus.EXPIRED,
                         VoucherStatus.ISSUED, VoucherStatus.PARTIALLY_REDEEMED)).stream()
                 .filter(voucher -> voucher.lapsed(now))
-                .forEach(voucher -> lines.add(line(Event.EXPIRED, voucher.getExpiresAt(), voucher, voucher.balance())));
+                .forEach(voucher -> lines.add(line(Event.EXPIRED, voucher.getExpiresAt(), voucher, voucher.balance(),
+                        merchantNames)));
+        if (merchant != null) {
+            lines.removeIf(line -> !merchant.equals(line.merchantCode()));
+        }
         lines.sort(Comparator.comparing(Line::at).thenComparing(Line::voucherId));
-        return new VoucherSettlementReport(day, now, totals(lines), byOutlet(lines), lines);
+        return new VoucherSettlementReport(day, merchant, now, totals(lines), byMerchant(lines, merchantNames),
+                byOutlet(lines), lines);
     }
 
     /** The report's events as CSV, one row each, for a spreadsheet. */
     @Transactional(readOnly = true)
-    public String csv(LocalDate day) {
+    public String csv(LocalDate day, String merchantCode) {
         StringBuilder out = new StringBuilder(String.join(",", CSV_HEADER)).append("\r\n");
-        for (Line line : report(day).lines()) {
+        for (Line line : report(day, merchantCode).lines()) {
             out.append(String.join(",", line.event().name(), marketTimeZone.render(line.at()),
                             String.valueOf(line.voucherId()), cell(line.maskedCode()), cell(line.loanAccount()),
                             cell(line.customerReference()), line.currency(), line.amount().toPlainString(),
-                            cell(line.outletId()), cell(line.outletName()), cell(line.merchantReference())))
+                            cell(line.outletId()), cell(line.outletName()), cell(line.merchantReference()),
+                            cell(line.merchantCode())))
                     .append("\r\n");
         }
         return out.toString();
     }
 
-    private static Line line(Event event, LocalDateTime at, Voucher voucher, BigDecimal amount) {
-        return new Line(event, at, voucher.getId(), voucher.maskedCode(), voucher.getLoanAccount(),
-                voucher.getCustomerReference(), voucher.getCurrency(), amount, null, null, null);
+    private static Line line(Event event, LocalDateTime at, Voucher voucher, BigDecimal amount,
+                             Map<String, String> merchantNames) {
+        return new Line(event, at, voucher.getId(), named(voucher, merchantNames), voucher.maskedCode(),
+                voucher.getLoanAccount(), voucher.getCustomerReference(), voucher.getCurrency(), amount, null, null,
+                null);
+    }
+
+    /** The voucher's merchant code, its name noted for the per-merchant totals. */
+    private static String named(Voucher voucher, Map<String, String> merchantNames) {
+        String code = voucher.getMerchant().getMerchantCode();
+        merchantNames.putIfAbsent(code, voucher.getMerchant().getCompanyName());
+        return code;
     }
 
     private static List<CurrencyTotals> totals(List<Line> lines) {
@@ -104,15 +136,30 @@ public class VoucherSettlementService {
         return totals;
     }
 
+    private static List<MerchantTotals> byMerchant(List<Line> lines, Map<String, String> merchantNames) {
+        Map<List<String>, List<Line>> grouped = new LinkedHashMap<>();
+        lines.stream().sorted(Comparator.comparing(Line::merchantCode).thenComparing(Line::currency))
+                .forEach(line -> grouped.computeIfAbsent(List.of(line.merchantCode(), line.currency()),
+                        key -> new ArrayList<>()).add(line));
+        List<MerchantTotals> totals = new ArrayList<>();
+        grouped.forEach((key, events) -> totals.add(new MerchantTotals(key.get(0), merchantNames.get(key.get(0)),
+                key.get(1), count(events, Event.ISSUED), sum(events, Event.ISSUED),
+                count(events, Event.REDEEMED), sum(events, Event.REDEEMED),
+                count(events, Event.CANCELLED), sum(events, Event.CANCELLED),
+                count(events, Event.EXPIRED), sum(events, Event.EXPIRED))));
+        return totals;
+    }
+
     private static List<OutletTotals> byOutlet(List<Line> lines) {
         Map<List<String>, List<Line>> grouped = new LinkedHashMap<>();
         lines.stream().filter(line -> line.event() == Event.REDEEMED)
-                .sorted(Comparator.comparing(Line::outletId).thenComparing(Line::currency))
-                .forEach(line -> grouped.computeIfAbsent(List.of(line.outletId(), line.currency()),
-                        key -> new ArrayList<>()).add(line));
+                .sorted(Comparator.comparing(Line::merchantCode).thenComparing(Line::outletId)
+                        .thenComparing(Line::currency))
+                .forEach(line -> grouped.computeIfAbsent(List.of(line.merchantCode(), line.outletId(),
+                        line.currency()), key -> new ArrayList<>()).add(line));
         List<OutletTotals> totals = new ArrayList<>();
-        grouped.forEach((key, redemptions) -> totals.add(new OutletTotals(key.get(0),
-                redemptions.getLast().outletName(), key.get(1), redemptions.size(),
+        grouped.forEach((key, redemptions) -> totals.add(new OutletTotals(key.get(0), key.get(1),
+                redemptions.getLast().outletName(), key.get(2), redemptions.size(),
                 sum(redemptions, Event.REDEEMED))));
         return totals;
     }
@@ -127,7 +174,7 @@ public class VoucherSettlementService {
 
     /**
      * A field made safe for a spreadsheet: quoted when it holds a comma, quote or line break, and with a leading
-     * {@code = + - @} neutralised, so a value GetMore typed cannot run as a formula when the file is opened.
+     * {@code = + - @} neutralised, so a value a merchant's till typed cannot run as a formula when the file is opened.
      */
     static String cell(String value) {
         if (value == null) {

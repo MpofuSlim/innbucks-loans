@@ -90,21 +90,25 @@ class StaffLoanPolicyTest {
     }
 
     @Test
-    @DisplayName("the agreement's terms: the register's record, the amount owed in full, no interest, the 20th")
+    @DisplayName("the agreement's terms: the register's record, the amount owed in full, no interest, the 20th, the"
+            + " merchant given")
     void signing() {
         StaffMember chipo = StaffMember.builder().id(2L).employeeNumber("E1012").fullName("Chipo Banda")
                 .nationalId("632223334C55").msisdn("263773456789").department("Treasury").grade("C4")
                 .employmentStatus(StaffEmploymentStatus.ACTIVE).build();
 
-        StaffLoanTerms.Signing terms = policy.signing(chipo, new BigDecimal("300"), LocalDate.of(2026, 10, 1));
+        StaffLoanTerms.Signing terms = policy.signing(chipo, new BigDecimal("300"), LocalDate.of(2026, 10, 1),
+                "GetMore Groceries");
 
         assertThat(terms).isEqualTo(new StaffLoanTerms.Signing("Chipo Banda", "E1012", "632223334C55",
                 "263773456789", "Treasury", new BigDecimal("300.00"), "USD", BigDecimal.ZERO,
                 new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries", 30,
                 UnredeemedVoucherTreatment.DEBT_STANDS.terms(), LocalDate.of(2026, 10, 1)));
         properties.setUnredeemedVoucherTreatment(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT);
-        assertThat(policy.signing(chipo, new BigDecimal("300"), LocalDate.of(2026, 10, 1)).unredeemedVoucherTerms())
-                .isEqualTo("If you do not spend the whole voucher before it expires, you repay only what you spent.");
+        assertThat(policy.signing(chipo, new BigDecimal("300"), LocalDate.of(2026, 10, 1), "Pick n Pay"))
+                .extracting(StaffLoanTerms.Signing::merchantName, StaffLoanTerms.Signing::unredeemedVoucherTerms)
+                .containsExactly("Pick n Pay",
+                        "If you do not spend the whole voucher before it expires, you repay only what you spent.");
     }
 
     @Test

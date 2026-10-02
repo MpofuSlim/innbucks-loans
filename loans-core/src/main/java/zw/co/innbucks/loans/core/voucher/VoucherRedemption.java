@@ -16,8 +16,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * One purchase paid with a voucher at a GetMore till (FR-SGL-035, 036). GetMore's own transaction reference identifies
- * it, so a till that sends the same redemption again gets the first answer back instead of spending twice.
+ * One purchase paid with a voucher at a till of its merchant (FR-SGL-035, 036). The merchant's own transaction
+ * reference identifies it, so a till that sends the same redemption again gets the first answer back instead of
+ * spending twice.
  */
 @Entity
 @Table(name = "voucher_redemptions")
@@ -35,7 +36,12 @@ public class VoucherRedemption {
     @Column(name = "voucher_id", nullable = false)
     private Long voucherId;
 
-    @Column(name = "merchant_reference", length = 64, nullable = false, unique = true)
+    /** The merchant whose till took it: the voucher's own, the only one that may. */
+    @Column(name = "merchant_id", nullable = false)
+    private Long merchantId;
+
+    /** The merchant's own reference for the sale: unique among that merchant's redemptions. */
+    @Column(name = "merchant_reference", length = 64, nullable = false)
     private String merchantReference;
 
     @Column(name = "amount", precision = 19, scale = 2, nullable = false)
@@ -51,7 +57,7 @@ public class VoucherRedemption {
     @Column(name = "outlet_name", length = 120)
     private String outletName;
 
-    /** The GetMore account that redeemed it. */
+    /** The till account that redeemed it. */
     @Column(name = "redeemed_by", nullable = false)
     private String redeemedBy;
 

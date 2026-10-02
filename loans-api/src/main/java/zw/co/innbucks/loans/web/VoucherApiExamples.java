@@ -2,8 +2,10 @@ package zw.co.innbucks.loans.web;
 
 /**
  * Example bodies for the voucher endpoints, as one story: voucher 7 (Chipo Banda, USD 300.00, issued 6 October) was
- * sent by WhatsApp and spent down to USD 120.00 at GetMore Avondale on 8 October; voucher 8 (Nyasha Dube, USD 250.00, issued
- * 8 October) could not be sent on either channel. Their codes carry real Damm check digits.
+ * sent by WhatsApp and spent down to USD 120.00 at GetMore Avondale on 8 October; voucher 8 (Nyasha Dube, USD 250.00,
+ * issued 8 October) could not be sent on either channel. Both are for the merchant GetMore Groceries
+ * ({@code getmore-groceries}), the Staff Grocery Loan's merchant, whose till signs in as {@code getmore-pos}. Their
+ * codes carry real Damm check digits.
  */
 public final class VoucherApiExamples {
 
@@ -14,6 +16,8 @@ public final class VoucherApiExamples {
                 {
                   "id": 7,
                   "product": "STAFF_GROCERY_LOAN",
+                  "merchantCode": "getmore-groceries",
+                  "merchantName": "GetMore Groceries",
                   "loanAccount": "SGL-2026-000143",
                   "disbursementReference": "BRNET-20261006-0007",
                   "customerReference": "E1012",
@@ -41,6 +45,8 @@ public final class VoucherApiExamples {
                 {
                   "id": 8,
                   "product": "STAFF_GROCERY_LOAN",
+                  "merchantCode": "getmore-groceries",
+                  "merchantName": "GetMore Groceries",
                   "loanAccount": "SGL-2026-000151",
                   "disbursementReference": "BRNET-20261008-0002",
                   "customerReference": "E1001",
@@ -253,8 +259,24 @@ public final class VoucherApiExamples {
                     "expiredUnredeemedValue": 0.00
                   }
                 ],
+                "byMerchant": [
+                  {
+                    "merchantCode": "getmore-groceries",
+                    "merchantName": "GetMore Groceries",
+                    "currency": "USD",
+                    "issuedCount": 1,
+                    "issuedValue": 250.00,
+                    "redemptionCount": 1,
+                    "redeemedValue": 180.00,
+                    "cancelledCount": 0,
+                    "cancelledValue": 0.00,
+                    "expiredCount": 0,
+                    "expiredUnredeemedValue": 0.00
+                  }
+                ],
                 "redemptionsByOutlet": [
                   {
+                    "merchantCode": "getmore-groceries",
                     "outletId": "GM-AVD-01",
                     "outletName": "GetMore Avondale",
                     "currency": "USD",
@@ -267,6 +289,7 @@ public final class VoucherApiExamples {
                     "event": "ISSUED",
                     "at": "2026-10-08T08:05:41+02:00",
                     "voucherId": 8,
+                    "merchantCode": "getmore-groceries",
                     "maskedCode": "**** **** **** 2151",
                     "loanAccount": "SGL-2026-000151",
                     "customerReference": "E1001",
@@ -280,6 +303,7 @@ public final class VoucherApiExamples {
                     "event": "REDEEMED",
                     "at": "2026-10-08T17:42:10+02:00",
                     "voucherId": 7,
+                    "merchantCode": "getmore-groceries",
                     "maskedCode": "**** **** **** 8406",
                     "loanAccount": "SGL-2026-000143",
                     "customerReference": "E1012",

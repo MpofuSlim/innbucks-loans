@@ -4,9 +4,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
@@ -14,6 +17,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGrades;
 
@@ -62,6 +66,11 @@ public class StaffLoan {
 
     @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false, updatable = false)
     private String grade;
+
+    /** The merchant it was accepted for: named in its agreement, paid the loan, and whose tills take its voucher. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "merchant_id", nullable = false, updatable = false)
+    private Merchant merchant;
 
     @Column(name = "amount", precision = 19, scale = 2, nullable = false, updatable = false)
     private BigDecimal amount;

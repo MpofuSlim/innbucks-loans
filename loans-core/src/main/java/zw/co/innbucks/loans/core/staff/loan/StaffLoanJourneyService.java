@@ -25,6 +25,8 @@ import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.instrument.StaffLoanTerms;
+import zw.co.innbucks.loans.core.merchant.Merchant;
+import zw.co.innbucks.loans.core.merchant.StaffLoanMerchantService;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
@@ -60,7 +62,9 @@ import java.util.regex.Pattern;
  * Who may borrow is decided the same way at every step as by the weekly run ({@link StaffOfferVerdict}), so an offer
  * the borrower still holds is refused at acceptance if, say, they have since fallen into arrears (FR-SGL-013,
  * FR-SGL-014). A declined borrower is told why in plain words (FR-SGL-029). A loan accepted waits for disbursement
- * through the bank's system (BR.NET, FR-SGL-032), which pays GetMore and issues the voucher; nothing here moves money.
+ * through the bank's system (BR.NET, FR-SGL-032), which pays the merchant and issues the voucher; nothing here moves
+ * money. The merchant is the one set for the Staff Grocery Loan at acceptance ({@link StaffLoanMerchantService}), and
+ * stays the loan's whatever is set later.
  */
 @Slf4j
 @Service
@@ -85,6 +89,7 @@ public class StaffLoanJourneyService {
     private final StaffLoanRepository loanRepository;
     private final StaffLoanAgreementRepository agreementRepository;
     private final StaffLoanPolicy policy;
+    private final StaffLoanMerchantService merchants;
     private final InstrumentTemplateService templateService;
     private final MiddlewareAssertionVerifier verifier;
     private final AssertionUses assertionUses;
@@ -106,6 +111,9 @@ public class StaffLoanJourneyService {
         StaffOfferAssessment assessment = offerService.assess(member);
         if (assessment.verdict() != StaffOfferVerdict.ELIGIBLE) {
             return StaffLoanHome.unavailable(StaffLoanDecline.of(assessment.verdict()));
+        }
+        if (merchants.current().isEmpty()) {
+            return StaffLoanHome.unavailable(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
         }
         LocalDateTime now = marketTimeZone.nowUtc();
         Optional<StaffOffer> offer = offerRepository.findByStaffMemberIdAndStatus(member.getId(),
@@ -136,7 +144,9 @@ public class StaffLoanJourneyService {
      * @throws StaffLoanDeclinedException they may not borrow now, with the reason in plain words
      */
     public StaffLoanAppliedOffer apply(Long staffMemberId) {
-        StaffOfferApplication application = offerService.apply(member(staffMemberId).getId());
+        StaffMember member = member(staffMemberId);
+        merchantForNewLoan();
+        StaffOfferApplication application = offerService.apply(member.getId());
         if (application.offer() == null) {
             throw new StaffLoanDeclinedException(application.unavailable() != null
                     ? StaffLoanDecline.TEMPORARILY_UNAVAILABLE : StaffLoanDecline.of(application.verdict()));
@@ -159,7 +169,8 @@ public class StaffLoanJourneyService {
         requireEligible(member);
         requireAmount(offer, request.amount());
         LocalDate today = marketTimeZone.today();
-        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today);
+        Merchant merchant = merchantForNewLoan();
+        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today, merchant.getCompanyName());
         InstrumentTemplate template = agreementInForce();
         String content = StaffLoanTerms.render(template.getBody(), terms);
         return new StaffLoanQuote(offer.getId(), terms.amount(), terms.currency(), terms.interestRate(),
@@ -202,7 +213,8 @@ public class StaffLoanJourneyService {
         StaffOffer offer = offerToTakeUp(member, request.offerId(), now);
         requireEligible(member);
         requireAmount(offer, request.amount());
-        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today);
+        Merchant merchant = merchantForNewLoan();
+        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today, merchant.getCompanyName());
         InstrumentTemplate template = agreementInForce();
         String content = StaffLoanTerms.render(template.getBody(), terms);
         String contentSha256 = AuditService.sha256Hex(content);
@@ -223,6 +235,7 @@ public class StaffLoanJourneyService {
                 .fullName(member.getFullName())
                 .msisdn(member.getMsisdn())
                 .grade(member.getGrade())
+                .merchant(merchant)
                 .amount(terms.amount())
                 .currency(terms.currency())
                 .interestRate(terms.interestRate())
@@ -256,7 +269,8 @@ public class StaffLoanJourneyService {
                 .entityType("STAFF_LOAN").entityId(String.valueOf(loan.getId()))
                 .actorId(borrower).channelUsed("superapp")
                 .detail("reference:" + reference + ";offer:" + offer.getId() + ";amount:" + loan.getAmount()
-                        + ";dueDate:" + loan.getDueDate() + ";agreement:v" + template.getVersion()
+                        + ";dueDate:" + loan.getDueDate() + ";merchant:" + merchant.getMerchantCode()
+                        + ";agreement:v" + template.getVersion()
                         + ";assertion:" + assertion.jti()));
         log.info("Staff member {} accepted Staff Grocery Loan {} for {} {}, due {}", member.getEmployeeNumber(),
                 reference, loan.getCurrency(), loan.getAmount(), loan.getDueDate());
@@ -271,6 +285,18 @@ public class StaffLoanJourneyService {
         return offerRepository.findById(offerId)
                 .filter(offer -> offer.getStaffMemberId().equals(member.getId()) && offer.isOpenAt(now))
                 .orElseThrow(() -> new StaffLoanDeclinedException(StaffLoanDecline.OFFER_NOT_AVAILABLE));
+    }
+
+    /**
+     * The merchant a loan taken up now is for. None is set only if the product was never given one, and then no loan
+     * can be taken up: the borrower is told it is unavailable, and the log says why.
+     */
+    private Merchant merchantForNewLoan() {
+        return merchants.current().orElseThrow(() -> {
+            log.error("No merchant is set for the Staff Grocery Loan, so no loan can be taken up: set one with"
+                    + " PUT /staff-loan-merchant");
+            return new StaffLoanDeclinedException(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
+        });
     }
 
     private void requireEligible(StaffMember member) {
@@ -339,9 +365,10 @@ public class StaffLoanJourneyService {
     }
 
     private StaffLoanView view(StaffLoan loan) {
+        String merchantName = loan.getMerchant().getCompanyName();
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
-                StaffLoanView.message(loan.getStatus(), policy.merchantName()), loan.getAmount(), loan.getCurrency(),
-                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), policy.merchantName(),
+                StaffLoanView.message(loan.getStatus(), merchantName), loan.getAmount(), loan.getCurrency(),
+                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), merchantName,
                 loan.getAcceptedAt(), PAID_OUT.contains(loan.getStatus())
                         ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
                         : null);

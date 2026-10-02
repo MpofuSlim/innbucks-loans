@@ -87,6 +87,12 @@ public class MerchantService {
         Merchant merchant = merchantRepository.findByMerchantCode(code)
                 .orElseThrow(() -> new NotFoundException("Merchant " + code + " not found"));
         validateUpdateRequest(request);
+        if (merchant.isStaffLoanMerchant()
+                && request.getDisbursementType() != DisbursementType.MERCHANT_MOBILE_WALLET) {
+            throw new ValidationException("Merchant " + code + " is the Staff Grocery Loan's merchant, which is paid to"
+                    + " its own account: keep its disbursement type " + DisbursementType.MERCHANT_MOBILE_WALLET
+                    + ", or make another merchant the Staff Grocery Loan's first");
+        }
         DisbursementType oldDisbursementType = merchant.getDisbursementType();
         String oldAccountNumber = merchant.getAccountNumber();
 

@@ -45,9 +45,9 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
         + " (FR-SGL-025 to FR-SGL-031), for the borrower session's own staff member: the tile (GET), \"Apply\" when"
         + " there is no offer, the disclosure and agreement for the amount chosen (quote), and accepting it with a"
         + " fresh PIN or biometric, and every loan they have taken (GET /loans). A loan accepted waits for"
-        + " disbursement through the bank's system, which pays"
-        + " GetMore Groceries and sends the voucher. When a borrower cannot borrow, the reason comes in plain words"
-        + " (unavailable.message, or a 422's message): show it as it is.")
+        + " disbursement through the bank's system, which pays the merchant it was accepted for (merchantName) and"
+        + " sends the voucher. When a borrower cannot borrow, the reason comes in plain words (unavailable.message,"
+        + " or a 422's message): show it as it is.")
 @RestController
 @RequestMapping(ApiPaths.BASE + "/borrower/staff-grocery-loan")
 @RequiredArgsConstructor

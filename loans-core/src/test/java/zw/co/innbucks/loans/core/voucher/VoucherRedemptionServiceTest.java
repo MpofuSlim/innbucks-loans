@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -18,14 +19,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * GetMore's till (FR-SGL-036): checking a voucher, spending it in part or in full, every refusal by its code, and a
- * retried redemption answered once rather than spent twice.
+ * A merchant's till (FR-SGL-036): checking a voucher, spending it in part or in full, every refusal by its code, a
+ * retried redemption answered once rather than spent twice, and another merchant's voucher refused as unknown.
  */
 class VoucherRedemptionServiceTest {
 
@@ -36,6 +38,7 @@ class VoucherRedemptionServiceTest {
     private VoucherRepository vouchers;
     private VoucherRedemptionRepository redemptions;
     private Voucher voucher;
+    private User till;
     private VoucherRedemptionService service;
 
     @BeforeEach
@@ -49,6 +52,10 @@ class VoucherRedemptionServiceTest {
         when(redemptions.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         AuthService auth = mock(AuthService.class);
         when(auth.getLoggedInUsername()).thenReturn("getmore-pos");
+        till = new User();
+        till.setUsername("getmore-pos");
+        till.setMerchant(TestVouchers.getMore());
+        when(auth.getLoggedInUser()).thenAnswer(i -> till);
         service = new VoucherRedemptionService(vouchers, redemptions, vault, properties, auth, mock(AuditService.class),
                 new MarketTimeZone("ZW", Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC)));
     }
@@ -149,10 +156,11 @@ class VoucherRedemptionServiceTest {
     @Test
     @DisplayName("the same reference again for the same voucher and amount gets the first answer; nothing more spent")
     void retrySameReference() {
-        VoucherRedemption earlier = VoucherRedemption.builder().id(31L).voucherId(7L).merchantReference("GM-POS-88412")
+        VoucherRedemption earlier = VoucherRedemption.builder().id(31L).voucherId(7L).merchantId(3L)
+                .merchantReference("GM-POS-88412")
                 .amount(new BigDecimal("180.00")).balanceAfter(new BigDecimal("120.00")).outletId("GM-AVD-01")
                 .redeemedBy("getmore-pos").redeemedAt(NOW.minusSeconds(5)).build();
-        when(redemptions.findByMerchantReference("GM-POS-88412")).thenReturn(Optional.of(earlier));
+        when(redemptions.findByMerchantIdAndMerchantReference(3L, "GM-POS-88412")).thenReturn(Optional.of(earlier));
 
         VoucherRedemptionResult again = service.redeem(redeem(TestVouchers.CODE, "180.00", "GM-POS-88412"));
 
@@ -163,6 +171,30 @@ class VoucherRedemptionServiceTest {
 
         refused(() -> service.redeem(redeem(TestVouchers.CODE, "50.00", "GM-POS-88412")),
                 VoucherRefusal.REFERENCE_REUSED);
+    }
+
+    @Test
+    @DisplayName("a redemption is recorded as the till's merchant's, under its own reference")
+    void recordedForTheMerchant() {
+        service.redeem(redeem(TestVouchers.CODE, "10.00", "GM-POS-1"));
+
+        verify(redemptions).findByMerchantIdAndMerchantReference(3L, "GM-POS-1");
+        verify(redemptions).saveAndFlush(argThat(redemption -> redemption.getMerchantId().equals(3L)
+                && redemption.getMerchantReference().equals("GM-POS-1")));
+    }
+
+    @Test
+    @DisplayName("another merchant's till is told the voucher does not exist, checking or spending; nothing spent")
+    void anotherMerchantsTill() {
+        till.setMerchant(TestVouchers.merchant(9L, "pick-n-pay", "Pick n Pay"));
+
+        refused(() -> service.validate(new VoucherValidationRequest(TestVouchers.CODE, "PNP-01")),
+                VoucherRefusal.VOUCHER_NOT_FOUND);
+        refused(() -> service.redeem(redeem(TestVouchers.CODE, "10.00", "PNP-1")), VoucherRefusal.VOUCHER_NOT_FOUND);
+        verify(redemptions, never()).findByMerchantIdAndMerchantReference(any(), anyString());
+        verify(redemptions, never()).saveAndFlush(any());
+        verify(vouchers, never()).save(any());
+        assertThat(voucher.getRedeemedAmount()).isEqualByComparingTo("0");
     }
 
     @Test

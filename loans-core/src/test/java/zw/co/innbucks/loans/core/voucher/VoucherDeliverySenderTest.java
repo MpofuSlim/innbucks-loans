@@ -35,8 +35,8 @@ import static org.mockito.Mockito.when;
 class VoucherDeliverySenderTest {
 
     private static final LocalDateTime NOW = TestVouchers.ISSUED_AT.plusSeconds(1);
-    private static final String MESSAGE = "InnBucks Staff Grocery Loan. Your GetMore voucher is 4829-1506-7331-8406,"
-            + " worth USD 300.00, valid until 31 Oct 2026. Show it at any GetMore till.";
+    private static final String MESSAGE = "InnBucks Staff Grocery Loan. Your voucher is 4829-1506-7331-8406, worth"
+            + " USD 300.00, valid until 31 Oct 2026. Spend it at GetMore Groceries.";
 
     private final List<VoucherDelivery> logged = new ArrayList<>();
     private Voucher voucher;
@@ -84,7 +84,7 @@ class VoucherDeliverySenderTest {
             assertThat(attempt.getStatus()).isEqualTo(Status.SENT);
             assertThat(attempt.getGatewayReference()).as("the WhatsApp gateway takes no reference").isNull();
             assertThat(attempt.getTemplate()).isEqualTo("VOUCHER_ISSUED");
-            assertThat(attempt.getTemplateVersion()).isEqualTo(1);
+            assertThat(attempt.getTemplateVersion()).as("the wording that names the merchant").isEqualTo(2);
             assertThat(attempt.getRequestedBy()).isEqualTo("system");
             assertThat(attempt.toString()).doesNotContain(TestVouchers.CODE).doesNotContain("4829-1506");
         });

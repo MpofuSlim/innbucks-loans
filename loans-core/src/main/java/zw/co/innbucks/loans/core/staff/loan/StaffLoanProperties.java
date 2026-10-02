@@ -62,10 +62,6 @@ public class StaffLoanProperties {
     @Pattern(regexp = "[A-Z]{3}", message = "loans.staff-loans.currency must be a 3-letter ISO code, such as USD")
     private String currency = "USD";
 
-    /** Where the voucher can be spent, as the borrower is told (FR-SGL-026). */
-    @NotBlank
-    private String merchantName = "GetMore Groceries";
-
     /** OQ-09, until Finance and Legal decide. */
     @NotNull
     private UnredeemedVoucherTreatment unredeemedVoucherTreatment = UnredeemedVoucherTreatment.DEBT_STANDS;

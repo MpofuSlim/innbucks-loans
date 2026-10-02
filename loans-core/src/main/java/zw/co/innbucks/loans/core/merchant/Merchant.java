@@ -53,4 +53,11 @@ public class Merchant extends BaseEntity {
     @Column(name = "contact_person_email")
     private String contactPersonEmail;
 
+    /**
+     * Whether this is the Staff Grocery Loan's merchant: the one a new loan is accepted for, paid to, and whose tills
+     * its voucher is spent at. At most one merchant is, and only {@link StaffLoanMerchantService} changes which.
+     */
+    @Column(name = "staff_loan_merchant", nullable = false)
+    private boolean staffLoanMerchant;
+
 }

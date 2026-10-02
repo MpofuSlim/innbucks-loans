@@ -1,6 +1,6 @@
 package zw.co.innbucks.loans.core.voucher;
 
-/** Why GetMore's till was refused a voucher (FR-SGL-036), each a stable code its integration can branch on. */
+/** Why a merchant's till was refused a voucher (FR-SGL-036), each a stable code its integration can branch on. */
 public enum VoucherRefusal {
     /** Not a voucher code at all: wrong length, a stray character, or a check digit that does not match. */
     INVALID_VOUCHER_CODE(400, "That is not a valid voucher code - check the digits"),
@@ -15,7 +15,7 @@ public enum VoucherRefusal {
     PARTIAL_REDEMPTION_NOT_ALLOWED(409, "This voucher must be redeemed in full, in one purchase"),
     /** The till's currency is not the voucher's. */
     CURRENCY_MISMATCH(409, "The voucher is in a different currency"),
-    /** GetMore's reference was already used for a different redemption. */
+    /** The merchant's reference was already used for a different redemption of its own. */
     REFERENCE_REUSED(409, "That reference was already used for a different redemption");
 
     private final int httpStatus;

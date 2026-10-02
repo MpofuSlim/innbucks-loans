@@ -5,7 +5,8 @@ import java.time.LocalDateTime;
 
 /**
  * What a till is told about a voucher (FR-SGL-036): whether it can be spent now, how much is left, until when, and the
- * holder's name as far as a receipt needs it ({@code Tendai M.}). Nothing else about the customer reaches GetMore.
+ * holder's name as far as a receipt needs it ({@code Tendai M.}). Nothing else about the customer reaches the
+ * merchant.
  */
 public record VoucherValidationResponse(String maskedCode, VoucherStatus status, boolean redeemable,
                                         BigDecimal faceValue, BigDecimal balance, String currency,

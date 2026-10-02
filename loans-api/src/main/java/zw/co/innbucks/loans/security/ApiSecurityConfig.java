@@ -90,7 +90,7 @@ public class ApiSecurityConfig {
                 // After the token is authenticated, before any role check: a session on a temporary password
                 // is answered 403 PASSWORD_CHANGE_REQUIRED everywhere but PUT /me/password.
                 .addFilterAfter(new TemporaryPasswordFilter(), BearerTokenAuthenticationFilter.class)
-                // Then a voucher role is kept to the voucher endpoints (GetMore's till to validation and redemption).
+                // Then a voucher role is kept to the voucher endpoints (a merchant till to validation and redemption).
                 .addFilterAfter(new VoucherRoleFilter(), TemporaryPasswordFilter.class)
                 // And a SuperApp borrower's session to the borrower endpoints, which answer nobody else.
                 .addFilterAfter(new BorrowerSessionFilter(), VoucherRoleFilter.class)

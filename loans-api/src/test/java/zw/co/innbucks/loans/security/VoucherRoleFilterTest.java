@@ -72,8 +72,8 @@ class VoucherRoleFilterTest {
         mvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class))
                 .build();
-        givenToken("till", UserGroup.GETMORE);
-        givenToken("till-admin", UserGroup.GETMORE, UserGroup.SUPER_ADMIN);
+        givenToken("till", UserGroup.MERCHANT_TILL);
+        givenToken("till-admin", UserGroup.MERCHANT_TILL, UserGroup.SUPER_ADMIN);
         givenToken("support", UserGroup.VOUCHER_SUPPORT);
         givenToken("support-credit", UserGroup.VOUCHER_SUPPORT, UserGroup.CREDIT_MANAGER);
         givenToken("credit", UserGroup.CREDIT_MANAGER);
@@ -96,7 +96,7 @@ class VoucherRoleFilterTest {
     }
 
     @Test
-    @DisplayName("GETMORE is refused an endpoint that asks only for a valid token, even alongside SUPER_ADMIN")
+    @DisplayName("MERCHANT_TILL is refused an endpoint that asks only for a valid token, even alongside SUPER_ADMIN")
     void getMoreConfined() throws Exception {
         for (String till : List.of("till", "till-admin")) {
             mvc.perform(as(till, get("/lending/v1/credit-reason-codes")))
@@ -110,7 +110,7 @@ class VoucherRoleFilterTest {
     }
 
     @Test
-    @DisplayName("GETMORE reaches validation, redemption and its own password change")
+    @DisplayName("MERCHANT_TILL reaches validation, redemption and its own password change")
     void getMoreReachesItsEndpoints() throws Exception {
         mvc.perform(as("till", post("/lending/v1/voucher-validations").contentType(MediaType.APPLICATION_JSON)
                         .content(VoucherApiExamples.VALIDATION_REQUEST)))
