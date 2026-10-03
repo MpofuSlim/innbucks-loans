@@ -343,9 +343,14 @@ supply-chain integrity"):
 - Trivy is installed with the installer from the mutable `main` branch, not a
   pinned version;
 - its actions are on movable tags, not commit SHAs;
-- no test job gates the build (the jar is built with `-DskipTests`);
-- the runtime image is JRE 25 (`eclipse-temurin:25-jre-alpine`), while `ci.yml`
-  tests on 21.
+- no test job gates the build (the jar is built with `-DskipTests`).
+
+The JDK is no longer one of the gaps: `ci.yml` and `release.yml` build and test
+on 25, the JRE the image runs (`eclipse-temurin:25-jre-alpine`), with bytecode
+still targeting 21 (`<release>`), and Lombok is an explicit processor path in
+both modules (JDK 23+ no longer runs one found on the classpath). Dependabot
+ignores the base image's major bumps, so the JDK moves only in one reviewed
+change, to an LTS, with `java-version` beside it.
 
 This is a deliberate gap for this step, closed by its own change. Turning the
 scan into a gate before the image's current findings are triaged into
@@ -362,7 +367,6 @@ The follow-up, in order:
    review date. Push only after that.
 3. Pin every action to a commit SHA (Dependabot keeps them current), and pin the
    Trivy version.
-4. Run the image on the JRE that `ci.yml`'s `java-version` tests on.
 
 The box's own workflow is kept off the cell's tags meanwhile (section 7).
 
