@@ -378,17 +378,24 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
-# --- Actuator: health only -------------------------------------------------
+# --- Actuator: health and prometheus ----------------------------------------
 # For the cell's probes: readiness on /actuator/health/readiness, liveness on /actuator/health/liveness,
-# on the app port like the other fleet services. Health is the ONLY endpoint exposed over HTTP, and it answers
-# UP or DOWN with no details, so an anonymous caller learns nothing about the database or the disk.
-# ApiSecurityConfig permits exactly /actuator/health and its subpaths; anything else under /actuator is
-# not mapped at all.
+# on the app port like the other fleet services. Health answers UP or DOWN with no details, so an anonymous
+# caller learns nothing about the database or the disk; ApiSecurityConfig permits exactly /actuator/health
+# and its subpaths.
+# /actuator/prometheus is for the cell's Prometheus (job loans-service, loans-service:8088). It is NOT public:
+# ApiSecurityConfig answers it only to a caller presenting X-Metrics-Token equal to monitoring.scrape-token
+# (MetricsScrapeTokenFilter), the fleet's scrape credential, and 401s everyone else, loans' own tokens
+# included. Blank (the default) is fail-closed: every scrape is a 401.
+# Anything else under /actuator is not mapped at all.
+monitoring:
+  scrape-token: ${METRICS_SCRAPE_TOKEN:}
+
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   endpoint:
     health:
       probes:
@@ -406,3 +413,12 @@ management:
   health:
     mail:
       enabled: false
+  metrics:
+    tags:
+      # The fleet tags every series with spring.application.name; loans sets none, so the name is literal.
+      application: loans-service
+    # Fixed latency buckets so Prometheus can compute p95/p99 for every endpoint: the fleet's list. A short,
+    # fixed list rather than percentiles-histogram, which emits ~70 buckets per uri/method/status.
+    distribution:
+      slo:
+        "[http.server.requests]": 50ms,100ms,250ms,500ms,1s,2s,5s

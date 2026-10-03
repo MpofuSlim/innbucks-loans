@@ -49,11 +49,16 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>3.1.1</version>
         </dependency>
-        <!-- Health endpoints for the fleet cell's readiness and liveness probes. application.yml exposes
-             health and nothing else. -->
+        <!-- Health endpoints for the fleet cell's readiness and liveness probes, and /actuator/prometheus for the
+             cell's Prometheus (application.yml exposes those two and nothing else). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Version managed by Spring Boot's dependency management. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
     </dependencies>
     <build>

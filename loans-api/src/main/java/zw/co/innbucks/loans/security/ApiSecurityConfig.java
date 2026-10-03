@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -12,6 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
@@ -40,8 +42,8 @@ public class ApiSecurityConfig {
             "/spec.html",
             "/swagger-resources/**",
             "/configuration/security",
-            // The cell's probes. Only health is exposed (application.yml), and it shows no details.
-            // Named exactly, never /actuator/**: any other actuator path stays behind a token.
+            // The cell's probes. Health shows no details. Named exactly, never /actuator/**: any other
+            // actuator path stays behind a token (/actuator/prometheus behind the scrape token, above).
             "/actuator/health",
             "/actuator/health/**"
     };
@@ -49,6 +51,31 @@ public class ApiSecurityConfig {
     @Bean
     protected SessionAuthenticationStrategy sessionAuthenticationStrategy() {
         return new RegisterSessionAuthenticationStrategy(new SessionRegistryImpl());
+    }
+
+    /**
+     * {@code /actuator/prometheus}, for the cell's Prometheus and nobody else: the fleet's scrape token
+     * ({@link MetricsScrapeAuthFilter}) or a 401. Its own chain, ahead of the other two, so no loans token
+     * reads it (a merchant till's credential has no business with every route's error counts) and none of the
+     * API chain's session filters apply to the scraper. Blank token: a 401 for every caller.
+     */
+    @Bean
+    @Order(0)
+    SecurityFilterChain metricsSecurityFilterChain(HttpSecurity http,
+                                                   @Value("${monitoring.scrape-token:}") String scrapeToken)
+            throws Exception {
+        return http
+                .securityMatcher(MetricsScrapeAuthFilter.SCRAPE_PATH)
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasRole(MetricsScrapeAuthFilter.SCRAPER_ROLE))
+                // Before the anonymous filter: it sets an anonymous caller, and the scrape filter only ever fills
+                // an empty context.
+                .addFilterBefore(new MetricsScrapeAuthFilter(scrapeToken), AnonymousAuthenticationFilter.class)
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint(SecurityErrorResponses::unauthorized)
+                        .accessDeniedHandler(SecurityErrorResponses::forbidden))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .build();
     }
 
     @Bean
