@@ -95,6 +95,16 @@ class GatewaySurfaceTest {
         }
     }
 
+    @Test
+    @DisplayName("no scrape token configured: /actuator/prometheus is a 401 whatever X-Metrics-Token says")
+    void prometheusIsClosedWithoutAScrapeToken() throws Exception {
+        mvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
+        for (String presented : List.of("", " ", "anything")) {
+            mvc.perform(get("/actuator/prometheus").header("X-Metrics-Token", presented))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
     // ── CORS: the gateway's alone ─────────────────────────────────────────
 
     @Test

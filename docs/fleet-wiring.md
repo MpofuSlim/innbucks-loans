@@ -120,6 +120,23 @@ loans ever calls a sibling by name.
   token. `replicas: 1` with `strategy: Recreate` (see section 6).
 - Probes on the app port: readiness `GET /actuator/health`, liveness
   `GET /actuator/health/liveness`.
+- **Metrics for the cell's Prometheus**: `GET /actuator/prometheus` on
+  `loans-service:8088`, the app port (loans has no separate management port),
+  with the fleet's scrape header `X-Metrics-Token: <METRICS_SCRAPE_TOKEN>`,
+  exactly like the `loyalty-service` and `marketplace-service` jobs. Two things
+  on the ticketing side make it work:
+  - the Deployment names `METRICS_SCRAPE_TOKEN` as an explicit `env:` entry
+    (`secretKeyRef` on `cell-zw-secrets`, the value every service and the
+    Prometheus `metrics-scrape-token` Secret share). Loans takes no `envFrom` of
+    the cell (section 5), so without that entry the token is blank and every
+    scrape is a 401;
+  - the `loans-service` job in `prometheus/prometheus.yml`. Loans runs on the
+    staging host only, so on production the target reads DOWN (the Service has
+    no endpoints), the same as every `/lending/**` call there.
+
+  The gateway never reaches it: `/lending/**` is forwarded unchanged (loans
+  sees `/lending/actuator/...`, which is the API's 401), and the docs proxy
+  strips to `/v3/api-docs` only.
 
 What this asks of loans, all in this repo:
 
@@ -127,7 +144,8 @@ What this asks of loans, all in this repo:
 |---|---|
 | Port 8088 | `server.port: ${SERVER_PORT:8088}`, `EXPOSE 8088` |
 | Fleet database variables | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `DB_POOL_MAX`, `DB_POOL_MIN` (defaults: the local dev database, pool 19/7) |
-| Probes | `spring-boot-starter-actuator`. Health is the ONLY endpoint exposed, it shows no details, and `ApiSecurityConfig` permits exactly `/actuator/health` and `/actuator/health/**` |
+| Probes | `spring-boot-starter-actuator`. Health shows no details, and `ApiSecurityConfig` permits exactly `/actuator/health` and `/actuator/health/**` |
+| Metrics | `micrometer-registry-prometheus`; `health` and `prometheus` are the only endpoints exposed. `/actuator/prometheus` has its own security chain: the scrape token (`monitoring.scrape-token`, env `METRICS_SCRAPE_TOKEN`, compared in constant time) or a 401, and no loans token opens it; blank is a 401 for everyone. Every series is tagged `application="loans-service"`, and `http.server.requests` carries the fleet's fixed latency buckets (50 ms to 5 s), not `percentiles-histogram`. `PrometheusEndpointTest` and `GatewaySurfaceTest` pin it |
 | Read-only root filesystem | Console logging only. The old rolling file appender under `logs/` aborted the boot there |
 | No mounted config | The image loads `/app/config` as `SPRING_CONFIG_ADDITIONAL_LOCATION`, so the packaged `application.yml` always loads and a mounted file (the box's) overrides it key by key. `SPRING_CONFIG_LOCATION` replaced the packaged file, so a pod with nothing mounted ran without a port, a datasource or partner URLs |
 | CORS owned by the gateway | Loans declares no CORS. The gateway adds a backend's response headers to its own, so two `Access-Control-Allow-Origin` values would reach the browser, which refuses them. `GatewaySurfaceTest` pins it |
@@ -179,7 +197,8 @@ What this asks of loans, all in this repo:
     `INNBUCKS_COUNTRY`, `PUBLIC_API_PREFIX` and `WHATSAPP_GATEWAY_URL` (the
     WhatsApp key stays in loans' own Secret), and the cell's SES settings for
     email, `MAIL_ENABLED`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` (ConfigMap) and
-    `MAIL_USERNAME` / `MAIL_PASSWORD` (Secret), each optional (section 8).
+    `MAIL_USERNAME` / `MAIL_PASSWORD` (Secret), each optional (section 8),
+    and `METRICS_SCRAPE_TOKEN` (Secret, section 4).
     Never `MAIL_SENDER_NAME`: the cell's is `Foundry`, loans' is its own.
 
 - **The Secret holds only the keys `loans.example.env` lists.** An explicit
@@ -193,7 +212,8 @@ What this asks of loans, all in this repo:
   - `SPRING_PROFILES_GROUP_API=scheduled-tasks` (or `SPRING_PROFILES_INCLUDE`,
     or `SPRING_APPLICATION_JSON`, if the pins above were ever dropped) adds the
     scheduled jobs beside `api`.
-  - `MANAGEMENT_*` would expose more of the actuator than health.
+  - `MANAGEMENT_*` would expose more of the actuator than health and
+    prometheus.
 
   So never a `SPRING_*`, `SERVER_*`, `DB_*`, `JAVA_*` or `MANAGEMENT_*` key in
   it. The pins cover the likeliest spellings; no list of pins covers every name.
