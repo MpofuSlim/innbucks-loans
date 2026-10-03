@@ -37,6 +37,13 @@ updates:
     target-branch: "main"
     labels: ["dependencies", "docker"]
     commit-message: { prefix: "docker(loans-api)" }
+    # A JDK move is one reviewed change: the base image, setup-java's java-version in ci.yml and
+    # release.yml, together, and only to an LTS. A Dependabot bump of the image alone would run
+    # production on a JDK the tests never ran on (the fleet's #621-#630 lesson). Remove this in the PR
+    # that moves the JDK.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by the workflows.
   - package-ecosystem: "github-actions"
