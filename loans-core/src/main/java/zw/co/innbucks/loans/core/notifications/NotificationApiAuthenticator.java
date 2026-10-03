@@ -8,7 +8,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import zw.co.innbucks.loans.core.config.SingleFlightTokenCache;
+
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
@@ -21,6 +24,11 @@ import java.util.function.Function;
  * obtained from {@code POST /auth/third-party} (cached until the JWT {@code exp},
  * refreshed once on a 401).
  *
+ * <p>The token lives in a {@link SingleFlightTokenCache}: a sender holding a valid token
+ * never waits for someone else's login, at most one login runs at a time, and N
+ * concurrent 401s cost one login. It used to be a {@code synchronized} method that
+ * held its monitor across the login, so one slow login stalled every SMS and email.
+ *
  * <p>Login runs against the notification API base URL ({@code innbucks-notify});
  * the resulting token is presented on whichever rail the caller targets.
  * Credentials come from {@link InnbucksNotifyProperties}.
@@ -31,6 +39,10 @@ public class NotificationApiAuthenticator {
 
     private static final String LOGIN_PATH = "/auth/third-party";
     public static final String API_KEY_HEADER = "X-Api-Key";
+    /** A token is not presented in its last 30 s, as before: clock skew and the call's own duration. */
+    private static final Duration EXPIRY_SAFETY = Duration.ofSeconds(30);
+    /** A refresh starts this long before that, while callers keep using the current token. */
+    static final Duration REFRESH_MARGIN = Duration.ofSeconds(60);
 
     private final RestClient restClient;
     private final InnbucksNotifyProperties properties;
@@ -38,13 +50,15 @@ public class NotificationApiAuthenticator {
     // no Jackson-2 ObjectMapper bean exists to inject. Only tiny responses parsed here.
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private String accessToken;
-    private Instant tokenExpiry = Instant.EPOCH;
+    private final SingleFlightTokenCache tokens;
 
     public NotificationApiAuthenticator(@Qualifier("innbucksNotifyRestClient") RestClient restClient,
                                         InnbucksNotifyProperties properties) {
         this.restClient = restClient;
         this.properties = properties;
+        this.tokens = new SingleFlightTokenCache(this::login, REFRESH_MARGIN,
+                SingleFlightTokenCache.waitBound(properties.getConnectTimeoutMs(), properties.getReadTimeoutMs()),
+                () -> new NotificationDeliveryException("Timed out waiting for the notification API login"));
     }
 
     /** The {@code X-Api-Key} value presented on every notification-platform call. */
@@ -67,12 +81,14 @@ public class NotificationApiAuthenticator {
      * refresh and replays the call exactly once.
      */
     public <T> T withAuthRetryOn401(Function<String, T> call) {
+        String token = tokens.get();
         try {
-            return call.apply(currentToken(false));
+            return call.apply(token);
         } catch (UnauthorizedException first) {
             log.info("Notification platform returned 401 — refreshing token and replaying once");
             try {
-                return call.apply(currentToken(true));
+                // Logs in again only if no other sender has already replaced the refused token.
+                return call.apply(tokens.refreshAfterRejection(token));
             } catch (UnauthorizedException second) {
                 throw new NotificationDeliveryException(
                         "Notification platform rejected our credentials twice (401)");
@@ -80,10 +96,8 @@ public class NotificationApiAuthenticator {
         }
     }
 
-    private synchronized String currentToken(boolean force) {
-        if (!force && accessToken != null && Instant.now().isBefore(tokenExpiry)) {
-            return accessToken;
-        }
+    /** One login. Runs outside any lock; {@link SingleFlightTokenCache} keeps it to one at a time. */
+    private SingleFlightTokenCache.Token login() {
         try {
             String raw = restClient.post()
                     .uri(LOGIN_PATH)
@@ -99,13 +113,13 @@ public class NotificationApiAuthenticator {
             if (token == null || token.toString().isBlank()) {
                 throw new NotificationDeliveryException("Notification API login returned no accessToken");
             }
-            accessToken = token.toString();
-            tokenExpiry = deriveExpiry(accessToken).minusSeconds(30);
+            String accessToken = token.toString();
+            Instant tokenExpiry = deriveExpiry(accessToken).minus(EXPIRY_SAFETY);
             log.info("Notification API login succeeded; token cached until {}", tokenExpiry);
-            return accessToken;
+            return new SingleFlightTokenCache.Token(accessToken, tokenExpiry);
         } catch (RestClientResponseException e) {
-            log.warn("Notification API rejected login status={} body={}",
-                    e.getStatusCode(), e.getResponseBodyAsString());
+            // Status only: a refused login's body can echo what was sent.
+            log.warn("Notification API rejected login status={}", e.getStatusCode());
             throw new NotificationDeliveryException(
                     "Notification API login failed: HTTP " + e.getStatusCode().value(), e);
         } catch (NotificationDeliveryException e) {
