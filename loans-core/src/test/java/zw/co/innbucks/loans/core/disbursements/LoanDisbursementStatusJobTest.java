@@ -9,6 +9,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.TaskRejectedException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.audit.AuditLog;
@@ -26,6 +27,7 @@ import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -126,17 +128,15 @@ class LoanDisbursementStatusJobTest {
     @Test
     void processLoanDisbursementStatus_shouldProcessLoans_whenLoansExist() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         // Act
         loanDisbursementStatusJob.processLoanDisbursementStatus();
 
         // Assert
-        verify(loanRepository).findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING);
+        verify(loanRepository).findIdsByLoanAccountStatusAndDisbursementStatus(eq(LoanAccountStatus.CREATED),
+                eq(LoanDisbursementStatus.PENDING), eq(0L), any());
         verify(disbursementService).checkLoanDisbursementStatus(testLoan);
         verify(loanRepository).save(testLoan);
         verify(loanNotificationService).notify(eq(testLoan), eq(LoanNotice.PAID), anyString());
@@ -148,9 +148,7 @@ class LoanDisbursementStatusJobTest {
 
     @Test
     void notifyCustomer_namesTheWalletByItsLastFourDigitsOnly() {
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -165,9 +163,7 @@ class LoanDisbursementStatusJobTest {
     void notifyCustomer_aMerchantLoanNamesTheMerchantNotTheCustomersWallet() {
         testLoan.setMerchant(Merchant.builder().companyName("Mega Furnishers")
                 .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber("0771000001").build());
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -184,9 +180,7 @@ class LoanDisbursementStatusJobTest {
     void notifyCustomer_aCustomerWalletMerchantStillNamesTheWallet() {
         testLoan.setMerchant(Merchant.builder().companyName("Innbucks")
                 .disbursementType(DisbursementType.CUSTOMER_MOBILE_WALLET).build());
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -199,16 +193,14 @@ class LoanDisbursementStatusJobTest {
     @Test
     void processLoanDisbursementStatus_shouldDoNothing_whenNoLoansExist() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(Collections.emptyList());
+        givenPending(Collections.emptyList());
 
         // Act
         loanDisbursementStatusJob.processLoanDisbursementStatus();
 
         // Assert
-        verify(loanRepository).findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING);
+        verify(loanRepository).findIdsByLoanAccountStatusAndDisbursementStatus(eq(LoanAccountStatus.CREATED),
+                eq(LoanDisbursementStatus.PENDING), eq(0L), any());
         verify(disbursementService, never()).checkLoanDisbursementStatus(any());
         verify(loanRepository, never()).save(any());
     }
@@ -216,9 +208,7 @@ class LoanDisbursementStatusJobTest {
     @Test
     void checkLoanDisbursementStatus_shouldUpdateLoanToSuccess_whenResponseIsSuccess() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         // Reset the spy to clear the initial setup calls
@@ -242,9 +232,7 @@ class LoanDisbursementStatusJobTest {
 
     @Test
     void aPaidLoanIsPostedToTheLedgerWithItsSuccess_andOnlyThenIsTheCustomerTold() {
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -260,9 +248,7 @@ class LoanDisbursementStatusJobTest {
 
     @Test
     void aPaidLoanThatCannotBePosted_isNeitherRecordedNorAnnounced_andTheNextRunRetries() {
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
         doThrow(new IllegalStateException("database unavailable"))
                 .when(disbursementLedger).recordPayout(any(), anyString());
@@ -277,9 +263,7 @@ class LoanDisbursementStatusJobTest {
 
     @Test
     void aLoanNotYetPaidPostsNothing() {
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(pendingResponse, failedResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -292,9 +276,7 @@ class LoanDisbursementStatusJobTest {
     @Test
     void checkLoanDisbursementStatus_shouldKeepLoanAsPending_whenResponseIsPending() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(pendingResponse);
 
         // Reset the spy to clear the initial setup calls
@@ -319,9 +301,7 @@ class LoanDisbursementStatusJobTest {
     @Test
     void checkLoanDisbursementStatus_shouldUpdateLoanToFailed_whenResponseIsFailed() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(failedResponse);
 
         // Act
@@ -345,9 +325,7 @@ class LoanDisbursementStatusJobTest {
     @Test
     void checkLoanDisbursementStatus_shouldHandleException_whenServiceThrowsException() {
         // Arrange
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenThrow(new RuntimeException("Test exception"));
 
         // Act
@@ -366,9 +344,7 @@ class LoanDisbursementStatusJobTest {
         LoanDisbursementStatusJob job = new LoanDisbursementStatusJob(disbursementService, loanRepository,
                 new LoanNotificationService(sender, mock(LoanNotificationRepository.class), loanRepository),
                 deductionCancellationService, auditService, disbursementLedger, transactionManager);
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING))
-                .thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
         job.processLoanDisbursementStatus();
@@ -402,8 +378,7 @@ class LoanDisbursementStatusJobTest {
         held.setLoanAccountStatus(LoanAccountStatus.CREATED);
         held.setDisbursementStatus(LoanDisbursementStatus.PENDING);
         held.setBookingFailureKind(BookingFailureKind.AMBIGUOUS);
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(held));
+        givenPending(List.of(held));
         when(disbursementService.checkLoanDisbursementStatus(held)).thenReturn(notFound());
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -429,8 +404,7 @@ class LoanDisbursementStatusJobTest {
     @Test
     void aLoanReportedMissingThatInnbucksFindsAgainIsCleared() {
         testLoan.setBookingNotFoundAt(LocalDateTime.of(2026, 9, 29, 8, 0));
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(pendingResponse);
 
         loanDisbursementStatusJob.processLoanDisbursementStatus();
@@ -444,8 +418,7 @@ class LoanDisbursementStatusJobTest {
     void anUnreachableInquiryNeitherReportsNorClearsNotFound() {
         LocalDateTime since = LocalDateTime.of(2026, 9, 29, 8, 0);
         testLoan.setBookingNotFoundAt(since);
-        when(loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING)).thenReturn(List.of(testLoan));
+        givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(LoanDisbursementStatusResponse
                 .builder().responseCode("999").success(false).status(LoanDisbursementStatus.PENDING).build());
 
@@ -453,5 +426,54 @@ class LoanDisbursementStatusJobTest {
 
         assertThat(testLoan.getBookingNotFoundAt()).isEqualTo(since);
         verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void aQueueLongerThanAChunkIsCheckedInFull_eachLoanOnce_andAFailingCheckDoesNotStopTheRest() {
+        List<Loan> pending = new java.util.ArrayList<>();
+        for (long id = 1; id <= 230; id++) {
+            Loan loan = new Loan();
+            loan.setId(id);
+            loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+            loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
+            pending.add(loan);
+        }
+        givenPending(pending);
+        List<Long> checked = new java.util.ArrayList<>();
+        when(disbursementService.checkLoanDisbursementStatus(any())).thenAnswer(call -> {
+            Loan loan = call.getArgument(0);
+            checked.add(loan.getId());
+            if (loan.getId() == 150L) {
+                throw new IllegalStateException("InnBucks inquiry failed");
+            }
+            return pendingResponse;
+        });
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        assertThat(checked).hasSize(230).doesNotHaveDuplicates().isSorted();
+        assertThat(pending.get(149).getDisbursementStatusMessage()).startsWith("Status check exception");
+        verify(loanRepository, times(230)).save(any(Loan.class));
+        // Three chunks, each read by id with its merchant: never the whole queue at once.
+        verify(loanRepository, times(3)).findWithMerchantByIdIn(anyCollection());
+        verify(loanRepository, never()).findByLoanAccountStatusAndDisbursementStatus(any(), any());
+    }
+
+    /**
+     * The CREATED/PENDING queue holds these loans: the keyset id query the job walks in chunks, and the chunk read
+     * that loads them (with their merchant) by id.
+     */
+    private void givenPending(List<Loan> pending) {
+        when(loanRepository.findIdsByLoanAccountStatusAndDisbursementStatus(eq(LoanAccountStatus.CREATED),
+                eq(LoanDisbursementStatus.PENDING), anyLong(), any())).thenAnswer(call -> {
+            long after = call.getArgument(2);
+            Pageable chunk = call.getArgument(3);
+            return pending.stream().map(Loan::getId).filter(id -> id > after).sorted().limit(chunk.getPageSize())
+                    .toList();
+        });
+        lenient().when(loanRepository.findWithMerchantByIdIn(anyCollection())).thenAnswer(call -> {
+            Collection<?> ids = call.getArgument(0);
+            return pending.stream().filter(loan -> ids.contains(loan.getId())).toList();
+        });
     }
 }

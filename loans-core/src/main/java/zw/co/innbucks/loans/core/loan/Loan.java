@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 import org.hibernate.annotations.BatchSize;
@@ -220,12 +221,16 @@ public class Loan extends BaseEntity {
     private EmploymentDetail employmentDetail;
 
     /**
-     * The deductions already on the applicant's payslip, in the order captured (FR-SSB-006). Loaded
-     * with the loan, and for a page or batch of loans in one query rather than one per loan.
+     * The deductions already on the applicant's payslip, in the order captured (FR-SSB-006). LAZY: only
+     * the detail view, the credit workbench, the credit decision snapshot and the fraud checks read them,
+     * all inside a transaction, and for a page or batch of loans they load in one query rather than one
+     * per loan.
      */
     @Builder.Default
     @BatchSize(size = 100)
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ElementCollection
     @CollectionTable(name = "loan_payslip_deductions", joinColumns = @JoinColumn(name = "loan_id",
             foreignKey = @ForeignKey(name = "fk_loan_payslip_deductions_loan_id")))
     @OrderColumn(name = "line_number")
@@ -268,7 +273,16 @@ public class Loan extends BaseEntity {
     @Column(name = "profession")
     private String profession;
 
-    @ManyToOne
+    /**
+     * LAZY, like {@link #createdByUser} and {@link #channel}: a loan read for its status (every job, every
+     * lock) no longer drags in the merchant, the originator and the channel, with THEIR merchants, commission
+     * groups, user groups and channel system users behind them. A read path that renders one fetches it in its
+     * query or reads it inside its transaction; one that hands the loan past its transaction initialises what
+     * the later step reads (see CLAUDE.md, "Loan's associations are LAZY").
+     */
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "merchant_id")
     private Merchant merchant;
 
@@ -369,11 +383,15 @@ public class Loan extends BaseEntity {
     @Column(name = "created_by")
     private String createdBy;
 
-    @ManyToOne
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id")
     private User createdByUser;
 
-    @ManyToOne
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "channel_id")
     private Channel channel;
 

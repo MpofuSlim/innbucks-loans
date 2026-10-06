@@ -1,6 +1,8 @@
 package zw.co.innbucks.loans.core.loan;
 
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 
 import jakarta.persistence.*;
@@ -11,7 +13,10 @@ import java.time.LocalDateTime;
 @Data
 public class LoanDisbursement extends BaseEntity {
 
-    @ManyToOne
+    /** LAZY: nothing reads an attempt's loan through it; the payout code holds the loan it locked. */
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
     private Loan loan;
 
     @Enumerated(value = EnumType.STRING)

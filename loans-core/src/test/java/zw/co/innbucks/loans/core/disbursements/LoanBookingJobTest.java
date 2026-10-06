@@ -89,7 +89,7 @@ class LoanBookingJobTest {
                 .ecNumber("1234567A")
                 .build();
         loan.setId(42L);
-        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L));
+        when(loanRepository.findIdsDueForBooking(anyLong(), any())).thenReturn(List.of(42L));
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
     }
 
@@ -411,7 +411,7 @@ class LoanBookingJobTest {
                 .merchant(Merchant.builder().accountNumber("123456789").build())
                 .build();
         second.setId(43L);
-        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findIdsDueForBooking(anyLong(), any())).thenReturn(List.of(42L, 43L));
         when(loanRepository.findByIdForUpdate(43L)).thenReturn(Optional.of(second));
         when(disbursementService.createLoanAccount(loan)).thenThrow(new BookingNotSentException(
                 "Booking of loan 000000042 not sent: InnBucks login failed (HTTP 503)", new RuntimeException()));
@@ -440,7 +440,7 @@ class LoanBookingJobTest {
                 .merchant(Merchant.builder().accountNumber("123456789").build())
                 .build();
         second.setId(43L);
-        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findIdsDueForBooking(anyLong(), any())).thenReturn(List.of(42L, 43L));
         when(loanRepository.findByIdForUpdate(43L)).thenReturn(Optional.of(second));
         return second;
     }
@@ -522,7 +522,7 @@ class LoanBookingJobTest {
     void staleClaimIsHeldForTheInquiryJob() {
         LocalDateTime claimedAt = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(45);
         loan.setBookingClaimedAt(claimedAt);
-        when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
+        when(loanRepository.findIdsWithBookingClaimedBefore(any(), anyLong(), any())).thenReturn(List.of(42L));
 
         job.processLoanAccountCreation();
 
@@ -541,7 +541,7 @@ class LoanBookingJobTest {
     @DisplayName("a claim still inside the window is left alone, whatever the query returned")
     void recentClaimIsNotHeld() {
         loan.setBookingClaimedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5));
-        when(loanRepository.findIdsWithBookingClaimedBefore(any())).thenReturn(List.of(42L));
+        when(loanRepository.findIdsWithBookingClaimedBefore(any(), anyLong(), any())).thenReturn(List.of(42L));
 
         job.processLoanAccountCreation();
 
@@ -593,5 +593,57 @@ class LoanBookingJobTest {
         assertThat(loan.getBookingFailureKind()).isNull();
         assertThat(loan.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED);
         verifyNoInteractions(auditService);
+    }
+
+    // ── Chunked queue (IdChunks): the run reads its due loans a chunk at a time ──────────────────────────
+
+    @Test
+    @DisplayName("a queue longer than a chunk is booked in full, each loan once; a loan whose claim fails is left for"
+            + " the next run and does not stop the rest")
+    void aQueueLongerThanAChunkIsBookedInFull_andAFailingLoanDoesNotBlockIt() {
+        java.util.Map<Long, Loan> due = new java.util.TreeMap<>();
+        for (long id = 1; id <= 150; id++) {
+            Loan queued = Loan.builder()
+                    .loanApprovalStatus(LoanApprovalStatus.APPROVED)
+                    .internalApprovalStatus(InternalApprovalStatus.APPROVED)
+                    .loanAccountStatus(LoanAccountStatus.PENDING)
+                    .merchant(Merchant.builder().accountNumber("123456789").build())
+                    .build();
+            queued.setId(id);
+            due.put(id, queued);
+        }
+        // The keyset query over the table: PENDING and unclaimed, ids above the cursor, oldest first.
+        when(loanRepository.findIdsDueForBooking(anyLong(), any())).thenAnswer(call -> {
+            long after = call.getArgument(0);
+            org.springframework.data.domain.Pageable chunk = call.getArgument(1);
+            return due.values().stream()
+                    .filter(l -> l.getLoanAccountStatus() == LoanAccountStatus.PENDING && l.getBookingClaimedAt() == null)
+                    .map(Loan::getId).filter(id -> id > after).limit(chunk.getPageSize()).toList();
+        });
+        when(loanRepository.findByIdForUpdate(anyLong())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            if (id == 60L) {
+                throw new org.springframework.dao.CannotAcquireLockException("loan 60 is locked");
+            }
+            return Optional.ofNullable(due.get(id));
+        });
+        java.util.List<Long> booked = new java.util.ArrayList<>();
+        when(disbursementService.createLoanAccount(any())).thenAnswer(call -> {
+            Loan sent = call.getArgument(0);
+            booked.add(sent.getId());
+            return LoanAccountCreationResponse.builder().reference(sent.getReference()).success(true).build();
+        });
+
+        job.processLoanAccountCreation();
+
+        assertThat(booked).hasSize(149).doesNotHaveDuplicates().isSorted().doesNotContain(60L);
+        assertThat(due.get(60L).getLoanAccountStatus()).isEqualTo(LoanAccountStatus.PENDING);
+        assertThat(due.get(60L).getBookingClaimedAt()).as("never claimed, so never sent").isNull();
+        verify(loanRepository, times(1)).findByIdForUpdate(60L);
+        assertThat(due.values().stream().filter(l -> l.getId() != 60L))
+                .allSatisfy(l -> assertThat(l.getLoanAccountStatus()).isEqualTo(LoanAccountStatus.CREATED));
+        ArgumentCaptor<Long> after = ArgumentCaptor.forClass(Long.class);
+        verify(loanRepository, times(2)).findIdsDueForBooking(after.capture(), any());
+        assertThat(after.getAllValues()).containsExactly(0L, 100L);
     }
 }

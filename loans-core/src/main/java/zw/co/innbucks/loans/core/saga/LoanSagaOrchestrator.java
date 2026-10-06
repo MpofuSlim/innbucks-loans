@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import zw.co.innbucks.loans.core.jobs.IdChunks;
 import zw.co.innbucks.loans.core.loan.LoanStatusSnapshot;
 
 import java.time.LocalDateTime;
@@ -44,35 +45,46 @@ public class LoanSagaOrchestrator {
         //    (Ndasenda answering late, credit deciding late) dropped out of its saga mid-flow. Only
         //    status columns are read here, and only a loan that moved is loaded in full; this used
         //    to load 30 days of complete rows, documents and images included, every minute.
+        //    A chunk of loans at a time, in id order (IdChunks), each with its sagas read for that chunk alone: this
+        //    used to read every candidate and every open saga at once.
         LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusDays(NEW_LOAN_WINDOW_DAYS);
         Set<LoanSagaState> terminal = LoanSagaState.terminalStates();
-        Map<Long, LoanSaga> sagas = new HashMap<>();
-        for (LoanSaga saga : sagaRepository.findReconcileSagas(since, terminal)) {
-            sagas.put(saga.getLoanId(), saga);
-        }
-        for (LoanStatusSnapshot loan : sagaRepository.findReconcileCandidates(since, terminal)) {
-            if (!moved(loan, sagas.get(loan.id()))) {
-                continue;
-            }
-            try {
-                transitionService.reconcileLoan(loan.id());
-            } catch (Exception ex) {
-                // One loan's saga trouble never stalls the fleet.
-                log.error("Saga reconciliation failed for loan {} — continuing with the rest",
-                        loan.id(), ex);
-            }
-        }
+        IdChunks.forEach((after, chunk) -> sagaRepository.findReconcileCandidates(since, terminal, after, chunk),
+                LoanStatusSnapshot::id, candidates -> {
+                    Map<Long, LoanSaga> sagas = new HashMap<>();
+                    for (LoanSaga saga : sagaRepository.findByLoanIdIn(
+                            candidates.stream().map(LoanStatusSnapshot::id).toList())) {
+                        sagas.put(saga.getLoanId(), saga);
+                    }
+                    for (LoanStatusSnapshot loan : candidates) {
+                        if (!moved(loan, sagas.get(loan.id()))) {
+                            continue;
+                        }
+                        try {
+                            transitionService.reconcileLoan(loan.id());
+                        } catch (Exception ex) {
+                            // One loan's saga trouble never stalls the fleet.
+                            log.error("Saga reconciliation failed for loan {} — continuing with the rest",
+                                    loan.id(), ex);
+                        }
+                    }
+                    return true;
+                });
 
         // 2. Drive any compensation that did not complete (crash between the
-        //    DISBURSEMENT_FAILED transition and its compensation commit).
-        for (LoanSaga saga : sagaRepository.findByCurrentState(LoanSagaState.DISBURSEMENT_FAILED)) {
-            try {
-                transitionService.compensate(saga.getLoanId());
-            } catch (Exception ex) {
-                log.error("Compensation retry failed for loan {} — will retry next tick",
-                        saga.getLoanId(), ex);
+        //    DISBURSEMENT_FAILED transition and its compensation commit). A chunk of sagas at a time.
+        IdChunks.forEach((after, chunk) -> sagaRepository.findByCurrentStateAndIdGreaterThanOrderByIdAsc(
+                LoanSagaState.DISBURSEMENT_FAILED, after, chunk), LoanSaga::getId, failed -> {
+            for (LoanSaga saga : failed) {
+                try {
+                    transitionService.compensate(saga.getLoanId());
+                } catch (Exception ex) {
+                    log.error("Compensation retry failed for loan {} — will retry next tick",
+                            saga.getLoanId(), ex);
+                }
             }
-        }
+            return true;
+        });
     }
 
     /**

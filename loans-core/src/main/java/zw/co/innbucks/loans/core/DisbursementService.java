@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core;
 
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -354,6 +355,9 @@ public abstract class DisbursementService {
                 // already compensated, and a terminal saga posts nothing, so this is the only place
                 // it can be. The loan's reference is MD-<ref> since the claim, so it posts as DISB-MD-<ref>.
                 disbursementLedger.recordPayout(loan, MANUAL_PAYOUT_ACTOR);
+                // The customer's SMS is worded after this commits (notifyDisbursed), and a merchant payout names the
+                // merchant, which is LAZY: loaded here, while the loan's session is open.
+                Hibernate.initialize(loan.getMerchant());
                 yield ManualDisbursementResponse.builder().outcome(Outcome.DISBURSED).reference(reference)
                         .message(paid).build();
             }

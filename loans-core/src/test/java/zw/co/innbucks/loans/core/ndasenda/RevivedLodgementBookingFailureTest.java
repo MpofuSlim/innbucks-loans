@@ -105,7 +105,7 @@ class RevivedLodgementBookingFailureTest {
         DisbursementService disbursementService = mock(DisbursementService.class);
         when(disbursementService.createLoanAccount(loan)).thenThrow(HttpClientErrorException.create(
                 HttpStatus.BAD_REQUEST, "Bad Request", HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8));
-        when(loanRepository.findIdsDueForBooking()).thenReturn(List.of(42L));
+        when(loanRepository.findIdsDueForBooking(anyLong(), any())).thenReturn(List.of(42L));
         when(loanRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));
         new LoanBookingJob(disbursementService, loanRepository, cancellations,
                 mock(LoanDisbursementRepository.class), auditService, mock(LoanNotificationService.class),

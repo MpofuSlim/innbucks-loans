@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.disbursements;
 
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,6 +14,7 @@ import org.springframework.web.client.RestClientResponseException;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.jobs.IdChunks;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -103,16 +105,19 @@ public class LoanBookingJob {
         log.info("Starting LoanBookingJob...");
         holdAbandonedClaims(LocalDateTime.now(ZoneOffset.UTC));
 
-        // Held at a checkpoint (FR-SSB-014): not booked, so not paid, until it is cleared.
-        List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_BOOKING,
-                loanRepository.findIdsDueForBooking());
-        for (int i = 0; i < due.size(); i++) {
-            if (!book(due.get(i))) {
-                log.warn("InnBucks booking run stopped at loan {}; {} loan(s) left for the next run",
-                        due.get(i), due.size() - i - 1);
-                return;
+        // Oldest first, a chunk of ids at a time (IdChunks): the run never holds more than one chunk.
+        IdChunks.forEach(loanRepository::findIdsDueForBooking, chunk -> {
+            // Held at a checkpoint (FR-SSB-014): not booked, so not paid, until it is cleared.
+            List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_BOOKING, chunk);
+            for (int i = 0; i < due.size(); i++) {
+                if (!book(due.get(i))) {
+                    log.warn("InnBucks booking run stopped at loan {}; {} loan(s) of its chunk, and every later one,"
+                            + " left for the next run", due.get(i), due.size() - i - 1);
+                    return false;
+                }
             }
-        }
+            return true;
+        });
     }
 
     /** @return whether the run may carry on to the next loan */
@@ -169,6 +174,10 @@ public class LoanBookingJob {
         LocalDateTime claimedAt = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
         loan.setBookingClaimedAt(claimedAt);
         loanRepository.save(loan);
+        // The booking is built from this loan AFTER this transaction commits, and it reads the merchant (the payout
+        // destination, and whether the merchant's settings moved since approval). The merchant is LAZY, so it is
+        // loaded here: read outside the transaction it would throw, and the booking would be held as AMBIGUOUS.
+        Hibernate.initialize(loan.getMerchant());
         log.info("Loan {} claimed for booking with InnBucks at {}", loanId, claimedAt);
         return new Claim(loanId, claimedAt, loan);
     }
@@ -348,23 +357,25 @@ public class LoanBookingJob {
      */
     private void holdAbandonedClaims(LocalDateTime now) {
         LocalDateTime cutoff = now.minus(staleClaimAfter);
-        List<Long> abandoned;
         try {
-            abandoned = loanRepository.findIdsWithBookingClaimedBefore(cutoff);
+            IdChunks.forEach((after, chunk) -> loanRepository.findIdsWithBookingClaimedBefore(cutoff, after, chunk),
+                    abandoned -> {
+                        for (Long loanId : abandoned) {
+                            try {
+                                transactionTemplate.executeWithoutResult(status -> loanRepository.findByIdForUpdate(loanId)
+                                        .filter(loan -> loan.getLoanAccountStatus() == LoanAccountStatus.PENDING
+                                                && loan.getBookingClaimedAt() != null
+                                                && loan.getBookingClaimedAt().isBefore(cutoff))
+                                        .ifPresent(this::holdAbandoned));
+                            } catch (RuntimeException ex) {
+                                log.error("Could not hold loan {}, whose booking claim is stale; it stays claimed and"
+                                        + " unbooked", loanId, ex);
+                            }
+                        }
+                        return true;
+                    });
         } catch (RuntimeException ex) {
             log.error("Could not look for abandoned booking claims", ex);
-            return;
-        }
-        for (Long loanId : abandoned) {
-            try {
-                transactionTemplate.executeWithoutResult(status -> loanRepository.findByIdForUpdate(loanId)
-                        .filter(loan -> loan.getLoanAccountStatus() == LoanAccountStatus.PENDING
-                                && loan.getBookingClaimedAt() != null && loan.getBookingClaimedAt().isBefore(cutoff))
-                        .ifPresent(this::holdAbandoned));
-            } catch (RuntimeException ex) {
-                log.error("Could not hold loan {}, whose booking claim is stale; it stays claimed and unbooked",
-                        loanId, ex);
-            }
         }
     }
 

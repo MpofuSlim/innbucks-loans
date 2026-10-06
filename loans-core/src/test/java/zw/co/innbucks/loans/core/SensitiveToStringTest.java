@@ -145,6 +145,7 @@ class SensitiveToStringTest {
         loan.setBankingDetail(bankingDetail());
         loan.setNextOfKin(nextOfKin());
         loan.setWitness(witness());
+        loan.setCreatedBy("creator-1");
         loan.setCreatedByUser(user("creator-1"));
 
         LoanResponse dto = new LoanResponse();
@@ -161,7 +162,10 @@ class SensitiveToStringTest {
         assertNoPii(dto);
         assertNoPii(customer);
         assertNoPii(bankingDetail());
-        assertThat(loan.toString()).contains("1234567A", "creator-1");
+        // The creator by the username stored on the loan; the associations (creator, merchant, channel, payslip
+        // deductions) are LAZY and never printed, so a log line cannot load them, or throw outside a session.
+        assertThat(loan.toString()).contains("1234567A", "createdBy=creator-1")
+                .doesNotContain("createdByUser", "merchant=", "channel=", "payslipDeductions");
     }
 
     @Test

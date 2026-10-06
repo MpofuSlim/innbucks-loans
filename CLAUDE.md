@@ -100,6 +100,80 @@ log pattern in `loans-core/src/main/resources/logback.xml`.
   authentication, no exporter with no endpoint), `TracingExportGateTest` and
   `FleetOnlyPropagatorTest`.
 
+## Loan's associations are LAZY: fetch them on purpose
+
+**`Loan.merchant`, `Loan.createdByUser`, `Loan.channel` and `Loan.payslipDeductions` are LAZY (so is
+`LoanDisbursement.loan`), and `spring.jpa.open-in-view` is false.** They used to be EAGER (`@ManyToOne`'s
+default), so every lock a job took, every saga step and every queue read loaded the merchant, the originator and
+the channel, and behind them the originator's merchant, commission group and groups and the channel's system user,
+whether anything read them or not. Lazy, a path that reads one outside a transaction throws
+`LazyInitializationException`: a 500 on an endpoint, and on a job that calls InnBucks with no transaction open, a
+booking held AMBIGUOUS or a payout SMS that never goes. So:
+
+- **A read path that renders one fetches it.** The loan list and detail (`LoanRepository.findAll(spec, page)` /
+  `findOne(spec)`) and the credit workbench (`findWithAssociationsById`) carry an `@EntityGraph` of the three
+  to-ones, and `LoanServiceImpl.findLoans` / `getLoan` are
+  `@Transactional(readOnly = true)`, so what those hold, and the payslip deductions, load inside it, in one batch
+  per kind (`hibernate.default_batch_fetch_size: 100`). Every other loan read in a service is already inside a
+  transaction. Never `JOIN FETCH` a collection in a paged query (Hibernate pages in memory).
+- **A path that hands a loan past its transaction initialises what the later step reads, in the transaction.**
+  Today: `LoanBookingJob.claim` (the booking reads the merchant after the claim commits),
+  `DisbursementService.settle` (the payout SMS names the merchant after the commit), and
+  `LoanDisbursementStatusJob`, which reads each chunk with `findWithMerchantByIdIn` (fetch join, no lock).
+  `CheckpointGate.withoutHeld` and the read half of `WorkflowEscalationService.escalateOverdue` run in read-only
+  transactions of their own, because a checkpoint reads each loan's channel. A new job that calls out with a loan
+  in hand must do the same.
+- **Lombok:** the four are `@ToString.Exclude @EqualsAndHashCode.Exclude`, so a log line or a hash never loads
+  them. `SensitiveToStringTest` pins it.
+- **Left EAGER, deliberately:** `User.merchant`, `User.commissionGroup`, `User.groups`, `Merchant.commissionGroup`
+  and `Channel.systemUser`. The user is the security principal, read in controllers with no transaction open
+  (`caller.getMerchant()`); they are small reference rows that batch-load. Change them only with every reader
+  moved inside a transaction.
+- **Pinned by `LoanFetchPlanPostgresIT`** (loans-api, real Postgres, real HTTP and token): every read path that
+  renders an association, measured with Hibernate `Statistics` at 3 and at 12 loans (each with its own merchant,
+  originator and channel) and required to cost the same, plus the booking, status, manual payout, escalation,
+  lodgement and saga paths driven end to end. A new path that reads an association belongs in it.
+
+## Job queues are walked in chunks (`IdChunks`), never read whole
+
+**A scheduled job reads its queue a chunk of ids at a time, by keyset on the id** (`jobs/IdChunks`: ids above the
+last one handed out, ascending, `IdChunks.SIZE` = 100 per chunk), never the whole backlog at once. The lodgement
+and booking jobs (and their stale-claim sweeps), the disbursement status job and the saga reconciler do; the
+voucher and staff-notification dispatchers already did.
+
+- What it keeps: id order; the job's own stop (a handler returning false ends the walk, so a run that stops on an
+  unreachable partner never reads the next chunk); each row's claim, lock, settle and retry exactly as before. What
+  it guarantees: no row is handed out twice in one run, even one that failed or was skipped and is still in the
+  queue (the next chunk starts strictly above it), so a failing row never stalls the walk and waits for the next
+  run, as before. A row that becomes due during a run with an id above the cursor is reached in that run.
+- A keyset query must filter `id > :after` and order by id; `IdChunks` refuses a chunk that does not move forward.
+- Not chunked, on purpose: the weekly staff offer run (one transaction under the register lock, all or nothing;
+  the register is the staff list), the arrears report (one email of every row), the Ndasenda response sweep (status
+  projections, all needed to date its window) and the escalation queues (the work queues' own definition).
+- Pinned by `IdChunksTest` and the chunk cases in `NdasendaLodgementJobTest`, `LoanBookingJobTest`,
+  `LoanDisbursementStatusJobTest` and `LoanSagaReconcileTest`: all of a queue longer than a chunk, each row once, a
+  failing row not blocking the rest.
+
+## Ids: IDENTITY by default, pooled sequences where inserts come in bulk (V33)
+
+**Under `GenerationType.IDENTITY` Hibernate cannot batch an INSERT** (it reads each generated id back), so
+`hibernate.jdbc.batch_size` only ever batched UPDATEs. `StaffRegisterRow` (one per line of a register upload) and
+`StaffRegisterVariance` (one per reconciliation finding) now draw ids from their own serial sequences 50 at a time
+(`SEQUENCE`, `allocationSize = 50`, the pooled-lo optimizer set in `JpaSchemaConfig`), and their `saveAll` goes
+out as JDBC batches.
+
+- **V33** set each sequence's `INCREMENT BY 50` (Hibernate's schema validation checks it against `allocationSize`)
+  and `setval` to at least the table's max id, never backwards. The columns keep `DEFAULT nextval(...)` on the same
+  sequences, so a build from before V33 still inserts after a rollback without colliding: each of its rows takes a
+  `nextval` of its own, which no pooled block was opened at. `PooledStaffRegisterIdsMigrationIT` pins all three.
+- **Pooled ids are monotonic within one JVM, not across two.** Only an entity whose rows are written in one
+  transaction and never ordered across writers by id may move. That is why the rest stay IDENTITY: `StaffOffer`,
+  `StaffNotification` and its dispatches, `StaffMemberChange`, `LedgerEntry` and `AuditLog` are written by the API
+  and the job instances alike and read "newest first" or "in order" by id; `Loan`'s id is the reference SSB and
+  InnBucks hold and is inserted one at a time. Moving one of them is a decision, not a cleanup.
+- A new pooled entity: sequence `INCREMENT BY` equal to `allocationSize`, `setval` above max in its migration, the
+  column default left on the same sequence.
+
 ## Outbound HTTP clients are pooled
 
 **Every outbound client draws its connections from ONE Apache httpclient5 pool,

@@ -31,6 +31,11 @@ public class JpaSchemaConfig {
             properties.put(AvailableSettings.GLOBALLY_QUOTED_IDENTIFIERS, false);
             properties.put(AvailableSettings.PHYSICAL_NAMING_STRATEGY, PhysicalNamingStrategySnakeCaseImpl.class.getName());
             properties.put(AvailableSettings.IMPLICIT_NAMING_STRATEGY, SpringImplicitNamingStrategy.class.getName());
+            // A pooled sequence value is read as the LOW end of its block: nextval v hands out v .. v+allocation-1,
+            // never an id below a value the sequence returned. V33's setval is written for that reading, and it is
+            // also how a build from before V33 inserts through the column default: it takes v alone, and the block
+            // v .. v+allocation-1 is then nobody else's. A contract with the migration, so set here, not in yml.
+            properties.put(AvailableSettings.PREFERRED_POOLED_OPTIMIZER, "pooled-lo");
         };
     }
 

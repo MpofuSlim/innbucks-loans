@@ -116,7 +116,7 @@ class CreditWorkbenchServiceTest {
     private LoanResponse viewed(Loan loan) {
         LoanResponse view = new LoanResponse();
         view.setId(loan.getId());
-        when(loanRepository.findById(loan.getId())).thenReturn(Optional.of(loan));
+        when(loanRepository.findWithAssociationsById(loan.getId())).thenReturn(Optional.of(loan));
         when(loanService.getLoan(loan.getId(), LoanReadScope.platform())).thenReturn(view);
         return view;
     }
@@ -310,7 +310,7 @@ class CreditWorkbenchServiceTest {
     @Test
     @DisplayName("an unknown loan is a NotFoundException, and nothing else is read")
     void unknownLoan() {
-        when(loanRepository.findById(anyLong())).thenReturn(Optional.empty());
+        when(loanRepository.findWithAssociationsById(anyLong())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.workbench(99L))
                 .isInstanceOf(NotFoundException.class)
