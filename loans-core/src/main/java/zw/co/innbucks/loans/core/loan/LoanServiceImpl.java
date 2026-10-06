@@ -90,7 +90,14 @@ public class LoanServiceImpl implements LoanService {
         return loanRepository.salesSummary(userId, atStartOfDay(fromDate), atEndOfDay(toDate));
     }
 
+    /**
+     * Read-only transaction: the page's merchant, originator and channel come in its query
+     * ({@link LoanRepository#findAll(Specification, Pageable)}), and what they in turn hold (the originator's
+     * merchant and groups, the channel's system user) loads in one batch per kind, so the page costs the same number
+     * of statements whatever its size. The rows are mapped before it closes.
+     */
     @Override
+    @Transactional(readOnly = true)
     public Page<LoanSummaryResponse> findLoans(LoanSearchCriteria criteria, LoanReadScope scope, Pageable pageable) {
         Specification<Loan> spec = where(withApprovalStatus(criteria.ssbApprovalStatus()))
                 .and(withInternalApprovalStatus(criteria.creditApprovalStatus()))
@@ -114,7 +121,9 @@ public class LoanServiceImpl implements LoanService {
         });
     }
 
+    /** Read-only transaction, as {@link #findLoans}: the view renders the payslip deductions too, read inside it. */
     @Override
+    @Transactional(readOnly = true)
     public LoanResponse getLoan(Long id, LoanReadScope scope) {
         Specification<Loan> spec = where(withId(id));
         if (!scope.platformWide()) {

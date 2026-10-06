@@ -67,7 +67,8 @@ public class CreditWorkbenchService {
      */
     @Transactional(readOnly = true)
     public CreditWorkbenchResponse workbench(Long loanId) {
-        Loan loan = loanRepository.findById(loanId)
+        // With what the view renders (LAZY otherwise): the view below then maps this same instance.
+        Loan loan = loanRepository.findWithAssociationsById(loanId)
                 .orElseThrow(() -> new NotFoundException("Loan " + loanId + " not found"));
         LoanResponse view = loanService.getLoan(loanId, LoanReadScope.platform());
         CreditWorkbenchResponse.Exposure exposure = exposureOf(loan);

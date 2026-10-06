@@ -9,6 +9,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.DisbursementService;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.jobs.IdChunks;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -18,6 +19,7 @@ import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 
 @Service
 @Slf4j
@@ -53,21 +55,26 @@ public class LoanDisbursementStatusJob {
     /**
      * Processes loans with PENDING disbursement status.
      * Runs at a configurable rate (default: every 3 minutes).
+     *
+     * <p>Oldest first, a chunk at a time ({@link IdChunks}): it used to read every CREATED/PENDING loan in full at
+     * once. Each chunk's loans are read in one query with their merchant, which the payout SMS names after the loan is
+     * recorded, with no transaction open; each loan is then handled exactly as before.</p>
      */
     @Scheduled(fixedRateString = "${innbucks.loan-disbursement-status-check-rate:180000}")
     public void processLoanDisbursementStatus() {
         log.info("Starting LoanDisbursementStatusJob...");
 
-        var loans = loanRepository.findByLoanAccountStatusAndDisbursementStatus(
-                LoanAccountStatus.CREATED,
-                LoanDisbursementStatus.PENDING
-        );
+        int[] found = {0};
+        IdChunks.forEach((after, chunk) -> loanRepository.findIdsByLoanAccountStatusAndDisbursementStatus(
+                LoanAccountStatus.CREATED, LoanDisbursementStatus.PENDING, after, chunk), ids -> {
+            List<Loan> loans = loanRepository.findWithMerchantByIdIn(ids);
+            found[0] += loans.size();
+            loans.forEach(this::checkLoanDisbursementStatus);
+            return true;
+        });
 
-        log.info("Found {} loans with CREATED account status and PENDING disbursement status", loans.size());
-
-        loans.forEach(this::checkLoanDisbursementStatus);
-
-        log.info("Completed LoanDisbursementStatusJob");
+        log.info("Completed LoanDisbursementStatusJob: {} loan(s) with CREATED account status and PENDING disbursement"
+                + " status", found[0]);
     }
 
     private void checkLoanDisbursementStatus(Loan loan) {

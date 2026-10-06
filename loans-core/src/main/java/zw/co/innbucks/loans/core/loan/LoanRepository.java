@@ -1,6 +1,10 @@
 package zw.co.innbucks.loans.core.loan;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -18,6 +22,31 @@ import java.util.Optional;
 
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificationExecutor<Loan> {
+
+    /**
+     * The loan list (GET /loans and its credit-queue twin): each row renders its merchant, originator and channel, so
+     * they come in the page's own query (to-one joins, safe under a page limit) rather than one batch each after it.
+     * The count query is not affected. LOAD graph: what is not named keeps its mapping.
+     */
+    @Override
+    @EntityGraph(attributePaths = {"merchant", "createdByUser", "channel"}, type = EntityGraph.EntityGraphType.LOAD)
+    Page<Loan> findAll(Specification<Loan> spec, Pageable pageable);
+
+    /** One loan in full (GET /loans/{loanId}), with what its view renders. */
+    @Override
+    @EntityGraph(attributePaths = {"merchant", "createdByUser", "channel"}, type = EntityGraph.EntityGraphType.LOAD)
+    Optional<Loan> findOne(Specification<Loan> spec);
+
+    /** One loan with its merchant, originator and channel: the credit workbench, which renders them. */
+    @EntityGraph(attributePaths = {"merchant", "createdByUser", "channel"}, type = EntityGraph.EntityGraphType.LOAD)
+    Optional<Loan> findWithAssociationsById(Long id);
+
+    /**
+     * These loans with their merchant, in id order: for a job that reads a chunk of loans and then works on them with
+     * no transaction open (LoanDisbursementStatusJob), where the payout SMS names the merchant. No lock.
+     */
+    @Query("select l from Loan l left join fetch l.merchant where l.id in :ids order by l.id")
+    List<Loan> findWithMerchantByIdIn(@Param("ids") Collection<Long> ids);
 
     /**
      * Loads a loan under a row-level write lock (SELECT ... FOR UPDATE). Used by
@@ -86,7 +115,8 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     /**
      * NEW loans due for lodgement with Ndasenda: unclaimed, past any retry backoff, not held for payslip
-     * review (FR-SSB-007) or for an employment event (FR-SSB-024), and not already declined. Oldest first.
+     * review (FR-SSB-007) or for an employment event (FR-SSB-024), and not already declined. Oldest first, one
+     * chunk at a time: the ids above {@code after} (see {@code IdChunks}).
      */
     @Query("""
             select l.id from Loan l
@@ -100,9 +130,10 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
               and not exists (select h.id from LoanEmploymentEvent h where h.loanId = l.id
                    and h.action = zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction.HOLD
                    and h.status = zw.co.innbucks.loans.core.employment.LoanEmploymentEventStatus.OPEN)
+              and l.id > :after
             order by l.id
             """)
-    List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now);
+    List<Long> findIdsDueForLodgement(@Param("now") LocalDateTime now, @Param("after") long after, Pageable chunk);
 
     /**
      * Whether an employment event holds the loan (FR-SSB-024): it is then not lodged, credit-approved or booked
@@ -192,18 +223,20 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
     /** The applications waiting in the payslip review queue, oldest first. */
     List<Loan> findByPayslipReviewStatusOrderByIdAsc(PayslipReviewStatus payslipReviewStatus);
 
-    /** NEW loans whose lodgement was claimed before {@code cutoff} and never settled. */
+    /** NEW loans whose lodgement was claimed before {@code cutoff} and never settled; a chunk above {@code after}. */
     @Query("""
             select l.id from Loan l
             where l.loanApprovalStatus = zw.co.innbucks.loans.core.loan.LoanApprovalStatus.NEW
               and l.lodgementClaimedAt < :cutoff
+              and l.id > :after
             order by l.id
             """)
-    List<Long> findIdsWithLodgementClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
+    List<Long> findIdsWithLodgementClaimedBefore(@Param("cutoff") LocalDateTime cutoff, @Param("after") long after,
+                                                 Pageable chunk);
 
     /**
      * Credit-approved loans due for booking with InnBucks: account PENDING, unclaimed, and not held for an
-     * employment event (FR-SSB-024). Oldest first.
+     * employment event (FR-SSB-024). Oldest first, one chunk at a time: the ids above {@code after}.
      */
     @Query("""
             select l.id from Loan l
@@ -214,18 +247,21 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
               and not exists (select h.id from LoanEmploymentEvent h where h.loanId = l.id
                    and h.action = zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction.HOLD
                    and h.status = zw.co.innbucks.loans.core.employment.LoanEmploymentEventStatus.OPEN)
+              and l.id > :after
             order by l.id
             """)
-    List<Long> findIdsDueForBooking();
+    List<Long> findIdsDueForBooking(@Param("after") long after, Pageable chunk);
 
-    /** Account-PENDING loans whose booking was claimed before {@code cutoff} and never settled. */
+    /** Account-PENDING loans whose booking was claimed before {@code cutoff} and never settled; a chunk above {@code after}. */
     @Query("""
             select l.id from Loan l
             where l.loanAccountStatus = zw.co.innbucks.loans.core.disbursements.LoanAccountStatus.PENDING
               and l.bookingClaimedAt < :cutoff
+              and l.id > :after
             order by l.id
             """)
-    List<Long> findIdsWithBookingClaimedBefore(@Param("cutoff") LocalDateTime cutoff);
+    List<Long> findIdsWithBookingClaimedBefore(@Param("cutoff") LocalDateTime cutoff, @Param("after") long after,
+                                               Pageable chunk);
 
     List<Loan> findByLoanAccountStatusAndDisbursementStatusAndInternalApprovalStatus(LoanAccountStatus loanAccountStatus,
                                                                                      LoanDisbursementStatus disbursementStatus,
@@ -233,6 +269,17 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     List<Loan> findByLoanAccountStatusAndDisbursementStatus(LoanAccountStatus loanAccountStatus,
                                                            LoanDisbursementStatus disbursementStatus);
+
+    /** The ids of {@link #findByLoanAccountStatusAndDisbursementStatus}, a chunk above {@code after} in id order. */
+    @Query("""
+            select l.id from Loan l
+            where l.loanAccountStatus = :accountStatus and l.disbursementStatus = :disbursementStatus
+              and l.id > :after
+            order by l.id
+            """)
+    List<Long> findIdsByLoanAccountStatusAndDisbursementStatus(@Param("accountStatus") LoanAccountStatus accountStatus,
+                                                               @Param("disbursementStatus") LoanDisbursementStatus disbursementStatus,
+                                                               @Param("after") long after, Pageable chunk);
 
     /** Oldest first, id as the tie-break, so the operators' queue has a stable order. */
     List<Loan> findByDeductionCancellationStatusOrderByDeductionCancellationRequestedAtAscIdAsc(

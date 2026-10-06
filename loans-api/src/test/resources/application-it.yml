@@ -1,0 +1,20 @@
+# The *IT classes: the packaged application.yml with these on top. The datasource comes from the test (ItPostgres).
+spring:
+  jpa:
+    properties:
+      hibernate:
+        # LoanFetchPlanPostgresIT reads Hibernate's Statistics to pin how many statements each read path costs.
+        # On in this profile only.
+        generate_statistics: true
+
+# Every partner is unreachable: a call that reaches one fails at once with "connection refused", which every client
+# here classifies as never having been sent. Nothing leaves the machine.
+innbucks:
+  base-url: http://127.0.0.1:1
+ndasenda:
+  base-url: http://127.0.0.1:1
+
+logging:
+  level:
+    root: WARN
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN

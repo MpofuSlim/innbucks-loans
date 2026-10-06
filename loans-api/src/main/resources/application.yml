@@ -45,15 +45,16 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        # 50 is the fleet's size. It batches UPDATEs (order_updates groups them by entity); INSERTs do not
-        # batch while the entities use IDENTITY ids, because Hibernate must read each id back one row at a time.
+        # 50 is the fleet's size. It batches UPDATEs (order_updates groups them by entity), and the INSERTs of
+        # the entities with pooled sequence ids (staff register rows and variances, V33); an IDENTITY entity's
+        # INSERTs do not batch, because Hibernate must read each id back one row at a time.
         jdbc:
           batch_size: ${HIBERNATE_JDBC_BATCH_SIZE:50}
         order_inserts: true
         order_updates: true
         # Loads lazy and EAGER associations of up to 100 parents in one IN query, instead of one SELECT per
-        # parent. Loan's EAGER merchant, createdByUser and channel otherwise cost a query per distinct id on
-        # every list and queue.
+        # parent: a page or a job chunk of loans reads its merchants, originators, channels and payslip
+        # deductions in one query per kind, when its transaction reads them at all (they are LAZY).
         default_batch_fetch_size: 100
 
   # --- @Scheduled jobs: ONE thread, deliberately --------------------------

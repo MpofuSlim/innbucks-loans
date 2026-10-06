@@ -60,6 +60,14 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <!-- The *IT classes (run by failsafe at verify) against a real Postgres: a container where Docker is
+             available (CI), or the server LOANS_IT_POSTGRES names (host:port). Version from Boot's
+             testcontainers BOM. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <finalName>loans-api</finalName>
@@ -81,6 +89,21 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <!-- Runs the *IT classes during `mvn verify` (surefire never picks them up). Without an execution bound
+                 here they would compile and never run. They boot the application on a real Postgres and skip
+                 themselves when neither Docker nor LOANS_IT_POSTGRES is available. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

@@ -136,8 +136,8 @@ class LoanSagaReconcileTest {
         LoanSaga terminal = LoanSaga.builder().loanId(3L).currentState(LoanSagaState.CREDIT_REJECTED).build();
         LoanSaga reported = LoanSaga.builder().loanId(4L).currentState(LoanSagaState.DISBURSEMENT_PENDING)
                 .flaggedAnomaly("CREDIT_APPROVED").build();
-        when(sagaRepository.findReconcileSagas(any(), any())).thenReturn(List.of(unchanged, moved, terminal, reported));
-        when(sagaRepository.findReconcileCandidates(any(), any())).thenReturn(List.of(
+        when(sagaRepository.findByLoanIdIn(any())).thenReturn(List.of(unchanged, moved, terminal, reported));
+        when(sagaRepository.findReconcileCandidates(any(), any(), anyLong(), any())).thenReturn(List.of(
                 snapshot(1L, LoanApprovalStatus.APPROVED, InternalApprovalStatus.PENDING),
                 snapshot(2L, LoanApprovalStatus.APPROVED, InternalApprovalStatus.REJECTED),
                 snapshot(3L, LoanApprovalStatus.APPROVED, InternalApprovalStatus.REJECTED),
@@ -163,8 +163,7 @@ class LoanSagaReconcileTest {
 
         LocalDateTime lowerBound = LocalDateTime.now(ZoneOffset.UTC).minusDays(30).minusMinutes(1);
         verify(sagaRepository).findReconcileCandidates(argThat(since -> since.isAfter(lowerBound)),
-                eq(LoanSagaState.terminalStates()));
-        verify(sagaRepository).findReconcileSagas(any(), eq(LoanSagaState.terminalStates()));
+                eq(LoanSagaState.terminalStates()), eq(0L), any());
         // Status columns only: the orchestrator never loads a whole loan itself.
         verifyNoInteractions(loanRepository);
     }
@@ -174,11 +173,37 @@ class LoanSagaReconcileTest {
     void oneFailureDoesNotStopTheRun() {
         LoanSagaTransitionService transitionService = mock(LoanSagaTransitionService.class);
         doThrow(new IllegalStateException("boom")).when(transitionService).reconcileLoan(1L);
-        when(sagaRepository.findReconcileCandidates(any(), any())).thenReturn(List.of(
+        when(sagaRepository.findReconcileCandidates(any(), any(), anyLong(), any())).thenReturn(List.of(
                 snapshot(1L, LoanApprovalStatus.NEW, null), snapshot(2L, LoanApprovalStatus.NEW, null)));
 
         new LoanSagaOrchestrator(sagaRepository, transitionService).reconcile();
 
         verify(transitionService).reconcileLoan(2L);
+    }
+
+    @Test
+    @DisplayName("candidates are read a chunk at a time, each with its own sagas: every loan reconciled once, a failure"
+            + " never stops the rest, and open compensations are driven a chunk at a time too")
+    void candidatesAreWalkedInChunks() {
+        LoanSagaTransitionService transitionService = mock(LoanSagaTransitionService.class);
+        doThrow(new IllegalStateException("boom")).when(transitionService).reconcileLoan(120L);
+        List<LoanStatusSnapshot> all = java.util.stream.LongStream.rangeClosed(1, 150)
+                .mapToObj(id -> snapshot(id, LoanApprovalStatus.NEW, null)).toList();
+        when(sagaRepository.findReconcileCandidates(any(), any(), anyLong(), any())).thenAnswer(call -> {
+            long after = call.getArgument(2);
+            org.springframework.data.domain.Pageable chunk = call.getArgument(3);
+            return all.stream().filter(loan -> loan.id() > after).limit(chunk.getPageSize()).toList();
+        });
+        LoanSaga failed = LoanSaga.builder().id(7L).loanId(99L).currentState(LoanSagaState.DISBURSEMENT_FAILED).build();
+        when(sagaRepository.findByCurrentStateAndIdGreaterThanOrderByIdAsc(eq(LoanSagaState.DISBURSEMENT_FAILED),
+                eq(0L), any())).thenReturn(List.of(failed));
+
+        new LoanSagaOrchestrator(sagaRepository, transitionService).reconcile();
+
+        for (long id = 1; id <= 150; id++) {
+            verify(transitionService).reconcileLoan(id);
+        }
+        verify(sagaRepository, times(2)).findByLoanIdIn(any());
+        verify(transitionService).compensate(99L);
     }
 }

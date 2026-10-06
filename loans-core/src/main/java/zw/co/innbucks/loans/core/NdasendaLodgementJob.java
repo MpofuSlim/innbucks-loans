@@ -11,6 +11,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.jobs.IdChunks;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.InternalApprovalStatus;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -137,18 +138,24 @@ public class NdasendaLodgementJob {
             return;
         }
 
-        // Held at a checkpoint (FR-SSB-014): not lodged until it is cleared.
-        List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_LODGEMENT,
-                loanRepository.findIdsDueForLodgement(now));
-        log.info("SSB lodgement run: {} loan(s) due", due.size());
-        for (int i = 0; i < due.size(); i++) {
-            if (!lodge(due.get(i))) {
-                pausedUntil = LocalDateTime.now(ZoneOffset.UTC).plus(retryBackoff);
-                log.warn("SSB lodgement run stopped at loan {}; {} loan(s) left untouched, lodging paused until {}",
-                        due.get(i), due.size() - i - 1, pausedUntil);
-                return;
+        // Oldest first, a chunk of ids at a time (IdChunks): the run never holds more than one chunk.
+        int[] tried = {0};
+        IdChunks.forEach((after, chunk) -> loanRepository.findIdsDueForLodgement(now, after, chunk), chunk -> {
+            // Held at a checkpoint (FR-SSB-014): not lodged until it is cleared.
+            List<Long> due = checkpointGate.withoutHeld(HoldPoint.BEFORE_LODGEMENT, chunk);
+            log.info("SSB lodgement run: {} loan(s) due in this chunk", due.size());
+            for (int i = 0; i < due.size(); i++) {
+                tried[0]++;
+                if (!lodge(due.get(i))) {
+                    pausedUntil = LocalDateTime.now(ZoneOffset.UTC).plus(retryBackoff);
+                    log.warn("SSB lodgement run stopped at loan {}; {} loan(s) of its chunk, and every later one, left"
+                            + " untouched, lodging paused until {}", due.get(i), due.size() - i - 1, pausedUntil);
+                    return false;
+                }
             }
-        }
+            return true;
+        });
+        log.info("SSB lodgement run: {} loan(s) tried", tried[0]);
     }
 
     /** @return whether the run may carry on to the next loan */
@@ -400,23 +407,28 @@ public class NdasendaLodgementJob {
      */
     private void holdAbandonedClaims(LocalDateTime now) {
         LocalDateTime cutoff = now.minus(staleClaimAfter);
-        List<Long> abandoned;
         try {
-            abandoned = loanRepository.findIdsWithLodgementClaimedBefore(cutoff);
+            IdChunks.forEach((after, chunk) -> loanRepository.findIdsWithLodgementClaimedBefore(cutoff, after, chunk),
+                    abandoned -> {
+                        for (Long loanId : abandoned) {
+                            holdAbandoned(loanId, cutoff);
+                        }
+                        return true;
+                    });
         } catch (RuntimeException ex) {
             log.error("Could not look for abandoned lodgement claims", ex);
-            return;
         }
-        for (Long loanId : abandoned) {
-            try {
-                transactionTemplate.executeWithoutResult(status -> loanRepository.findByIdForUpdate(loanId)
-                        .filter(loan -> loan.getLoanApprovalStatus() == LoanApprovalStatus.NEW
-                                && loan.getLodgementClaimedAt() != null && loan.getLodgementClaimedAt().isBefore(cutoff))
-                        .ifPresent(loan -> hold(loan, "A lodgement started " + loan.getLodgementClaimedAt()
-                                + " was never recorded, so it may have reached Ndasenda; held for its answer, not sent again")));
-            } catch (RuntimeException ex) {
-                log.error("Could not hold loan {}, whose lodgement claim is stale; it stays claimed and unsent", loanId, ex);
-            }
+    }
+
+    private void holdAbandoned(Long loanId, LocalDateTime cutoff) {
+        try {
+            transactionTemplate.executeWithoutResult(status -> loanRepository.findByIdForUpdate(loanId)
+                    .filter(loan -> loan.getLoanApprovalStatus() == LoanApprovalStatus.NEW
+                            && loan.getLodgementClaimedAt() != null && loan.getLodgementClaimedAt().isBefore(cutoff))
+                    .ifPresent(loan -> hold(loan, "A lodgement started " + loan.getLodgementClaimedAt()
+                            + " was never recorded, so it may have reached Ndasenda; held for its answer, not sent again")));
+        } catch (RuntimeException ex) {
+            log.error("Could not hold loan {}, whose lodgement claim is stale; it stays claimed and unsent", loanId, ex);
         }
     }
 
