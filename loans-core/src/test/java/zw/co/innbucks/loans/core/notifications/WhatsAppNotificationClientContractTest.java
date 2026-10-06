@@ -74,7 +74,11 @@ class WhatsAppNotificationClientContractTest {
         wireMock.verify(postRequestedFor(urlEqualTo(PATH))
                 .withHeader("x-api-key", equalTo(API_KEY))
                 .withRequestBody(equalToJson("{\"to\":\"+263782606983\","
-                        + "\"notification\":\"Your offer: USD 300.00 — log in!\"}")));
+                        + "\"notification\":\"Your offer: USD 300.00 — log in!\"}"))
+                // A partner never receives our trace (CLAUDE.md "Tracing"): partner WAFs have
+                // refused headers they did not expect.
+                .withoutHeader("traceparent")
+                .withoutHeader("tracestate"));
     }
 
     @Test

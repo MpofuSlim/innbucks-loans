@@ -422,3 +422,33 @@ management:
     distribution:
       slo:
         "[http.server.requests]": 50ms,100ms,250ms,500ms,1s,2s,5s
+  # Distributed tracing — the fleet convention (CLAUDE.md "Tracing"). Trace and span ids are always generated and
+  # continued from the gateway's W3C traceparent; spans are EXPORTED only when a collector is named.
+  #
+  # The endpoint is deliberately NOT a key in this file. Boot reads OTEL_EXPORTER_OTLP_TRACES_ENDPOINT itself
+  # (falling back to OTEL_EXPORTER_OTLP_ENDPOINT) and skips an EMPTY value, so the exporter only exists when the
+  # variable names a collector. Writing `endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:}` here would define the
+  # property as "", which satisfies the exporter's @ConditionalOnProperty and builds an exporter with no URL.
+  # TracingExportGateTest pins both halves.
+  #
+  # export.enabled must stay TRUE: in Boot 4, false also swaps in a no-op propagator, so nothing would be extracted
+  # or injected and every request would start a new trace.
+  tracing:
+    export:
+      enabled: true
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
+    propagation:
+      # W3C traceparent only, in and out: one format fleet-wide.
+      type: W3C
+  # Logs go to stdout and the cell's log pipeline, never over OTLP, even if someone sets the generic
+  # OTEL_EXPORTER_OTLP_ENDPOINT.
+  logging:
+    export:
+      otlp:
+        enabled: false
+  opentelemetry:
+    resource-attributes:
+      # Loans sets no spring.application.name (the metrics tag above is literal for the same reason), so without
+      # this every exported span would be named unknown_service.
+      "[service.name]": loans-service

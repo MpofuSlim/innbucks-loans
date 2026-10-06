@@ -237,7 +237,11 @@ class InnbucksDepositContractTest {
                 .withRequestBody(matchingJsonPath("$.amount", equalTo("45000")))
                 .withRequestBody(matchingJsonPath("$.narration", equalTo("Ref: 000000042")))
                 .withRequestBody(matchingJsonPath("$.destinationMsisdn", equalTo("263772123123")))
-                .withRequestBody(notMatching(".*destinationAccount.*")));
+                .withRequestBody(notMatching(".*destinationAccount.*"))
+                // InnBucks is a partner: it never receives our trace (CLAUDE.md "Tracing"),
+                // on the deposit or on the login before it.
+                .withoutHeader("traceparent"));
+        wireMock.verify(postRequestedFor(urlEqualTo(LOGIN)).withoutHeader("traceparent"));
     }
 
     @Test

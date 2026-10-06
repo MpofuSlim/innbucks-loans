@@ -4,9 +4,12 @@
          kubectl logs in the cell). There is deliberately no file appender: the cell runs the image with a
          read-only root filesystem, where a file appender cannot create its directory and logback aborts
          the boot, and a file inside a container is lost with it anyway. -->
+    <!-- [traceId,spanId] are Micrometer Tracing's MDC keys (CLAUDE.md "Tracing"): every line written inside a
+         request or an @Async task carries the trace the gateway started, so one search follows a call across the
+         fleet. Empty outside a trace (startup, a scheduled job before it starts its own span). -->
     <appender name="consoleAppender" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <Pattern>.%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg %n
+            <Pattern>.%d{HH:mm:ss.SSS} %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg %n
             </Pattern>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
