@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.core.saga;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,28 +21,27 @@ public interface LoanSagaRepository extends JpaRepository<LoanSaga, Long> {
 
     List<LoanSaga> findByCurrentState(LoanSagaState state);
 
+    /** The sagas in {@code state}, a chunk above {@code after} in id order (see {@code IdChunks}). */
+    List<LoanSaga> findByCurrentStateAndIdGreaterThanOrderByIdAsc(LoanSagaState state, Long after, Pageable chunk);
+
+    /** The sagas of these loans: a chunk of {@link #findReconcileCandidates}' loans. */
+    List<LoanSaga> findByLoanIdIn(Collection<Long> loanIds);
+
     /**
      * The loans the reconciler looks at, as their status columns only (never the documents and
      * images on the row): every loan whose saga is still open, however old, plus loans created since
-     * {@code since}, which may not have a saga yet.
+     * {@code since}, which may not have a saga yet. A chunk above {@code after}, in id order.
      */
     @Query("""
             select new zw.co.innbucks.loans.core.loan.LoanStatusSnapshot(l.id, l.loanApprovalStatus,
                    l.internalApprovalStatus, l.loanAccountStatus, l.disbursementStatus)
             from Loan l
-            where l.createdDate >= :since
-               or l.id in (select s.loanId from LoanSaga s where s.currentState not in :terminal)
+            where (l.createdDate >= :since
+                   or l.id in (select s.loanId from LoanSaga s where s.currentState not in :terminal))
+              and l.id > :after
             order by l.id
             """)
     List<LoanStatusSnapshot> findReconcileCandidates(@Param("since") LocalDateTime since,
-                                                     @Param("terminal") Collection<LoanSagaState> terminal);
-
-    /** The sagas of {@link #findReconcileCandidates}' loans: every open saga, and those of recent loans. */
-    @Query("""
-            select s from LoanSaga s
-            where s.currentState not in :terminal
-               or s.loanId in (select l.id from Loan l where l.createdDate >= :since)
-            """)
-    List<LoanSaga> findReconcileSagas(@Param("since") LocalDateTime since,
-                                      @Param("terminal") Collection<LoanSagaState> terminal);
+                                                     @Param("terminal") Collection<LoanSagaState> terminal,
+                                                     @Param("after") long after, Pageable chunk);
 }

@@ -114,19 +114,19 @@ class NdasendaLodgementJobTest {
         transactions = new RecordingTransactions();
 
         // The repository over an in-memory table: the due query applies the same rule as the JPQL.
-        when(loanRepository.findIdsDueForLodgement(any())).thenAnswer(call -> {
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenAnswer(call -> {
             LocalDateTime now = call.getArgument(0);
-            return loans.values().stream()
+            return chunk(loans.values().stream()
                     .filter(l -> l.getLoanApprovalStatus() == LoanApprovalStatus.NEW && l.getLodgementClaimedAt() == null
-                            && (l.getNextLodgementAttemptAt() == null || !l.getNextLodgementAttemptAt().isAfter(now)))
-                    .map(Loan::getId).toList();
+                            && (l.getNextLodgementAttemptAt() == null || !l.getNextLodgementAttemptAt().isAfter(now))),
+                    call.getArgument(1), call.getArgument(2));
         });
-        when(loanRepository.findIdsWithLodgementClaimedBefore(any())).thenAnswer(call -> {
+        when(loanRepository.findIdsWithLodgementClaimedBefore(any(), anyLong(), any())).thenAnswer(call -> {
             LocalDateTime cutoff = call.getArgument(0);
-            return loans.values().stream()
+            return chunk(loans.values().stream()
                     .filter(l -> l.getLoanApprovalStatus() == LoanApprovalStatus.NEW && l.getLodgementClaimedAt() != null
-                            && l.getLodgementClaimedAt().isBefore(cutoff))
-                    .map(Loan::getId).toList();
+                            && l.getLodgementClaimedAt().isBefore(cutoff)),
+                    call.getArgument(1), call.getArgument(2));
         });
         when(loanRepository.findByIdForUpdate(anyLong())).thenAnswer(call -> Optional.ofNullable(loans.get((Long) call.getArgument(0))));
         when(loanRepository.save(any(Loan.class))).thenAnswer(call -> call.getArgument(0));
@@ -324,7 +324,7 @@ class NdasendaLodgementJobTest {
         Loan loan = newLoan(42);
         LocalDateTime theirs = LocalDateTime.now(ZoneOffset.UTC).minusSeconds(5);
         // The due list was read before the other instance's claim committed.
-        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenReturn(List.of(42L));
         loan.setLodgementClaimedAt(theirs);
         LoanApprovalService service = mock(LoanApprovalService.class);
 
@@ -343,7 +343,7 @@ class NdasendaLodgementJobTest {
         Loan loan = newLoan(42);
         loan.setPayslipReviewStatus(review);
         // Read before the review landed: the claim re-checks under the lock.
-        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenReturn(List.of(42L));
         LoanApprovalService service = mock(LoanApprovalService.class);
 
         job(service).processSsbApprovals();
@@ -361,7 +361,7 @@ class NdasendaLodgementJobTest {
         Loan declined = newLoan(43);
         declined.setInternalApprovalStatus(InternalApprovalStatus.REJECTED);
         // Read before the hold or the decline landed: the claim re-checks under the lock (FR-SSB-024).
-        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenReturn(List.of(42L, 43L));
         when(loanRepository.isHeldForEmploymentEvent(42L)).thenReturn(true);
         LoanApprovalService service = mock(LoanApprovalService.class);
 
@@ -379,7 +379,7 @@ class NdasendaLodgementJobTest {
     void checkpointKeepsTheLoanBack() {
         Loan filtered = newLoan(42);
         Loan caughtLate = newLoan(43);
-        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L, 43L));
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenReturn(List.of(42L, 43L));
         checkpointGate = mock(CheckpointGate.class);
         when(checkpointGate.withoutHeld(HoldPoint.BEFORE_LODGEMENT, List.of(42L, 43L))).thenReturn(List.of(43L));
         when(checkpointGate.holding(HoldPoint.BEFORE_LODGEMENT, caughtLate)).thenReturn(Optional.of(
@@ -400,7 +400,7 @@ class NdasendaLodgementJobTest {
     void clearedLoanIsLodged() {
         Loan loan = newLoan(42);
         loan.setPayslipReviewStatus(PayslipReviewStatus.CLEARED);
-        when(loanRepository.findIdsDueForLodgement(any())).thenReturn(List.of(42L));
+        when(loanRepository.findIdsDueForLodgement(any(), anyLong(), any())).thenReturn(List.of(42L));
         LoanApprovalService service = mock(LoanApprovalService.class);
         when(service.requestApproval(any())).thenReturn(
                 LoanApprovalResponse.builder().status(LoanApprovalStatus.PROCESSING).batchNumber("BATCH-A").build());
@@ -754,6 +754,80 @@ class NdasendaLodgementJobTest {
                 .equals("Lodging Ndasenda deduction for reference 000000042 ec *****67A tenor 6"));
     }
 
+    // ── Chunked queue (IdChunks): the run reads its due loans a chunk at a time ──────────────────────────
+
+    @Test
+    @DisplayName("a queue longer than a chunk is lodged in full, oldest first, each loan sent once, read chunk by chunk")
+    void aQueueLongerThanAChunkIsLodgedInFull() {
+        for (long id = 1; id <= 230; id++) {
+            newLoan(id);
+        }
+        List<String> sent = new ArrayList<>();
+        ndasendaAnswers(reference -> {
+            sent.add(reference);
+            return accepted("BATCH-" + reference);
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        assertThat(loans.values()).allSatisfy(loan ->
+                assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING));
+        assertThat(sent).hasSize(230).doesNotHaveDuplicates().isSorted();
+        assertThat(lodgementPosts()).isEqualTo(230);
+        // Three chunks of at most 100, each read above the last id of the one before.
+        ArgumentCaptor<Long> after = ArgumentCaptor.forClass(Long.class);
+        verify(loanRepository, times(3)).findIdsDueForLodgement(any(), after.capture(), any());
+        assertThat(after.getAllValues()).containsExactly(0L, 100L, 200L);
+    }
+
+    @Test
+    @DisplayName("a loan whose claim fails stays due for the next run, is not retried in this one, and the rest of the"
+            + " queue behind it, in later chunks too, is lodged")
+    void aFailingLoanDoesNotBlockTheQueueAndIsNotProcessedTwice() {
+        for (long id = 1; id <= 150; id++) {
+            newLoan(id);
+        }
+        ndasendaAnswers(reference -> accepted("BATCH-" + reference));
+        when(loanRepository.findByIdForUpdate(anyLong())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            if (id == 60L) {
+                throw new org.springframework.dao.CannotAcquireLockException("loan 60 is locked");
+            }
+            return Optional.ofNullable(loans.get(id));
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        Loan failed = loans.get(60L);
+        assertThat(failed.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.NEW);
+        assertThat(failed.getLodgementClaimedAt()).as("nothing was sent, so nothing is claimed").isNull();
+        // Still in the due set, but behind the cursor: tried once in this run, and again by the next.
+        verify(loanRepository, times(1)).findByIdForUpdate(60L);
+        assertThat(loans.values().stream().filter(loan -> loan.getId() != 60L))
+                .allSatisfy(loan -> assertThat(loan.getLoanApprovalStatus()).isEqualTo(LoanApprovalStatus.PROCESSING));
+        assertThat(lodgementPosts()).isEqualTo(149);
+    }
+
+    @Test
+    @DisplayName("a stop in the first chunk (Ndasenda unreachable) leaves every later chunk unread")
+    void aStopEndsTheRunAcrossChunks() {
+        for (long id = 1; id <= 150; id++) {
+            newLoan(id);
+        }
+        ndasendaAnswers(reference -> {
+            throw new ResourceAccessException("I/O error on POST request: Connection refused",
+                    new ConnectException("Connection refused"));
+        });
+
+        ndasendaJob().processSsbApprovals();
+
+        // Ndasenda is down: the run stops at the first loan, and the second chunk is never even read.
+        assertThat(lodgementPosts()).isEqualTo(1);
+        verify(loanRepository, times(1)).findIdsDueForLodgement(any(), anyLong(), any());
+        verify(loanRepository, never()).findByIdForUpdate(2L);
+        assertThat(loans.values()).allSatisfy(loan -> assertThat(loan.getLodgementClaimedAt()).isNull());
+    }
+
     /** Opens, commits and rolls back nothing real; records the order so each loan's boundaries are visible. */
     private static final class RecordingTransactions implements PlatformTransactionManager {
         final List<String> events = new ArrayList<>();
@@ -775,5 +849,12 @@ class NdasendaLodgementJobTest {
         public void rollback(TransactionStatus status) {
             events.add("rollback");
         }
+    }
+
+    /** The keyset chunk the JPQL returns: ids above {@code after}, ascending, at most a page of them. */
+    private static List<Long> chunk(Stream<Loan> due, long after, org.springframework.data.domain.Pageable page) {
+        // page is null only while Mockito re-stubs the method with matchers.
+        return due.map(Loan::getId).filter(id -> id > after).sorted().limit(page == null ? Long.MAX_VALUE
+                : page.getPageSize()).toList();
     }
 }

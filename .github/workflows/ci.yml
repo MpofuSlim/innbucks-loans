@@ -40,11 +40,23 @@ jobs:
       # the full application context, which needs a live database —
       # unreachable from CI — so it is excluded here. Everything else
       # (compilation of both modules + the loans-core unit tests) runs.
+      # The *IT classes run once, in failsafe at verify, on a Testcontainers
+      # Postgres (the runner has Docker). A -Dtest of exclusions alone makes
+      # surefire include every class, so they are excluded from it by name.
       - name: Build + test
         run: >
           mvn -B -ntp clean verify
-          -Dtest='!LoansApiApplicationTests'
+          -Dtest='!LoansApiApplicationTests,!*IT'
           -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Upload Failsafe reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: failsafe-reports
+          path: '**/target/failsafe-reports/**'
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload Surefire reports
         if: always()

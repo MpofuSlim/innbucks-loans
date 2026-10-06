@@ -47,6 +47,7 @@ public class WorkflowEscalationService {
     private final NotificationService notificationService;
     private final AuditService auditService;
     private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate readTemplate;
 
     public WorkflowEscalationService(WorkflowStageRepository workflowStageRepository, StageQueues stageQueues,
                                      WorkQueueService workQueueService, WorkItemRepository workItemRepository,
@@ -63,10 +64,16 @@ public class WorkflowEscalationService {
         this.auditService = auditService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.readTemplate = new TransactionTemplate(transactionManager);
+        this.readTemplate.setReadOnly(true);
     }
 
     private record Escalated(WorkflowStage stage, String reference, long waitingHours, String assignee,
                              String originatorEmail) {
+    }
+
+    /** A wait past the escalation point whose item is not yet escalated: what the read leaves for the writes. */
+    private record Due(Long loanId, LocalDateTime enteredAt) {
     }
 
     /**
@@ -84,21 +91,29 @@ public class WorkflowEscalationService {
             }
             StageQueue queue = stageQueues.of(stage);
             LocalDateTime cutoff = now.minusHours(stage.getEscalationHours());
-            List<Waiting> due = queue.waiting().stream().filter(wait -> !wait.enteredAt().isAfter(cutoff)).toList();
-            Map<Long, WorkItem> items = workQueueService.currentItems(stage.getCode(), due);
-            for (Waiting wait : due) {
-                WorkItem item = items.get(wait.loan().getId());
-                if (item != null && item.getEscalatedAt() != null) {
-                    continue;
-                }
+            // Read in a transaction of its own: a checkpoint's queue reads each loan's channel, which is LAZY. Only
+            // ids and times leave it; each escalation re-reads its loan under the lock.
+            List<Due> due = readTemplate.execute(tx -> {
+                List<Waiting> waiting = queue.waiting().stream()
+                        .filter(wait -> !wait.enteredAt().isAfter(cutoff)).toList();
+                Map<Long, WorkItem> items = workQueueService.currentItems(stage.getCode(), waiting);
+                return waiting.stream()
+                        .filter(wait -> {
+                            WorkItem item = items.get(wait.loan().getId());
+                            return item == null || item.getEscalatedAt() == null;
+                        })
+                        .map(wait -> new Due(wait.loan().getId(), wait.enteredAt()))
+                        .toList();
+            });
+            for (Due wait : due == null ? List.<Due>of() : due) {
                 try {
                     Escalated one = transactionTemplate.execute(
-                            tx -> escalate(stage, queue, wait.loan().getId(), wait.enteredAt(), now));
+                            tx -> escalate(stage, queue, wait.loanId(), wait.enteredAt(), now));
                     if (one != null) {
                         escalated.add(one);
                     }
                 } catch (RuntimeException ex) {
-                    log.error("Could not escalate loan {}'s {} item; the next run tries again", wait.loan().getId(),
+                    log.error("Could not escalate loan {}'s {} item; the next run tries again", wait.loanId(),
                             stage.getCode(), ex);
                 }
             }

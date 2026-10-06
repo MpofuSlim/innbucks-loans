@@ -2,6 +2,7 @@ package zw.co.innbucks.loans.core.workflow;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 
@@ -85,7 +86,13 @@ public class CheckpointGate {
     public record NotCleared(WorkflowStage stage, boolean declined) {
     }
 
-    /** The loans no checkpoint holds at the point, in the order given; one read for the lot, not one per loan. */
+    /**
+     * The loans no checkpoint holds at the point, in the order given; one read for the lot, not one per loan. The
+     * lodgement and booking jobs call it with no transaction open, a chunk of ids at a time, and a checkpoint reads
+     * each loan's channel ({@link WorkflowStage#appliesTo}), which is LAZY: so it reads in a transaction of its own,
+     * where the channels of the whole chunk load in one query.
+     */
+    @Transactional(readOnly = true)
     public List<Long> withoutHeld(HoldPoint point, List<Long> loanIds) {
         List<WorkflowStage> checkpoints = checkpointsAt(point);
         if (checkpoints.isEmpty() || loanIds.isEmpty()) {
