@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -28,10 +27,10 @@ import zw.co.innbucks.loans.core.loan.NextOfKin;
 import zw.co.innbucks.loans.core.loan.RelationshipType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 import zw.co.innbucks.loans.core.workflow.CheckpointGates;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDate;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -101,10 +100,8 @@ class InnbucksLoanApiContractTest {
         params.setLoanInquiryEndpoint(loanBase + INQUIRY + "{participantReference}");
         params.setLoanProduct("NANOUS");
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(500));
-        factory.setReadTimeout(Duration.ofMillis(2000));
-        RestTemplate restTemplate = new RestTemplate(factory);
+        // The production transport (config/OutboundHttp): pooled httpclient5, no automatic retries.
+        RestTemplate restTemplate = new RestTemplate(TestOutboundHttp.POOL.requestFactory(500, 2000));
 
         InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
         return new InnbucksDisbursementService(mock(LoanRepository.class), mock(LoanNotificationService.class),

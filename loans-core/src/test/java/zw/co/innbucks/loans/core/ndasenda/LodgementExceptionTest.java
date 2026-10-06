@@ -39,6 +39,20 @@ class LodgementExceptionTest {
     }
 
     @Test
+    @DisplayName("httpclient5 (the pooled transport): a connect timeout and a timed-out wait for a pooled connection never left")
+    void pooledTransportPreSendFailuresNeverLeft() {
+        assertThat(kindOf(new org.apache.hc.client5.http.ConnectTimeoutException(
+                "Connect to https://deductions.ndasenda.co.zw:443 failed: Connect timed out")))
+                .isEqualTo(LodgementException.Kind.NDASENDA_UNAVAILABLE);
+        assertThat(kindOf(new org.apache.hc.core5.http.ConnectionRequestTimeoutException(
+                "Timeout deadline: 500 MILLISECONDS, actual: 501 MILLISECONDS")))
+                .isEqualTo(LodgementException.Kind.NDASENDA_UNAVAILABLE);
+        assertThat(kindOf(new org.apache.hc.core5.http.NoHttpResponseException(
+                "deductions.ndasenda.co.zw:443 failed to respond")))
+                .isEqualTo(LodgementException.Kind.OUTCOME_UNKNOWN);
+    }
+
+    @Test
     @DisplayName("a read timeout, or a timeout that does not say it was the connect, may follow a delivered request")
     void readTimeoutIsUnknown() {
         assertThat(kindOf(new SocketTimeoutException("Read timed out"))).isEqualTo(LodgementException.Kind.OUTCOME_UNKNOWN);

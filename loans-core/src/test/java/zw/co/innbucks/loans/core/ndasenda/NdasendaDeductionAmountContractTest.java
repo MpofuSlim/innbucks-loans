@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -15,6 +16,7 @@ import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
 import java.math.BigDecimal;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -68,7 +70,9 @@ class NdasendaDeductionAmountContractTest {
         params.setDeductionCode("DC01");
         params.setSecurityCode("SEC01");
 
-        RestTemplate restTemplate = new RestTemplate();
+        // The production transport (config/OutboundHttp), never RestTemplate's classpath-detected default.
+        RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(
+                TestOutboundHttp.POOL.requestFactory(5000, 5000)));
         service = new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthService(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(LoanNotificationService.class),
                 mock(AuditService.class), mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));

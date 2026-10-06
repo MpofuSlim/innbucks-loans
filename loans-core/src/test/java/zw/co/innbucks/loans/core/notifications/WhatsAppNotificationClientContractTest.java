@@ -6,10 +6,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -56,11 +55,10 @@ class WhatsAppNotificationClientContractTest {
         WhatsAppProperties properties = new WhatsAppProperties();
         properties.setBaseUrl(baseUrl);
         properties.setApiKey(apiKey);
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(500));
-        factory.setReadTimeout(Duration.ofMillis(2000));
-        RestClient restClient = RestClient.builder()
-                .baseUrl(baseUrl == null ? "" : baseUrl).requestFactory(factory).build();
+        properties.setConnectTimeoutMs(500);
+        properties.setReadTimeoutMs(2000);
+        // Built exactly as production builds it: WhatsAppClientConfig's pooled client.
+        RestClient restClient = new WhatsAppClientConfig().whatsAppRestClient(properties, TestOutboundHttp.POOL);
         return new WhatsAppNotificationClient(restClient, properties);
     }
 
