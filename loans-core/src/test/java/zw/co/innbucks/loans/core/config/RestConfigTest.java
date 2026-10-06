@@ -21,12 +21,11 @@ import org.springframework.http.client.AbstractClientHttpRequestFactoryWrapper;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.InterceptingClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import java.net.ConnectException;
 import java.net.InetAddress;
@@ -50,8 +49,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * The shared RestTemplate carries every Ndasenda and InnBucks call, including the irreversible
  * writes: an InnBucks booking or deposit and a Ndasenda lodgement. Pins, on the wire:
  * <ul>
- *   <li>a POST whose connection dies before any response is sent ONCE, never re-sent by the
- *       transport;</li>
+ *   <li>the transport is the service's pooled httpclient5 client ({@link OutboundHttp}): HTTP/1.1,
+ *       connections reused, no automatic retries;</li>
+ *   <li>a POST whose connection dies before any response — or that is answered 503 — is sent ONCE,
+ *       never re-sent by the transport;</li>
  *   <li>the timeouts come from {@link HttpClientConfig}, and a slow upstream is cut off;</li>
  *   <li>each failure keeps the exception type the callers classify on: a refused or connect-timed-out
  *       call reads as never sent, a read timeout or a reset as possibly sent, and a 4xx/5xx as an
@@ -116,7 +117,8 @@ class RestConfigTest {
     }
 
     private static RestTemplate restTemplate(int connectMs, int readMs) {
-        return new RestConfig().restTemplate(new LoggingInterceptor(), timeouts(connectMs, readMs));
+        return new RestConfig().restTemplate(new LoggingInterceptor(), timeouts(connectMs, readMs),
+                TestOutboundHttp.POOL);
     }
 
     private static String url(String path) {
@@ -146,26 +148,31 @@ class RestConfigTest {
         assertThat(took).isLessThan(Duration.ofMillis(UPSTREAM_DELAY_MS - 1_000));
     }
 
-    /** HttpURLConnection's connect timeout: "Connect timed out", with a capital C. */
+    /**
+     * A connect timeout: httpclient5's ConnectTimeoutException, carrying the JDK socket's
+     * SocketTimeoutException("Connect timed out") as its cause. Either one marks it; ConnectPhase and
+     * LodgementException read both as "never sent".
+     */
     private static boolean isConnectTimeout(Throwable t) {
-        return t instanceof SocketTimeoutException && "Connect timed out".equals(t.getMessage());
+        return t instanceof org.apache.hc.client5.http.ConnectTimeoutException
+                || (t instanceof SocketTimeoutException && "Connect timed out".equals(t.getMessage()));
     }
 
-    /** InterceptingClientHttpRequestFactory -> BufferingClientHttpRequestFactory -> SimpleClientHttpRequestFactory. */
-    private static SimpleClientHttpRequestFactory innermostFactory(RestTemplate restTemplate) {
+    /** InterceptingClientHttpRequestFactory -> BufferingClientHttpRequestFactory -> the pooled factory. */
+    private static OutboundHttp.PooledRequestFactory innermostFactory(RestTemplate restTemplate) {
         ClientHttpRequestFactory intercepting = restTemplate.getRequestFactory();
         assertThat(intercepting).isInstanceOf(InterceptingClientHttpRequestFactory.class);
         ClientHttpRequestFactory buffering = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
         assertThat(buffering).isInstanceOf(BufferingClientHttpRequestFactory.class);
-        ClientHttpRequestFactory simple = ((AbstractClientHttpRequestFactoryWrapper) buffering).getDelegate();
-        assertThat(simple).isInstanceOf(SimpleClientHttpRequestFactory.class);
-        return (SimpleClientHttpRequestFactory) simple;
+        ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) buffering).getDelegate();
+        assertThat(pooled).isInstanceOf(OutboundHttp.PooledRequestFactory.class);
+        return (OutboundHttp.PooledRequestFactory) pooled;
     }
 
     private static void assertTimeouts(RestTemplate restTemplate, int connectMs, int readMs) {
-        SimpleClientHttpRequestFactory factory = innermostFactory(restTemplate);
-        assertThat(ReflectionTestUtils.getField(factory, "connectTimeout")).isEqualTo(connectMs);
-        assertThat(ReflectionTestUtils.getField(factory, "readTimeout")).isEqualTo(readMs);
+        OutboundHttp.PooledRequestFactory factory = innermostFactory(restTemplate);
+        assertThat(factory.connectTimeout()).isEqualTo(Duration.ofMillis(connectMs));
+        assertThat(factory.responseTimeout()).isEqualTo(Duration.ofMillis(readMs));
     }
 
     @Test
@@ -188,8 +195,39 @@ class RestConfigTest {
         assertThat(causeChain(thrown))
                 .noneMatch(ConnectException.class::isInstance)
                 .noneMatch(SocketTimeoutException.class::isInstance);
-        // HttpURLConnection re-sends a POST like this unless it is streamed; see RestConfig.
+        // httpclient5's default retry strategy would re-send it; OutboundHttp disables it. See RestConfig.
         wireMock.verify(1, postRequestedFor(urlEqualTo(FAULT)));
+    }
+
+    @Test
+    @DisplayName("a POST answered 503 (with Retry-After) is not re-sent: httpclient5's default would retry it")
+    void postAnswered503IsNeverReSent() {
+        wireMock.stubFor(post(urlEqualTo(FAULT)).willReturn(aResponse().withStatus(503)
+                .withHeader("Retry-After", "1").withBody("busy")));
+
+        Throwable thrown = catchThrowable(() -> restTemplate(1_000, 5_000)
+                .postForEntity(url(FAULT), "{\"amount\":150000}", String.class));
+
+        assertThat(thrown).isInstanceOf(HttpServerErrorException.ServiceUnavailable.class);
+        wireMock.verify(1, postRequestedFor(urlEqualTo(FAULT)));
+    }
+
+    @Test
+    @DisplayName("requests go out as HTTP/1.1, and a second call reuses the pooled connection")
+    void http11AndPooled() throws Exception {
+        try (OutboundHttp pool = OutboundHttp.withDefaults()) {
+            RestTemplate restTemplate = new RestConfig().restTemplate(new LoggingInterceptor(),
+                    timeouts(1_000, 5_000), pool);
+
+            restTemplate.postForEntity(url(JSON), "{}", String.class);
+            restTemplate.postForEntity(url(JSON), "{}", String.class);
+
+            assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(JSON))))
+                    .hasSize(2)
+                    .allSatisfy(request -> assertThat(request.getProtocol()).isEqualTo("HTTP/1.1"));
+            assertThat(pool.connectionManager().getTotalStats().getAvailable()).isEqualTo(1);
+            assertThat(pool.connectionManager().getTotalStats().getLeased()).isZero();
+        }
     }
 
     @ParameterizedTest(name = "{0}")
@@ -286,8 +324,9 @@ class RestConfigTest {
         Throwable thrown = catchThrowable(() -> restTemplate(1_000, 5_000)
                 .postForEntity(url(UNAUTHORIZED), "{}", String.class));
 
-        // Its body is not asserted: a 401 answering a streamed POST arrives without one (RestConfig).
         assertThat(thrown).isInstanceOf(HttpClientErrorException.Unauthorized.class);
+        // On httpclient5 the 401's body arrives too (HttpURLConnection dropped it for a streamed POST).
+        assertThat(((HttpClientErrorException) thrown).getResponseBodyAsString()).contains("token expired");
         wireMock.verify(1, postRequestedFor(urlEqualTo(UNAUTHORIZED)));
     }
 
@@ -305,7 +344,8 @@ class RestConfigTest {
     @DisplayName("the logging interceptor is still the one interceptor, and a prompt answer still reads through it")
     void loggingInterceptorIsStillInstalled() {
         LoggingInterceptor loggingInterceptor = new LoggingInterceptor();
-        RestTemplate restTemplate = new RestConfig().restTemplate(loggingInterceptor, timeouts(1_000, READ_TIMEOUT_MS));
+        RestTemplate restTemplate = new RestConfig().restTemplate(loggingInterceptor, timeouts(1_000, READ_TIMEOUT_MS),
+                TestOutboundHttp.POOL);
 
         assertThat(restTemplate.getInterceptors()).containsExactly(loggingInterceptor);
 
@@ -357,7 +397,7 @@ class RestConfigTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(RegisteredLikeLoansCoreConfig.class, ScannedLikeTheApplication.class,
-                    RestConfig.class, LoggingInterceptor.class);
+                    RestConfig.class, LoggingInterceptor.class, OutboundHttpConfig.class);
 
     @Test
     @DisplayName("http.client.* properties bind to one HttpClientConfig and time out the RestTemplate bean")
@@ -369,6 +409,9 @@ class RestConfigTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(HttpClientConfig.class);
                     assertThat(context).hasSingleBean(RestTemplate.class);
+                    assertThat(innermostFactory(context.getBean(RestTemplate.class)).getHttpClient())
+                            .as("the context's one pooled client")
+                            .isSameAs(context.getBean(OutboundHttp.class).httpClient());
 
                     RestTemplate restTemplate = context.getBean(RestTemplate.class);
                     assertTimeouts(restTemplate, 1_234, READ_TIMEOUT_MS);

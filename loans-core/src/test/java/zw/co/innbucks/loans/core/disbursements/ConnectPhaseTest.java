@@ -32,6 +32,26 @@ class ConnectPhaseTest {
     }
 
     @Test
+    @DisplayName("httpclient5 (the pooled transport): a connect timeout and a timed-out wait for a pooled "
+            + "connection never reached the server")
+    void pooledTransportPreSendFailures() {
+        assertThat(ConnectPhase.neverConnected(wrapped(new org.apache.hc.client5.http.ConnectTimeoutException(
+                "Connect to http://innbucks.example:443 failed: Connect timed out")))).isTrue();
+        assertThat(ConnectPhase.neverConnected(wrapped(new org.apache.hc.core5.http.ConnectionRequestTimeoutException(
+                "Timeout deadline: 2000 MILLISECONDS, actual: 2001 MILLISECONDS")))).isTrue();
+        // A connection refused is httpclient5's HttpHostConnectException, a ConnectException.
+        assertThat(ConnectPhase.neverConnected(wrapped(new org.apache.hc.client5.http.HttpHostConnectException(
+                "Connect to http://innbucks.example:443 failed: Connection refused")))).isTrue();
+    }
+
+    @Test
+    @DisplayName("httpclient5's after-connect failures stay possibly-sent: no response on a pooled connection")
+    void pooledTransportAfterConnectFailures() {
+        assertThat(ConnectPhase.neverConnected(wrapped(new org.apache.hc.core5.http.NoHttpResponseException(
+                "innbucks.example:443 failed to respond")))).isFalse();
+    }
+
+    @Test
     @DisplayName("a READ timeout and a reset may follow a request that was processed")
     void afterConnectFailures() {
         assertThat(ConnectPhase.neverConnected(wrapped(new SocketTimeoutException("Read timed out")))).isFalse();

@@ -159,6 +159,22 @@ http:
     connect-timeout: "${HTTP_CLIENT_CONNECT_TIMEOUT_MS:10000}"
     read-timeout: "${HTTP_CLIENT_READ_TIMEOUT_MS:60000}"
 
+# The ONE pooled httpclient5 client (config/OutboundHttp) under that RestTemplate
+# and the notification/WhatsApp RestClients. Sizing for one pod; the two
+# timeouts here apply only to a client that sets none (every client above does).
+# The wait for a free pooled connection is capped at each client's connect
+# timeout, and a timed-out wait reads as "never sent". HTTP/1.1, NO automatic
+# retries — see "Outbound HTTP clients are pooled" in CLAUDE.md.
+outbound-http:
+  max-total: "${OUTBOUND_HTTP_MAX_TOTAL:50}"
+  max-per-route: "${OUTBOUND_HTTP_MAX_PER_ROUTE:20}"
+  connect-timeout: "${OUTBOUND_HTTP_CONNECT_TIMEOUT:2s}"
+  response-timeout: "${OUTBOUND_HTTP_RESPONSE_TIMEOUT:10s}"
+  connection-request-timeout: "${OUTBOUND_HTTP_CONNECTION_REQUEST_TIMEOUT:2s}"
+  idle-eviction: "${OUTBOUND_HTTP_IDLE_EVICTION:30s}"
+  time-to-live: "${OUTBOUND_HTTP_TIME_TO_LIVE:5m}"
+  validate-after-inactivity: "${OUTBOUND_HTTP_VALIDATE_AFTER_INACTIVITY:2s}"
+
 # Uploaded documents (FR-SSB-005): what a payslip, national ID or signature must meet to be accepted.
 # The defaults refuse what cannot be read, not what is merely imperfect. Accepted images are logged with
 # their measured contrast and sharpness, which is what to tune these against.

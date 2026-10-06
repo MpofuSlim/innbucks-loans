@@ -6,10 +6,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -70,9 +69,8 @@ class SmsNotificationClientContractTest {
         props.setUsername("test-user");
         props.setPassword("test-pass");
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(500));
-        factory.setReadTimeout(Duration.ofMillis(2000));
+        // The production transport (config/OutboundHttp); two base URLs, so two clients on the one pool.
+        var factory = TestOutboundHttp.POOL.requestFactory(500, 2000);
 
         RestClient authRestClient = RestClient.builder()
                 .baseUrl(authBaseUrl).requestFactory(factory).build();
@@ -186,7 +184,8 @@ class SmsNotificationClientContractTest {
     @DisplayName("no notification API credentials: refused before the network")
     void sendSms_unconfigured_rejectedBeforeNetwork() {
         InnbucksNotifyProperties blank = new InnbucksNotifyProperties();
-        RestClient restClient = RestClient.builder().baseUrl(baseUrl(wireMock.port())).build();
+        RestClient restClient = RestClient.builder().baseUrl(baseUrl(wireMock.port()))
+                .requestFactory(TestOutboundHttp.POOL.requestFactory()).build();
         SmsNotificationClient unconfigured = new SmsNotificationClient(restClient,
                 new NotificationApiAuthenticator(restClient, blank));
 

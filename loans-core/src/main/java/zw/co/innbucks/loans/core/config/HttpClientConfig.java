@@ -6,10 +6,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Timeouts, in milliseconds, of the shared outbound {@link org.springframework.web.client.RestTemplate}
- * built by {@link RestConfig}, which carries every Ndasenda and InnBucks call. Why the values are
+ * built by {@link RestConfig}, which carries every Ndasenda and InnBucks call. They ride on the
+ * service's pooled client ({@link OutboundHttp}), whose own defaults apply only to clients that set none. Why the values are
  * what they are is written beside {@code http.client} in application.yml. The same defaults are
  * held here so that a context without that block (a test, an external config that leaves it out)
- * still gets bounded calls, never the JDK's wait-forever.
+ * still gets bounded calls, never an unbounded wait.
  *
  * <p>Registered only by {@code @EnableConfigurationProperties} on
  * {@link zw.co.innbucks.loans.core.LoansCoreConfig}. It is deliberately not also a

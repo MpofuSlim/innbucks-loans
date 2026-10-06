@@ -219,7 +219,7 @@ class LoggingInterceptorTest {
         // The template comes from RestConfig's bean exactly as the application wires it, whatever
         // collaborators that bean method takes, rather than from a direct call pinned to its signature.
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
-                RestConfig.class, HttpClientConfig.class, LoggingInterceptor.class)) {
+                RestConfig.class, HttpClientConfig.class, LoggingInterceptor.class, OutboundHttpConfig.class)) {
             wireMock.stubFor(post(urlEqualTo("/connect/token")).willReturn(aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")

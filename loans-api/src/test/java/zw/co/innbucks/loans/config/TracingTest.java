@@ -41,6 +41,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.config.LoggingInterceptor;
+import zw.co.innbucks.loans.core.config.OutboundHttp;
 import zw.co.innbucks.loans.core.config.RestConfig;
 import zw.co.innbucks.loans.core.notifications.WhatsAppClientConfig;
 import zw.co.innbucks.loans.core.notifications.WhatsAppNotificationClient;
@@ -92,6 +93,8 @@ class TracingTest {
     private static final String PROBE_LOGGER = "tracing-probe";
 
     private static final WireMockServer WIREMOCK = startedWireMock();
+    /** The production transport the partner clients are built on (config/OutboundHttp). */
+    private static final OutboundHttp POOL = OutboundHttp.withDefaults();
 
     @SpringBootConfiguration
     @EnableAutoConfiguration
@@ -166,8 +169,9 @@ class TracingTest {
     }
 
     @AfterAll
-    static void stopWireMock() {
+    static void stopWireMock() throws java.io.IOException {
         WIREMOCK.stop();
+        POOL.close();
     }
 
     // ---- incoming requests + the log MDC ----------------------------------
@@ -210,7 +214,7 @@ class TracingTest {
         properties.setBaseUrl("http://localhost:" + WIREMOCK.port());
         properties.setApiKey("test-whatsapp-key");
         WhatsAppNotificationClient whatsApp = new WhatsAppNotificationClient(
-                new WhatsAppClientConfig().whatsAppRestClient(properties), properties);
+                new WhatsAppClientConfig().whatsAppRestClient(properties, POOL), properties);
 
         inObservation(() -> whatsApp.sendCustomNotification("+263771234567", "Hello"));
 
@@ -224,7 +228,7 @@ class TracingTest {
     void theSharedInnbucksAndNdasendaRestTemplate_neverSendsTheTrace() {
         HttpClientConfig timeouts = new HttpClientConfig();
         RestTemplate restTemplate = new RestConfig().restTemplate(
-                new LoggingInterceptor(), timeouts);
+                new LoggingInterceptor(), timeouts, POOL);
 
         inObservation(() -> restTemplate.postForEntity(
                 "http://localhost:" + WIREMOCK.port() + "/bank/api/deposit", "{}", String.class));
