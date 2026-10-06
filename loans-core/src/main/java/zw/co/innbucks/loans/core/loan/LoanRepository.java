@@ -12,9 +12,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountStatus;
+import zw.co.innbucks.loans.core.dashboard.DashboardLoanGroup;
 import zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -297,26 +297,20 @@ public interface LoanRepository extends JpaRepository<Loan, Long>, JpaSpecificat
 
     // --- Admin dashboard aggregates -----------------------------------------
 
-    long countByLoanApprovalStatusAndInternalApprovalStatus(LoanApprovalStatus loanApprovalStatus,
-                                                            InternalApprovalStatus internalApprovalStatus);
-
-    @Query("select l.loanApprovalStatus, count(l) from Loan l group by l.loanApprovalStatus")
-    List<Object[]> countGroupedByApprovalStatus();
-
-    @Query("select l.disbursementStatus, count(l) from Loan l where l.disbursementStatus is not null group by l.disbursementStatus")
-    List<Object[]> countGroupedByDisbursementStatus();
-
+    /**
+     * Every loan figure on the admin dashboard, from ONE scan of loans: a row per combination of SSB approval,
+     * Credit decision and disbursement status (a few dozen at most), with its count and its two sums.
+     * {@code DashboardServiceImpl} folds the totals, both status maps, the loans awaiting Credit and the SUCCESS sums
+     * out of them. It replaced five statements that each read the whole table.
+     */
     @Query("""
-            select coalesce(sum(l.disbursedAmount), 0) from Loan l
-            where l.disbursementStatus = zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
+            select new zw.co.innbucks.loans.core.dashboard.DashboardLoanGroup(
+                       l.loanApprovalStatus, l.internalApprovalStatus, l.disbursementStatus,
+                       count(l), sum(l.disbursedAmount), sum(l.agentCommission))
+            from Loan l
+            group by l.loanApprovalStatus, l.internalApprovalStatus, l.disbursementStatus
             """)
-    BigDecimal sumDisbursedAmountForSuccessfulDisbursements();
-
-    @Query("""
-            select coalesce(sum(l.agentCommission), 0) from Loan l
-            where l.disbursementStatus = zw.co.innbucks.loans.core.disbursements.LoanDisbursementStatus.SUCCESS
-            """)
-    BigDecimal sumAgentCommissionForSuccessfulDisbursements();
+    List<DashboardLoanGroup> dashboardGroups();
 
     // --- Reporting aggregates ------------------------------------------------
 

@@ -1,5 +1,7 @@
 package zw.co.innbucks.loans.core.disbursements;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.data.domain.Pageable;
@@ -61,6 +64,9 @@ class LoanDisbursementStatusJobTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private LoanDisbursementStatusJob loanDisbursementStatusJob;
@@ -343,7 +349,7 @@ class LoanDisbursementStatusJobTest {
         doThrow(new TaskRejectedException("Notification executor shut down")).when(sender).deliver(any());
         LoanDisbursementStatusJob job = new LoanDisbursementStatusJob(disbursementService, loanRepository,
                 new LoanNotificationService(sender, mock(LoanNotificationRepository.class), loanRepository),
-                deductionCancellationService, auditService, disbursementLedger, transactionManager);
+                deductionCancellationService, auditService, disbursementLedger, transactionManager, meterRegistry);
         givenPending(List.of(testLoan));
         when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(successResponse);
 
@@ -457,6 +463,53 @@ class LoanDisbursementStatusJobTest {
         // Three chunks, each read by id with its merchant: never the whole queue at once.
         verify(loanRepository, times(3)).findWithMerchantByIdIn(anyCollection());
         verify(loanRepository, never()).findByLoanAccountStatusAndDisbursementStatus(any(), any());
+    }
+
+    @Test
+    void aLoanThatCannotBeSaved_doesNotStopTheRun_andIsCounted() {
+        List<Loan> pending = new java.util.ArrayList<>();
+        for (long id = 1; id <= 230; id++) {
+            Loan loan = new Loan();
+            loan.setId(id);
+            loan.setLoanAccountStatus(LoanAccountStatus.CREATED);
+            loan.setDisbursementStatus(LoanDisbursementStatus.PENDING);
+            pending.add(loan);
+        }
+        givenPending(pending);
+        when(disbursementService.checkLoanDisbursementStatus(any())).thenReturn(pendingResponse);
+        when(loanRepository.save(any(Loan.class))).thenAnswer(call -> {
+            Loan loan = call.getArgument(0);
+            if (loan.getId() == 7L || loan.getId() == 150L) {
+                throw new org.springframework.orm.ObjectOptimisticLockingFailureException(Loan.class, loan.getId());
+            }
+            return loan;
+        });
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // Every loan after the two that failed is still checked and saved, each once: the run is not aborted.
+        verify(disbursementService, times(230)).checkLoanDisbursementStatus(any());
+        verify(loanRepository, times(230)).save(any(Loan.class));
+        assertThat(meterRegistry.get(LoanDisbursementStatusJob.SAVE_FAILED_METRIC).counter().count()).isEqualTo(2.0);
+    }
+
+    @Test
+    void aFailedLoanThatCannotBeSaved_isNotAnnounced() {
+        givenPending(List.of(testLoan));
+        when(disbursementService.checkLoanDisbursementStatus(testLoan)).thenReturn(failedResponse);
+        when(loanRepository.save(testLoan)).thenThrow(new IllegalStateException("connection closed"));
+
+        loanDisbursementStatusJob.processLoanDisbursementStatus();
+
+        // Nothing the check learned was kept, so the applicant hears nothing; the next run asks InnBucks again.
+        verify(loanNotificationService, never()).notify(any(), any());
+        verifyNoInteractions(disbursementLedger);
+        assertThat(meterRegistry.get(LoanDisbursementStatusJob.SAVE_FAILED_METRIC).counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void theSaveFailureCounterStartsAtZero() {
+        assertThat(meterRegistry.get(LoanDisbursementStatusJob.SAVE_FAILED_METRIC).counter().count()).isZero();
     }
 
     /**
