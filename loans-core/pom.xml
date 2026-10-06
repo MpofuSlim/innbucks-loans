@@ -42,6 +42,21 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- The pooled outbound HTTP client (config/OutboundHttp) every RestTemplate and RestClient
+             uses: HTTP/1.1, no automatic retries. Versions managed by the Boot BOM; Boot 4.1.1 manages
+             httpcore5 5.4.3, which already carries the fixes for CVE-2026-54399 / CVE-2026-54428 that
+             InnRewards and market-place pin by hand. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+        <!-- Publishes that pool's gauges (httpcomponents.httpclient.pool.*). loans-api's actuator brings
+             the same artifact at runtime; declared here because loans-core compiles against it. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

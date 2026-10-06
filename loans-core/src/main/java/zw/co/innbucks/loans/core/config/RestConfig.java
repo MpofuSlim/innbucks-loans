@@ -6,7 +6,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
@@ -18,29 +17,24 @@ import java.util.List;
 public class RestConfig {
 
     @Bean
-    public RestTemplate restTemplate(LoggingInterceptor loggingInterceptor, HttpClientConfig httpClientConfig) {
-        // setOutputStreaming(false) was removed in Spring Framework 7; the
-        // BufferingClientHttpRequestFactory wrapper below provides the same
-        // request/response buffering (needed by the logging interceptor).
+    public RestTemplate restTemplate(LoggingInterceptor loggingInterceptor, HttpClientConfig httpClientConfig,
+                                     OutboundHttp outboundHttp) {
+        // The transport is the service's one pooled httpclient5 client (OutboundHttp), with this
+        // template's own timeouts from http.client.*. Without them a call would wait forever: one hung
+        // Ndasenda or InnBucks call froze the job making it and, since every @Scheduled job shares one
+        // scheduler thread, all of them.
         //
         // A POST is never sent twice by this stack, and it must stay that way: an InnBucks booking or
-        // deposit and a Ndasenda lodgement are irreversible writes. HttpURLConnection silently
-        // re-sends a POST whose connection dies before a response (sun.net.http.retryPost), but
-        // never a request in streaming mode, and Spring 7's SimpleClientHttpRequest streams every
-        // request that may carry a body (fixed-length, since the buffering wrapper sets
-        // Content-Length). RestConfigTest pins it on the wire. One side effect of streaming: a 401
-        // answering a POST arrives without its body. The status still raises
-        // HttpClientErrorException.Unauthorized, which is all the token-refresh replays read.
-        final SimpleClientHttpRequestFactory simpleClientHttpRequestFactory = new SimpleClientHttpRequestFactory();
-        // Without these, HttpURLConnection waits forever: one hung Ndasenda or InnBucks call froze
-        // the job making it and, since every @Scheduled job shares one scheduler thread, all of them.
-        simpleClientHttpRequestFactory.setConnectTimeout(
-                millis("http.client.connect-timeout", httpClientConfig.getConnectTimeout()));
-        simpleClientHttpRequestFactory.setReadTimeout(
+        // deposit and a Ndasenda lodgement are irreversible writes. OutboundHttp disables httpclient5's
+        // automatic retries outright (its default re-sends an idempotent request after an I/O error and
+        // ANY request after a 429/503), and never follows a redirect for a POST. RestConfigTest pins it
+        // on the wire, for a POST with a body and one without.
+        //
+        // The buffering wrapper keeps the response readable after the logging interceptor has read it.
+        OutboundHttp.PooledRequestFactory pooled = outboundHttp.requestFactory(
+                millis("http.client.connect-timeout", httpClientConfig.getConnectTimeout()),
                 millis("http.client.read-timeout", httpClientConfig.getReadTimeout()));
-        final BufferingClientHttpRequestFactory
-                bufferingClientHttpRequestFactory = new BufferingClientHttpRequestFactory(simpleClientHttpRequestFactory);
-        RestTemplate restTemplate = new RestTemplate(bufferingClientHttpRequestFactory);
+        RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(pooled));
         List<ClientHttpRequestInterceptor> interceptors = new ArrayList<>();
         interceptors.add(loggingInterceptor);
         restTemplate.setInterceptors(interceptors);
@@ -48,7 +42,7 @@ public class RestConfig {
     }
 
     /**
-     * Refused at boot rather than applied: to HttpURLConnection 0 means "no timeout", which is
+     * Refused at boot rather than applied: 0 used to mean "no timeout" to the transport, which is
      * exactly the hang these settings exist to prevent.
      */
     private static Duration millis(String property, int value) {

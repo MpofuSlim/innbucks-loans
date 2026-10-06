@@ -13,7 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -22,8 +21,8 @@ import zw.co.innbucks.loans.core.loan.LoanBatchService;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
 
-import java.time.Duration;
 import java.util.List;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -82,10 +81,8 @@ class NdasendaCommitContractTest {
         params.setPassword("test-pass");
         params.setDeductionCode("DC01");
         params.setSecurityCode("SEC01");
-        SimpleClientHttpRequestFactory simple = new SimpleClientHttpRequestFactory();
-        simple.setConnectTimeout(Duration.ofMillis(500));
-        simple.setReadTimeout(Duration.ofMillis(500));
-        RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(simple));
+        RestTemplate restTemplate = new RestTemplate(
+                new BufferingClientHttpRequestFactory(TestOutboundHttp.POOL.requestFactory(500, 500)));
         return new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthService(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(LoanNotificationService.class),
                 mock(AuditService.class), mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));

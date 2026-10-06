@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -73,13 +73,10 @@ class EmailNotificationClientContractTest {
         props.setApiKey(API_KEY);
         props.setUsername("test-user");
         props.setPassword("test-pass");
-        // HTTP/1.1 via SimpleClientHttpRequestFactory, matching the prod
-        // InnbucksNotifyClientConfig — the default RestClient factory negotiates
-        // HTTP/2, which WireMock answers with RST_STREAM.
-        RestClient restClient = RestClient.builder()
-                .baseUrl("http://localhost:" + port)
-                .requestFactory(new SimpleClientHttpRequestFactory())
-                .build();
+        // Built exactly as production builds it: InnbucksNotifyClientConfig's pooled
+        // HTTP/1.1 client. (The JDK HttpClient negotiates HTTP/2, which WireMock
+        // answers with RST_STREAM.)
+        RestClient restClient = new InnbucksNotifyClientConfig().innbucksNotifyRestClient(props, TestOutboundHttp.POOL);
         NotificationApiAuthenticator authenticator = new NotificationApiAuthenticator(restClient, props);
         return new EmailNotificationClient(restClient, authenticator, props, smtp);
     }
