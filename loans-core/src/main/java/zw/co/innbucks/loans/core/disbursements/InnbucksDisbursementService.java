@@ -37,6 +37,8 @@ public class InnbucksDisbursementService extends DisbursementService {
     public static final String MONTHLY = "MONTHLY";
     public static final String COUNTRY_CODE = "263";
     private static final BigDecimal CENTS = new BigDecimal("100");
+    /** How InnBucks' loan application writes a date; one formatter, not one per booking. */
+    private static final DateTimeFormatter DAY_MONTH_YEAR = DateTimeFormatter.ofPattern("dd-MM-yyyy");
     private final InnbucksAuthService innbucksAuthService;
     private final RestTemplate restTemplate;
     private final InnbucksParameters parameters;
@@ -83,7 +85,7 @@ public class InnbucksDisbursementService extends DisbursementService {
                 .lastName(loan.getLastName())
                 .idNumber(loan.getNationalIdNumber())
                 .address(loan.getAddress().toString())
-                .dateOfBirth(loan.getDateOfBirth().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")))
+                .dateOfBirth(loan.getDateOfBirth().format(DAY_MONTH_YEAR))
                 .currency("USD")
                 .amount(toCents(loan.getPrincipal()))
                 .maritalStatus(loan.getMaritalStatus() == null ? null : loan.getMaritalStatus().getCode())
@@ -124,7 +126,7 @@ public class InnbucksDisbursementService extends DisbursementService {
                     .employer(trimToNull(employmentDetail.getEmployerName()))
                     .employmentStartDate(employmentDetail.getEmploymentStartDate() == null
                             ? null
-                            : employmentDetail.getEmploymentStartDate().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
+                            : employmentDetail.getEmploymentStartDate().format(DAY_MONTH_YEAR));
         }
 
         LoanAccountCreationRequest requestBody = builder.build();

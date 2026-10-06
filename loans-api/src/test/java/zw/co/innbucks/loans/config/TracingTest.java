@@ -28,6 +28,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.Ordered;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -39,6 +40,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+import zw.co.innbucks.loans.core.config.DispatcherExecutor;
 import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.config.LoggingInterceptor;
 import zw.co.innbucks.loans.core.config.OutboundHttp;
@@ -299,6 +301,49 @@ class TracingTest {
         inObservation(() -> onWorker.set(asyncProbe.authenticationOnWorker()));
 
         assertThat(onWorker.get().get(10, TimeUnit.SECONDS)).isNull();
+    }
+
+    // ---- the voucher and staff-notification dispatchers ------------------------
+
+    /**
+     * The dispatchers build their {@link DispatcherExecutor} with the context's unique {@link TaskDecorator}, as Boot
+     * does for {@code @Async}; in the packaged context that is {@code TracingConfig}'s, so a send keeps the trace of
+     * the request that queued it.
+     */
+    private DispatcherExecutor dispatcherExecutor() {
+        TaskDecorator decorator = context.getBeanProvider(TaskDecorator.class).getIfUnique();
+        assertThat(decorator).as("exactly one TaskDecorator in the context").isNotNull();
+        return new DispatcherExecutor("voucher-delivery", 4, decorator, null);
+    }
+
+    @Test
+    void aDispatcherSend_keepsTheTrace() throws Exception {
+        DispatcherExecutor executor = dispatcherExecutor();
+        try {
+            CompletableFuture<String> onWorker = new CompletableFuture<>();
+            String traceId = inObservation(() -> executor.execute(() -> onWorker.complete(MDC.get("traceId"))));
+
+            assertThat(onWorker.get(10, TimeUnit.SECONDS)).isEqualTo(traceId);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void aDispatcherSend_doesNotCarryTheCallersAuthentication() throws Exception {
+        DispatcherExecutor executor = dispatcherExecutor();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("caller", null, List.of()));
+        try {
+            CompletableFuture<Object> onWorker = new CompletableFuture<>();
+            inObservation(() -> executor.execute(
+                    () -> onWorker.complete(String.valueOf(SecurityContextHolder.getContext().getAuthentication()))));
+
+            assertThat(onWorker.get(10, TimeUnit.SECONDS)).isEqualTo("null");
+        } finally {
+            SecurityContextHolder.clearContext();
+            executor.shutdownNow();
+        }
     }
 
     // ---- helpers -------------------------------------------------------------

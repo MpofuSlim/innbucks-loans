@@ -1,6 +1,8 @@
 package zw.co.innbucks.loans.core.config;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import com.github.tomakehurst.wiremock.http.Fault;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -9,6 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.ComponentScan;
@@ -18,7 +22,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.AbstractClientHttpRequestFactoryWrapper;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.InterceptingClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
@@ -57,7 +60,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>each failure keeps the exception type the callers classify on: a refused or connect-timed-out
  *       call reads as never sent, a read timeout or a reset as possibly sent, and a 4xx/5xx as an
  *       HTTP error (a 401 included, which drives the token refresh) whose body can be read;</li>
- *   <li>the buffering wrapper and the logging interceptor are still in place.</li>
+ *   <li>the logging interceptor is in place and there is NO buffering wrapper: the body is read only by its
+ *       caller, or copied by the interceptor when it logs one at DEBUG; a request still goes out with a
+ *       Content-Length, and a body that fails half-read still reads as possibly sent.</li>
  * </ul>
  *
  * <p>Pure JUnit + standalone WireMock; the one Spring piece is an {@link ApplicationContextRunner},
@@ -158,13 +163,14 @@ class RestConfigTest {
                 || (t instanceof SocketTimeoutException && "Connect timed out".equals(t.getMessage()));
     }
 
-    /** InterceptingClientHttpRequestFactory -> BufferingClientHttpRequestFactory -> the pooled factory. */
+    /**
+     * InterceptingClientHttpRequestFactory -> the pooled factory, with nothing between: no
+     * BufferingClientHttpRequestFactory reading every response into memory.
+     */
     private static OutboundHttp.PooledRequestFactory innermostFactory(RestTemplate restTemplate) {
         ClientHttpRequestFactory intercepting = restTemplate.getRequestFactory();
         assertThat(intercepting).isInstanceOf(InterceptingClientHttpRequestFactory.class);
-        ClientHttpRequestFactory buffering = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
-        assertThat(buffering).isInstanceOf(BufferingClientHttpRequestFactory.class);
-        ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) buffering).getDelegate();
+        ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
         assertThat(pooled).isInstanceOf(OutboundHttp.PooledRequestFactory.class);
         return (OutboundHttp.PooledRequestFactory) pooled;
     }
@@ -176,7 +182,7 @@ class RestConfigTest {
     }
 
     @Test
-    @DisplayName("the configured connect and read timeouts reach the request factory, under the buffering wrapper")
+    @DisplayName("the configured connect and read timeouts reach the pooled request factory, with no buffering wrapper")
     void appliesTheConfiguredTimeouts() {
         assertTimeouts(restTemplate(1_234, 5_678), 1_234, 5_678);
     }
@@ -349,11 +355,69 @@ class RestConfigTest {
 
         assertThat(restTemplate.getInterceptors()).containsExactly(loggingInterceptor);
 
-        // The interceptor consumes the response body to log it; the buffering wrapper is what
-        // leaves it readable for the caller.
+        // At INFO the interceptor never reads the body, so the caller reads it straight off the connection.
         ResponseEntity<String> response = restTemplate.getForEntity(url(FAST), String.class);
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).isEqualTo("{\"ok\":true}");
+    }
+
+    @Test
+    @DisplayName("with DEBUG switched on at runtime the interceptor reads the body to log it, and the caller still gets it")
+    void debugLoggingLeavesTheBodyReadable() {
+        RestTemplate restTemplate = restTemplate(1_000, 5_000);
+        Logger interceptorLog = (Logger) LoggerFactory.getLogger(LoggingInterceptor.class);
+        Level before = interceptorLog.getLevel();
+        interceptorLog.setLevel(Level.DEBUG);
+        try {
+            assertThat(restTemplate.postForEntity(url(JSON), "{}", Map.class).getBody()).containsEntry("ok", true);
+            Throwable thrown = catchThrowable(() -> restTemplate.postForEntity(url(BAD_REQUEST), "{}", String.class));
+            assertThat(((HttpClientErrorException) thrown).getResponseBodyAs(Map.class))
+                    .containsEntry("responseCode", 12);
+        } finally {
+            interceptorLog.setLevel(before);
+        }
+    }
+
+    @Test
+    @DisplayName("a request goes out with a Content-Length and no chunked encoding, as it did over the buffering wrapper")
+    void requestsCarryAContentLength() {
+        RestTemplate restTemplate = restTemplate(1_000, 5_000);
+        HttpHeaders json = new HttpHeaders();
+        json.setContentType(MediaType.APPLICATION_JSON);
+
+        restTemplate.postForEntity(url(JSON), Map.of("amount", 150000), String.class);
+        restTemplate.exchange(url(JSON), HttpMethod.POST, new HttpEntity<>(json), String.class);
+
+        assertThat(wireMock.findAll(postRequestedFor(urlEqualTo(JSON))))
+                .extracting(request -> request.getHeader("Content-Length"),
+                        request -> request.containsHeader("Transfer-Encoding"))
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("17", false),
+                        org.assertj.core.groups.Tuple.tuple("0", false));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"malformed chunk", "body stalls past the read timeout"})
+    @DisplayName("an answer that fails half-read is an I/O failure after the request left: possibly sent, not re-sent")
+    void bodyFailingHalfReadIsPossiblySent(String failure) {
+        if (failure.startsWith("malformed")) {
+            wireMock.stubFor(post(urlEqualTo(FAULT)).willReturn(aResponse()
+                    .withFault(Fault.MALFORMED_RESPONSE_CHUNK)));
+        } else {
+            wireMock.stubFor(post(urlEqualTo(FAULT)).willReturn(okJson("{\"responseCode\":0,\"responseMsg\":\""
+                    + "x".repeat(2_000) + "\"}").withChunkedDribbleDelay(10, UPSTREAM_DELAY_MS)));
+        }
+
+        for (Class<?> type : List.of(String.class, Map.class)) {
+            Throwable thrown = catchThrowable(() -> restTemplate(1_000, READ_TIMEOUT_MS)
+                    .postForEntity(url(FAULT), "{\"amount\":150000}", type));
+
+            assertThat(thrown).as(type.getSimpleName()).isInstanceOf(ResourceAccessException.class);
+            assertThat(causeChain(thrown))
+                    .noneMatch(ConnectException.class::isInstance)
+                    .noneMatch(RestConfigTest::isConnectTimeout);
+            assertThat(zw.co.innbucks.loans.core.disbursements.ConnectPhase.neverConnected(thrown)).isFalse();
+        }
+        wireMock.verify(2, postRequestedFor(urlEqualTo(FAULT)));
     }
 
     @Test

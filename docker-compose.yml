@@ -51,6 +51,9 @@ services:
       # "local" opts this dev stack into the placeholder JWT secret and the
       # bootstrap admin's fallback password; both are refused without it.
       SPRING_PROFILES_ACTIVE: api,local
+      # The image serves no Swagger UI of its own (the cell uses the gateway's); this dev stack turns it on, at
+      # http://localhost:8088/swagger-ui.html.
+      SWAGGER_UI_ENABLED: "true"
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-innbucks_loans}
       DB_USERNAME: ${POSTGRES_USER:-postgres}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

@@ -12,7 +12,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -81,8 +80,7 @@ class NdasendaCommitContractTest {
         params.setPassword("test-pass");
         params.setDeductionCode("DC01");
         params.setSecurityCode("SEC01");
-        RestTemplate restTemplate = new RestTemplate(
-                new BufferingClientHttpRequestFactory(TestOutboundHttp.POOL.requestFactory(500, 500)));
+        RestTemplate restTemplate = new RestTemplate(TestOutboundHttp.POOL.requestFactory(500, 500));
         return new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthService(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(LoanNotificationService.class),
                 mock(AuditService.class), mock(DeductionCancellationService.class), new MarketTimeZone("ZW"));

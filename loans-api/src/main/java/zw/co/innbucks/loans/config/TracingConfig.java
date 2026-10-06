@@ -44,7 +44,9 @@ public class TracingConfig {
     /**
      * The trace for every {@code @Async} task. Loans declares no executor of its own: {@code @Async} runs on Boot's
      * {@code applicationTaskExecutor}, and Boot applies a {@link TaskDecorator} bean to it (and to the scheduler,
-     * where there is no trace to carry and this is a no-op). Queueing and rejection are Boot's, unchanged.
+     * where there is no trace to carry and this is a no-op). The voucher and staff-notification dispatchers apply the
+     * same bean to their own executors ({@code DispatcherExecutor}), as the context's one {@link TaskDecorator}. The
+     * queue's bound and what a full one does are {@code application.yml}'s and {@code AsyncExecutorConfig}'s.
      *
      * <p>Scoped to the OBSERVATION alone, not every registered context. A plain
      * {@link ContextPropagatingTaskDecorator} snapshots every {@code ThreadLocalAccessor} on the classpath — Spring

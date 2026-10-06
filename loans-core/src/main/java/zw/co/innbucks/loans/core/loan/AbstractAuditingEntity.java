@@ -18,6 +18,9 @@ import java.time.format.DateTimeFormatter;
 @NoArgsConstructor
 public abstract class AbstractAuditingEntity implements Serializable {
 
+    /** One formatter, not one per call: it is immutable and thread-safe. The default locale, as before. */
+    private static final DateTimeFormatter CREATED_DATE = DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm:ss");
+
     @Column(name = "created_date", nullable = false, updatable = false)
     private LocalDateTime createdDate = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -25,7 +28,7 @@ public abstract class AbstractAuditingEntity implements Serializable {
     private LocalDateTime lastModifiedDate = LocalDateTime.now(ZoneOffset.UTC);
 
     public String getFormatedCreatedDate() {
-        return this.getCreatedDate().format(DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm:ss"));
+        return this.getCreatedDate().format(CREATED_DATE);
     }
 
 }

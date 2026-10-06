@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.staff;
 
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * How a grade is written everywhere. A grade is whatever the bank grades its staff by: a Paterson grade such as C4, or
@@ -18,16 +19,22 @@ public final class StaffGrades {
     public static final String MESSAGE = "Grade must be at most 32 letters, digits, spaces, hyphens or slashes, e.g. C4"
             + " or CLERK/ASSISTANT/AGENT";
 
+    // Compiled once: a register upload normalises and checks a grade on every row.
+    private static final Pattern VALID = Pattern.compile(PATTERN);
+    private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
+    private static final Pattern SPACED_SLASH = Pattern.compile(" ?/ ?");
+
     private StaffGrades() {
     }
 
     public static String normalise(String grade) {
-        return grade == null ? null : grade.strip().replaceAll("\\s+", " ").replaceAll(" ?/ ?", "/")
-                .toUpperCase(Locale.ROOT);
+        return grade == null ? null
+                : SPACED_SLASH.matcher(WHITESPACE_RUN.matcher(grade.strip()).replaceAll(" ")).replaceAll("/")
+                        .toUpperCase(Locale.ROOT);
     }
 
     /** Whether a grade as typed is one: the characters {@link #PATTERN} allows, and at most {@link #MAX_LENGTH}. */
     public static boolean valid(String grade) {
-        return grade != null && grade.matches(PATTERN) && normalise(grade).length() <= MAX_LENGTH;
+        return grade != null && VALID.matcher(grade).matches() && normalise(grade).length() <= MAX_LENGTH;
     }
 }
