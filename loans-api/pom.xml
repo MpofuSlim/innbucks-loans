@@ -60,6 +60,33 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <!-- Distributed tracing, the fleet's convention (CLAUDE.md "Tracing"): Micrometer Tracing over the
+             OpenTelemetry bridge, W3C traceparent. Ids are generated and continued from the gateway's
+             traceparent; spans are exported over OTLP only when OTEL_EXPORTER_OTLP_TRACES_ENDPOINT names a
+             collector (blank = nothing exported). spring-boot-micrometer-tracing-opentelemetry is the Boot 4
+             auto-configuration module; versions are Boot-managed. Not spring-boot-starter-opentelemetry: it also
+             brings micrometer-registry-otlp, which pushes metrics to localhost:4318 by default and logs a failure
+             every step. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-micrometer-tracing-opentelemetry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <!-- Stubs the partner gateways in TracingTest, which proves they never receive traceparent. Same
+             standalone (shaded) jar and version as loans-core's contract tests. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.2</version>
+            <scope>test</scope>
+        </dependency>
         <!-- The *IT classes (run by failsafe at verify) against a real Postgres: a container where Docker is
              available (CI), or the server LOANS_IT_POSTGRES names (host:port). Version from Boot's
              testcontainers BOM. -->

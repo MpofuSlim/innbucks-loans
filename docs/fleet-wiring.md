@@ -146,6 +146,7 @@ What this asks of loans, all in this repo:
 | Fleet database variables | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `DB_POOL_MAX`, `DB_POOL_MIN` (defaults: the local dev database, pool 19/7) |
 | Probes | `spring-boot-starter-actuator`. Health shows no details, and `ApiSecurityConfig` permits exactly `/actuator/health` and `/actuator/health/**` |
 | Metrics | `micrometer-registry-prometheus`; `health` and `prometheus` are the only endpoints exposed. `/actuator/prometheus` has its own security chain: the scrape token (`monitoring.scrape-token`, env `METRICS_SCRAPE_TOKEN`, compared in constant time) or a 401, and no loans token opens it; blank is a 401 for everyone. Every series is tagged `application="loans-service"`, and `http.server.requests` carries the fleet's fixed latency buckets (50 ms to 5 s), not `percentiles-histogram`. `PrometheusEndpointTest` and `GatewaySurfaceTest` pin it |
+| Tracing | Micrometer Tracing over OpenTelemetry (`loans-api/pom.xml`). The gateway's W3C `traceparent` is continued and `[traceId,spanId]` is on every log line; partners never receive it. Spans are exported over OTLP only when `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set; sampling `TRACING_SAMPLING_PROBABILITY` (default 0.1). Both are explicit `env:` entries (section 5). `TracingTest` and `TracingExportGateTest` pin it |
 | Read-only root filesystem | Console logging only. The old rolling file appender under `logs/` aborted the boot there |
 | No mounted config | The image loads `/app/config` as `SPRING_CONFIG_ADDITIONAL_LOCATION`, so the packaged `application.yml` always loads and a mounted file (the box's) overrides it key by key. `SPRING_CONFIG_LOCATION` replaced the packaged file, so a pod with nothing mounted ran without a port, a datasource or partner URLs |
 | CORS owned by the gateway | Loans declares no CORS. The gateway adds a backend's response headers to its own, so two `Access-Control-Allow-Origin` values would reach the browser, which refuses them. `GatewaySurfaceTest` pins it |
@@ -198,7 +199,10 @@ What this asks of loans, all in this repo:
     WhatsApp key stays in loans' own Secret), and the cell's SES settings for
     email, `MAIL_ENABLED`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` (ConfigMap) and
     `MAIL_USERNAME` / `MAIL_PASSWORD` (Secret), each optional (section 8),
-    and `METRICS_SCRAPE_TOKEN` (Secret, section 4).
+    `METRICS_SCRAPE_TOKEN` (Secret, section 4), and the fleet's tracing keys
+    `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `TRACING_SAMPLING_PROBABILITY`
+    (ConfigMap, each optional; CLAUDE.md "Tracing"). Blank or absent endpoint =
+    no span is exported; ids are still generated and logged either way.
     Never `MAIL_SENDER_NAME`: the cell's is `Foundry`, loans' is its own.
 
 - **The Secret holds only the keys `loans.example.env` lists.** An explicit
@@ -214,9 +218,12 @@ What this asks of loans, all in this repo:
     scheduled jobs beside `api`.
   - `MANAGEMENT_*` would expose more of the actuator than health and
     prometheus.
+  - `OTEL_*` is mapped by Boot onto `management.*` tracing settings
+    (`OTEL_EXPORTER_OTLP_ENDPOINT` names the trace collector,
+    `OTEL_TRACES_SAMPLER_ARG` the sampling), ahead of the Deployment's entries.
 
-  So never a `SPRING_*`, `SERVER_*`, `DB_*`, `JAVA_*` or `MANAGEMENT_*` key in
-  it. The pins cover the likeliest spellings; no list of pins covers every name.
+  So never a `SPRING_*`, `SERVER_*`, `DB_*`, `JAVA_*`, `MANAGEMENT_*` or `OTEL_*`
+  key in it. The pins cover the likeliest spellings; no list of pins covers every name.
   For the money-moving jobs there is also a guard in code (section 6).
 
 ## 6. Scheduled jobs: OFF in the cell
