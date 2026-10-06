@@ -174,6 +174,22 @@ out as JDBC batches.
 - A new pooled entity: sequence `INCREMENT BY` equal to `allocationSize`, `setval` above max in its migration, the
   column default left on the same sequence.
 
+## The legacy document columns on `loans` are dormant (V6, V35)
+
+**`payslip_picture`, `national_id_picture`, `signature` and `witness_signature` on `loans` are read and written by
+nothing.** V6 copied them into `loan_documents` (version 1 of PAYSLIP / NATIONAL_ID / SIGNATURE / WITNESS_SIGNATURE)
+and the same change unmapped them (the unused `Customer` embeddable still names `signature`; it is embedded nowhere).
+
+- A value is either the base64 itself or, as Hibernate stored a `@Lob String`, the OID of a large object holding it
+  (digits only; the bytes are in `pg_largeobject`). V5, V6 and V35 all read both forms the same way.
+- **V35 cleared a value only where a `loan_documents` row of the same loan and type holds the same bytes**, and
+  unlinked its large object (unless another value named it). What it left (no copy, a different copy, a shared or
+  unreadable large object, a blank) is counted in its NOTICE and stays. `LegacyLoanDocumentColumnsMigrationIT`.
+- **Dropping the columns is a separate owner decision**, not a cleanup. Space comes back only with an operator
+  `VACUUM` (`loans`, `pg_largeobject`); `VACUUM FULL` locks.
+- **Never run `vacuumlo` on this database while a legacy value still holds an OID**: it only sees oid/lo-typed
+  columns, these are TEXT, so it would delete those large objects, including the ones with no copy.
+
 ## Outbound HTTP clients are pooled
 
 **Every outbound client draws its connections from ONE Apache httpclient5 pool,
