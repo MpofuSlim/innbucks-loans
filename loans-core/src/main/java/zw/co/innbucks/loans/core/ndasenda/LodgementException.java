@@ -112,13 +112,16 @@ public class LodgementException extends RuntimeException {
 
     private static boolean isConnectTimeout(Throwable t) {
         String type = t.getClass().getSimpleName();
-        // java.net.http.HttpConnectTimeoutException; Apache HttpClient's and Netty's ConnectTimeoutException.
-        if ("HttpConnectTimeoutException".equals(type) || "ConnectTimeoutException".equals(type)) {
+        // java.net.http.HttpConnectTimeoutException; Apache HttpClient's and Netty's ConnectTimeoutException;
+        // and httpclient5's ConnectionRequestTimeoutException, a wait for a free pooled connection that ran
+        // out (config/OutboundHttp) — thrown while leasing, before anything can have been written.
+        if ("HttpConnectTimeoutException".equals(type) || "ConnectTimeoutException".equals(type)
+                || "ConnectionRequestTimeoutException".equals(type)) {
             return true;
         }
-        // HttpURLConnection (behind the SimpleClientHttpRequestFactory this service uses) reports a
-        // connect timeout as a bare SocketTimeoutException; only its wording tells it apart from a read
-        // timeout, which can follow a delivered request. Anything else stays unknown.
+        // The JDK socket reports a connect timeout as a bare SocketTimeoutException (httpclient5 keeps it
+        // as the cause of its own); only its wording tells it apart from a read timeout, which can follow
+        // a delivered request. Anything else stays unknown.
         return t instanceof SocketTimeoutException && "connect timed out".equalsIgnoreCase(t.getMessage());
     }
 

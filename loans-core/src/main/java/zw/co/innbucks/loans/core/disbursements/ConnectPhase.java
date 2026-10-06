@@ -1,5 +1,8 @@
 package zw.co.innbucks.loans.core.disbursements;
 
+import org.apache.hc.client5.http.ConnectTimeoutException;
+import org.apache.hc.core5.http.ConnectionRequestTimeoutException;
+
 import javax.net.ssl.SSLHandshakeException;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
@@ -27,11 +30,17 @@ public final class ConnectPhase {
                     || t instanceof NoRouteToHostException
                     || t instanceof PortUnreachableException
                     || t instanceof HttpConnectTimeoutException
-                    || t instanceof SSLHandshakeException) {
+                    || t instanceof SSLHandshakeException
+                    // httpclient5 (the pooled transport, config/OutboundHttp): a connect that timed out,
+                    // and a wait for a free pooled connection that timed out. The second is thrown
+                    // while leasing, before any connection is chosen, so nothing can have been written.
+                    || t instanceof ConnectTimeoutException
+                    || t instanceof ConnectionRequestTimeoutException) {
                 return true;
             }
-            // HttpURLConnection reports a connect timeout as a plain SocketTimeoutException
-            // ("Connect timed out"); a READ timeout uses the same type and is NOT connect-phase.
+            // The JDK socket reports a connect timeout as a plain SocketTimeoutException ("Connect timed
+            // out"), and httpclient5 keeps it as the cause; a READ timeout uses the same type and is NOT
+            // connect-phase.
             if (t instanceof SocketTimeoutException && t.getMessage() != null
                     && t.getMessage().toLowerCase(Locale.ROOT).contains("connect timed out")) {
                 return true;

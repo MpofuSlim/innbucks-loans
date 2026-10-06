@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.client.RestTemplate;
@@ -28,6 +27,7 @@ import zw.co.innbucks.loans.core.loan.LoanDisbursementRepository;
 import zw.co.innbucks.loans.core.loan.LoanRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notice.LoanNotificationService;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 import zw.co.innbucks.loans.core.workflow.AssignmentMode;
 import zw.co.innbucks.loans.core.workflow.CheckpointDecisionRepository;
 import zw.co.innbucks.loans.core.workflow.CheckpointGate;
@@ -37,7 +37,6 @@ import zw.co.innbucks.loans.core.workflow.WorkflowStage;
 import zw.co.innbucks.loans.core.workflow.WorkflowStageRepository;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -126,10 +125,8 @@ class InnbucksDepositContractTest {
         params.setAuthEndpoint(authBase + LOGIN);
         params.setDepositEndpoint(depositBase + DEPOSIT);
 
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(500));
-        factory.setReadTimeout(Duration.ofMillis(500));
-        RestTemplate restTemplate = new RestTemplate(factory);
+        // The production transport (config/OutboundHttp): pooled httpclient5, no automatic retries.
+        RestTemplate restTemplate = new RestTemplate(TestOutboundHttp.POOL.requestFactory(500, 500));
 
         LoanRepository loans = mock(LoanRepository.class);
         when(loans.findByIdForUpdate(42L)).thenReturn(Optional.of(loan));

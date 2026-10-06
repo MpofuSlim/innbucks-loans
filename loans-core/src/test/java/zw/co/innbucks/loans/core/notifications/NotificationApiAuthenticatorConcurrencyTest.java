@@ -8,10 +8,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -19,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import zw.co.innbucks.loans.core.testsupport.TestOutboundHttp;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -58,11 +56,8 @@ class NotificationApiAuthenticatorConcurrencyTest {
         props.setPassword("test-pass");
         props.setConnectTimeoutMs(500);
         props.setReadTimeoutMs(5000);
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofMillis(500));
-        factory.setReadTimeout(Duration.ofMillis(5000));
         authenticator = new NotificationApiAuthenticator(
-                RestClient.builder().baseUrl(props.getBaseUrl()).requestFactory(factory).build(), props);
+                new InnbucksNotifyClientConfig().innbucksNotifyRestClient(props, TestOutboundHttp.POOL), props);
     }
 
     @AfterEach
