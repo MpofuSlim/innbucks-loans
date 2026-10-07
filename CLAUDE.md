@@ -25,13 +25,15 @@ shape is used in ticketing, InnRewards and market-place; keep them alike.
 - A failed login caches nothing and the next caller retries. Never log the
   token, the credentials or a refused login's body.
 - `InnbucksAuthService` and `NdasendaAuthService` are Spring `@Cacheable`
-  (Caffeine, no TTL, evicted on 401) and hold no lock, so they do not have this
-  problem. Their `refreshToken()` calls `getAccessToken()` on itself, which
-  bypasses the cache proxy: the token it returns is used once and NOT cached
-  (the `@CacheEvict` runs after it), so the next call logs in again. Harmless
-  while their callers are the serial, single-threaded `scheduled-tasks` jobs
-  (OFF in the cell) and the manual payout; move them onto
-  `SingleFlightTokenCache` before either gains concurrent callers.
+  (Caffeine, bounded, 5-minute TTL) and hold no lock, so they do not have this
+  problem. Their `refreshToken()` evicts BEFORE logging in and `@CachePut`s the
+  new token under `getAccessToken()`'s key, so a 401 costs one login and a
+  failed login leaves nothing cached (`AccessTokenCacheTest`). Never make it
+  call `getAccessToken()` on itself again: that skips the cache proxy. Two
+  concurrent cache misses still log in twice, harmless while their callers are
+  the serial `scheduled-tasks` jobs (OFF in the cell) and the manual payout;
+  move them onto `SingleFlightTokenCache` before either gains concurrent
+  callers.
 
 Pinned by `SingleFlightTokenCacheTest` and
 `NotificationApiAuthenticatorConcurrencyTest`.
@@ -89,8 +91,11 @@ log pattern in `loans-core/src/main/resources/logback.xml`.
   `ContextPropagatingTaskDecorator` scoped to the OBSERVATION only, because the
   default one also snapshots Spring Security's context and would hand the
   caller's authentication to the notification threads. The voucher and staff
-  notification dispatchers run on their own single-thread executors and do NOT
-  carry the trace yet.
+  notification dispatchers run on their own `DispatcherExecutor`s, which pass
+  every task through the context's unique `TaskDecorator` (that same bean, the
+  way Boot applies it to `@Async`), so their sends carry the trace of the
+  request that queued them. A second `TaskDecorator` bean would silently take
+  the trace away from both, and from `@Async`.
 - **No response compression here.** It is done once at the ticketing
   api-gateway / edge; compressing here too would double-encode.
 - Pinned by `TracingTest` (packaged config, real HTTP: the gateway's
@@ -99,6 +104,32 @@ log pattern in `loans-core/src/main/resources/logback.xml`.
   while a Service name does, `@Async` keeps the trace but not the caller's
   authentication, no exporter with no endpoint), `TracingExportGateTest` and
   `FleetOnlyPropagatorTest`.
+
+## Executors and caches are bounded
+
+**Nothing in loans queues or caches without a bound.** Every refusal is counted
+on `loans.executor.rejected{executor}` (registered at 0; alert on any increase)
+with a throttled WARN that names no recipient (`config/RejectedTasks`).
+
+- **`@Async` (`applicationTaskExecutor`)**: `spring.task.execution.pool` in
+  `application.yml` (8 to 16 threads, 2000 queued). Full = the send is DROPPED
+  and counted (`AsyncExecutorConfig`). Never `CallerRunsPolicy` (it would run a
+  gateway call on a request, inside a transaction or on the one scheduler
+  thread that drives the paying jobs) and never Boot's default abort (it throws
+  at the caller, rolling back work that already happened). Nothing re-sends
+  these messages, so keep the bound large; it is there for a gateway outage,
+  not to shed load. A new `@Async` method must return `void`: a dropped task's
+  `Future` never completes.
+- **The voucher and staff-notification dispatchers** (`config/DispatcherExecutor`,
+  one thread each, 10 000 / 16 queued): a refusal throws
+  `RejectedExecutionException`, which each dispatcher catches; what it was to
+  send is a PENDING row the next sweep or pass sends. Neither may become a
+  Spring `Executor` bean (Boot would then build no `@Async` executor).
+- **Caches**: `spring.cache.cache-names` is a closed list and
+  `spring.cache.caffeine.spec` gives every cache `maximumSize=500`,
+  `expireAfterWrite=5m` and `recordStats` (Boot binds them to `cache.*`
+  metrics at startup). A new `@Cacheable` name must be added to the list, or
+  its first call fails; `CacheNamesTest` and `RuntimeBoundsTest` pin both.
 
 ## Loan's associations are LAZY: fetch them on purpose
 
@@ -153,6 +184,14 @@ voucher and staff-notification dispatchers already did.
 - Pinned by `IdChunksTest` and the chunk cases in `NdasendaLodgementJobTest`, `LoanBookingJobTest`,
   `LoanDisbursementStatusJobTest` and `LoanSagaReconcileTest`: all of a queue longer than a chunk, each row once, a
   failing row not blocking the rest.
+
+## No Swagger UI of its own
+
+`springdoc.swagger-ui.enabled` is `${SWAGGER_UI_ENABLED:false}`: the cell uses
+the fleet gateway's aggregated UI, which reads loans' spec at
+`/loans-service/v3/api-docs` (StripPrefix to `/v3/api-docs`, still served and
+still token-free). `docker-compose.yml` turns the UI on for local development.
+`RuntimeBoundsTest` and `SwaggerUiLocalDevTest` pin both states.
 
 ## Aggregates and searches run in the database, once
 
@@ -246,6 +285,14 @@ alike.
 - **HTTP/1.1** (the classic httpclient5 transport never negotiates HTTP/2), no
   cookie store, no added `Accept-Encoding`, system proxy/TLS properties
   honoured.
+- **No `BufferingClientHttpRequestFactory` under the `RestTemplate`.** It read
+  every response into memory only so `LoggingInterceptor` could read it too;
+  the interceptor copies a body only when it logs one (DEBUG) and hands the
+  caller a replayable copy. The interceptor chain still buffers the REQUEST, so
+  it goes out with a Content-Length, and a body that fails half-read is still a
+  `ResourceAccessException` after the request left (`RestConfigTest`). Don't add
+  the wrapper back for logging, and don't read a body in an interceptor without
+  handing the caller a copy.
 - **Pre-send failures are named for the money paths.** `ConnectPhase` and
   `LodgementException.neverLeft` read httpclient5's `ConnectTimeoutException`
   and `ConnectionRequestTimeoutException` (a timed-out wait for a pooled

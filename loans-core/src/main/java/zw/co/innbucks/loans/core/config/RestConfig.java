@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.web.client.RestTemplate;
 
@@ -30,11 +29,16 @@ public class RestConfig {
         // ANY request after a 429/503), and never follows a redirect for a POST. RestConfigTest pins it
         // on the wire, for a POST with a body and one without.
         //
-        // The buffering wrapper keeps the response readable after the logging interceptor has read it.
+        // No BufferingClientHttpRequestFactory: it read every response body into memory, on every call,
+        // only so the logging interceptor could read it too. The interceptor reads a body only when it
+        // logs one (DEBUG) and then hands the caller a copy that replays it, so it needs no buffering
+        // underneath, and a level changed at runtime is still safe. The request is buffered regardless,
+        // by the interceptor chain, so it still goes out with a Content-Length; and every failure keeps
+        // the exception the callers classify on. RestConfigTest pins both on the wire.
         OutboundHttp.PooledRequestFactory pooled = outboundHttp.requestFactory(
                 millis("http.client.connect-timeout", httpClientConfig.getConnectTimeout()),
                 millis("http.client.read-timeout", httpClientConfig.getReadTimeout()));
-        RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(pooled));
+        RestTemplate restTemplate = new RestTemplate(pooled);
         List<ClientHttpRequestInterceptor> interceptors = new ArrayList<>();
         interceptors.add(loggingInterceptor);
         restTemplate.setInterceptors(interceptors);

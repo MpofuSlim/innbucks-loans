@@ -28,7 +28,7 @@ class OutboundHttpWiringTest {
     private static final OutboundHttp POOL = TestOutboundHttp.POOL;
 
     @Test
-    @DisplayName("the shared RestTemplate (Ndasenda + InnBucks): pooled, with http.client.* timeouts, under the buffering wrapper")
+    @DisplayName("the shared RestTemplate (Ndasenda + InnBucks): pooled, with http.client.* timeouts, straight under the interceptor")
     void restTemplate() {
         HttpClientConfig timeouts = new HttpClientConfig();
         timeouts.setConnectTimeout(10_000);
@@ -36,8 +36,7 @@ class OutboundHttpWiringTest {
         RestTemplate template = new RestConfig().restTemplate(new LoggingInterceptor(), timeouts, POOL);
 
         ClientHttpRequestFactory intercepting = template.getRequestFactory();
-        ClientHttpRequestFactory buffering = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
-        ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) buffering).getDelegate();
+        ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
         assertPooled(pooled, 10_000, 60_000);
     }
 

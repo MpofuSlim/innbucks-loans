@@ -1,17 +1,20 @@
 package zw.co.innbucks.loans.core.staff.notification;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import zw.co.innbucks.loans.core.config.DispatcherExecutor;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,9 +28,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * during a pass makes it go round again rather than starting a second one. A notification left PENDING by a stop is sent
  * by the next pass, which the scheduled sweep or {@code POST /staff-notifications/dispatch} starts.
  *
- * <p>Deliberately not a Spring {@code Executor} bean: Boot creates its default {@code @Async} executor only when the
- * context has none, and one here would quietly put every other {@code @Async} call in the service on this single,
- * paced thread.
+ * <p>The thread is a {@link DispatcherExecutor}. Deliberately not a Spring {@code Executor} bean: Boot creates its
+ * default {@code @Async} executor only when the context has none, and one here would quietly put every other
+ * {@code @Async} call in the service on this single, paced thread. A pass carries the trace of the request that started
+ * it (a wake-up during a pass is served by that same pass, under its trace). Its queue is bounded, though by
+ * construction it never holds more than one pass; a refusal is counted
+ * ({@code loans.executor.rejected{executor="staff-notifications"}}) and the notifications stay PENDING.
  */
 @Slf4j
 @Component
@@ -35,23 +41,24 @@ public class StaffNotificationDispatcher {
 
     private static final int BATCH = 100;
 
+    /** At most one pass is ever queued (see {@code running}); the rest is headroom. */
+    static final int QUEUE_CAPACITY = 16;
+
     private final StaffNotificationRepository notificationRepository;
     private final StaffNotificationSender sender;
     private final StaffNotificationProperties properties;
     private final Executor executor;
-    private final ExecutorService ownExecutor;
     private final AtomicBoolean requested = new AtomicBoolean();
     private final AtomicBoolean running = new AtomicBoolean();
 
     @Autowired
     public StaffNotificationDispatcher(StaffNotificationRepository notificationRepository,
                                        StaffNotificationSender sender,
-                                       StaffNotificationProperties properties) {
-        this(notificationRepository, sender, properties, Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "staff-notifications");
-            thread.setDaemon(true);
-            return thread;
-        }));
+                                       StaffNotificationProperties properties,
+                                       ObjectProvider<TaskDecorator> taskDecorator,
+                                       ObjectProvider<MeterRegistry> meterRegistry) {
+        this(notificationRepository, sender, properties, new DispatcherExecutor("staff-notifications",
+                QUEUE_CAPACITY, taskDecorator.getIfUnique(), meterRegistry.getIfAvailable()));
     }
 
     /** With the executor passes run on; a test passes one that runs them at once. */
@@ -61,7 +68,6 @@ public class StaffNotificationDispatcher {
         this.sender = sender;
         this.properties = properties;
         this.executor = executor;
-        this.ownExecutor = executor instanceof ExecutorService service ? service : null;
     }
 
     /** Starts a pass once the current transaction commits, or now when there is none. */
@@ -159,8 +165,10 @@ public class StaffNotificationDispatcher {
 
     @PreDestroy
     void stop() {
-        if (ownExecutor != null) {
-            ownExecutor.shutdownNow();
+        if (executor instanceof DispatcherExecutor own) {
+            own.shutdownNow();
+        } else if (executor instanceof ExecutorService service) {
+            service.shutdownNow();
         }
     }
 }

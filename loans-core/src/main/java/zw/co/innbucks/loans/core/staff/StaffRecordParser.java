@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +34,16 @@ public final class StaffRecordParser {
     private static final DateTimeFormatter DAY_FIRST = DateTimeFormatter.ofPattern("d/M/uuuu", Locale.ROOT)
             .withResolverStyle(ResolverStyle.STRICT);
 
+    // Compiled once: parse runs for every row of a register upload, and String.matches / replaceAll compile their
+    // pattern on every call. Each is the expression the call used to pass, with the same whole-string match.
+    private static final Pattern EMPLOYEE_NUMBER = Pattern.compile(EMPLOYEE_NUMBER_PATTERN);
+    private static final Pattern ZIMBABWE_MOBILE = Pattern.compile(MsisdnUtils.ZIMBABWE_MOBILE_REGEX);
+    private static final Pattern ACCOUNT_NUMBER = Pattern.compile("\\d{6,20}");
+    private static final Pattern NOT_ID_CHARACTER = Pattern.compile("[^A-Z0-9]");
+    private static final Pattern STATUS_SEPARATORS = Pattern.compile("[\\s-]+");
+    private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
+    private static final Pattern PHONE_PUNCTUATION = Pattern.compile("[\\s().-]");
+
     private StaffRecordParser() {
     }
 
@@ -47,7 +58,7 @@ public final class StaffRecordParser {
         String employeeNumber = upper(value(record, StaffFields.EMPLOYEE_NUMBER));
         if (employeeNumber == null) {
             errors.put(StaffFields.EMPLOYEE_NUMBER, "Employee number is required");
-        } else if (!employeeNumber.matches(EMPLOYEE_NUMBER_PATTERN)) {
+        } else if (!EMPLOYEE_NUMBER.matcher(employeeNumber).matches()) {
             errors.put(StaffFields.EMPLOYEE_NUMBER, "Employee number must be 1 to 32 letters, digits, hyphens or slashes");
         }
 
@@ -59,7 +70,8 @@ public final class StaffRecordParser {
         }
 
         String rawId = value(record, StaffFields.NATIONAL_ID);
-        String nationalId = rawId == null ? null : rawId.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        String nationalId = rawId == null ? null
+                : NOT_ID_CHARACTER.matcher(rawId.toUpperCase(Locale.ROOT)).replaceAll("");
         if (StringUtils.isEmpty(nationalId)) {
             errors.put(StaffFields.NATIONAL_ID, "National ID is required");
         } else if (nationalId.length() < 6 || nationalId.length() > 20) {
@@ -70,7 +82,7 @@ public final class StaffRecordParser {
         String rawMobile = phone(value(record, StaffFields.MOBILE_NUMBER));
         if (rawMobile == null) {
             errors.put(StaffFields.MOBILE_NUMBER, "Mobile number is required");
-        } else if (!rawMobile.matches(MsisdnUtils.ZIMBABWE_MOBILE_REGEX)) {
+        } else if (!ZIMBABWE_MOBILE.matcher(rawMobile).matches()) {
             errors.put(StaffFields.MOBILE_NUMBER, "Mobile number " + MsisdnUtils.ZIMBABWE_MOBILE_MESSAGE);
         } else {
             msisdn = MsisdnUtils.formatMsisdnInternational(rawMobile);
@@ -98,7 +110,7 @@ public final class StaffRecordParser {
         if (rawStatus == null) {
             errors.put(StaffFields.EMPLOYMENT_STATUS, "Employment status is required");
         } else {
-            String name = rawStatus.toUpperCase(Locale.ROOT).replaceAll("[\\s-]+", "_");
+            String name = STATUS_SEPARATORS.matcher(rawStatus.toUpperCase(Locale.ROOT)).replaceAll("_");
             status = Arrays.stream(StaffEmploymentStatus.values()).filter(s -> s.name().equals(name))
                     .findFirst().orElse(null);
             if (status == null) {
@@ -125,9 +137,9 @@ public final class StaffRecordParser {
         String rawWallet = phone(value(record, StaffFields.WALLET_ACCOUNT_NUMBER));
         if (rawWallet == null) {
             errors.put(StaffFields.WALLET_ACCOUNT_NUMBER, "Wallet or account number is required");
-        } else if (rawWallet.matches(MsisdnUtils.ZIMBABWE_MOBILE_REGEX)) {
+        } else if (ZIMBABWE_MOBILE.matcher(rawWallet).matches()) {
             wallet = MsisdnUtils.formatMsisdnInternational(rawWallet);
-        } else if (rawWallet.matches("\\d{6,20}")) {
+        } else if (ACCOUNT_NUMBER.matcher(rawWallet).matches()) {
             wallet = rawWallet;
         } else {
             errors.put(StaffFields.WALLET_ACCOUNT_NUMBER,
@@ -185,12 +197,12 @@ public final class StaffRecordParser {
 
     /** Runs of whitespace collapsed to one space. */
     private static String words(String value) {
-        return value == null ? null : value.replaceAll("\\s+", " ");
+        return value == null ? null : WHITESPACE_RUN.matcher(value).replaceAll(" ");
     }
 
     /** A number as typed in a spreadsheet: spaces, hyphens, dots and brackets dropped. */
     private static String phone(String value) {
-        return value == null ? null : StringUtils.trimToNull(value.replaceAll("[\\s().-]", ""));
+        return value == null ? null : StringUtils.trimToNull(PHONE_PUNCTUATION.matcher(value).replaceAll(""));
     }
 
     private static LocalDate date(String value) {

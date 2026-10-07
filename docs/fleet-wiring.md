@@ -69,6 +69,8 @@ In `springdoc.swagger-ui.urls`, the "Select a definition" dropdown:
 
 What this asks of loans: the spec stays at the root `/v3/api-docs` (springdoc
 `api-docs.path`), which `ApiSecurityConfig` already permits without a token.
+Loans serves no Swagger UI of its own (`SWAGGER_UI_ENABLED`, default false): the
+gateway's UI is the one people use, and it needs only the spec.
 
 ## 2. The Swagger entry: "/foundry - Gateway relative server"
 

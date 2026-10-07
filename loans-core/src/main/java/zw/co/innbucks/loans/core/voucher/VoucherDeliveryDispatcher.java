@@ -1,17 +1,20 @@
 package zw.co.innbucks.loans.core.voucher;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import zw.co.innbucks.loans.core.config.DispatcherExecutor;
 
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
@@ -20,8 +23,11 @@ import java.util.concurrent.RejectedExecutionException;
  * by {@link #requestSweep()}, which the scheduled sweep runs, or sent again on request. One thread, so the gateways are
  * called for one voucher at a time.
  *
- * <p>Deliberately not a Spring {@code Executor} bean, for the reason {@code StaffNotificationDispatcher} gives: one here
- * would become the default {@code @Async} executor for the whole service.
+ * <p>The thread is a {@link DispatcherExecutor}: not a Spring {@code Executor} bean (one here would become the default
+ * {@code @Async} executor for the whole service), carrying the trace of the request that issued the voucher, with a
+ * bounded queue of {@link #QUEUE_CAPACITY} sends. A send that does not fit is counted
+ * ({@code loans.executor.rejected{executor="voucher-delivery"}}) and logged, and its voucher stays PENDING for the
+ * sweep or a resend, exactly as when sending fails.
  */
 @Slf4j
 @Component
@@ -30,18 +36,22 @@ public class VoucherDeliveryDispatcher {
     static final String SYSTEM = "system";
     private static final int BATCH = 100;
 
+    /**
+     * Large on purpose: the bound is there so a gateway outage cannot fill the heap with queued sends, not to shed
+     * ordinary load. Each entry holds a voucher id.
+     */
+    static final int QUEUE_CAPACITY = 10_000;
+
     private final VoucherRepository voucherRepository;
     private final VoucherDeliverySender sender;
     private final Executor executor;
-    private final ExecutorService ownExecutor;
 
     @Autowired
-    public VoucherDeliveryDispatcher(VoucherRepository voucherRepository, VoucherDeliverySender sender) {
-        this(voucherRepository, sender, Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "voucher-delivery");
-            thread.setDaemon(true);
-            return thread;
-        }));
+    public VoucherDeliveryDispatcher(VoucherRepository voucherRepository, VoucherDeliverySender sender,
+                                     ObjectProvider<TaskDecorator> taskDecorator,
+                                     ObjectProvider<MeterRegistry> meterRegistry) {
+        this(voucherRepository, sender, new DispatcherExecutor("voucher-delivery", QUEUE_CAPACITY,
+                taskDecorator.getIfUnique(), meterRegistry.getIfAvailable()));
     }
 
     /** With the executor sends run on; a test passes one that runs them at once. */
@@ -49,7 +59,6 @@ public class VoucherDeliveryDispatcher {
         this.voucherRepository = voucherRepository;
         this.sender = sender;
         this.executor = executor;
-        this.ownExecutor = executor instanceof ExecutorService service ? service : null;
     }
 
     /** Sends the voucher once the current transaction commits, or now when there is none. */
@@ -113,8 +122,10 @@ public class VoucherDeliveryDispatcher {
 
     @PreDestroy
     void stop() {
-        if (ownExecutor != null) {
-            ownExecutor.shutdownNow();
+        if (executor instanceof DispatcherExecutor own) {
+            own.shutdownNow();
+        } else if (executor instanceof ExecutorService service) {
+            service.shutdownNow();
         }
     }
 }

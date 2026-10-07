@@ -8,7 +8,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -32,8 +31,8 @@ import static org.mockito.Mockito.mock;
 /**
  * Contract test for HOW a lodgement fails, over a real socket: which failures prove the deduction
  * never reached Ndasenda (and may be sent again), and which may follow one that landed (held, never
- * resent). The classification leans on the exact exceptions the production client stack
- * (Buffering over Simple, i.e. HttpURLConnection) raises, which a mocked RestTemplate cannot show.
+ * resent). The classification leans on the exact exceptions the production client stack (the pooled
+ * httpclient5 factory, config/OutboundHttp) raises, which a mocked RestTemplate cannot show.
  *
  * <p>Pure JUnit + WireMock, no Spring context, so the token cache is inert and every lodgement
  * fetches a token. The stubbed bodies carry only what this service reads; they are not observed
@@ -82,8 +81,7 @@ class NdasendaLodgementContractTest {
         params.setDeductionCode("DC01");
         params.setSecurityCode("SEC01");
 
-        RestTemplate restTemplate = new RestTemplate(
-                new BufferingClientHttpRequestFactory(TestOutboundHttp.POOL.requestFactory(500, 500)));
+        RestTemplate restTemplate = new RestTemplate(TestOutboundHttp.POOL.requestFactory(500, 500));
         return new NdasendaLoanApprovalServiceImpl(restTemplate, new NdasendaAuthService(restTemplate, params),
                 params, mock(LoanRepository.class), mock(LoanBatchService.class), mock(LoanNotificationService.class),
                 mock(AuditService.class), mock(DeductionCancellationService.class), market);

@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +39,8 @@ public final class StaffRegisterCsv {
 
     /** Header names, reduced to lower-case letters and digits, to the field they fill. */
     private static final Map<String, String> HEADERS = new LinkedHashMap<>();
+    /** What that reduction drops; compiled once rather than on every header cell. */
+    private static final Pattern NOT_HEADER_CHARACTER = Pattern.compile("[^a-z0-9]");
 
     static {
         alias(StaffFields.EMPLOYEE_NUMBER, "employeenumber", "employeeno", "empno", "employeeid", "staffnumber",
@@ -122,7 +125,7 @@ public final class StaffRegisterCsv {
             if (name.isEmpty()) {
                 continue;
             }
-            String field = HEADERS.get(name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", ""));
+            String field = HEADERS.get(NOT_HEADER_CHARACTER.matcher(name.toLowerCase(Locale.ROOT)).replaceAll(""));
             if (field == null) {
                 ignored.add(name);
                 continue;
