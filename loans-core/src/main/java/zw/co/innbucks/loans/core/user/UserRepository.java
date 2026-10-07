@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.core.user;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -26,7 +27,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByUsernameIn(Collection<String> usernames);
 
-    List<User> findByUsernameContainingIgnoreCase(String username);
+    /**
+     * A page of the users whose username contains {@code username}, ignoring case; the page's order comes from the
+     * {@link Pageable}. Spring Data renders it {@code upper(username) like upper(?) escape '\'}, which the trigram
+     * index {@code idx_users_username_trgm} (V34) is built on: change the one with the other
+     * ({@code DashboardAndSearchPostgresIT}).
+     */
+    List<User> findByUsernameContainingIgnoreCase(String username, Pageable page);
 
     /** Everyone given a credit authority level. */
     List<User> findByCreditAuthorityLevelIsNotNull();

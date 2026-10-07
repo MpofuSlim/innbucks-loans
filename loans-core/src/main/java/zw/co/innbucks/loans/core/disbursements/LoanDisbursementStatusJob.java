@@ -1,5 +1,7 @@
 package zw.co.innbucks.loans.core.disbursements;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,6 +31,8 @@ public class LoanDisbursementStatusJob {
     static final String SYSTEM_ACTOR = "loan-disbursement-status-job";
     static final String BOOKING_NOT_FOUND = "INNBUCKS_BOOKING_NOT_FOUND";
     static final String BOOKING_FOUND = "INNBUCKS_BOOKING_FOUND";
+    /** Loans whose status could not be saved; registered at 0, so the first one shows as an increase. */
+    static final String SAVE_FAILED_METRIC = "loans.disbursement_status.save_failed";
 
     private final DisbursementService disbursementService;
     private final LoanRepository loanRepository;
@@ -37,12 +41,13 @@ public class LoanDisbursementStatusJob {
     private final AuditService auditService;
     private final DisbursementLedger disbursementLedger;
     private final TransactionTemplate transactionTemplate;
+    private final Counter saveFailed;
 
     public LoanDisbursementStatusJob(DisbursementService disbursementService, LoanRepository loanRepository,
                                      LoanNotificationService loanNotificationService,
                                      DeductionCancellationService deductionCancellationService,
                                      AuditService auditService, DisbursementLedger disbursementLedger,
-                                     PlatformTransactionManager transactionManager) {
+                                     PlatformTransactionManager transactionManager, MeterRegistry meterRegistry) {
         this.disbursementService = disbursementService;
         this.loanRepository = loanRepository;
         this.loanNotificationService = loanNotificationService;
@@ -50,6 +55,9 @@ public class LoanDisbursementStatusJob {
         this.auditService = auditService;
         this.disbursementLedger = disbursementLedger;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.saveFailed = Counter.builder(SAVE_FAILED_METRIC)
+                .description("Loans whose disbursement status check could not be saved; the next run asks again")
+                .register(meterRegistry);
     }
 
     /**
@@ -101,12 +109,30 @@ public class LoanDisbursementStatusJob {
         if (paid) {
             recordPaid(loan);
         } else {
+            recordUnpaid(loan);
+        }
+    }
+
+    /**
+     * Saves what the check learned about a loan that is not paid. A loan that cannot be saved (a version conflict
+     * with an operator, a constraint, a dropped connection) is logged, counted and left as it was: nothing of the
+     * check is kept, the applicant is not told, and the next run asks InnBucks again, exactly as when the save failed
+     * before. It used to abort the whole run, so one bad loan stopped every loan after it in the queue. Only the save
+     * is caught: the check itself is a status inquiry, and nothing here calls InnBucks again.
+     */
+    private void recordUnpaid(Loan loan) {
+        try {
             loanRepository.save(loan);
-            if (loan.getDisbursementStatus() == LoanDisbursementStatus.FAILED) {
-                // Only once it is saved. It may yet be paid by a recovery payout, so the applicant hears of a
-                // delay, not of a failure (FR-SSB-016).
-                loanNotificationService.notify(loan, LoanNotice.PAYOUT_DELAYED);
-            }
+        } catch (RuntimeException ex) {
+            saveFailed.increment();
+            log.error("Loan {} [{}]: the disbursement status check could not be saved; the next run checks it again",
+                    loan.getId(), loan.getReference(), ex);
+            return;
+        }
+        if (loan.getDisbursementStatus() == LoanDisbursementStatus.FAILED) {
+            // Only once it is saved. It may yet be paid by a recovery payout, so the applicant hears of a
+            // delay, not of a failure (FR-SSB-016).
+            loanNotificationService.notify(loan, LoanNotice.PAYOUT_DELAYED);
         }
     }
 
@@ -122,6 +148,7 @@ public class LoanDisbursementStatusJob {
                 loanRepository.save(loan);
             });
         } catch (RuntimeException ex) {
+            saveFailed.increment();
             log.error("Loan {} [{}] was reported paid by InnBucks but could not be recorded; the next run retries",
                     loan.getId(), loan.getReference(), ex);
             return;

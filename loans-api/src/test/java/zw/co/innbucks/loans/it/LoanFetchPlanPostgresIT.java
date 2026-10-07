@@ -309,7 +309,8 @@ class LoanFetchPlanPostgresIT {
                 loanRepository);
 
         new LoanDisbursementStatusJob(innbucks, loanRepository, notices, deductionCancellationService, auditService,
-                disbursementLedger, transactionManager).processLoanDisbursementStatus();
+                disbursementLedger, transactionManager, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
+                .processLoanDisbursementStatus();
 
         for (Long id : booked) {
             assertThat(loanRepository.findById(id).orElseThrow().getDisbursementStatus())

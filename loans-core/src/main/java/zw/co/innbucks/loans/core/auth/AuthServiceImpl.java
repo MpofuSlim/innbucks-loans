@@ -2,6 +2,8 @@ package zw.co.innbucks.loans.core.auth;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -176,12 +178,18 @@ public class AuthServiceImpl implements AuthService {
                 .toList();
     }
 
+    /**
+     * One page of the users whose username contains the text, ignoring case; pages are numbered from 1. The page is
+     * read by the database (LIMIT/OFFSET), in id order: it used to load every match and skip in memory, in whatever
+     * order Postgres returned them, which with no ORDER BY was not even stable from one page to the next.
+     */
     @Override
     public List<UserResponse> search(SearchUserRequest searchUserRequest) {
         validateSearchRequest(searchUserRequest);
-        return userRepository.findByUsernameContainingIgnoreCase(searchUserRequest.getSearchText()).stream()
-                .skip((long) (searchUserRequest.getPageNumber() - 1) * searchUserRequest.getPageSize())
-                .limit(searchUserRequest.getPageSize())
+        return userRepository.findByUsernameContainingIgnoreCase(searchUserRequest.getSearchText(),
+                        PageRequest.of(searchUserRequest.getPageNumber() - 1, searchUserRequest.getPageSize(),
+                                Sort.by("id")))
+                .stream()
                 .map(UserResponse::from)
                 .toList();
     }

@@ -193,6 +193,36 @@ the fleet gateway's aggregated UI, which reads loans' spec at
 still token-free). `docker-compose.yml` turns the UI on for local development.
 `RuntimeBoundsTest` and `SwaggerUiLocalDevTest` pin both states.
 
+## Aggregates and searches run in the database, once
+
+- **The dashboard is two statements** (`DashboardServiceImpl`): one grouped scan of loans
+  (`LoanRepository.dashboardGroups`: count and both sums per SSB approval × Credit decision × disbursement status)
+  that every loan figure is folded from, and one statement for the merchant, user and batch counts. It was nine, five
+  of them whole-table reads of loans. A new loan figure is folded from those groups (add a column to the GROUP BY or
+  a sum to the select), never a query of its own. The SUCCESS sums start from `BigDecimal.ZERO` so an empty result
+  is `0` and a populated one carries the column's scale, exactly as `coalesce(sum(...), 0)` did.
+- **Its answer is cached 30s, one entry** (`innbucks.dashboard.cache-ttl`, zero turns it off). That is correct only
+  because the dashboard is platform-wide and SUPER_ADMIN only: every caller who can reach it sees the same thing. A
+  dashboard or figure scoped by caller (merchant, agent, channel) puts the scope in the key or is not cached.
+- **Pages are cut by the database, never in memory.** The user search (`AuthServiceImpl.search`, no endpoint today)
+  pages with a `Pageable`, in id order; it used to load every match and `skip()/limit()` them, in no defined order.
+- **A substring search's trigram index must be on EXACTLY the expression the query compares (V34).** `pg_trgm` GIN
+  indexes: `lower(employee_number)`, `lower(full_name)`, `lower(department)`, `msisdn` on `staff_members` (the
+  register search's `cb.lower(...)` / raw msisdn) and `upper(username)` on `users` (Spring Data's
+  `ContainingIgnoreCase` renders `upper(...) like upper(?)`). An index on another expression is never used, silently.
+  Change the query and its index together, in a new migration. `DashboardAndSearchPostgresIT` captures the SQL
+  Hibernate sends (`CapturedSql`, a `StatementInspector`), reads the LIKE operands out of it and fails if they are not
+  exactly the indexed expressions, or if an index stops serving its expression. It also pins the dashboard against
+  the nine old queries (kept in the test as the oracle) and the response body byte for byte.
+
+## A status check that cannot be saved does not stop the run
+
+`LoanDisbursementStatusJob` catches a failed save per loan (`recordUnpaid`, and the paid path's `recordPaid` as
+before), logs it, counts `loans.disbursement_status.save_failed` (registered at 0) and goes on to the next loan; it
+used to abort the whole run, so one loan in conflict left every loan after it unchecked. Nothing of that loan's check
+is kept, its applicant is not told (the FAILED notice goes only after the save), and the next run asks InnBucks again.
+The job only reads InnBucks' status: nothing it does is retried, and no paying call is involved.
+
 ## Ids: IDENTITY by default, pooled sequences where inserts come in bulk (V33)
 
 **Under `GenerationType.IDENTITY` Hibernate cannot batch an INSERT** (it reads each generated id back), so
@@ -212,6 +242,22 @@ out as JDBC batches.
   InnBucks hold and is inserted one at a time. Moving one of them is a decision, not a cleanup.
 - A new pooled entity: sequence `INCREMENT BY` equal to `allocationSize`, `setval` above max in its migration, the
   column default left on the same sequence.
+
+## The legacy document columns on `loans` are dormant (V6, V35)
+
+**`payslip_picture`, `national_id_picture`, `signature` and `witness_signature` on `loans` are read and written by
+nothing.** V6 copied them into `loan_documents` (version 1 of PAYSLIP / NATIONAL_ID / SIGNATURE / WITNESS_SIGNATURE)
+and the same change unmapped them (the unused `Customer` embeddable still names `signature`; it is embedded nowhere).
+
+- A value is either the base64 itself or, as Hibernate stored a `@Lob String`, the OID of a large object holding it
+  (digits only; the bytes are in `pg_largeobject`). V5, V6 and V35 all read both forms the same way.
+- **V35 cleared a value only where a `loan_documents` row of the same loan and type holds the same bytes**, and
+  unlinked its large object (unless another value named it). What it left (no copy, a different copy, a shared or
+  unreadable large object, a blank) is counted in its NOTICE and stays. `LegacyLoanDocumentColumnsMigrationIT`.
+- **Dropping the columns is a separate owner decision**, not a cleanup. Space comes back only with an operator
+  `VACUUM` (`loans`, `pg_largeobject`); `VACUUM FULL` locks.
+- **Never run `vacuumlo` on this database while a legacy value still holds an OID**: it only sees oid/lo-typed
+  columns, these are TEXT, so it would delete those large objects, including the ones with no copy.
 
 ## Outbound HTTP clients are pooled
 
