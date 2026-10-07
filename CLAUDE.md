@@ -154,6 +154,36 @@ voucher and staff-notification dispatchers already did.
   `LoanDisbursementStatusJobTest` and `LoanSagaReconcileTest`: all of a queue longer than a chunk, each row once, a
   failing row not blocking the rest.
 
+## Aggregates and searches run in the database, once
+
+- **The dashboard is two statements** (`DashboardServiceImpl`): one grouped scan of loans
+  (`LoanRepository.dashboardGroups`: count and both sums per SSB approval × Credit decision × disbursement status)
+  that every loan figure is folded from, and one statement for the merchant, user and batch counts. It was nine, five
+  of them whole-table reads of loans. A new loan figure is folded from those groups (add a column to the GROUP BY or
+  a sum to the select), never a query of its own. The SUCCESS sums start from `BigDecimal.ZERO` so an empty result
+  is `0` and a populated one carries the column's scale, exactly as `coalesce(sum(...), 0)` did.
+- **Its answer is cached 30s, one entry** (`innbucks.dashboard.cache-ttl`, zero turns it off). That is correct only
+  because the dashboard is platform-wide and SUPER_ADMIN only: every caller who can reach it sees the same thing. A
+  dashboard or figure scoped by caller (merchant, agent, channel) puts the scope in the key or is not cached.
+- **Pages are cut by the database, never in memory.** The user search (`AuthServiceImpl.search`, no endpoint today)
+  pages with a `Pageable`, in id order; it used to load every match and `skip()/limit()` them, in no defined order.
+- **A substring search's trigram index must be on EXACTLY the expression the query compares (V34).** `pg_trgm` GIN
+  indexes: `lower(employee_number)`, `lower(full_name)`, `lower(department)`, `msisdn` on `staff_members` (the
+  register search's `cb.lower(...)` / raw msisdn) and `upper(username)` on `users` (Spring Data's
+  `ContainingIgnoreCase` renders `upper(...) like upper(?)`). An index on another expression is never used, silently.
+  Change the query and its index together, in a new migration. `DashboardAndSearchPostgresIT` captures the SQL
+  Hibernate sends (`CapturedSql`, a `StatementInspector`), reads the LIKE operands out of it and fails if they are not
+  exactly the indexed expressions, or if an index stops serving its expression. It also pins the dashboard against
+  the nine old queries (kept in the test as the oracle) and the response body byte for byte.
+
+## A status check that cannot be saved does not stop the run
+
+`LoanDisbursementStatusJob` catches a failed save per loan (`recordUnpaid`, and the paid path's `recordPaid` as
+before), logs it, counts `loans.disbursement_status.save_failed` (registered at 0) and goes on to the next loan; it
+used to abort the whole run, so one loan in conflict left every loan after it unchecked. Nothing of that loan's check
+is kept, its applicant is not told (the FAILED notice goes only after the save), and the next run asks InnBucks again.
+The job only reads InnBucks' status: nothing it does is retried, and no paying call is involved.
+
 ## Ids: IDENTITY by default, pooled sequences where inserts come in bulk (V33)
 
 **Under `GenerationType.IDENTITY` Hibernate cannot batch an INSERT** (it reads each generated id back), so
