@@ -13,6 +13,8 @@ public interface VoucherRedemptionRepository extends JpaRepository<VoucherRedemp
 
     List<VoucherRedemption> findByVoucherIdOrderByIdAsc(Long voucherId);
 
+    boolean existsByVoucherId(Long voucherId);
+
     List<VoucherRedemption> findByVoucherIdInOrderByIdAsc(Collection<Long> voucherIds);
 
     /** A till's redemptions in the window, by when they were made. */

@@ -83,7 +83,7 @@ class StaffLoanWebContractTest {
     private static final StaffLoanView LOAN = new StaffLoanView("SGL-2026-000143",
             StaffLoanStatus.AWAITING_DISBURSEMENT, "Your loan is approved.", new BigDecimal("300.00"), "USD",
             new BigDecimal("300.00"), new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries",
-            LocalDateTime.of(2026, 10, 1, 7, 10, 41), null);
+            LocalDateTime.of(2026, 10, 1, 7, 10, 41), null, null);
 
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean StaffLoanJourneyService journeyService;
@@ -145,7 +145,8 @@ class StaffLoanWebContractTest {
     void history() throws Exception {
         StaffLoanView repaid = new StaffLoanView("SGL-2026-000143", StaffLoanStatus.REPAID, "Repaid in full. Thank you.",
                 new BigDecimal("300.00"), "USD", new BigDecimal("300.00"), new BigDecimal("0.00"),
-                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null);
+                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null,
+                null);
         when(journeyService.loans(eq(2L), any())).thenReturn(new PageImpl<>(List.of(repaid),
                 org.springframework.data.domain.PageRequest.of(1, 5), 6));
 

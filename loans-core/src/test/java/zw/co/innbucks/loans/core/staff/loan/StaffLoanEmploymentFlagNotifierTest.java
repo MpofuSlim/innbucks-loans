@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronizationUtils;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.user.User;
@@ -31,7 +33,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Who hears about a flagged loan, when, and in what words: Human Capital and Payroll for someone who left, Credit for
- * someone suspended or on unpaid leave, once the register change commits, one email each.
+ * someone suspended or on unpaid leave, once the register change commits, one email each. A simulated GetMore loan is
+ * emailed, marked, only on a SIMULATED host.
  */
 class StaffLoanEmploymentFlagNotifierTest {
 
@@ -39,6 +42,7 @@ class StaffLoanEmploymentFlagNotifierTest {
 
     private final UserRepository users = mock(UserRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
+    private final GetMoreProperties getMore = new GetMoreProperties();
     private final StaffLoanEmploymentFlagNotifier notifier = notifier(List.of(" payroll@innbucks.co.zw ",
             "Payroll@InnBucks.co.zw", ""));
 
@@ -125,7 +129,8 @@ class StaffLoanEmploymentFlagNotifierTest {
         TransactionSynchronizationManager.initSynchronization();
         notifier.notifyAfterCommit(nyasha(ACTIVE, StaffEmploymentStatus.RESIGNED));
         notifier.notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000158", "E1012",
-                new BigDecimal("300.00"), "USD", LocalDate.of(2026, 11, 20), ACTIVE, StaffEmploymentStatus.TERMINATED));
+                new BigDecimal("300.00"), "USD", LocalDate.of(2026, 11, 20), ACTIVE, StaffEmploymentStatus.TERMINATED,
+                false));
         verifyNoInteractions(notifications);
         List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
         assertThat(synchronizations).hasSize(1);
@@ -136,7 +141,7 @@ class StaffLoanEmploymentFlagNotifierTest {
 
         String body = StaffLoanEmploymentFlagNotifier.body(List.of(nyasha(ACTIVE, StaffEmploymentStatus.RESIGNED),
                 new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000158", "E1012", new BigDecimal("300.00"), "USD",
-                        LocalDate.of(2026, 11, 20), ACTIVE, StaffEmploymentStatus.TERMINATED)));
+                        LocalDate.of(2026, 11, 20), ACTIVE, StaffEmploymentStatus.TERMINATED, false)));
         assertThat(body).startsWith("The employment status of these borrowers").contains("SGL-2026-000151")
                 .contains("SGL-2026-000158");
         verify(notifications).sendEmail("hc1@innbucks.co.zw", "Staff Grocery Loans: 2 borrowers' employment status"
@@ -176,16 +181,45 @@ class StaffLoanEmploymentFlagNotifierTest {
         verify(notifications, times(2)).sendEmail(anyString(), anyString(), anyString());
     }
 
+    @Test
+    @DisplayName("a simulated GetMore loan is a test: emailed marked as one on a SIMULATED host, not emailed elsewhere")
+    void simulatedLoans() {
+        StaffLoanEmploymentFlagNotifier.Change rutendo = new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000164",
+                "E1064", new BigDecimal("150.00"), "USD", LocalDate.of(2026, 11, 20), null,
+                StaffEmploymentStatus.RESIGNED, true);
+
+        getMore.setMode(GetMoreMode.LIVE);
+        notifier.notifyAfterCommit(rutendo);
+        getMore.setMode(GetMoreMode.OFF);
+        notifier.notifyAfterCommit(rutendo);
+        verifyNoInteractions(notifications);
+        verifyNoInteractions(users);
+
+        getMore.setMode(GetMoreMode.SIMULATED);
+        notifier.notifyAfterCommit(rutendo);
+        verify(notifications).sendEmail(eq("payroll@innbucks.co.zw"),
+                eq("[SIMULATED - staging test] Staff Grocery Loan SGL-2026-000164: borrower now RESIGNED"),
+                eq("The employment status of a borrower with a Staff Grocery Loan already paid out has changed on the"
+                        + " staff register:\n\n[SIMULATED - staging test] SGL-2026-000164, employee E1064, now"
+                        + " RESIGNED: USD 150.00 outstanding, due 20 November 2026. Recover it from their terminal"
+                        + " benefits.\n\nThe loans are listed in the Staff Grocery Loans screen of the InnBucks Lending"
+                        + " portal."));
+        assertThat(StaffLoanEmploymentFlagNotifier.subject(List.of(nyasha(ACTIVE, StaffEmploymentStatus.RESIGNED),
+                rutendo))).startsWith("[SIMULATED - staging test] Staff Grocery Loans: 2 borrowers");
+        assertThat(StaffLoanEmploymentFlagNotifier.line(nyasha(ACTIVE, StaffEmploymentStatus.RESIGNED)))
+                .as("a real loan's line is unmarked").startsWith("SGL-2026-000151");
+    }
+
     private StaffLoanEmploymentFlagNotifier notifier(List<String> payrollEmails) {
         StaffLoanProperties properties = new StaffLoanProperties();
         properties.setPayrollEmails(payrollEmails);
-        return new StaffLoanEmploymentFlagNotifier(users, notifications, properties);
+        return new StaffLoanEmploymentFlagNotifier(users, notifications, properties, getMore);
     }
 
     private static StaffLoanEmploymentFlagNotifier.Change nyasha(StaffEmploymentStatus from,
                                                                  StaffEmploymentStatus to) {
         return new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000151", "E1001", new BigDecimal("250.00"), "USD",
-                LocalDate.of(2026, 11, 20), from, to);
+                LocalDate.of(2026, 11, 20), from, to, false);
     }
 
     private static User user(String email) {

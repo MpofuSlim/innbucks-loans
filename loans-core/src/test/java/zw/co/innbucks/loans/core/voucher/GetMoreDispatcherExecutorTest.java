@@ -12,6 +12,7 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.config.RejectedTasks;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuer;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -50,6 +51,7 @@ class GetMoreDispatcherExecutorTest {
     private final CountDownLatch release = new CountDownLatch(1);
     private final List<String> runs = new CopyOnWriteArrayList<>();
     private GetMoreVoucherSync sync;
+    private StaffLoanVoucherIssuer issuer;
     private VoucherRepository vouchers;
     private GetMoreProperties properties;
     private GetMoreDispatcher dispatcher;
@@ -57,6 +59,7 @@ class GetMoreDispatcherExecutorTest {
     @BeforeEach
     void setUp() {
         sync = mock(GetMoreVoucherSync.class);
+        issuer = mock(StaffLoanVoucherIssuer.class);
         vouchers = mock(VoucherRepository.class);
         properties = new GetMoreProperties();
         properties.setMode(GetMoreMode.SIMULATED);
@@ -76,7 +79,7 @@ class GetMoreDispatcherExecutorTest {
         if (decorator != null) {
             beans.registerSingleton("traceContextTaskDecorator", decorator);
         }
-        return new GetMoreDispatcher(sync, vouchers, properties,
+        return new GetMoreDispatcher(sync, issuer, vouchers, properties,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), beans.getBeanProvider(TaskDecorator.class),
                 beans.getBeanProvider(MeterRegistry.class));
     }
@@ -159,7 +162,7 @@ class GetMoreDispatcherExecutorTest {
     @Test
     @DisplayName("a failing task is logged, never thrown, and frees its key")
     void failureFreesTheKey() {
-        dispatcher = new GetMoreDispatcher(sync, vouchers, properties,
+        dispatcher = new GetMoreDispatcher(sync, issuer, vouchers, properties,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run);
 
         assertThat(dispatcher.submit("sync:9", () -> {
@@ -171,7 +174,7 @@ class GetMoreDispatcherExecutorTest {
     @Test
     @DisplayName("a refresh syncs the borrower's vouchers due one, in the background; OFF queues nothing")
     void refresh() {
-        dispatcher = new GetMoreDispatcher(sync, vouchers, properties,
+        dispatcher = new GetMoreDispatcher(sync, issuer, vouchers, properties,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run);
         LocalDateTime now = LocalDateTime.ofInstant(NOW, ZoneOffset.UTC);
         when(vouchers.findGetMoreIdsToRefresh(eq(9L), eq(GetMoreMode.SIMULATED), any(), any(), anyInt()))
@@ -179,6 +182,7 @@ class GetMoreDispatcherExecutorTest {
 
         dispatcher.refresh(9L);
 
+        verify(issuer).refreshFor(9L);
         verify(vouchers).findGetMoreIdsToRefresh(9L, GetMoreMode.SIMULATED, now.minus(Duration.ofDays(30)),
                 now.minus(Duration.ofMinutes(1)), GetMoreDispatcher.VOUCHERS_PER_REFRESH);
         verify(sync).sync(12L, GetMoreSyncTrigger.BORROWER_READ);
@@ -187,15 +191,41 @@ class GetMoreDispatcherExecutorTest {
         properties.setMode(GetMoreMode.OFF);
         GetMoreVoucherSync offSync = mock(GetMoreVoucherSync.class);
         VoucherRepository offVouchers = mock(VoucherRepository.class);
-        new GetMoreDispatcher(offSync, offVouchers, properties,
+        StaffLoanVoucherIssuer offIssuer = mock(StaffLoanVoucherIssuer.class);
+        new GetMoreDispatcher(offSync, offIssuer, offVouchers, properties,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run).refresh(9L);
-        verifyNoInteractions(offSync, offVouchers);
+        verifyNoInteractions(offSync, offIssuer, offVouchers);
+    }
+
+    @Test
+    @DisplayName("a cancelled loan's GetMore coupons are withdrawn in the background, once per issuance at a time")
+    void cleanup() {
+        dispatcher = new GetMoreDispatcher(sync, issuer, vouchers, properties,
+                new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run);
+
+        dispatcher.cleanup(101L);
+
+        verify(issuer).cleanup(101L);
+        assertThat(dispatcher.isQueued("cleanup:101")).isFalse();
+    }
+
+    @Test
+    @DisplayName("issuances that cannot be moved on do not stop the vouchers' refresh")
+    void refreshCarriesOnPastTheIssuances() {
+        dispatcher = new GetMoreDispatcher(sync, issuer, vouchers, properties,
+                new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run);
+        org.mockito.Mockito.doThrow(new IllegalStateException("database went away")).when(issuer).refreshFor(9L);
+        when(vouchers.findGetMoreIdsToRefresh(anyLong(), any(), any(), any(), anyInt())).thenReturn(List.of(9L));
+
+        assertThatCode(() -> dispatcher.refresh(9L)).doesNotThrowAnyException();
+
+        verify(sync).sync(9L, GetMoreSyncTrigger.BORROWER_READ);
     }
 
     @Test
     @DisplayName("one voucher's failing sync does not stop the refresh of the others")
     void refreshCarriesOn() {
-        dispatcher = new GetMoreDispatcher(sync, vouchers, properties,
+        dispatcher = new GetMoreDispatcher(sync, issuer, vouchers, properties,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), Runnable::run);
         when(vouchers.findGetMoreIdsToRefresh(anyLong(), any(), any(), any(), anyInt())).thenReturn(List.of(12L, 9L));
         when(sync.sync(12L, GetMoreSyncTrigger.BORROWER_READ)).thenThrow(new IllegalStateException("keys"));

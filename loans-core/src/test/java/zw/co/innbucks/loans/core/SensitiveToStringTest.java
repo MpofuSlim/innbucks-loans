@@ -64,6 +64,9 @@ import zw.co.innbucks.loans.core.notice.LoanNotification;
 import zw.co.innbucks.loans.core.notice.OutgoingNotice;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuance;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceResponse;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceStatus;
 import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
@@ -432,6 +435,22 @@ class SensitiveToStringTest {
         }
         assertThat(command.toString()).contains("****8B1C", "****0064", "couponId=1207");
         assertThat(result.toString()).contains("outcome=SYNCED");
+    }
+
+    @Test
+    @DisplayName("a Staff Grocery Loan's voucher issuance prints neither the codes it keeps nor their seals")
+    void voucherIssuanceHidesKeptCodes() {
+        String sealed = "v1:c2VhbGVkLWNvZGUtdGhhdC1tdXN0LW5ldmVyLWJlLXByaW50ZWQ=";
+        StaffLoanVoucherIssuance issuance = StaffLoanVoucherIssuance.builder().id(101L).staffLoanId(164L)
+                .storeMode(GetMoreMode.SIMULATED).couponPrefix("SIM-K7Q2M3XW-")
+                .status(StaffLoanVoucherIssuanceStatus.PARKED).lastOutcome("ORPHAN_LIVE")
+                .mintedCodesCiphertext(sealed + "\n" + sealed).build();
+
+        assertThat(issuance.toString()).doesNotContain(sealed).contains("ORPHAN_LIVE");
+        StaffLoanVoucherIssuanceResponse response = new StaffLoanVoucherIssuanceResponse(101L, 164L,
+                "SGL-2026-000164", StaffLoanVoucherIssuanceStatus.PARKED, GetMoreMode.SIMULATED, "SIM-K7Q2M3XW-", 2, 1,
+                1, issuance.mintedCodeCount(), "ORPHAN_LIVE", null, null, null, null, null);
+        assertThat(response.toString()).doesNotContain(sealed).contains("mintedCodes=2");
     }
 
     @Test

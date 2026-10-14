@@ -5,6 +5,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.user.User;
@@ -29,18 +31,26 @@ import java.util.stream.Collectors;
  * suspended or on unpaid leave (what becomes of the due date is Credit's decision). A change tells everyone either the
  * old or the new flag concerns, so whoever was told about a flag hears when it no longer applies. One email per
  * recipient per register approval, naming loan references and employee numbers, never the borrowers.
+ *
+ * <p>A loan paid out as a coupon of staging's simulated GetMore store is a test: on a SIMULATED host it is emailed
+ * marked {@value #SIMULATED_MARK}, and on any other host it is not emailed at all (the skip is logged), so Payroll is
+ * never asked to recover a test from someone's terminal benefits.</p>
  */
 @Slf4j
 @Component
 public class StaffLoanEmploymentFlagNotifier {
 
     private static final DateTimeFormatter DUE = DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH);
+    static final String SIMULATED_MARK = "[SIMULATED - staging test] ";
 
     /**
      * One paid-out loan's flag moving from {@code from} to {@code to}, each the borrower's status, null for ACTIVE.
+     *
+     * @param simulated paid out as a coupon of staging's simulated GetMore store
      */
     public record Change(String reference, String employeeNumber, BigDecimal outstanding, String currency,
-                         LocalDate dueDate, StaffEmploymentStatus from, StaffEmploymentStatus to) {
+                         LocalDate dueDate, StaffEmploymentStatus from, StaffEmploymentStatus to,
+                         boolean simulated) {
 
         boolean concerns(EmploymentFlagAction action) {
             return action == EmploymentFlagAction.of(from) || action == EmploymentFlagAction.of(to);
@@ -56,11 +66,13 @@ public class StaffLoanEmploymentFlagNotifier {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final List<String> payrollEmails;
+    private final GetMoreProperties getMore;
 
     public StaffLoanEmploymentFlagNotifier(UserRepository userRepository, NotificationService notificationService,
-                                           StaffLoanProperties properties) {
+                                           StaffLoanProperties properties, GetMoreProperties getMore) {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.getMore = getMore;
         this.payrollEmails = properties.getPayrollEmails().stream().map(StringUtils::trimToNull)
                 .filter(Objects::nonNull).distinct().toList();
         if (payrollEmails.isEmpty()) {
@@ -77,6 +89,11 @@ public class StaffLoanEmploymentFlagNotifier {
      * The group addresses are read now, inside it.
      */
     public void notifyAfterCommit(Change change) {
+        if (change.simulated() && getMore.getMode() != GetMoreMode.SIMULATED) {
+            log.info("Staff Grocery Loan {} is a simulated GetMore loan and GetMore is {} here: its employment flag"
+                    + " change is not emailed", change.reference(), getMore.getMode());
+            return;
+        }
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             Pending now = new Pending();
             add(now, change);
@@ -158,12 +175,13 @@ public class StaffLoanEmploymentFlagNotifier {
     }
 
     static String subject(List<Change> changes) {
+        String mark = changes.stream().anyMatch(Change::simulated) ? SIMULATED_MARK : "";
         if (changes.size() > 1) {
-            return "Staff Grocery Loans: " + changes.size() + " borrowers' employment status changed";
+            return mark + "Staff Grocery Loans: " + changes.size() + " borrowers' employment status changed";
         }
         Change change = changes.getFirst();
-        return "Staff Grocery Loan " + change.reference() + ": borrower " + (change.to() == null ? "ACTIVE again"
-                : "now " + change.to());
+        return mark + "Staff Grocery Loan " + change.reference() + ": borrower " + (change.to() == null
+                ? "ACTIVE again" : "now " + change.to());
     }
 
     static String body(List<Change> changes) {
@@ -179,7 +197,8 @@ public class StaffLoanEmploymentFlagNotifier {
         if (change.from() != null) {
             status += " (was " + change.from() + ")";
         }
-        String line = change.reference() + ", employee " + change.employeeNumber() + ", " + status + ": "
+        String line = (change.simulated() ? SIMULATED_MARK : "") + change.reference() + ", employee "
+                + change.employeeNumber() + ", " + status + ": "
                 + change.currency() + " " + change.outstanding() + " outstanding, due " + DUE.format(change.dueDate())
                 + ". ";
         EmploymentFlagAction before = EmploymentFlagAction.of(change.from());

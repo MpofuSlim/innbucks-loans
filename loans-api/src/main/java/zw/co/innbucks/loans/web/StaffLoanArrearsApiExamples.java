@@ -61,7 +61,8 @@ public final class StaffLoanArrearsApiExamples {
                     "bucket": "OVER_90_DAYS",
                     "inArrears": true,
                     "escalated": false,
-                    "employmentFlag": null
+                    "employmentFlag": null,
+                    "simulated": false
                   },
                   {
                     "staffLoanId": 127,
@@ -83,7 +84,8 @@ public final class StaffLoanArrearsApiExamples {
                     "bucket": "DAYS_31_TO_60",
                     "inArrears": true,
                     "escalated": true,
-                    "employmentFlag": null
+                    "employmentFlag": null,
+                    "simulated": false
                   },
                   {
                     "staffLoanId": 151,
@@ -110,7 +112,8 @@ public final class StaffLoanArrearsApiExamples {
                       "action": "RECOVER_FROM_TERMINAL_BENEFITS",
                       "flaggedAt": "2026-10-28T10:14:03+02:00",
                       "registerBatchId": 21
-                    }
+                    },
+                    "simulated": false
                   }
                 ]
               }

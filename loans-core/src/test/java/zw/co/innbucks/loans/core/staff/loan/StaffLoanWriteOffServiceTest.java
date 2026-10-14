@@ -17,9 +17,11 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
 import zw.co.innbucks.loans.core.voucher.Voucher;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherRepository;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
@@ -220,6 +222,47 @@ class StaffLoanWriteOffServiceTest {
                         + " written off");
         assertThat(requests).isEmpty();
         verifyNoInteractions(auditService);
+    }
+
+    /** A GetMore coupon as Chipo Banda's voucher 7, open until 20 December. */
+    private static Voucher.VoucherBuilder getMoreVoucher(StaffLoan loan, VoucherStatus status,
+                                                         LocalDateTime expiresAt) {
+        return Voucher.builder().id(7L).loanAccount(loan.getReference()).staffMemberId(loan.getStaffMemberId())
+                .status(status).expiresAt(expiresAt).codeSource(VoucherCodeSource.GETMORE)
+                .storeMode(GetMoreMode.SIMULATED).staffLoanId(loan.getId());
+    }
+
+    @Test
+    @DisplayName("a GetMore voucher: untouched, cancel the loan instead; used or held, wait; lapsed but still live at"
+            + " GetMore, sync it first; withdrawn, written off")
+    void getMoreVoucher() {
+        LocalDateTime open = LocalDateTime.of(2026, 12, 20, 21, 59, 59);
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.ISSUED, open).build());
+        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Staff loan SGL-2026-000143's voucher 7 can still be spent, until"
+                        + " 2026-12-20T23:59:59+02:00; a loan whose value can still be drawn cannot be written off:"
+                        + " cancel the loan instead (POST /lending/v1/staff-loans/143/cancel)");
+
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.ISSUED, open).heldAmount(new BigDecimal("20.00")).build());
+        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .hasMessageEndingWith(": wait until it expires");
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.PARTIALLY_REDEEMED, open).build());
+        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .hasMessageEndingWith(": wait until it expires");
+
+        LocalDateTime lapsed = LocalDateTime.of(2026, 12, 13, 21, 59, 59);
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.PARTIALLY_REDEEMED, lapsed).build());
+        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Staff loan SGL-2026-000143's voucher 7 has lapsed but its GetMore coupon is still live;"
+                        + " sync it first (POST /lending/v1/vouchers/7/getmore-syncs), which withdraws it");
+        assertThat(requests).isEmpty();
+
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.PARTIALLY_REDEEMED, lapsed)
+                .couponWithdrawnAt(LocalDateTime.of(2026, 12, 14, 6, 0)).build());
+        assertThat(service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)).status())
+                .isEqualTo(StaffLoanWriteOffStatus.PENDING);
     }
 
     @Test

@@ -626,8 +626,11 @@ public class VoucherService {
         return BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
     }
 
-    /** The end of the last market day the voucher is good for, to the microsecond the column keeps. */
-    private LocalDateTime expiryFor(LocalDateTime issuedAt) {
+    /**
+     * When a voucher issued at {@code issuedAt} lapses: the end of its last market day, to the microsecond the column
+     * keeps. A GetMore issuance reads it before the coupon is made, so the store's rule can be checked against it.
+     */
+    public LocalDateTime expiryFor(LocalDateTime issuedAt) {
         LocalDate lastDay = marketTimeZone.localDay(issuedAt).plusDays(properties.getValidityDays());
         return marketTimeZone.endOfDayUtc(lastDay).truncatedTo(ChronoUnit.MICROS);
     }

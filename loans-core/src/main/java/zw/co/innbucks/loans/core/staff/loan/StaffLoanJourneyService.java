@@ -20,6 +20,7 @@ import zw.co.innbucks.loans.core.borrower.MiddlewareAssertionVerifier;
 import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.borrower.VerifiedAssertion;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
@@ -63,10 +64,12 @@ import java.util.regex.Pattern;
  * </ol>
  * Who may borrow is decided the same way at every step as by the weekly run ({@link StaffOfferVerdict}), so an offer
  * the borrower still holds is refused at acceptance if, say, they have since fallen into arrears (FR-SGL-013,
- * FR-SGL-014). A declined borrower is told why in plain words (FR-SGL-029). A loan accepted waits for disbursement
- * through the bank's system (BR.NET, FR-SGL-032), which pays the merchant and issues the voucher; nothing here moves
- * money. The merchant is the one set for the Staff Grocery Loan at acceptance ({@link StaffLoanMerchantService}), and
- * stays the loan's whatever is set later.
+ * FR-SGL-014). A declined borrower is told why in plain words (FR-SGL-029). A loan accepted for a merchant whose
+ * vouchers are GetMore coupons ({@code merchants.voucher_store}) has its voucher issuance queued in the same
+ * transaction, and is paid out as that voucher once GetMore has made it ({@link StaffLoanVoucherIssuer}, after the
+ * acceptance commits: {@link StaffLoanAcceptance}); any other waits for disbursement through the bank's system (BR.NET,
+ * FR-SGL-032). Nothing here moves money or calls GetMore. The merchant is the one set for the Staff Grocery Loan at
+ * acceptance ({@link StaffLoanMerchantService}), and stays the loan's whatever is set later.
  */
 @Slf4j
 @Service
@@ -97,6 +100,8 @@ public class StaffLoanJourneyService {
     private final MiddlewareAssertionVerifier verifier;
     private final AssertionUses assertionUses;
     private final VoucherService voucherService;
+    private final StaffLoanVoucherIssuer voucherIssuer;
+    private final StaffLoanVoucherIssuanceRepository issuanceRepository;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
 
@@ -139,6 +144,17 @@ public class StaffLoanJourneyService {
         StaffMember member = member(staffMemberId);
         return loanRepository.findByStaffMemberId(member.getId(), PageRequest.of(pageable.getPageNumber(),
                 pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"))).map(this::view);
+    }
+
+    /**
+     * One of their loans, as the tile shows it: the acceptance answers with it once its GetMore voucher has been tried.
+     *
+     * @throws NotFoundException it is not theirs, or there is no such loan
+     */
+    @Transactional(readOnly = true)
+    public StaffLoanView loanView(Long staffMemberId, String reference) {
+        return loanRepository.findByStaffMemberIdAndReference(staffMemberId, reference).map(this::view)
+                .orElseThrow(() -> new NotFoundException("Loan " + reference + " not found"));
     }
 
     /**
@@ -188,7 +204,9 @@ public class StaffLoanJourneyService {
      * and has just entered their PIN or used biometrics, which the middleware's fresh assertion proves. Everything is
      * checked again first: the offer is still open, they may still borrow (one loan at a time, no arrears), the
      * amount, and that the agreement is the one that would be signed now. Then, in one transaction, the assertion is
-     * spent, the loan made AWAITING_DISBURSEMENT, the offer taken up, and the agreement recorded with its evidence.
+     * spent, the loan made AWAITING_DISBURSEMENT, the offer taken up, the agreement recorded with its evidence, and,
+     * for a GetMore merchant, the voucher's issuance queued (nothing is called: {@link StaffLoanAcceptance} works it
+     * once this commits).
      * A borrower who owes a written-off loan may borrow only under Credit's arrears override, which the loan names and
      * uses up (FR-SGL-014). Under the register's lock, so neither a second acceptance nor a register change or
      * override decision lands in the middle.
@@ -273,6 +291,7 @@ public class StaffLoanJourneyService {
                 .assertionId(assertion.jti())
                 .build();
         agreementRepository.save(unsealed.toBuilder().evidenceSha256(evidenceSha256(unsealed)).build());
+        boolean getMoreVoucher = voucherIssuer.queue(loan).isPresent();
         auditService.record(AuditLog.builder()
                 .eventType(ACCEPTED)
                 .entityType("STAFF_LOAN").entityId(String.valueOf(loan.getId()))
@@ -281,7 +300,7 @@ public class StaffLoanJourneyService {
                         + ";dueDate:" + loan.getDueDate() + ";merchant:" + merchant.getMerchantCode()
                         + ";agreement:v" + template.getVersion()
                         + (arrearsOverride == null ? "" : ";arrearsOverride:" + arrearsOverride.getId())
-                        + ";assertion:" + assertion.jti()));
+                        + ";assertion:" + assertion.jti() + (getMoreVoucher ? ";voucher:pending" : "")));
         log.info("Staff member {} accepted Staff Grocery Loan {} for {} {}, due {}", member.getEmployeeNumber(),
                 reference, loan.getCurrency(), loan.getAmount(), loan.getDueDate());
         return view(loan);
@@ -380,10 +399,13 @@ public class StaffLoanJourneyService {
         BorrowerVoucherResponse voucher = PAID_OUT.contains(loan.getStatus())
                 ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
                 : null;
+        StaffLoanView.VoucherIssuance issuance = loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
+                ? StaffLoanView.VoucherIssuance.of(issuanceRepository.findByStaffLoanId(loan.getId()).orElse(null))
+                : null;
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
-                StaffLoanView.message(loan, voucher, marketTimeZone.today()), loan.getAmount(), loan.getCurrency(),
-                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), loan.getMerchant().getCompanyName(),
-                loan.getAcceptedAt(), voucher);
+                StaffLoanView.message(loan, voucher, issuance, marketTimeZone.today()), loan.getAmount(),
+                loan.getCurrency(), loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(),
+                loan.getMerchant().getCompanyName(), loan.getAcceptedAt(), voucher, issuance);
     }
 
     private static String collection(StaffLoanTerms.Signing terms) {
