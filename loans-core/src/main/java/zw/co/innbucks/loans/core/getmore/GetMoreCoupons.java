@@ -30,13 +30,16 @@ import java.util.function.ToLongFunction;
  *       idempotency key, so EVERY attempt searches the prefix first and never generates after a failed search; a
  *       generate is counted durably before the POST ({@link GenerateGuard}); a code that does not carry the prefix is
  *       withdrawn at once; a coupon not made by loans (another rule, or created before the first claim) is never
- *       adopted.</li>
+ *       adopted; once a generate has been sent its code is always looked for, and is never left live and unreported
+ *       when the attempt parks.</li>
  *   <li>{@link #activity}: the prefix's coupons, the orders placed with them and their credit memos, for a sync.</li>
  *   <li>{@link #setExpiry} and {@link #withdraw}: a PUT of {@code expiration_date} (which Magento stores but does not
  *       enforce) and {@code deleteByCodes} (the only real stop).</li>
  * </ul>
  *
- * <p>A {@link Deadline} is checked before every call, never during one. Codes are logged only as {@code ****8B1C}.
+ * <p>A {@link Deadline} is checked before every call, never during one, and not at all for the search that follows a
+ * generate: the code was sent for, so it is looked for whatever the budget. Codes are logged only as
+ * {@code ****8B1C}.
  */
 @Slf4j
 @Component
@@ -82,16 +85,21 @@ public class GetMoreCoupons {
      *   <li>search the prefix; a failure propagates, so a failed search never leads to a generate;</li>
      *   <li>nothing found: count the generate ({@link GenerateGuard#beforeGenerate}), generate one code, give the count
      *       back if the store provably did not process it; check the code carries the prefix and length asked for
-     *       (else withdraw it at once and park); search again, and if it is still not there the outcome is
-     *       unknown;</li>
+     *       (else withdraw it at once and park); search again, with no deadline (the code was sent for, so it is
+     *       always looked for), and if it is still not there, or that search fails, the outcome is unknown with the
+     *       code in hand ({@link GetMoreOutcomeUnknownException#mintedCodes()});</li>
      *   <li>classify what is on the prefix: a coupon under another rule or created before {@code notBeforeUtc} is
      *       foreign; several, more than one used, is a duplicate; several otherwise keeps the lowest id (or the one
-     *       used) and withdraws the rest; a used coupon found rather than made is not adopted;</li>
+     *       used) and withdraws the rest; a used coupon this call did not generate is not adopted;</li>
      *   <li>bind the kept coupon to the voucher's value.</li>
      * </ol>
+     * An attempt that generated a code and then parks withdraws that code first (best effort); any it cannot confirm
+     * gone is returned as a live orphan ({@link FindOrCreate.Parked#liveOrphanCodes()}), never dropped.
      *
-     * @throws GetMoreUnavailableException    a read failed, the deadline passed, or the generate was not processed
-     * @throws GetMoreOutcomeUnknownException the generate may have minted a coupon that a search cannot find yet
+     * @throws GetMoreUnavailableException    a read before the generate failed, the deadline passed before the
+     *                                        generate, or the generate was not processed
+     * @throws GetMoreOutcomeUnknownException the generate may have minted a coupon that a search cannot find yet, or
+     *                                        could not search for
      * @throws GetMoreRejectedException       the store or the amount binding refused
      * @throws ClaimLostException             this attempt lost its claim before the generate: nothing was sent
      */
@@ -106,9 +114,9 @@ public class GetMoreCoupons {
 
         OnPrefix found = onPrefix(request.prefix(), budget);
         if (!found.complete()) {
-            return tooMany(request.prefix());
+            return tooMany(request, List.of());
         }
-        boolean generated = false;
+        List<String> generated = List.of();
         if (found.coupons().isEmpty()) {
             budget.check(clock);
             try {
@@ -128,21 +136,26 @@ public class GetMoreCoupons {
                 giveBack(request.guard(), notProcessed);
                 throw notProcessed;
             }
-            generated = true;
             Optional<FindOrCreate> refused = echoGuard(request, codes);
             if (refused.isPresent()) {
                 return refused.get();
             }
-            found = onPrefix(request.prefix(), budget);
+            generated = List.copyOf(codes);
+            try {
+                found = onPrefix(request.prefix(), Deadline.none());   // the generate was sent: finish finding it
+            } catch (GetMoreRejectedException | GetMoreUnavailableException searchFailed) {
+                throw new GetMoreOutcomeUnknownException(Operation.GENERATE, codes, "the code generated on prefix "
+                        + request.prefix() + " could not be searched for (" + reasonOf(searchFailed) + ")");
+            }
             if (found.coupons().isEmpty()) {
                 throw new GetMoreOutcomeUnknownException(Operation.GENERATE, codes,
                         "the code generated on prefix " + request.prefix() + " is not found by a search yet");
             }
             if (!found.complete()) {
-                return tooMany(request.prefix());
+                return tooMany(request, generated);
             }
         }
-        return classify(request, found.coupons(), !generated);
+        return classify(request, found.coupons(), generated);
     }
 
     /**
@@ -280,19 +293,8 @@ public class GetMoreCoupons {
             }
         }
         List<String> sent = returned.stream().filter(c -> c != null && !c.isBlank()).toList();
-        List<String> orphans = new ArrayList<>();
-        if (!sent.isEmpty()) {
-            try {
-                GetMoreCouponDeletion deletion = store.deleteCoupons(sent, true);
-                Set<String> unconfirmed = new HashSet<>(deletion.failedItems());
-                unconfirmed.addAll(deletion.missingItems());
-                sent.stream().filter(unconfirmed::contains).forEach(orphans::add);
-            } catch (RuntimeException withdrawFailed) {
-                log.warn("GetMore: could not withdraw the code(s) {} generated outside prefix {}: {}", masked(sent),
-                        request.prefix(), GetMoreCodes.maskAll(String.valueOf(withdrawFailed.getMessage()), sent));
-                orphans.addAll(sent);
-            }
-        }
+        Withdrawal withdrawal = tryWithdraw(request.prefix(), sent, "generated outside it");
+        List<String> orphans = sent.stream().filter(withdrawal::unconfirmed).toList();
         log.error("GetMore generated {} code(s) {} for prefix {} and length {}: not exactly one code on the prefix."
                         + " Withdrawn at once; {} not confirmed withdrawn. Parked for an operator.", returned.size(),
                 masked(sent), request.prefix(), request.length(), orphans.size());
@@ -301,42 +303,47 @@ public class GetMoreCoupons {
                 + request.length() + "; " + orphans.size() + " not confirmed withdrawn", orphans));
     }
 
-    private FindOrCreate classify(CouponRequest request, List<GetMoreCoupon> found, boolean adopted) {
+    /** @param generated the codes this call generated (none when it generated nothing) */
+    private FindOrCreate classify(CouponRequest request, List<GetMoreCoupon> found, List<String> generated) {
         for (GetMoreCoupon coupon : found) {
             String why = foreign(request, coupon);
             if (why != null) {
                 log.warn("GetMore: coupon {} ({}) on prefix {} {}: parked, never adopted", coupon.couponId(),
                         GetMoreCodes.maskedCode(coupon.code()), request.prefix(), why);
-                return new FindOrCreate.Parked(FindOrCreate.FOREIGN_COUPON, "coupon " + coupon.couponId() + " ("
+                return parked(request, FindOrCreate.FOREIGN_COUPON, "coupon " + coupon.couponId() + " ("
                         + GetMoreCodes.maskedCode(coupon.code()) + ") on prefix " + request.prefix() + " " + why,
-                        List.of());
+                        generated, Withdrawal.NONE);
             }
         }
         List<GetMoreCoupon> used = found.stream().filter(c -> c.timesUsed() > 0).toList();
         if (found.size() > 1 && used.size() > 1) {
             log.warn("GetMore: {} coupons on prefix {}, {} of them used: parked", found.size(), request.prefix(),
                     used.size());
-            return new FindOrCreate.Parked(FindOrCreate.DUPLICATE_COUPONS_USED, found.size() + " coupons on prefix "
-                    + request.prefix() + ", " + used.size() + " of them used: " + describe(used), List.of());
+            return parked(request, FindOrCreate.DUPLICATE_COUPONS_USED, found.size() + " coupons on prefix "
+                    + request.prefix() + ", " + used.size() + " of them used: " + describe(used), generated,
+                    Withdrawal.NONE);
         }
         GetMoreCoupon kept = used.size() == 1 ? used.getFirst() : found.getFirst();
-        List<String> extrasWithdrawn = List.of();
+        // Made by THIS call, not merely found after it: an older coupon on the prefix that someone already spent is
+        // never the voucher, whether or not a generate happened in between.
+        boolean madeHere = generated.stream().anyMatch(code -> code.equalsIgnoreCase(kept.code()));
+        Withdrawal extras = Withdrawal.NONE;
         if (found.size() > 1) {
-            List<GetMoreCoupon> extras = found.stream().filter(c -> c.couponId() != kept.couponId()).toList();
-            extrasWithdrawn = withdrawExtras(request.prefix(), kept, extras);
+            extras = withdrawExtras(request.prefix(), kept,
+                    found.stream().filter(c -> c.couponId() != kept.couponId()).toList());
         }
-        if (kept.timesUsed() > 0 && adopted) {
+        if (kept.timesUsed() > 0 && !madeHere) {
             log.warn("GetMore: coupon {} ({}) on prefix {} was used {} time(s) before loans bound it: parked",
                     kept.couponId(), GetMoreCodes.maskedCode(kept.code()), request.prefix(), kept.timesUsed());
-            return new FindOrCreate.Parked(FindOrCreate.COUPON_ALREADY_USED, "coupon " + kept.couponId() + " ("
+            return parked(request, FindOrCreate.COUPON_ALREADY_USED, "coupon " + kept.couponId() + " ("
                     + GetMoreCodes.maskedCode(kept.code()) + ") on prefix " + request.prefix() + " was used "
-                    + kept.timesUsed() + " time(s) before loans bound it", List.of());
+                    + kept.timesUsed() + " time(s) before loans bound it", generated, extras);
         }
         binding.bind(kept, request.faceValue(), request.currency());
         log.info("GetMore: coupon {} ({}) on prefix {} {} and bound to {} {}", kept.couponId(),
-                GetMoreCodes.maskedCode(kept.code()), request.prefix(), adopted ? "adopted" : "generated",
+                GetMoreCodes.maskedCode(kept.code()), request.prefix(), madeHere ? "generated" : "adopted",
                 request.currency(), request.faceValue());
-        return new FindOrCreate.Bound(kept, adopted, extrasWithdrawn);
+        return new FindOrCreate.Bound(kept, !madeHere, extras.withdrawnMasked());
     }
 
     /** Why a coupon on the prefix was not made by loans, or null when it could have been. */
@@ -352,32 +359,93 @@ public class GetMoreCoupons {
         return null;
     }
 
-    /** Best effort: withdraws the unused extras, logging and swallowing any failure; what went, masked. */
-    private List<String> withdrawExtras(String prefix, GetMoreCoupon kept, List<GetMoreCoupon> extras) {
+    /**
+     * Stops for an operator. When this call generated codes, the coupon is live at the store, worth its face value,
+     * and nothing but this call knows it: so each is withdrawn first (best effort, like the echo guard), unless
+     * {@code earlier} already sent it, and every one not confirmed gone is returned as a live orphan, never dropped.
+     */
+    private FindOrCreate.Parked parked(CouponRequest request, String outcome, String detail, List<String> generated,
+                                       Withdrawal earlier) {
+        if (generated.isEmpty()) {
+            return new FindOrCreate.Parked(outcome, detail, List.of());
+        }
+        List<String> toWithdraw = generated.stream().filter(code -> !earlier.sent().contains(code)).toList();
+        Withdrawal now = tryWithdraw(request.prefix(), toWithdraw, "generated by this attempt");
+        List<String> orphans = generated.stream()
+                .filter(code -> earlier.sent().contains(code) ? earlier.unconfirmed(code) : now.unconfirmed(code))
+                .toList();
+        if (orphans.isEmpty()) {
+            log.warn("GetMore: parked {} on prefix {}; the code(s) {} this attempt generated were withdrawn", outcome,
+                    request.prefix(), masked(generated));
+        } else {
+            log.error("GetMore: parked {} on prefix {}; {} of the code(s) {} this attempt generated not confirmed"
+                    + " withdrawn: live at the store, kept for an operator", outcome, request.prefix(), orphans.size(),
+                    masked(generated));
+        }
+        return new FindOrCreate.Parked(outcome, detail + "; " + generated.size() + " code(s) generated by this attempt "
+                + masked(generated) + ", " + orphans.size() + " not confirmed withdrawn", orphans);
+    }
+
+    /** Best effort: withdraws the extras, logging and swallowing any failure. */
+    private Withdrawal withdrawExtras(String prefix, GetMoreCoupon kept, List<GetMoreCoupon> extras) {
         List<String> codes = extras.stream().map(GetMoreCoupon::code).filter(c -> c != null && !c.isBlank()).toList();
+        Withdrawal withdrawal = tryWithdraw(prefix, codes, "beside coupon " + kept.couponId());
+        if (!codes.isEmpty()) {
+            log.warn("GetMore: {} extra coupon(s) on prefix {} beside coupon {} ({}): withdrew {}, {} failed",
+                    codes.size(), prefix, kept.couponId(), GetMoreCodes.maskedCode(kept.code()),
+                    withdrawal.withdrawnMasked(), withdrawal.failed().size());
+        }
+        return withdrawal;
+    }
+
+    /** One best-effort {@code deleteByCodes} (invalid codes ignored): never throws, nothing sent for no codes. */
+    private Withdrawal tryWithdraw(String prefix, List<String> codes, String which) {
         if (codes.isEmpty()) {
-            return List.of();
+            return Withdrawal.NONE;
         }
         try {
             GetMoreCouponDeletion deletion = store.deleteCoupons(codes, true);
-            Set<String> failed = new HashSet<>(deletion.failedItems());
-            List<String> withdrawn = codes.stream().filter(c -> !failed.contains(c)).map(GetMoreCodes::maskedCode)
-                    .toList();
-            log.warn("GetMore: {} extra coupon(s) on prefix {} beside coupon {} ({}): withdrew {}, {} failed",
-                    codes.size(), prefix, kept.couponId(), GetMoreCodes.maskedCode(kept.code()), withdrawn,
-                    failed.size());
-            return withdrawn;
+            return new Withdrawal(codes, new HashSet<>(deletion.failedItems()),
+                    new HashSet<>(deletion.missingItems()));
         } catch (RuntimeException withdrawFailed) {
-            log.warn("GetMore: could not withdraw the extra coupon(s) {} on prefix {}: {}", masked(codes), prefix,
+            log.warn("GetMore: could not withdraw the code(s) {} {} on prefix {}: {}", masked(codes), which, prefix,
                     GetMoreCodes.maskAll(String.valueOf(withdrawFailed.getMessage()), codes));
-            return List.of();
+            return new Withdrawal(codes, new HashSet<>(codes), Set.of());
         }
     }
 
-    private static FindOrCreate tooMany(String prefix) {
-        log.warn("GetMore: more than {} pages of coupons on prefix {}: parked", MAX_COUPON_PAGES, prefix);
-        return new FindOrCreate.Parked(FindOrCreate.TOO_MANY_ON_PREFIX, "more than " + MAX_COUPON_PAGES
-                + " pages of coupons on prefix " + prefix, List.of());
+    /**
+     * What a best-effort {@code deleteByCodes} did: the codes sent, those the store reported failed (all of them when
+     * the call itself failed) and those it reported missing.
+     */
+    private record Withdrawal(List<String> sent, Set<String> failed, Set<String> missing) {
+
+        static final Withdrawal NONE = new Withdrawal(List.of(), Set.of(), Set.of());
+
+        /** Sent and not reported failed (withdrawn, or already gone), as {@code ****8B1C}. */
+        List<String> withdrawnMasked() {
+            return sent.stream().filter(code -> !failed.contains(code)).map(GetMoreCodes::maskedCode).toList();
+        }
+
+        /** Not confirmed deleted by this call: reported failed or missing, or the call failed. */
+        boolean unconfirmed(String code) {
+            return failed.contains(code) || missing.contains(code);
+        }
+    }
+
+    private FindOrCreate tooMany(CouponRequest request, List<String> generated) {
+        log.warn("GetMore: more than {} pages of coupons on prefix {}: parked", MAX_COUPON_PAGES, request.prefix());
+        return parked(request, FindOrCreate.TOO_MANY_ON_PREFIX, "more than " + MAX_COUPON_PAGES
+                + " pages of coupons on prefix " + request.prefix(), generated, Withdrawal.NONE);
+    }
+
+    /** The reason a search failed, for an operator: the kind, never a code. */
+    private static String reasonOf(GetMoreException failure) {
+        return switch (failure) {
+            case GetMoreUnavailableException unavailable -> unavailable.reason().name();
+            case GetMoreRejectedException rejected -> "rejected " + rejected.reason().name();
+            case GetMoreOutcomeUnknownException ignored -> "outcome unknown";
+        };
     }
 
     private static void giveBack(GenerateGuard guard, GetMoreException notProcessed) {

@@ -65,7 +65,11 @@ class GetMoreCouponsTest {
     }
 
     private CouponRequest request() {
-        return new CouponRequest(PREFIX, RULE, FACE, "USD", 16, LAST_DAY, FLOOR, guard);
+        return request(FLOOR);
+    }
+
+    private CouponRequest request(LocalDateTime floor) {
+        return new CouponRequest(PREFIX, RULE, FACE, "USD", 16, LAST_DAY, floor, guard);
     }
 
     private FindOrCreate findOrCreate() {
@@ -348,6 +352,145 @@ class GetMoreCouponsTest {
     }
 
     @Test
+    @DisplayName("the generate went through and the search after it fails: outcome unknown WITH the code, the count"
+            + " kept, nothing bound")
+    void searchAfterGenerateFailsKeepsTheCode() {
+        store.searchFailure = new GetMoreUnavailableException(Operation.SEARCH_COUPONS,
+                GetMoreUnavailableException.Reason.READ_FAILED);
+        store.failSearchesFrom = 2;
+
+        assertThatThrownBy(this::findOrCreate).isInstanceOfSatisfying(GetMoreOutcomeUnknownException.class, e -> {
+            assertThat(e.mintedCodes()).containsExactlyElementsOf(store.lastMinted);
+            assertThat(e.getMessage()).contains("could not be searched for (READ_FAILED)")
+                    .doesNotContain(store.lastMinted.getFirst());
+        });
+        assertThat(store.generateCalls).isEqualTo(1);
+        assertThat(guard.counted).isEqualTo(1);
+        assertThat(guard.givenBack).as("it was processed: never given back").isZero();
+        assertThat(events).doesNotContain("guard.notProcessed");
+        assertThat(binding.bound).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the deadline passes while the generate runs: the search after it still runs, and the coupon is bound")
+    void deadlinePassingDuringGenerateStillFindsTheCode() {
+        store.callCost = Duration.ofSeconds(4);
+        Deadline deadline = Deadline.after(clock, Duration.ofSeconds(10));   // checks at +0, +4 and +8 pass
+
+        FindOrCreate result = coupons.findOrCreate(request(), deadline);
+
+        assertThat(result).isInstanceOfSatisfying(FindOrCreate.Bound.class, bound -> {
+            assertThat(bound.adopted()).isFalse();
+            assertThat(bound.coupon().code()).isEqualTo(store.lastMinted.getFirst());
+        });
+        assertThat(clock.instant()).as("the search started at +12s, past the deadline")
+                .isEqualTo(START.plusSeconds(16));
+        assertThat(events).containsSubsequence("generate", "search", "bind:" + FACE);
+    }
+
+    @Test
+    @DisplayName("after a generate, an older coupon on the prefix already used: parked, never bound; the fresh one"
+            + " withdrawn")
+    void olderUsedCouponBesideTheGeneratedOneIsParked() {
+        GetMoreCoupon[] older = new GetMoreCoupon[1];
+        store.generateBehaviour = spec -> {
+            older[0] = store.plant(PREFIX + "AAAABBBBCCCC1111", RULE, 1, FLOOR.plusMinutes(1));
+            return store.mint(spec);
+        };
+
+        FindOrCreate result = findOrCreate();
+
+        assertThat(result).isInstanceOfSatisfying(FindOrCreate.Parked.class, parked -> {
+            assertThat(parked.outcome()).isEqualTo(FindOrCreate.COUPON_ALREADY_USED);
+            assertThat(parked.liveOrphanCodes()).isEmpty();
+            assertThat(parked.detail()).contains("coupon " + older[0].couponId());
+        });
+        assertThat(binding.bound).isEmpty();
+        assertThat(store.deleted).containsExactly(store.lastMinted.getFirst());
+        assertThat(store.coupons).extracting(GetMoreCoupon::code).containsExactly(older[0].code());
+    }
+
+    @Test
+    @DisplayName("after a generate, an older UNUSED coupon on the prefix is kept as adopted; the fresh one withdrawn")
+    void olderUnusedCouponBesideTheGeneratedOneIsAdopted() {
+        GetMoreCoupon[] older = new GetMoreCoupon[1];
+        store.generateBehaviour = spec -> {
+            older[0] = store.plant(PREFIX + "AAAABBBBCCCC1111", RULE, 0, FLOOR.plusMinutes(1));
+            return store.mint(spec);
+        };
+
+        FindOrCreate result = findOrCreate();
+
+        assertThat(result).isInstanceOfSatisfying(FindOrCreate.Bound.class, bound -> {
+            assertThat(bound.coupon().couponId()).isEqualTo(older[0].couponId());
+            assertThat(bound.adopted()).as("found, not made by this call").isTrue();
+            assertThat(bound.extrasWithdrawnMasked())
+                    .containsExactly(GetMoreCodes.maskedCode(store.lastMinted.getFirst()));
+        });
+        assertThat(store.deleted).containsExactly(store.lastMinted.getFirst());
+    }
+
+    @Test
+    @DisplayName("the generated coupon itself fails the adoption floor (GetMore's clock behind loans'): parked"
+            + " FOREIGN_COUPON, and the fresh code withdrawn rather than left live")
+    void parkedAfterGenerateWithdrawsTheFreshCode() {
+        FindOrCreate result = coupons.findOrCreate(request(FLOOR.plusMinutes(10)), Deadline.none());
+
+        assertThat(result).isInstanceOfSatisfying(FindOrCreate.Parked.class, parked -> {
+            assertThat(parked.outcome()).isEqualTo(FindOrCreate.FOREIGN_COUPON);
+            assertThat(parked.liveOrphanCodes()).isEmpty();
+            assertThat(parked.detail()).doesNotContain(store.lastMinted.getFirst());
+        });
+        assertThat(store.deleted).containsExactly(store.lastMinted.getFirst());
+        assertThat(store.lastIgnoreInvalid).isTrue();
+        assertThat(store.coupons).isEmpty();
+        assertThat(binding.bound).isEmpty();
+    }
+
+    @Test
+    @DisplayName("parked after a generate whose code cannot be withdrawn (reported failed, or the call fails): kept"
+            + " as a live orphan, never dropped")
+    void parkedAfterGenerateKeepsAnUnwithdrawnCodeAsOrphan() {
+        store.failDeleting = true;
+        FindOrCreate reportedFailed = coupons.findOrCreate(request(FLOOR.plusMinutes(10)), Deadline.none());
+
+        assertThat(reportedFailed).isInstanceOfSatisfying(FindOrCreate.Parked.class, parked -> {
+            assertThat(parked.outcome()).isEqualTo(FindOrCreate.FOREIGN_COUPON);
+            assertThat(parked.liveOrphanCodes()).containsExactlyElementsOf(store.lastMinted);
+            assertThat(parked.toString()).doesNotContain(store.lastMinted.getFirst());
+        });
+
+        setUp();
+        store.deleteFailure = new GetMoreUnavailableException(Operation.DELETE_COUPONS,
+                GetMoreUnavailableException.Reason.NOT_REACHED);
+        FindOrCreate deleteThrew = coupons.findOrCreate(request(FLOOR.plusMinutes(10)), Deadline.none());
+
+        assertThat(deleteThrew).isInstanceOfSatisfying(FindOrCreate.Parked.class,
+                parked -> assertThat(parked.liveOrphanCodes()).containsExactlyElementsOf(store.lastMinted));
+        assertThat(events).containsSubsequence("generate", "search", "delete");
+    }
+
+    @Test
+    @DisplayName("more than three pages on the prefix after a generate: parked TOO_MANY_ON_PREFIX, the fresh code"
+            + " withdrawn")
+    void tooManyAfterGenerateWithdrawsTheFreshCode() {
+        properties.setPageSize(1);
+        store.generateBehaviour = spec -> {
+            for (int i = 0; i < 3; i++) {
+                store.plant(PREFIX + "AAAABBBBCCCC000" + i, RULE, 0, FLOOR.plusMinutes(1));
+            }
+            return store.mint(spec);
+        };
+
+        assertThat(findOrCreate()).isInstanceOfSatisfying(FindOrCreate.Parked.class, parked -> {
+            assertThat(parked.outcome()).isEqualTo(FindOrCreate.TOO_MANY_ON_PREFIX);
+            assertThat(parked.liveOrphanCodes()).isEmpty();
+        });
+        assertThat(store.deleted).containsExactly(store.lastMinted.getFirst());
+        assertThat(binding.bound).isEmpty();
+    }
+
+    @Test
     @DisplayName("called with a transaction open: refused before any call")
     void transactionOpenIllegalState() {
         TransactionSynchronizationManager.setActualTransactionActive(true);
@@ -468,6 +611,8 @@ class GetMoreCouponsTest {
         final MutableClock clock;
         Function<GetMoreCouponSpec, List<String>> generateBehaviour = this::mint;
         RuntimeException searchFailure;
+        /** The first search call (1-based) that {@link #searchFailure} fails. */
+        int failSearchesFrom = 1;
         RuntimeException deleteFailure;
         boolean failDeleting;
         Duration callCost = Duration.ZERO;
@@ -536,7 +681,7 @@ class GetMoreCouponsTest {
         public GetMorePage<GetMoreCoupon> searchCoupons(GetMoreCouponQuery query) {
             enter("search");
             searchCalls++;
-            if (searchFailure != null) {
+            if (searchFailure != null && searchCalls >= failSearchesFrom) {
                 throw searchFailure;
             }
             List<GetMoreCoupon> matching = coupons.stream()
