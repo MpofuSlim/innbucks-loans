@@ -229,8 +229,12 @@ public class GetMoreSimulatorActions {
             requireSimulated(target);
             SimLookup lookup = till.lookup(target.code());
             Map<String, Object> store = new LinkedHashMap<>();
-            store.put("coupon", lookup.coupon());
-            store.put("rule", lookup.rule());
+            if (lookup.coupon() != null) {
+                store.put("coupon", lookup.coupon());   // absent once withdrawn, as Magento omits what it lacks
+            }
+            if (lookup.rule() != null) {
+                store.put("rule", lookup.rule());
+            }
             store.put("orders", lookup.orders());
             store.put("creditmemos", lookup.creditmemos());
             return new SimAction<>("The store's view of coupon " + GetMoreCodes.maskedCode(target.code()), false,

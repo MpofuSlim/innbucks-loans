@@ -561,6 +561,13 @@ public final class GetMoreApiExamples {
               "message": "No GetMore voucher for loan SGL-2026-000164"
             }""";
 
+    /** Expiring by a code no GetMore voucher was kept for: a code of loans' own, or none at all. */
+    public static final String NO_GETMORE_VOUCHER_FOR_CODE = """
+            {
+              "code": "NOT_FOUND",
+              "message": "No GetMore voucher has that code"
+            }""";
+
     public static final String SIM_COUPON_NOT_FOUND = """
             {
               "code": "SIM_COUPON_NOT_FOUND",
@@ -627,10 +634,11 @@ public final class GetMoreApiExamples {
               "message": "Refund reference AVD-RF-0012 was already used for a different refund (SIMCM00000003)"
             }""";
 
+    /** Only a LIVE GetMore voucher: a voucher of loans' own is not a GetMore one at all (404 NOT_FOUND). */
     public static final String NOT_A_SIMULATED_VOUCHER = """
             {
               "code": "NOT_A_SIMULATED_VOUCHER",
-              "message": "Voucher 7 is not a simulated GetMore voucher"
+              "message": "Voucher 31 is not a simulated GetMore voucher"
             }""";
 
     public static final String ALREADY_EXPIRED = """

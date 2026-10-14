@@ -79,11 +79,12 @@ public class GetMoreSimulatorController {
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.SALE_INVALID))),
             @ApiResponse(responseCode = "401", description = "Wrong or missing api key",
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_KEY_REFUSED))),
-            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan, or no coupon has the"
-                    + " code", content = @Content(examples = {
+            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan (none, or a voucher of"
+                    + " loans' own), or no coupon has the code", content = @Content(examples = {
                     @ExampleObject(name = "No voucher", value = GetMoreApiExamples.NO_GETMORE_VOUCHER),
                     @ExampleObject(name = "Not valid", value = GetMoreApiExamples.SIM_COUPON_NOT_FOUND)})),
-            @ApiResponse(responseCode = "409", description = "The till refused", content = @Content(examples = {
+            @ApiResponse(responseCode = "409", description = "The till refused, or the voucher is a LIVE GetMore"
+                    + " voucher (NOT_A_SIMULATED_VOUCHER)", content = @Content(examples = {
                     @ExampleObject(name = "Too much", value = GetMoreApiExamples.SIM_INSUFFICIENT_BALANCE),
                     @ExampleObject(name = "Expired", value = GetMoreApiExamples.SIM_COUPON_EXPIRED),
                     @ExampleObject(name = "Spending in parts off",
@@ -175,9 +176,12 @@ public class GetMoreSimulatorController {
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.EXPIRED))),
             @ApiResponse(responseCode = "401", description = "Wrong or missing api key",
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_KEY_REFUSED))),
-            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan or code",
-                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.NO_GETMORE_VOUCHER))),
-            @ApiResponse(responseCode = "409", description = "Not a simulated voucher, or closed already",
+            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan (none, or a voucher of"
+                    + " loans' own) or code", content = @Content(examples = {
+                    @ExampleObject(name = "No voucher", value = GetMoreApiExamples.NO_GETMORE_VOUCHER),
+                    @ExampleObject(name = "No such code", value = GetMoreApiExamples.NO_GETMORE_VOUCHER_FOR_CODE)})),
+            @ApiResponse(responseCode = "409", description = "A LIVE GetMore voucher (NOT_A_SIMULATED_VOUCHER), or"
+                    + " closed already",
                     content = @Content(examples = {
                             @ExampleObject(name = "Not simulated", value = GetMoreApiExamples.NOT_A_SIMULATED_VOUCHER),
                             @ExampleObject(name = "Closed", value = GetMoreApiExamples.ALREADY_EXPIRED)}))
@@ -202,8 +206,8 @@ public class GetMoreSimulatorController {
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.LOOKUP))),
             @ApiResponse(responseCode = "401", description = "Wrong or missing api key",
                     content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_KEY_REFUSED))),
-            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan, or no coupon has the"
-                    + " code", content = @Content(examples = {
+            @ApiResponse(responseCode = "404", description = "No GetMore voucher for the loan (none, or a voucher of"
+                    + " loans' own), or no coupon has the code", content = @Content(examples = {
                     @ExampleObject(name = "No voucher", value = GetMoreApiExamples.NO_GETMORE_VOUCHER),
                     @ExampleObject(name = "Not valid", value = GetMoreApiExamples.SIM_COUPON_NOT_FOUND)}))
     })

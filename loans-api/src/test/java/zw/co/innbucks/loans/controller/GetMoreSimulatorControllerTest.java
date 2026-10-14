@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
@@ -31,6 +32,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreException.Operation;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.getmore.simulator.GetMoreSimulatorActions;
+import zw.co.innbucks.loans.core.getmore.simulator.SimLookup;
 import zw.co.innbucks.loans.core.getmore.simulator.SimSale;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedTill;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatorApiKey;
@@ -57,6 +59,7 @@ import zw.co.innbucks.loans.web.GetMoreApiExamples;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -350,6 +353,33 @@ class GetMoreSimulatorControllerTest {
     }
 
     @Test
+    @DisplayName("a body with no declared length is cut off past 8 KiB: 413 through the real chain, the till never asked")
+    void tooLargeUndeclared() throws Exception {
+        String body = GetMoreApiExamples.SALE_REQUEST.replace("GetMore Avondale", "x".repeat(9000));
+        mvc.perform(servletContext -> {
+                    MockHttpServletRequest request = new MockHttpServletRequest(servletContext, "POST",
+                            BASE + "/sales") {
+                        @Override
+                        public int getContentLength() {
+                            return -1;
+                        }
+
+                        @Override
+                        public long getContentLengthLong() {
+                            return -1;
+                        }
+                    };
+                    request.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    request.setContent(body.getBytes(StandardCharsets.UTF_8));
+                    request.addHeader("X-Api-Key", API_KEY);
+                    return request;
+                })
+                .andExpect(status().isContentTooLarge())
+                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+        verifyNoInteractions(till);
+    }
+
+    @Test
     @DisplayName("faults: queued (201) and cleared (200), with what is pending")
     void faults() throws Exception {
         mvc.perform(withKey(post(BASE + "/faults")).contentType(MediaType.APPLICATION_JSON)
@@ -386,6 +416,31 @@ class GetMoreSimulatorControllerTest {
                         .content("{\"code\": \"SIM-NOPE0000-0000000000000000\"}"))
                 .andExpect(status().isNotFound());
         verify(till).lookup("SIM-NOPE0000-0000000000000000");
+    }
+
+    @Test
+    @DisplayName("what the store no longer has is absent, not null: a withdrawn coupon, and a coupon that is no voucher's")
+    void absentNotNull() throws Exception {
+        when(till.lookup(GetMoreApiExamples.CODE_9)).thenReturn(new SimLookup(null,
+                Map.of("rule_id", 43), Map.of("items", List.of(), "total_count", 0),
+                Map.of("items", List.of(), "total_count", 0), new BigDecimal("150.00"), "USD",
+                new BigDecimal("60.00"), true, List.of("A1 per-coupon allowance")));
+        mvc.perform(withKey(post(BASE + "/coupon-lookups")).contentType(MediaType.APPLICATION_JSON)
+                        .content(GetMoreApiExamples.LOOKUP_REQUEST))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawn").value(true))
+                .andExpect(jsonPath("$.data.store.coupon").doesNotExist())
+                .andExpect(jsonPath("$.data.store.rule.rule_id").value(43));
+
+        when(voucherRepository.findByStoreModeAndExternalCouponId(GetMoreMode.SIMULATED, 1207L))
+                .thenReturn(Optional.empty());
+        when(till.sell(any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(sale(false));
+        mvc.perform(sell(GetMoreApiExamples.SALE_REQUEST.replace("\"loanReference\": \"SGL-2026-000164\"",
+                        "\"code\": \"" + GetMoreApiExamples.CODE_9 + "\"")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.store").exists())
+                .andExpect(jsonPath("$.data.voucher").doesNotExist())
+                .andExpect(jsonPath("$.data.sync").doesNotExist());
     }
 
     @Test

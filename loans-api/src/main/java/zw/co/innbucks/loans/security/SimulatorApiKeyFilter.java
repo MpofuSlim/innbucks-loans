@@ -34,7 +34,9 @@ import java.util.List;
  *       with no declared length is read through a stream that fails past the same limit, answered 413 as well.</li>
  *   <li>Then the caller holds {@code ROLE_GETMORE_SIMULATOR}, which the chain requires, and nothing else.</li>
  * </ol>
- * Not a {@code @Component}: Boot would register it as a servlet filter on every request as well.
+ * Not a {@code @Component}: Boot would register it as a servlet filter on every request as well. Nothing ahead of the
+ * security chains reads a body either: Boot's FormContentFilter, which would read a form-encoded PUT, PATCH or DELETE
+ * whole, is switched off ({@code spring.mvc.formcontent.filter.enabled: false}).
  */
 @Slf4j
 public class SimulatorApiKeyFilter extends OncePerRequestFilter {

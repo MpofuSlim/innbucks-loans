@@ -14,7 +14,9 @@ import java.util.Map;
  *
  * @param couponWithdrawn whether the coupon is gone at the store; only for "expire now"
  */
-public record SimActionResponse(Map<String, Object> store, VoucherResponse voucher, SimSyncSummary sync,
+public record SimActionResponse(Map<String, Object> store,
+                                @JsonInclude(JsonInclude.Include.NON_NULL) VoucherResponse voucher,
+                                @JsonInclude(JsonInclude.Include.NON_NULL) SimSyncSummary sync,
                                 @JsonInclude(JsonInclude.Include.NON_NULL) Boolean couponWithdrawn,
                                 List<String> assumptions) {
 }

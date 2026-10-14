@@ -521,8 +521,9 @@ marked "TEST code, not valid in store."
 `/lending/**` route, no gateway change), exist only on a SIMULATED host (a plain
 404 everywhere else, whatever is sent) and only for whoever holds
 `GETMORE_SIMULATOR_API_KEY` in `X-Api-Key`. Their own security chain checks the key
-in constant time and refuses a body over 8 KiB before anything reads it; no loans
-token reaches them:
+in constant time and refuses a body over 8 KiB before anything reads it (Boot's
+FormContentFilter, which would read a form-encoded PUT, PATCH or DELETE ahead of
+every chain, is switched off); no loans token reaches them:
 
 | Action | Does |
 |---|---|
@@ -558,19 +559,31 @@ a chore:
    401 (`GETMORE_UNAVAILABLE: AUTH`), issuances wait PENDING and syncs report
    UNAVAILABLE. Nothing is lost.
 2. Put the new consumer key and secret and the new access token and secret in the
-   host's `loans.<iso>.local.env`, re-create the Secret (section 5) and re-pin the
-   image so the pod restarts with them:
+   host's `loans.<iso>.local.env`, re-create the Secret (section 5) and restart the
+   Deployment, so a new pod reads them (a pod reads its Secret only when it starts):
    ```sh
    kubectl -n ticketing create secret generic loans-service-secrets --from-env-file=loans.zw.local.env --dry-run=client -o yaml | kubectl apply -f -
-   kubectl -n ticketing set image deployment/loans-service '*=ghcr.io/mpofuslim/loans-api:sha-<current pin>'
+   kubectl -n ticketing rollout restart deployment/loans-service
    kubectl -n ticketing rollout status deployment/loans-service
    ```
+   A restart, not a `set image` to the tag already running: setting the same image
+   leaves the pod template unchanged, so no pod restarts, `rollout status` succeeds at
+   once, and the running pod keeps the old values. The image is pinned, so the
+   restart runs the same build with the new Secret.
 3. Check `GET /lending/v1/getmore?checkRule=true` reads the rule (no `ruleError`).
 
 QA and production are separate Magento integrations with separate keys; production's
 never go on the staging host. The simulator's key rotates the same way (a new
-`GETMORE_SIMULATOR_API_KEY`, the Secret re-created, the image re-pinned), and the
-audit's key fingerprint shows which key each action was taken with.
+`GETMORE_SIMULATOR_API_KEY`, the Secret re-created, the Deployment restarted with
+`rollout restart`), and the audit's key fingerprint shows which key each action was
+taken with. Loans checks that key itself, read once when the pod starts, so a leaked
+key keeps working until the restart. Then check that it no longer does: a call with
+the OLD key must be a 401,
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H 'X-Api-Key: <old key>' \
+  https://<staging edge>/foundry/lending/v1/getmore-simulator/faults
+```
+and `GET /lending/v1/getmore?checkRule=true` still answers with no `ruleError`.
 
 **Rolling back past this.** The build before GetMore vouchers would render a GetMore
 code through loans' digit grouping, so a resend or a reveal would give GetMore's till
