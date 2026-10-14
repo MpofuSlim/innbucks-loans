@@ -72,7 +72,8 @@ import java.util.function.Predicate;
  *
  * <p>Searches send Magento's {@code fields} projection, so shoppers' names, addresses, phones and payments never reach
  * loans, and prefix searches are re-filtered here: Magento compares case-insensitively and reads {@code _} as a
- * wildcard. {@code total_count} is Magento's, unadjusted.
+ * wildcard. {@code total_count} is Magento's, unadjusted. Under that projection Magento renders an empty result as
+ * {@code "items": null}, which reads as an empty page whenever {@code total_count} says the page holds nothing.
  */
 @Slf4j
 public final class MagentoGetMoreStore implements GetMoreStore {
@@ -230,7 +231,7 @@ public final class MagentoGetMoreStore implements GetMoreStore {
         return call(op, HttpMethod.GET, path, criteria, null, knownCodes, body -> {
             MagentoSearchResultDto<D> result = MagentoJson.read(body, MagentoJson.searchResultOf(itemType));
             List<T> items = new ArrayList<>();
-            for (D item : result.requiredItems()) {
+            for (D item : result.itemsOn(criteria.currentPage(), criteria.pageSize())) {
                 if (item == null) {
                     throw new MagentoShapeException("a null item");
                 }

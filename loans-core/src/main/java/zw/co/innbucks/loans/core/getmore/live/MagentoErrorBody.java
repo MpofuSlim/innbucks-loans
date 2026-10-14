@@ -22,7 +22,8 @@ public record MagentoErrorBody(String message, JsonNode parameters, List<Magento
     /** What a rendered message is cut to, so a log line or a stored error stays bounded. */
     static final int MAX_RENDERED = 500;
 
-    private static final Pattern POSITIONAL = Pattern.compile("%(\\d+)");
+    /** At most nine digits, so the index always parses: a longer run renders as it came. */
+    private static final Pattern POSITIONAL = Pattern.compile("%(\\d{1,9})");
     private static final Pattern NAMED = Pattern.compile("%([A-Za-z_][A-Za-z0-9_]*)");
 
     public MagentoErrorBody {

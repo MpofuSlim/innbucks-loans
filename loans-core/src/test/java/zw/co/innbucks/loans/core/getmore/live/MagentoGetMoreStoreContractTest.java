@@ -92,7 +92,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       {@code Order/Invoice.php:659-660}, {@code Creditmemo/RefundOperation.php:98-99}, {@code Order.php:1387-1391};
  *       {@code store_name} per {@code ResourceModel/Order.php:140-150}); credit memos:
  *       {@code Sales/Api/Data/CreditmemoInterface.php};</li>
- *   <li>a null field omitted from REST: {@code Framework/Reflection/DataObjectProcessor.php:88-90}.</li>
+ *   <li>a null field omitted from REST: {@code Framework/Reflection/DataObjectProcessor.php:88-90};</li>
+ *   <li>an empty search under the {@code fields} projection, {@code {"items":null,"total_count":0}}
+ *       ({@code coupon-search-empty.json}, for orders and credit memos too): the output of
+ *       {@code Framework/Webapi/Rest/Response/FieldsFilter.php} {@code applyFilter}, whose result starts null and is
+ *       never filled for an empty list (run on 2.4-develop's code with {@code COUPON_FIELDS}).</li>
  * </ul>
  * Amounts are shown as DECIMAL(12,4) renders ({@code -45.5000}); PHP may render the same value {@code -45.5}, which
  * reads the same.
@@ -349,6 +353,21 @@ class MagentoGetMoreStoreContractTest {
     }
 
     @Test
+    @DisplayName("generate, a 500 whose template holds a placeholder index too long for an int: still OutcomeUnknown,"
+            + " the text kept as it came")
+    void generate500OddTemplateStillUnknown() {
+        stub(post(urlEqualTo(BASE + "/coupons/generate")).willReturn(json(500,
+                "{\"message\":\"x %99999999999\",\"parameters\":[\"a\"]}")));
+
+        Throwable thrown = generateFailure();
+
+        assertThat(thrown).isInstanceOf(GetMoreOutcomeUnknownException.class)
+                .hasMessageContaining("x %99999999999");
+        assertSentExactlyOnce(GENERATE);
+        assertThat(counted("generate", "outcome_unknown")).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("generate, Magento's masked database error (400 'Internal Error... Report ID'): OutcomeUnknown")
     void generateMaskedDbError400Unknown() {
         stub(post(urlEqualTo(BASE + "/coupons/generate")).willReturn(json(400,
@@ -482,6 +501,58 @@ class MagentoGetMoreStoreContractTest {
         assertThat(page.items()).extracting(GetMoreCoupon::couponId).containsExactly(1L);
         assertThat(page.totalCount()).as("Magento's own count, unadjusted").isEqualTo(4);
         assertThat(page.last()).as("a page made short by the re-filter still has pages after it").isFalse();
+    }
+
+    @Test
+    @DisplayName("search, nothing on the prefix: Magento's fields projection renders the empty list as items null;"
+            + " an empty last page, not a bad response")
+    void searchEmptyItemsNull() {
+        stub(get(urlPathEqualTo(BASE + "/coupons/search")).willReturn(json(200, fixture("coupon-search-empty.json"))));
+
+        GetMorePage<GetMoreCoupon> page = store.searchCoupons(GetMoreCouponQuery.byPrefix(PREFIX, 1, 50));
+
+        assertThat(page.items()).isEmpty();
+        assertThat(page.totalCount()).isZero();
+        assertThat(page.last()).isTrue();
+        onlyRequest("GET");
+        wireMock.verify(getRequestedFor(urlPathEqualTo(BASE + "/coupons/search"))
+                .withQueryParam("fields", equalTo(MagentoSearchCriteria.COUPON_FIELDS)));
+        assertThat(counted("search_coupons", "ok")).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("search, a page past the end with items null: empty, the true total kept")
+    void searchPastTheEndItemsNull() {
+        stub(get(urlPathEqualTo(BASE + "/coupons/search")).willReturn(json(200,
+                "{\"items\":null,\"total_count\":3}")));
+
+        GetMorePage<GetMoreCoupon> page = store.searchCoupons(GetMoreCouponQuery.byPrefix(PREFIX, 3, 2));
+
+        assertThat(page.items()).isEmpty();
+        assertThat(page.totalCount()).isEqualTo(3);
+        assertThat(page.last()).isTrue();
+    }
+
+    @Test
+    @DisplayName("search, items null while total_count says this page has some: a read failed, BAD_RESPONSE")
+    void itemsNullWithItemsDueIsBadResponse() {
+        stub(get(urlPathEqualTo(BASE + "/coupons/search")).willReturn(json(200,
+                "{\"items\":null,\"total_count\":3}")));
+
+        Throwable thrown = catchFailure(() -> store.searchCoupons(GetMoreCouponQuery.byPrefix(PREFIX, 1, 50)));
+
+        assertUnavailable(thrown, Reason.BAD_RESPONSE);
+        assertThat(thrown).hasMessageContaining("missing items");
+        assertThat(counted("search_coupons", "bad_response")).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("search, no total_count: a read failed, BAD_RESPONSE")
+    void missingTotalCountIsBadResponse() {
+        stub(get(urlPathEqualTo(BASE + "/coupons/search")).willReturn(json(200, "{\"items\":null}")));
+
+        assertUnavailable(catchFailure(() -> store.searchCoupons(GetMoreCouponQuery.byPrefix(PREFIX, 1, 50))),
+                Reason.BAD_RESPONSE);
     }
 
     @Test
@@ -799,7 +870,36 @@ class MagentoGetMoreStoreContractTest {
         assertThat(processing.held()).isEqualByComparingTo("20");
     }
 
+    @Test
+    @DisplayName("orders, none placed with the prefix yet (every voucher before its first sale): items null is an"
+            + " empty last page")
+    void ordersEmptyItemsNull() {
+        stub(get(urlPathEqualTo(BASE + "/orders")).willReturn(json(200, fixture("coupon-search-empty.json"))));
+
+        GetMorePage<GetMoreOrder> page = store.orders(GetMoreOrderQuery.byPrefix(PREFIX, 1, 50));
+
+        assertThat(page.items()).isEmpty();
+        assertThat(page.last()).isTrue();
+        onlyRequest("GET");
+        wireMock.verify(getRequestedFor(urlPathEqualTo(BASE + "/orders"))
+                .withQueryParam("fields", equalTo(MagentoSearchCriteria.ORDER_FIELDS)));
+    }
+
     // ---- creditmemos -------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("credit memos, none for the orders asked: items null is an empty last page")
+    void creditMemosEmptyItemsNull() {
+        stub(get(urlPathEqualTo(BASE + "/creditmemos")).willReturn(json(200, fixture("coupon-search-empty.json"))));
+
+        GetMorePage<GetMoreCreditMemo> page = store.creditMemos(new GetMoreCreditMemoQuery(List.of(5012L), 1, 50));
+
+        assertThat(page.items()).isEmpty();
+        assertThat(page.last()).isTrue();
+        onlyRequest("GET");
+        wireMock.verify(getRequestedFor(urlPathEqualTo(BASE + "/creditmemos"))
+                .withQueryParam("fields", equalTo(MagentoSearchCriteria.CREDIT_MEMO_FIELDS)));
+    }
 
     @Test
     @DisplayName("credit memos: order_id in a,b sent comma-joined, entity_id ASC, fields; every memo mapped")

@@ -62,7 +62,7 @@ final class MagentoFailures {
     static GetMoreException classify(Operation op, Raw raw, Collection<String> knownCodes) {
         int status = raw.status();
         Optional<MagentoErrorBody> envelope = raw.truncated() ? Optional.empty() : MagentoErrorBody.parse(raw.body());
-        String rendered = envelope.map(e -> e.render(knownCodes)).orElse(null);
+        String rendered = rendered(envelope, knownCodes);
         if (status == 401) {
             return new GetMoreUnavailableException(op, Reason.AUTH, status, rendered);
         }
@@ -93,6 +93,19 @@ final class MagentoFailures {
                     : new GetMoreNotFoundException(op, rendered);
         }
         return new GetMoreUnavailableException(op, Reason.BLOCKED, status, rendered);
+    }
+
+    /**
+     * The envelope's text, or null. Never throws: classification must always end in one of the port's three kinds, so
+     * a store message that cannot be rendered is left out rather than allowed to escape (a write would lose its
+     * "maybe applied").
+     */
+    private static String rendered(Optional<MagentoErrorBody> envelope, Collection<String> knownCodes) {
+        try {
+            return envelope.map(e -> e.render(knownCodes)).orElse(null);
+        } catch (RuntimeException unrenderable) {
+            return null;
+        }
     }
 
     /** A 2xx whose body is not the shape asked for: a read failed; a write may have applied. */
