@@ -60,9 +60,8 @@ public class GetMoreProperties {
     @Max(value = 300, message = "loans.getmore.page-size must be at most 300, Magento's limit (GETMORE_PAGE_SIZE)")
     private int pageSize = 50;
     /** Adoption floor: a coupon created before the first claim minus this was not made by loans. */
+    @NotNull(message = "loans.getmore.clock-skew must be set (GETMORE_CLOCK_SKEW)")
     private Duration clockSkew = Duration.ofMinutes(2);
-    /** The pod's node (the Deployment's {@code NODE_NAME} fieldRef), never set by hand. */
-    private String nodeName;
 
     @Valid
     private Issuance issuance = new Issuance();
@@ -91,6 +90,12 @@ public class GetMoreProperties {
             + " loans.getmore.simulator.coupon-prefix alike (GETMORE_CODE_LENGTH)")
     public boolean isCodeFitsOneMessage() {
         return fits(couponPrefix) && (simulator == null || fits(simulator.getCouponPrefix()));
+    }
+
+    @AssertTrue(message = "loans.getmore.clock-skew must not be negative (GETMORE_CLOCK_SKEW): it would put the"
+            + " adoption floor after the first claim, so every coupon loans generated would read as foreign")
+    public boolean isClockSkewNotNegative() {
+        return clockSkew == null || !clockSkew.isNegative();
     }
 
     @AssertTrue(message = "loans.getmore.issuance.stale-claim must be at least 8 x (connect-timeout-ms +"
@@ -164,7 +169,10 @@ public class GetMoreProperties {
     public static class Simulator {
         @ToString.Exclude
         private String apiKey;
-        /** The one node SIMULATED may run on (a deployment compares it with {@code node-name}). */
+        /**
+         * The one node SIMULATED may run on: a deployment compares it with the pod's {@code NODE_NAME}, read from the
+         * process environment (the Deployment's {@code spec.nodeName} fieldRef), never from a property.
+         */
         private String allowedNode;
         @NotNull(message = "loans.getmore.simulator.coupon-prefix must be set (GETMORE_SIMULATOR_COUPON_PREFIX)")
         @Pattern(regexp = PREFIX_SHAPE,

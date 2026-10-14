@@ -44,11 +44,17 @@ public class GetMoreStoreConfig {
                 .build();
     }
 
-    /** The boot checks and the mode's announcement; refuses to start on a configuration that could do harm. */
+    /**
+     * The boot checks and the mode's announcement; refuses to start on a configuration that could do harm. The pod's
+     * node is read from the process environment ({@link GetMoreModeReport.NodeName#FROM_ENVIRONMENT}); only a test
+     * supplies a bean in its place.
+     */
     @Bean
     public GetMoreModeReport getMoreModeReport(GetMoreProperties properties, Environment environment,
-                                               ObjectProvider<MeterRegistry> meterRegistry) {
-        return new GetMoreModeReport(properties, environment, meterRegistry.getIfAvailable());
+                                               ObjectProvider<MeterRegistry> meterRegistry,
+                                               ObjectProvider<GetMoreModeReport.NodeName> nodeName) {
+        return new GetMoreModeReport(properties, environment, meterRegistry.getIfAvailable(),
+                nodeName.getIfAvailable(() -> GetMoreModeReport.NodeName.FROM_ENVIRONMENT));
     }
 
     /**

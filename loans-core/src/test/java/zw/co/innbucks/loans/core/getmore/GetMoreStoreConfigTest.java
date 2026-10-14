@@ -1,6 +1,9 @@
 package zw.co.innbucks.loans.core.getmore;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.ValidatorFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,22 +12,34 @@ import org.springframework.boot.test.context.assertj.AssertableApplicationContex
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.config.OutboundHttp;
 import zw.co.innbucks.loans.core.getmore.live.MagentoGetMoreStore;
 import zw.co.innbucks.loans.core.getmore.live.NoLiveAmountModel;
 import zw.co.innbucks.loans.core.getmore.live.RuleAmountSingleUseBinding;
+import zw.co.innbucks.loans.core.getmore.simulator.SimRuleRepository;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedAmountBinding;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedGetMoreStore;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedStoreBackend;
+import zw.co.innbucks.loans.core.getmore.simulator.SimulatedStoreSeeder;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatorFaults;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * GetMore's mode switch and boot rules, over {@link GetMoreStoreConfig} alone. Exactly one store and one amount
@@ -66,16 +81,27 @@ class GetMoreStoreConfigTest {
         List<String> values = new ArrayList<>(List.of(
                 "loans.getmore.mode=SIMULATED",
                 "loans.getmore.simulator.api-key=" + SIM_KEY,
-                "loans.getmore.simulator.allowed-node=" + NODE,
-                "loans.getmore.node-name=" + NODE));
+                "loans.getmore.simulator.allowed-node=" + NODE));
         values.addAll(Arrays.asList(more));
         return values.toArray(String[]::new);
     }
 
-    /** The simulator's beans exist only in SIMULATED; the store needs them there. */
+    /** The simulator's beans exist only in SIMULATED; the store needs them there. The pod runs on {@link #NODE}. */
     private ApplicationContextRunner withSimulatorBeans() {
+        return withSimulatorBeans(NODE);
+    }
+
+    /** As {@link #withSimulatorBeans()}, on a pod whose {@code NODE_NAME} is {@code node} (null: not set). */
+    private ApplicationContextRunner withSimulatorBeans(String node) {
         return runner.withBean(SimulatedStoreBackend.class, () -> mock(SimulatedStoreBackend.class))
-                .withBean(SimulatorFaults.class, SimulatorFaults::new);
+                .withBean(SimulatorFaults.class, SimulatorFaults::new)
+                .withBean(GetMoreModeReport.NodeName.class, () -> () -> node);
+    }
+
+    /** A value exactly as the environment would hand it over: the runner's own pairs are trimmed. */
+    private static ApplicationContextRunner raw(ApplicationContextRunner runner, String property, String value) {
+        return runner.withInitializer(context -> context.getEnvironment().getPropertySources()
+                .addFirst(new MapPropertySource("raw-" + property, Map.of(property, value))));
     }
 
     private static ApplicationContextRunner profiles(ApplicationContextRunner runner, String... profiles) {
@@ -162,12 +188,47 @@ class GetMoreStoreConfigTest {
     }
 
     @Test
-    @DisplayName("LIVE refuses a blank or non-https base URL")
+    @DisplayName("LIVE refuses a blank base URL, or one that is not a valid https URL a request can be built on")
     void liveRefusesBaseUrl() {
         runner.withPropertyValues(live("loans.getmore.live.base-url=http://qa.getmore.syncrony.com/rest/V1"))
-                .run(context -> refused(context, "GETMORE_BASE_URL", "not an https:// URL"));
+                .run(context -> refused(context, "GETMORE_BASE_URL", "not a valid https URL"));
         runner.withPropertyValues(live("loans.getmore.live.base-url="))
                 .run(context -> refused(context, "GETMORE_BASE_URL", "not set"));
+        for (String bad : List.of("https://", "https:///rest/V1", "https://qa.getmore syncrony.com/rest/V1",
+                "https://qa.getmore.syncrony.com/rest/V1?store=default", "https://qa.getmore.syncrony.com/rest/V1#x",
+                "qa.getmore.syncrony.com/rest/V1")) {
+            runner.withPropertyValues(live("loans.getmore.live.base-url=" + bad))
+                    .run(context -> refused(context, "GETMORE_BASE_URL", "not a valid https URL"));
+        }
+        raw(runner.withPropertyValues(live()), "loans.getmore.live.base-url",
+                "https://qa.getmore.syncrony.com/rest/V1\r")
+                .run(context -> refused(context, "GETMORE_BASE_URL", "not a valid https URL"));
+        runner.withPropertyValues(live("loans.getmore.live.base-url=HTTPS://qa.getmore.syncrony.com/rest/V1/"))
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    @DisplayName("LIVE refuses a signature base URL that is set and not a valid http or https URL")
+    void liveRefusesSignatureBaseUrl() {
+        for (String bad : List.of("qa.getmore.syncrony.com/rest/V1", "http://", "ftp://qa.getmore.syncrony.com/rest/V1",
+                "http://qa.getmore syncrony.com/rest/V1")) {
+            runner.withPropertyValues(live("loans.getmore.live.signature-base-url=" + bad))
+                    .run(context -> refused(context, "GETMORE_SIGNATURE_BASE_URL is not a valid http or https URL"));
+        }
+        runner.withPropertyValues(live("loans.getmore.live.signature-base-url=http://qa.getmore.syncrony.com/rest/V1"))
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    @DisplayName("LIVE refuses an OAuth value with whitespace around it (a secret file's newline, a CRLF env file): the"
+            + " signer would sign with those bytes")
+    void liveRefusesWhitespaceAroundCredentials() {
+        raw(runner.withPropertyValues(live()), "loans.getmore.live.access-token", TOKEN + "\n")
+                .run(context -> refused(context, "GETMORE_ACCESS_TOKEN has leading or trailing whitespace"));
+        raw(runner.withPropertyValues(live()), "loans.getmore.live.consumer-secret", CONSUMER_SECRET + "\r")
+                .run(context -> refused(context, "GETMORE_CONSUMER_SECRET has leading or trailing whitespace"));
+        raw(runner.withPropertyValues(live()), "loans.getmore.live.consumer-key", " " + CONSUMER_KEY)
+                .run(context -> refused(context, "GETMORE_CONSUMER_KEY has leading or trailing whitespace"));
     }
 
     @Test
@@ -238,13 +299,21 @@ class GetMoreStoreConfigTest {
     }
 
     @Test
-    @DisplayName("SIMULATED refuses a key equal to the test-assertions key, the JWT secret or a voucher key")
+    @DisplayName("SIMULATED refuses a key equal to any other secret: its own, and the keys partners already hold")
     void simulatedRefusesSharedKey() {
-        for (String other : List.of("loans.borrower.test-assertions.api-key", "jwt.secret",
-                "loans.vouchers.code-hmac-key", "loans.vouchers.code-encryption-key")) {
-            withSimulatorBeans().withPropertyValues(simulated(other + "=" + SIM_KEY))
-                    .run(context -> refused(context, "GETMORE_SIMULATOR_API_KEY must differ from"));
-        }
+        Map<String, String> others = Map.of(
+                "loans.borrower.test-assertions.api-key", "BORROWER_TEST_ASSERTIONS_API_KEY",
+                "jwt.secret", "JWT_SECRET",
+                "loans.vouchers.code-hmac-key", "VOUCHER_CODE_HMAC_KEY",
+                "loans.vouchers.code-encryption-key", "VOUCHER_CODE_ENCRYPTION_KEY",
+                "monitoring.scrape-token", "METRICS_SCRAPE_TOKEN",
+                "whatsapp.api-key", "WHATSAPP_API_KEY",
+                "innbucks-notify.api-key", "INNBUCKS_NOTIFY_API_KEY",
+                "innbucks.api-key", "INNBUCKS_API_KEY");
+        others.forEach((other, variable) -> withSimulatorBeans().withPropertyValues(simulated(other + "=" + SIM_KEY))
+                .run(context -> refused(context, "GETMORE_SIMULATOR_API_KEY must differ from " + variable)));
+        withSimulatorBeans().withPropertyValues(simulated("monitoring.scrape-token=another-" + SIM_KEY))
+                .run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test
@@ -262,21 +331,63 @@ class GetMoreStoreConfigTest {
     @Test
     @DisplayName("SIMULATED on a deployment refuses a blank or different allowed node; under test it is not checked")
     void simulatedRefusesAnotherNode() {
-        withSimulatorBeans().withPropertyValues(simulated("loans.getmore.node-name=ip-10-0-9-9"))
+        withSimulatorBeans("ip-10-0-9-9").withPropertyValues(simulated())
                 .run(context -> refused(context, "GETMORE_SIMULATOR_ALLOWED_NODE does not name this node"));
         withSimulatorBeans().withPropertyValues(simulated("loans.getmore.simulator.allowed-node="))
                 .run(context -> refused(context, "GETMORE_SIMULATOR_ALLOWED_NODE does not name this node"));
-        withSimulatorBeans().withPropertyValues(simulated("loans.getmore.node-name="))
+        withSimulatorBeans(null).withPropertyValues(simulated())
                 .run(context -> refused(context, "NODE_NAME is not set"));
-        profiles(withSimulatorBeans(), "api", "test")
-                .withPropertyValues(simulated("loans.getmore.node-name=", "loans.getmore.simulator.allowed-node="))
+        profiles(withSimulatorBeans(null), "api", "test")
+                .withPropertyValues(simulated("loans.getmore.simulator.allowed-node="))
                 .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    @DisplayName("SIMULATED: no property can name the node (a copied env file's LOANS_GETMORE_NODENAME, a"
+            + " SPRING_APPLICATION_JSON entry); only the pod's own NODE_NAME counts")
+    void simulatedNodeIsNeverReadFromAProperty() {
+        withSimulatorBeans(null).withPropertyValues(simulated("loans.getmore.node-name=" + NODE,
+                        "loans.getmore.nodename=" + NODE, "NODE_NAME=" + NODE))
+                .run(context -> refused(context, "NODE_NAME is not set"));
+        assertThat(GetMoreModeReport.NodeName.FROM_ENVIRONMENT.get()).isEqualTo(System.getenv("NODE_NAME"));
+    }
+
+    @Test
+    @DisplayName("SIMULATED refused on the wrong node: the seeder never writes, because the boot checks run first")
+    void seederNeverWritesBeforeTheBootChecks() {
+        SimRuleRepository rules = mock(SimRuleRepository.class);
+        // Registered before the configuration's beans, so without its dependency on the mode report the seeder would
+        // be created, and would seed, first.
+        withSimulatorBeans("ip-10-0-9-9")
+                .withBean(SimRuleRepository.class, () -> rules)
+                .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
+                .withBean(MarketTimeZone.class, () -> new MarketTimeZone("ZW", Clock.systemUTC()))
+                .withBean(SimulatedStoreSeeder.class)
+                .withPropertyValues(simulated())
+                .run(context -> refused(context, "GETMORE_SIMULATOR_ALLOWED_NODE does not name this node"));
+
+        verify(rules, never()).seedIfAbsent(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("SIMULATED on its node: the seeder seeds, after the boot checks")
+    void seederSeedsOnItsNode() {
+        SimRuleRepository rules = mock(SimRuleRepository.class);
+        withSimulatorBeans()
+                .withBean(SimRuleRepository.class, () -> rules)
+                .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
+                .withBean(MarketTimeZone.class, () -> new MarketTimeZone("ZW", Clock.systemUTC()))
+                .withBean(SimulatedStoreSeeder.class)
+                .withPropertyValues(simulated())
+                .run(context -> assertThat(context).hasNotFailed());
+
+        verify(rules).seedIfAbsent(anyLong(), any(), any());
     }
 
     @Test
     @DisplayName("SIMULATED without the simulator's beans (the mode not read as SIMULATED by them): refused")
     void simulatedWithoutItsBeansRefused() {
-        runner.withPropertyValues(simulated())
+        runner.withBean(GetMoreModeReport.NodeName.class, () -> () -> NODE).withPropertyValues(simulated())
                 .run(context -> refused(context, "the simulator's beans were not created"));
     }
 
@@ -322,7 +433,7 @@ class GetMoreStoreConfigTest {
     }
 
     @Test
-    @DisplayName("rule id, page size and code length are bounded")
+    @DisplayName("rule id, page size, code length and the clock skew are bounded")
     void numbersBounded() {
         runner.withPropertyValues("loans.getmore.page-size=301")
                 .run(context -> refused(context, "loans.getmore.page-size must be at most 300"));
@@ -330,6 +441,19 @@ class GetMoreStoreConfigTest {
                 .run(context -> refused(context, "loans.getmore.rule-id"));
         runner.withPropertyValues("loans.getmore.code-length=7")
                 .run(context -> refused(context, "loans.getmore.code-length must be at least 8"));
+        runner.withPropertyValues("loans.getmore.clock-skew=")   // a blank GETMORE_CLOCK_SKEW keeps the default
+                .run(context -> assertThat(context.getBean(GetMoreProperties.class).getClockSkew())
+                        .isEqualTo(Duration.ofMinutes(2)));
+        runner.withPropertyValues("loans.getmore.clock-skew=-PT1M")
+                .run(context -> refused(context, "loans.getmore.clock-skew must not be negative"));
+        runner.withPropertyValues("loans.getmore.clock-skew=PT0S")
+                .run(context -> assertThat(context).hasNotFailed());
+        GetMoreProperties nulled = new GetMoreProperties();
+        nulled.setClockSkew(null);
+        try (ValidatorFactory validation = Validation.buildDefaultValidatorFactory()) {
+            assertThat(validation.getValidator().validate(nulled)).extracting(ConstraintViolation::getMessage)
+                    .containsExactly("loans.getmore.clock-skew must be set (GETMORE_CLOCK_SKEW)");
+        }
     }
 
     private static double gauge(AssertableApplicationContext context, GetMoreMode mode) {
