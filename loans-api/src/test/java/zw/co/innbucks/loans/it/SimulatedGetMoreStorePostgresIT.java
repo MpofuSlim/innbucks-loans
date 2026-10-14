@@ -596,6 +596,28 @@ class SimulatedGetMoreStorePostgresIT {
     }
 
     @Test
+    @DisplayName("an amount past the store's NUMERIC(12,4) columns (a basket of 100 000 000.00) is refused before"
+            + " anything is written, never a numeric overflow")
+    void oversizedAmountsRefusedNotOverflowed() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+
+        assertThatThrownBy(() -> till.sell(coupon.code(), BigDecimal.TEN, null, new BigDecimal("100000000.00"),
+                "GM-AVD", null, null, true)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("basketTotal must be at most 99999999.99");
+        assertThatThrownBy(() -> sell(coupon, "100000000")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("amount must be at most 99999999.99");
+        assertThat(ordersOf(coupon)).isEmpty();
+        assertThat(till.lookup(coupon.code()).balance()).isEqualByComparingTo("150.00");
+
+        SimSale sale = till.sell(coupon.code(), BigDecimal.TEN, null, new BigDecimal("99999999.99"), "GM-AVD", null,
+                null, true);
+        assertThat(sale.order()).containsEntry("subtotal", new BigDecimal("99999999.9900"));
+        assertThatThrownBy(() -> till.refund(sale.orderNumber(), new BigDecimal("100000000"), null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("amount must be at most 99999999.99");
+        assertThat(store.creditMemos(new GetMoreCreditMemoQuery(List.of(sale.orderId()), 1, 50)).items()).isEmpty();
+    }
+
+    @Test
     @DisplayName("the store's own view: unset discount fields absent, codes masked, allowance, balance, assumptions")
     void lookupOmitsUnsetDiscountFields() {
         GetMoreCoupon coupon = boundCoupon("150.00");
@@ -604,7 +626,9 @@ class SimulatedGetMoreStorePostgresIT {
         SimLookup held = till.lookup(coupon.code().toLowerCase(Locale.ROOT));
 
         assertThat(held.coupon()).containsEntry("code", GetMoreCodes.maskedCode(coupon.code()))
-                .doesNotContainKey("expiration_date");
+                .doesNotContainKey("expiration_date")
+                .as("a generated coupon: Magento stores is_primary NULL and renders it null")
+                .containsEntry("is_primary", null);
         assertThat(held.rule()).containsEntry("rule_id", RULE).containsEntry("simple_action", "cart_fixed");
         assertThat(held.orders()).containsEntry("total_count", 1);
         @SuppressWarnings("unchecked")
@@ -619,6 +643,14 @@ class SimulatedGetMoreStorePostgresIT {
         assertThat(held.assumptions()).containsExactly("A1 per-coupon allowance", "A2 spending in parts",
                 "A3 refund restores balance", "A4 coupon expiry enforced");
         assertThat(held.toString()).doesNotContain(coupon.code());
+
+        properties.getSimulator().setPartialSpending(false);
+        properties.getSimulator().setEnforceCouponExpiry(false);
+        assertThat(till.lookup(coupon.code()).assumptions()).as("the rules the till is applying now")
+                .containsExactly("A1 per-coupon allowance", "A2 one purchase of the whole balance",
+                        "A3 refund restores balance", "A4 coupon expiry not enforced");
+        properties.getSimulator().setPartialSpending(true);
+        properties.getSimulator().setEnforceCouponExpiry(true);
 
         String orderNumber = (String) order.get("increment_id");
         till.invoice(orderNumber);

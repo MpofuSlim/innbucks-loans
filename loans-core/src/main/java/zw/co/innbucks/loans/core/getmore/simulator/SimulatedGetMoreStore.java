@@ -18,6 +18,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMorePage;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.getmore.GetMoreSalesRule;
 import zw.co.innbucks.loans.core.getmore.GetMoreStore;
 import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
@@ -40,17 +41,26 @@ import java.util.function.Supplier;
  * masked.
  *
  * <p><b>Not Magento</b>, and said so at every boot and in every test action's answer
- * ({@link #ASSUMPTIONS}): A1 each coupon is worth its own allowance; A2 it can be spent in parts; A3 a refund restores
- * its balance; A4 its {@code expiration_date} is enforced at the till. Unlike the live client, a prefix search is not
- * re-filtered here: it answers what Magento's SQL {@code LIKE} matches, {@code _} as a wildcard, and the callers above
- * the port re-filter (as they must for Magento too).
+ * ({@link #assumptions}): A1 each coupon is worth its own allowance; A2 it can be spent in parts (or, with spending in
+ * parts off, only in one purchase of its whole balance); A3 a refund restores its balance; A4 its
+ * {@code expiration_date} is enforced at the till (unless enforcement is off). Unlike the live client, a prefix search
+ * is not re-filtered here: it answers what Magento's SQL {@code LIKE} matches, {@code _} as a wildcard, and the callers
+ * above the port re-filter (as they must for Magento too).
  */
 @Slf4j
 public final class SimulatedGetMoreStore implements GetMoreStore {
 
-    /** The simulator's assumptions, in the words every test action answers with. */
-    public static final List<String> ASSUMPTIONS = List.of("A1 per-coupon allowance", "A2 spending in parts",
-            "A3 refund restores balance", "A4 coupon expiry enforced");
+    /**
+     * The simulator's assumptions as this host runs them, in the words every test action answers with: A2 and A4
+     * follow {@code GETMORE_SIMULATOR_PARTIAL_SPENDING} and {@code GETMORE_SIMULATOR_ENFORCE_COUPON_EXPIRY}, read when
+     * asked, so a tester is never told a rule the till is not applying.
+     */
+    public static List<String> assumptions(GetMoreProperties.Simulator simulator) {
+        return List.of("A1 per-coupon allowance",
+                simulator.isPartialSpending() ? "A2 spending in parts" : "A2 one purchase of the whole balance",
+                "A3 refund restores balance",
+                simulator.isEnforceCouponExpiry() ? "A4 coupon expiry enforced" : "A4 coupon expiry not enforced");
+    }
 
     private final SimulatedStoreBackend backend;
     private final SimulatorFaults faults;

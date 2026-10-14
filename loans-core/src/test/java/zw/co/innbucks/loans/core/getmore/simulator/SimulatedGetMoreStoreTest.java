@@ -2,6 +2,7 @@ package zw.co.innbucks.loans.core.getmore.simulator;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.transaction.CannotCreateTransactionException;
@@ -19,6 +20,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreException.Operation;
 import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMorePage;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.GetMoreRejectedException;
 import zw.co.innbucks.loans.core.getmore.GetMoreSalesRule;
 import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
 import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException.Reason;
@@ -36,6 +38,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -145,6 +148,72 @@ class SimulatedGetMoreStoreTest {
                         e -> assertThat(e.reason()).isEqualTo(Reason.NOT_REACHED));
         assertThat(guard.counted).isEqualTo(1);
         assertThat(guard.givenBack).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the allowance bind, which reaches the backend directly: a transaction that never began is"
+            + " NOT_REACHED and any other failure outcome unknown, so find-or-create ends in the port's kinds, as live")
+    void bindFailuresAreClassifiedLikeTheStore() {
+        GetMoreCoupon onPrefix = new GetMoreCoupon(1201, 43, PREFIX + "7KQ2M9XWD4RT8B1C", 0, 0, 0, null, false,
+                LocalDateTime.now(ZoneOffset.UTC), 1);
+        when(backend.salesRule(43)).thenReturn(rule());
+        when(backend.searchCoupons(any())).thenReturn(new GetMorePage<>(List.of(onPrefix), 1, 1, 50));
+        doThrow(new CannotCreateTransactionException("Could not open JPA EntityManager for transaction"))
+                .doThrow(new QueryTimeoutException("timeout"))
+                .when(backend).bindAllowance(anyLong(), any(), any());
+        GetMoreCoupons coupons = new GetMoreCoupons(store, binding(), new GetMoreProperties(),
+                new MarketTimeZone("ZW", Clock.systemUTC()));
+        CouponRequest request = request(new CountingGuard());
+
+        assertThatThrownBy(() -> coupons.findOrCreate(request, Deadline.none()))
+                .isInstanceOfSatisfying(GetMoreUnavailableException.class, e -> {
+                    assertThat(e.reason()).isEqualTo(Reason.NOT_REACHED);
+                    assertThat(e.operation()).isEqualTo(Operation.UPDATE_COUPON);
+                    assertThat(e).hasMessageNotContaining("JPA");
+                });
+        assertThatThrownBy(() -> coupons.findOrCreate(request, Deadline.none()))
+                .isInstanceOf(GetMoreOutcomeUnknownException.class)
+                .hasMessageContaining("QueryTimeoutException");
+    }
+
+    @Test
+    @DisplayName("the allowance precheck refuses a face value the till cannot sell or the store cannot hold (a fraction"
+            + " of a cent, past NUMERIC(12,4)) before anything is minted; the bind passes a refusal through unchanged")
+    void precheckRefusesWhatTheStoreCannotHold() {
+        SimulatedAmountBinding binding = binding();
+
+        LocalDate lastDay = LocalDate.now(ZoneOffset.UTC).plusDays(30);
+        for (String face : List.of("150.005", "0.001", "100000000.00")) {
+            assertThatThrownBy(() -> binding.precheck(rule(), new BigDecimal(face), "USD", lastDay))
+                    .as(face).isInstanceOfSatisfying(GetMoreRejectedException.class,
+                            e -> assertThat(e.reason()).isEqualTo(GetMoreRejectedException.Reason.VALUE_UNSUPPORTED));
+        }
+        binding.precheck(rule(), new BigDecimal("99999999.99"), "USD", lastDay);
+        binding.precheck(rule(), new BigDecimal("150.0000"), "USD", lastDay);
+
+        GetMoreRejectedException mismatch = new GetMoreRejectedException(null,
+                GetMoreRejectedException.Reason.VALUE_UNSUPPORTED, "already worth USD 100");
+        doThrow(mismatch).when(backend).bindAllowance(anyLong(), any(), any());
+        GetMoreCoupon coupon = new GetMoreCoupon(1201, 43, PREFIX + "7KQ2M9XWD4RT8B1C", 0, 0, 0, null, false, null,
+                1);
+        assertThatThrownBy(() -> binding.bind(coupon, new BigDecimal("150.00"), "USD")).isSameAs(mismatch);
+    }
+
+    private SimulatedAmountBinding binding() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SimulatedStoreBackend> provider = mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(backend);
+        return new SimulatedAmountBinding(provider, new GetMoreProperties().getSimulator());
+    }
+
+    private static GetMoreSalesRule rule() {
+        return new GetMoreSalesRule(43, "InnBucks Staff Grocery (SIMULATED)", true, null, null, "cart_fixed",
+                BigDecimal.ZERO, "AUTO", true, 0, 0, true, false);
+    }
+
+    private static CouponRequest request(GenerateGuard guard) {
+        return new CouponRequest(PREFIX, 43, new BigDecimal("150.00"), "USD", 16,
+                LocalDate.now(ZoneOffset.UTC).plusDays(30), LocalDateTime.now(ZoneOffset.UTC).minusMinutes(4), guard);
     }
 
     private static final class CountingGuard implements GenerateGuard {

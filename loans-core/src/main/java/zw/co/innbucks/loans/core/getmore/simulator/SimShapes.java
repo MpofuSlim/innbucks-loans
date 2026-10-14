@@ -23,7 +23,8 @@ import java.util.Set;
  * live client maps Magento's JSON: absent amounts already zero), and in Magento's own JSON shape for the staging
  * test actions to show, snake_case, {@code yyyy-MM-dd HH:mm:ss} UTC, and with Magento's omissions: no
  * {@code discount_invoiced} while nothing is invoiced, no {@code discount_refunded} while nothing is refunded, no
- * {@code discount_canceled} while it is zero, no null field. Every code in a shape is masked ({@code ****8B1C}).
+ * {@code discount_canceled} while it is zero, no null field but {@code is_primary} (Magento renders it null on a
+ * generated coupon). Every code in a shape is masked ({@code ****8B1C}).
  */
 final class SimShapes {
 
@@ -81,7 +82,10 @@ final class SimShapes {
         putIfPresent(out, "usage_per_customer", c.getUsagePerCustomer());
         out.put("times_used", c.getTimesUsed());
         putIfPresent(out, "expiration_date", time(c.getExpirationDate()));
-        out.put("is_primary", c.isPrimary());
+        // Magento stores is_primary NULL on every coupon but the rule's primary one (ResourceModel/Coupon::_beforeSave)
+        // and declares getIsPrimary() "@return bool", not nullable, so REST keeps the key and renders it null: a
+        // generated coupon reads "is_primary": null, never false and never absent.
+        out.put("is_primary", c.isPrimary() ? Boolean.TRUE : null);
         out.put("created_at", time(c.getCreatedAt()));
         out.put("type", c.getType());
         return frozen(out);

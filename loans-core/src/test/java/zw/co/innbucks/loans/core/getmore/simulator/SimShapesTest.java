@@ -69,7 +69,8 @@ class SimShapesTest {
     }
 
     @Test
-    @DisplayName("Magento's coupon shape: no expiration_date or usage limits while unset; the code masked")
+    @DisplayName("Magento's coupon shape: no expiration_date or usage limits while unset; is_primary null on a"
+            + " generated coupon (stored NULL, declared non-nullable, so kept as null); the code masked")
     void couponShape() {
         SimCoupon coupon = SimCoupon.builder().couponId(1207L).ruleId(43).code(CODE).timesUsed(2).type(1)
                 .createdAt(AT).build();
@@ -77,7 +78,9 @@ class SimShapesTest {
         Map<String, Object> shape = SimShapes.coupon(coupon);
 
         assertThat(shape).containsEntry("code", "****8B1C").containsEntry("times_used", 2)
-                .containsEntry("is_primary", false).doesNotContainKeys("expiration_date", "usage_limit");
+                .containsEntry("is_primary", null).doesNotContainKeys("expiration_date", "usage_limit");
+        coupon.setPrimary(true);
+        assertThat(SimShapes.coupon(coupon)).containsEntry("is_primary", true);
     }
 
     @Test

@@ -3,6 +3,7 @@ package zw.co.innbucks.loans.core.getmore.simulator;
 import org.springframework.beans.factory.ObjectProvider;
 import zw.co.innbucks.loans.core.getmore.GetMoreAmountBinding;
 import zw.co.innbucks.loans.core.getmore.GetMoreCoupon;
+import zw.co.innbucks.loans.core.getmore.GetMoreException;
 import zw.co.innbucks.loans.core.getmore.GetMoreException.Operation;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.getmore.GetMoreRejectedException;
@@ -15,8 +16,9 @@ import java.time.LocalDate;
 /**
  * SIMULATED's amount model ({@value #NAME}), assumption A1: each simulated coupon carries its own allowance, bound
  * once, after the coupon is found, to the voucher's face value; equal again is nothing, another value is refused.
- * {@link #precheck} asks only what the simulated store can honour: an active, auto-generating rule, and the voucher in
- * the simulated store's currency (its till refuses any other, so a coupon in another would never be spendable).
+ * {@link #precheck} asks only what the simulated store can honour: an active, auto-generating rule, a value in whole
+ * cents up to {@link SimulatedTill#MAX_AMOUNT} (what its till sells in and its columns hold), and the voucher in the
+ * simulated store's currency (its till refuses any other, so a coupon in another would never be spendable).
  * Spending in parts follows {@code GETMORE_SIMULATOR_PARTIAL_SPENDING} (assumption A2). Plain class, built only by the
  * configuration's mode switch.
  */
@@ -45,15 +47,32 @@ public final class SimulatedAmountBinding implements GetMoreAmountBinding {
         if (faceValue == null || faceValue.signum() <= 0) {
             throw refused(Reason.VALUE_UNSUPPORTED, "a simulated coupon is worth more than 0, not " + faceValue);
         }
+        if (faceValue.stripTrailingZeros().scale() > 2 || faceValue.compareTo(SimulatedTill.MAX_AMOUNT) > 0) {
+            // The till sells in cents, and the allowance column holds NUMERIC(12,4): anything else is refused here,
+            // before a coupon is minted, never failed at the bind after it.
+            throw refused(Reason.VALUE_UNSUPPORTED, "a simulated coupon is worth whole cents up to "
+                    + SimulatedTill.MAX_AMOUNT.toPlainString() + ", not " + faceValue.toPlainString());
+        }
         if (currency == null || !currency.equalsIgnoreCase(simulator.getCurrency())) {
             throw refused(Reason.CURRENCY_UNSUPPORTED, "the voucher is in " + currency
                     + "; the simulated store sells in " + simulator.getCurrency());
         }
     }
 
+    /**
+     * Binds the allowance through the backend directly (no store call behind it, unlike live), so its failures are
+     * classified here exactly as the store's facade classifies its own ({@link SimulatedGetMoreStore#classify}): the
+     * code above the port then runs the same path as live, whatever the simulator's database did.
+     */
     @Override
     public void bind(GetMoreCoupon coupon, BigDecimal faceValue, String currency) {
-        backend.getObject().bindAllowance(coupon.couponId(), faceValue, currency);
+        try {
+            backend.getObject().bindAllowance(coupon.couponId(), faceValue, currency);
+        } catch (GetMoreException | IllegalArgumentException alreadyClassified) {
+            throw alreadyClassified;
+        } catch (RuntimeException failure) {
+            throw SimulatedGetMoreStore.classify(Operation.UPDATE_COUPON, failure);
+        }
     }
 
     @Override

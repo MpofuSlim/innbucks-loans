@@ -36,7 +36,7 @@ import java.util.UUID;
  * the PORT's PUT with no transaction open, so the store's write path is exercised as in production. Every refusal is a
  * {@link SimulatorRefusedException}; a full code never reaches a log or a message.
  *
- * <p>Assumptions, not Magento ({@link SimulatedGetMoreStore#ASSUMPTIONS}): a coupon's balance is its allowance less
+ * <p>Assumptions, not Magento ({@link SimulatedGetMoreStore#assumptions}): a coupon's balance is its allowance less
  * what its orders took plus what refunds gave back ({@link SimulatedBalance}); a held (not yet invoiced) sale counts
  * against it, as at a real till; with spending in parts on, any amount from 0.01 to the balance (in cents), any number
  * of times, and with it off exactly the balance; the coupon's {@code expiration_date} is enforced when enforcement is
@@ -52,6 +52,8 @@ public class SimulatedTill {
     static final int MAX_OUTLET_NAME = 120;
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
     private static final BigDecimal MIN_AMOUNT = new BigDecimal("0.01");
+    /** The most the store's NUMERIC(12,4) amount columns hold in cents: refused above, never a database overflow. */
+    static final BigDecimal MAX_AMOUNT = new BigDecimal("99999999.99");
 
     private final SimCouponRepository coupons;
     private final SimRuleRepository rules;
@@ -283,7 +285,7 @@ public class SimulatedTill {
                 SimShapes.searchResult(placed.stream().map(SimShapes::order).toList()),
                 SimShapes.searchResult(memos.stream().map(SimShapes::creditMemo).toList()),
                 coupon.getAllowance(), coupon.getAllowanceCurrency(), balance, coupon.isDeleted(),
-                SimulatedGetMoreStore.ASSUMPTIONS);
+                SimulatedGetMoreStore.assumptions(simulator()));
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------
@@ -348,7 +350,8 @@ public class SimulatedTill {
 
     /**
      * An amount of at least 0.01 with at most 2 decimals (assumption A2: a sale is any amount from 0.01, in the cents
-     * loans' voucher ledger records), held at the store's 4-decimal scale.
+     * loans' voucher ledger records) and at most {@link #MAX_AMOUNT}, held at the store's 4-decimal scale. Checked
+     * before anything is written, so an oversized basket is a refusal, never a database overflow.
      */
     private static BigDecimal money(BigDecimal amount, String name) {
         if (amount == null || amount.signum() <= 0) {
@@ -356,6 +359,9 @@ public class SimulatedTill {
         }
         if (amount.compareTo(MIN_AMOUNT) < 0 || amount.stripTrailingZeros().scale() > 2) {
             throw new IllegalArgumentException(name + " must be at least 0.01 with at most 2 decimals");
+        }
+        if (amount.compareTo(MAX_AMOUNT) > 0) {
+            throw new IllegalArgumentException(name + " must be at most " + MAX_AMOUNT.toPlainString());
         }
         return amount.setScale(4, RoundingMode.UNNECESSARY);
     }
