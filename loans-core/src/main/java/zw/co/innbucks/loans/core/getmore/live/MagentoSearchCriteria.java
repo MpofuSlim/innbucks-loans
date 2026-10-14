@@ -1,5 +1,7 @@
 package zw.co.innbucks.loans.core.getmore.live;
 
+import zw.co.innbucks.loans.core.getmore.GetMoreCodes;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +42,13 @@ public final class MagentoSearchCriteria {
 
     /** One Magento filter: {@code field condition_type value}. */
     public record Filter(String field, String value, String conditionType) {
+
+        /** An {@code eq} value can be a full coupon code, so it is shown only as {@code ****8B1C}. */
+        @Override
+        public String toString() {
+            return "Filter[field=" + field + ", conditionType=" + conditionType + ", value="
+                    + ("eq".equals(conditionType) ? GetMoreCodes.maskedCode(value) : value) + "]";
+        }
     }
 
     /** The decoded pairs, in the order sent, and the encoded query string carrying exactly them. */

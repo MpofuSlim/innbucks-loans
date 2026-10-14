@@ -65,6 +65,17 @@ public record MagentoErrorBody(String message, JsonNode parameters, List<Magento
     }
 
     /**
+     * Whether this is Magento's own missing-entity answer: {@code NoSuchEntityException}'s template, {@code "No such
+     * entity."} (bare, as {@code CouponRepository::getById} and {@code RuleRepository::getById} throw it) or
+     * {@code "No such entity with %fieldName = %fieldValue"} ({@code singleField}/{@code doubleField}). A 404 with any
+     * other message (Magento's own {@code "Request does not match any route."}, a JSON-speaking proxy) checked
+     * nothing, so it is never read as the entity being gone.
+     */
+    boolean noSuchEntity() {
+        return message != null && (message.equals("No such entity.") || message.startsWith("No such entity with"));
+    }
+
+    /**
      * The message with its parameters substituted, then any nested errors, every code masked
      * ({@link GetMoreCodes#maskAll}) and the whole cut to {@value #MAX_RENDERED} characters.
      */

@@ -13,7 +13,9 @@ import static zw.co.innbucks.loans.core.getmore.live.dto.MagentoShapeException.r
 
 /**
  * Magento's {@code CouponInterface} (coupons/search items, {@code GET} and {@code PUT /V1/coupons/{id}}). An absent key
- * is null here: Magento omits a null field ({@code expiration_date}, usually).
+ * is null here: Magento omits a null field ({@code expiration_date}, usually). {@code is_primary} is the exception,
+ * kept as {@code null} on a generated coupon (its getter is declared non-nullable); null and false both read as not
+ * primary.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record MagentoCouponDto(@JsonProperty("coupon_id") Long couponId,

@@ -36,6 +36,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.live.MagentoSearchCriteria;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDeletionDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoOrderDto;
@@ -365,6 +366,10 @@ class SensitiveToStringTest {
             assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random);
         }
         assertThat(holders.get(0).toString()).contains("****8B1C", "couponId=1207");
+        MagentoSearchCriteria.Filter byCode = new MagentoSearchCriteria.Filter("code", code, "eq");
+        assertThat(byCode.toString()).doesNotContain(random).contains("value=****8B1C", "field=code", "eq");
+        assertThat(new MagentoSearchCriteria.Filter("code", "INN-K7Q2M3XW-%", "like").toString())
+                .as("a prefix is not a code: shown as it is").contains("value=INN-K7Q2M3XW-%");
 
         GetMoreException unknown = new GetMoreOutcomeUnknownException(GetMoreException.Operation.GENERATE,
                 List.of(code), null);

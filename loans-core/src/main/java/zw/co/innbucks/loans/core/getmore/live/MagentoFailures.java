@@ -25,11 +25,13 @@ import java.util.Set;
  *   <tr><td>401, any body (signature, nonce, token, ACL)</td><td>AUTH</td><td>AUTH</td></tr>
  *   <tr><td>429</td><td>THROTTLED</td><td>THROTTLED</td></tr>
  *   <tr><td>400 with Magento's envelope</td><td>Rejected INVALID</td><td>Rejected INVALID</td></tr>
- *   <tr><td>404 with Magento's envelope</td><td>NotFound (BLOCKED on a search: a list never 404s, a route
- *       does)</td><td>Rejected NOT_FOUND</td></tr>
+ *   <tr><td>404 "No such entity." / "No such entity with ..." (Magento's {@code NoSuchEntityException})</td>
+ *       <td>NotFound (BLOCKED on a search: a list never 404s, a route does)</td><td>Rejected NOT_FOUND</td></tr>
  *   <tr><td>400 "Internal Error... Report ID", a 5xx</td><td>UPSTREAM_ERROR (BLOCKED when the 5xx is not
  *       Magento's)</td><td>OutcomeUnknown</td></tr>
- *   <tr><td>a 3xx (never followed), another 4xx, a 4xx that is not Magento's</td><td>BLOCKED</td><td>BLOCKED</td></tr>
+ *   <tr><td>a 3xx (never followed), another 4xx, a 4xx that is not Magento's, a 404 with any other message
+ *       (Magento's "Request does not match any route.", a JSON-speaking proxy: nothing was looked up)</td>
+ *       <td>BLOCKED</td><td>BLOCKED</td></tr>
  *   <tr><td>2xx of the wrong shape</td><td>BAD_RESPONSE</td><td>OutcomeUnknown</td></tr>
  *   <tr><td>read timeout, reset after the send</td><td>READ_FAILED</td><td>OutcomeUnknown</td></tr>
  * </table>
@@ -84,7 +86,7 @@ final class MagentoFailures {
         if (status == 400 && envelope.isPresent()) {
             return new GetMoreRejectedException(op, status, GetMoreRejectedException.Reason.INVALID, rendered);
         }
-        if (status == 404 && envelope.isPresent()) {
+        if (status == 404 && envelope.isPresent() && envelope.get().noSuchEntity()) {
             if (op.isWrite()) {
                 return new GetMoreRejectedException(op, status, GetMoreRejectedException.Reason.NOT_FOUND, rendered);
             }

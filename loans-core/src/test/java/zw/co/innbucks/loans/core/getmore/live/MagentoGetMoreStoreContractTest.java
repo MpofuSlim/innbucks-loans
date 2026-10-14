@@ -82,7 +82,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ul>
  *   <li>error envelope and status mapping: {@code lib/internal/Magento/Framework/Webapi/Rest/Response.php:83-117},
  *       {@code Webapi/ErrorProcessor.php:119-240}; the 401 ACL message
- *       {@code Webapi/Controller/Rest/RequestValidator.php:104-115};</li>
+ *       {@code Webapi/Controller/Rest/RequestValidator.php:104-115}; a missing entity's 404 is
+ *       {@code NoSuchEntityException}'s template ({@code "No such entity."}, or {@code "No such entity with
+ *       %fieldName = %fieldValue"}), a missing route's 404 {@code Webapi/Controller/Rest/Router.php:55-59};</li>
  *   <li>generate: {@code SalesRule/Model/Service/CouponManagementService.php:101-165} (codes only, an unknown rule
  *       wrapped as a 400); deleteByCodes {@code :188-228} and
  *       {@code SalesRule/Api/Data/CouponMassDeleteResultInterface.php:19-44};</li>
@@ -92,7 +94,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       {@code Order/Invoice.php:659-660}, {@code Creditmemo/RefundOperation.php:98-99}, {@code Order.php:1387-1391};
  *       {@code store_name} per {@code ResourceModel/Order.php:140-150}); credit memos:
  *       {@code Sales/Api/Data/CreditmemoInterface.php};</li>
- *   <li>a null field omitted from REST: {@code Framework/Reflection/DataObjectProcessor.php:88-90};</li>
+ *   <li>a null field omitted from REST: {@code Framework/Reflection/DataObjectProcessor.php:88-90}; except where the
+ *       getter is declared non-nullable: {@code is_primary} ({@code CouponInterface::getIsPrimary}, {@code @return
+ *       bool}) is stored NULL on every coupon but the rule's primary
+ *       ({@code ResourceModel/Coupon.php::_beforeSave}), so a generated coupon renders {@code "is_primary": null};</li>
  *   <li>an empty search under the {@code fields} projection, {@code {"items":null,"total_count":0}}
  *       ({@code coupon-search-empty.json}, for orders and credit memos too): the output of
  *       {@code Framework/Webapi/Rest/Response/FieldsFilter.php} {@code applyFilter}, whose result starts null and is
@@ -113,6 +118,8 @@ class MagentoGetMoreStoreContractTest {
     private static final String CODE = "INN-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
     private static final String RANDOM_PART = "7KQ2M9XWD4RT8B1C";
     private static final String PREFIX = "INN-K7Q2M3XW-";
+    /** Magento's own 404 when no route matches ({@code Webapi/Controller/Rest/Router.php:55-59}). */
+    private static final String ROUTE_MISS = "{\"message\":\"Request does not match any route.\"}";
     private static final String EXAMPLE_1_HEADER = "OAuth oauth_consumer_key=\"ck0123456789abcdefghijklmnopqrst\", "
             + "oauth_nonce=\"n0n4e0123456789abcdefghijklmnopq\", "
             + "oauth_signature=\"j3EDqMXSXCI0%2BGKWGIyLd140drbngWcEqeNbkPA02Mw%3D\", "
@@ -453,6 +460,32 @@ class MagentoGetMoreStoreContractTest {
     }
 
     @Test
+    @DisplayName("search by code: code eq '<full code>' signed as sent, coupon_id ASC, fields; a case-different echo of"
+            + " the code is kept, another code dropped; the code never logged")
+    void searchByCodeEq(CapturedOutput output) {
+        stub(get(urlPathEqualTo(BASE + "/coupons/search")).willReturn(json(200, "{\"items\":["
+                + "{\"coupon_id\":1207,\"rule_id\":43,\"code\":\"" + CODE.toLowerCase() + "\",\"times_used\":0},"
+                + "{\"coupon_id\":1210,\"rule_id\":43,\"code\":\"INN-K7Q2M3XW-AAAABBBBCCCCDDDD\",\"times_used\":0}],"
+                + "\"total_count\":2}")));
+
+        GetMorePage<GetMoreCoupon> page = store.searchCoupons(GetMoreCouponQuery.byCode(CODE, 1, 50));
+
+        assertThat(page.items()).extracting(GetMoreCoupon::couponId).containsExactly(1207L);
+        LoggedRequest request = onlyRequest("GET");
+        assertThat(request.getUrl()).doesNotContain("[", "+", " ");
+        wireMock.verify(getRequestedFor(urlPathEqualTo(BASE + "/coupons/search"))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][field]", equalTo("code"))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][value]", equalTo(CODE))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][condition_type]", equalTo("eq"))
+                .withQueryParam("searchCriteria[sortOrders][0][field]", equalTo("coupon_id"))
+                .withQueryParam("searchCriteria[sortOrders][0][direction]", equalTo("ASC"))
+                .withQueryParam("searchCriteria[pageSize]", equalTo("50"))
+                .withQueryParam("searchCriteria[currentPage]", equalTo("1"))
+                .withQueryParam("fields", equalTo(MagentoSearchCriteria.COUPON_FIELDS)));
+        assertThat(output.getOut()).doesNotContain(CODE, RANDOM_PART, RANDOM_PART.toLowerCase());
+    }
+
+    @Test
     @DisplayName("search, two pages: the first is not last, the second (reaching total_count) is")
     void searchTwoPages() {
         stub(get(urlPathEqualTo(BASE + "/coupons/search"))
@@ -482,7 +515,7 @@ class MagentoGetMoreStoreContractTest {
         assertThat(unexpiring.code()).isEqualTo(CODE);
         assertThat(unexpiring.expirationDateUtc()).isNull();
         assertThat(unexpiring.timesUsed()).isZero();
-        assertThat(unexpiring.primary()).isFalse();
+        assertThat(unexpiring.primary()).as("is_primary: null, as Magento renders a generated coupon").isFalse();
         assertThat(unexpiring.createdAtUtc()).isEqualTo(LocalDateTime.of(2026, 10, 14, 8, 30, 5));
         assertThat(coupons.get(1).expirationDateUtc()).isEqualTo(LocalDateTime.of(2026, 11, 13, 21, 59, 59));
         assertThat(coupons.get(1).timesUsed()).isEqualTo(2);
@@ -631,6 +664,20 @@ class MagentoGetMoreStoreContractTest {
         assertThat(counted("get_coupon", "not_found")).isEqualTo(1.0);
     }
 
+    @Test
+    @DisplayName("coupon by id, a 404 that is not 'No such entity' (no route matched): nothing was looked up,"
+            + " Unavailable BLOCKED, never NotFound")
+    void coupon404RouteMissBlocked() {
+        stub(get(urlEqualTo(BASE + "/coupons/1207")).willReturn(json(404, ROUTE_MISS)));
+
+        Throwable thrown = catchFailure(() -> store.coupon(1207));
+
+        assertUnavailable(thrown, Reason.BLOCKED);
+        assertThat(thrown).hasMessageContaining("Request does not match any route.");
+        assertThat(counted("get_coupon", "blocked")).isEqualTo(1.0);
+        assertThat(counted("get_coupon", "not_found")).isZero();
+    }
+
     // ---- PUT coupons/{id} --------------------------------------------------------------------------------------
 
     @Test
@@ -671,6 +718,29 @@ class MagentoGetMoreStoreContractTest {
         assertThat(catchFailure(() -> store.updateCoupon(1207, new GetMoreCouponUpdate(43, CODE, 1,
                 LocalDateTime.of(2026, 11, 13, 21, 59, 59))))).isInstanceOf(GetMoreOutcomeUnknownException.class)
                 .satisfies(noCode());
+        assertSentExactlyOnce(putRequestedFor(urlEqualTo(BASE + "/coupons/1207")));
+    }
+
+    @Test
+    @DisplayName("update, 404 'No such entity.' (the coupon is gone): Rejected NOT_FOUND")
+    void update404NoSuchEntityRejected() {
+        stub(put(urlEqualTo(BASE + "/coupons/1207")).willReturn(json(404, fixture("error-404.json"))));
+
+        assertThat(catchFailure(() -> store.updateCoupon(1207, new GetMoreCouponUpdate(43, CODE, 1, null))))
+                .isInstanceOfSatisfying(GetMoreRejectedException.class,
+                        e -> assertThat(e.reason()).isEqualTo(GetMoreRejectedException.Reason.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("update, a 404 that is not 'No such entity' (no route matched): nothing was processed, Unavailable"
+            + " BLOCKED, never Rejected NOT_FOUND")
+    void update404RouteMissBlocked() {
+        stub(put(urlEqualTo(BASE + "/coupons/1207")).willReturn(json(404, ROUTE_MISS)));
+
+        Throwable thrown = catchFailure(() -> store.updateCoupon(1207, new GetMoreCouponUpdate(43, CODE, 1, null)));
+
+        assertUnavailable(thrown, Reason.BLOCKED);
+        assertThat(thrown).satisfies(noCode());
         assertSentExactlyOnce(putRequestedFor(urlEqualTo(BASE + "/coupons/1207")));
     }
 
@@ -767,6 +837,27 @@ class MagentoGetMoreStoreContractTest {
         assertThat(catchFailure(() -> store.salesRule(44))).isInstanceOf(GetMoreNotFoundException.class);
     }
 
+    @Test
+    @DisplayName("sales rule, 404 'No such entity with rule_id = 44' (singleField's template): NotFound")
+    void salesRule404SingleFieldNotFound() {
+        stub(get(urlEqualTo(BASE + "/salesRules/44")).willReturn(json(404,
+                "{\"message\":\"No such entity with %fieldName = %fieldValue\",\"parameters\":{\"fieldName\":"
+                        + "\"rule_id\",\"fieldValue\":44}}")));
+
+        assertThat(catchFailure(() -> store.salesRule(44))).isInstanceOfSatisfying(GetMoreNotFoundException.class,
+                e -> assertThat(e.renderedMessage()).isEqualTo("No such entity with rule_id = 44"));
+    }
+
+    @Test
+    @DisplayName("sales rule, a 404 that is not 'No such entity' (no route matched): an outage, Unavailable BLOCKED,"
+            + " never 'the rule does not exist'")
+    void salesRule404RouteMissBlocked() {
+        stub(get(urlEqualTo(BASE + "/salesRules/43")).willReturn(json(404, ROUTE_MISS)));
+
+        assertUnavailable(catchFailure(() -> store.salesRule(43)), Reason.BLOCKED);
+        assertThat(counted("sales_rule", "blocked")).isEqualTo(1.0);
+    }
+
     // ---- orders ------------------------------------------------------------------------------------------------
 
     private void stubOrders() {
@@ -800,6 +891,38 @@ class MagentoGetMoreStoreContractTest {
                 .withQueryParam("searchCriteria[sortOrders][0][direction]", equalTo("ASC"))
                 .withQueryParam("searchCriteria[pageSize]", equalTo("2"))
                 .withQueryParam("fields", equalTo(MagentoSearchCriteria.ORDER_FIELDS)));
+    }
+
+    @Test
+    @DisplayName("orders by code: coupon_code eq '<full code>' signed as sent, entity_id ASC, fields; a case-different"
+            + " echo of the code is kept (Magento's quote records the code as typed), another code dropped")
+    void ordersByCouponCodeEq(CapturedOutput output) {
+        stub(get(urlPathEqualTo(BASE + "/orders")).willReturn(json(200, "{\"items\":["
+                + "{\"entity_id\":5012,\"increment_id\":\"000000512\",\"coupon_code\":\"" + CODE.toLowerCase()
+                + "\",\"applied_rule_ids\":\"43\",\"state\":\"complete\",\"order_currency_code\":\"USD\","
+                + "\"subtotal\":52.25,\"grand_total\":6.75,\"discount_amount\":-45.5000,"
+                + "\"discount_invoiced\":-45.5000,\"store_id\":1,\"created_at\":\"2026-10-14 08:30:00\"},"
+                + "{\"entity_id\":5099,\"increment_id\":\"000000599\",\"coupon_code\":"
+                + "\"INN-K7Q2M3XW-AAAABBBBCCCCDDDD\",\"applied_rule_ids\":\"43\",\"state\":\"complete\","
+                + "\"order_currency_code\":\"USD\",\"subtotal\":10,\"grand_total\":0,\"discount_amount\":-10,"
+                + "\"store_id\":1,\"created_at\":\"2026-10-14 09:00:00\"}],\"total_count\":2}")));
+
+        GetMorePage<GetMoreOrder> page = store.orders(GetMoreOrderQuery.byCode(CODE, 1, 50));
+
+        assertThat(page.items()).extracting(GetMoreOrder::entityId).containsExactly(5012L);
+        assertThat(page.items().getFirst().couponCode()).isEqualTo(CODE.toLowerCase());
+        LoggedRequest request = onlyRequest("GET");
+        assertThat(request.getUrl()).startsWith(BASE + "/orders?").doesNotContain("[", "+", " ");
+        wireMock.verify(getRequestedFor(urlPathEqualTo(BASE + "/orders"))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][field]", equalTo("coupon_code"))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][value]", equalTo(CODE))
+                .withQueryParam("searchCriteria[filter_groups][0][filters][0][condition_type]", equalTo("eq"))
+                .withQueryParam("searchCriteria[sortOrders][0][field]", equalTo("entity_id"))
+                .withQueryParam("searchCriteria[sortOrders][0][direction]", equalTo("ASC"))
+                .withQueryParam("searchCriteria[pageSize]", equalTo("50"))
+                .withQueryParam("searchCriteria[currentPage]", equalTo("1"))
+                .withQueryParam("fields", equalTo(MagentoSearchCriteria.ORDER_FIELDS)));
+        assertThat(output.getOut()).doesNotContain(CODE, RANDOM_PART, RANDOM_PART.toLowerCase());
     }
 
     @Test
