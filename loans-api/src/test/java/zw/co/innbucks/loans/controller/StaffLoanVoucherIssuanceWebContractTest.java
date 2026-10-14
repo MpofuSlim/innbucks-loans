@@ -252,6 +252,13 @@ class StaffLoanVoucherIssuanceWebContractTest {
         assertThat(StaffLoanVoucherIssuanceController.message(
                 issuance(StaffLoanVoucherIssuanceStatus.ISSUED, "ISSUED", 9L)))
                 .isEqualTo("The voucher of SGL-2026-000164 is issued");
+        assertThat(StaffLoanVoucherIssuanceController.message(new StaffLoanVoucherIssuanceResponse(12L, 164L,
+                "SGL-2026-000164", StaffLoanVoucherIssuanceStatus.ISSUED, GetMoreMode.SIMULATED, "SIM-K7Q2M3XW-", 3,
+                2, 2, 1, "ISSUED", "1 other code(s) GetMore made are live and kept sealed until withdrawn",
+                LocalDateTime.of(2026, 10, 14, 8, 24, 30), 9L, LocalDateTime.of(2026, 10, 14, 8, 20, 5),
+                LocalDateTime.of(2026, 10, 14, 8, 24, 2))))
+                .isEqualTo("The voucher of SGL-2026-000164 is issued; 1 other code(s) GetMore made are still to be"
+                        + " withdrawn, tried again on the borrower's next read, or here");
         assertThat(StaffLoanVoucherIssuanceController.message(
                 issuance(StaffLoanVoucherIssuanceStatus.CALLING, "GETMORE_OUTCOME_UNKNOWN", null)))
                 .isEqualTo("The voucher of SGL-2026-000164 is not issued yet (GETMORE_OUTCOME_UNKNOWN); it is tried"

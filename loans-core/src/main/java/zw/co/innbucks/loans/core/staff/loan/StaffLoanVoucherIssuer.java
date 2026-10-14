@@ -54,6 +54,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +115,8 @@ public class StaffLoanVoucherIssuer {
     static final String ORPHAN_LIVE = "ORPHAN_LIVE";
     static final String COUPON_USED_AFTER_CANCEL = "COUPON_USED_AFTER_CANCEL";
     static final String WAITING_FOR_CLAIM = "WAITING_FOR_CLAIM";
+    /** A cleanup found codes kept on the issuance after it read it (a lost claimant's): withdrawn by the next one. */
+    static final String CODES_ADDED = "CODES_ADDED";
     /** After these an operator may allow another generate, stating GetMore holds no usable coupon on the prefix. */
     static final Set<String> GENERATE_AGAIN_OUTCOMES = Set.of(FindOrCreate.GENERATED_NOT_FOUND,
             FindOrCreate.PREFIX_NOT_HONOURED, ORPHAN_LIVE);
@@ -388,6 +392,16 @@ public class StaffLoanVoucherIssuer {
         if (issuance.isClaimFresh(now, staleClaim())) {
             return ClaimStep.done(Outcome.IN_PROGRESS);
         }
+        StaffLoan loan = loanRepository.findById(staffLoanId).orElseThrow(() -> new NotFoundException(
+                "Staff loan " + staffLoanId + " not found"));
+        if (loan.getStatus() == StaffLoanStatus.CANCELLED) {
+            // Before a parked or not-due issuance waits: under a cancelled loan nothing but a cleanup moves it on.
+            issuance.cancelling(now);
+            issuanceRepository.save(issuance);
+            log.info("GetMore voucher of staff loan {}: the loan is cancelled; its coupons are withdrawn",
+                    loan.getReference());
+            return ClaimStep.cleanup(issuance.getId());
+        }
         if (issuance.getStatus() == StaffLoanVoucherIssuanceStatus.PARKED && trigger != Trigger.OPERATOR) {
             return ClaimStep.done(Outcome.PARKED);
         }
@@ -400,15 +414,6 @@ public class StaffLoanVoucherIssuer {
             issuance.notTried(GETMORE_OFF, now);
             issuanceRepository.save(issuance);
             return ClaimStep.done(Outcome.PENDING);
-        }
-        StaffLoan loan = loanRepository.findById(staffLoanId).orElseThrow(() -> new NotFoundException(
-                "Staff loan " + staffLoanId + " not found"));
-        if (loan.getStatus() == StaffLoanStatus.CANCELLED) {
-            issuance.cancelling(now);
-            issuanceRepository.save(issuance);
-            log.info("GetMore voucher of staff loan {}: the loan is cancelled; its coupons are withdrawn",
-                    loan.getReference());
-            return ClaimStep.cleanup(issuance.getId());
         }
         if (loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT) {
             return ClaimStep.done(parkNow(issuance, loan, "LOAN_" + loan.getStatus(), "the loan is "
@@ -488,6 +493,9 @@ public class StaffLoanVoucherIssuer {
         switch (settled.kind()) {
             case ISSUED -> {
                 setExpiry(claim, coupon, settled.voucher(), deadline);
+                if (settled.otherCodes() > 0) {
+                    withdrawLeftovers(claim.issuanceId());
+                }
                 return Outcome.ISSUED;
             }
             case LOAN_CANCELLED -> {
@@ -539,7 +547,9 @@ public class StaffLoanVoucherIssuer {
                 issuance.getCouponPrefix()));
         loan.voucherIssued(voucher.issuedAt(), voucher.disbursementReference());
         loanRepository.save(loan);
-        issuance.issued(voucher.id(), now);
+        List<String> others = issuance.sealedCodes().stream()
+                .filter(sealed -> !vault.decrypt(sealed).equalsIgnoreCase(coupon.code())).toList();
+        issuance.issued(voucher.id(), others, now);
         issuanceRepository.save(issuance);
         auditService.record(AuditLog.builder()
                 .eventType(ISSUED_EVENT)
@@ -549,12 +559,12 @@ public class StaffLoanVoucherIssuer {
                 .detail("reference:" + loan.getReference() + ";voucher:" + voucher.id() + ";coupon:"
                         + coupon.couponId() + ";code:" + voucher.maskedCode() + ";mode:" + issuance.getStoreMode()
                         + ";disbursement:" + voucher.disbursementReference() + ";adopted:" + bound.adopted()
-                        + ";attempts:" + issuance.getAttempts()));
+                        + ";attempts:" + issuance.getAttempts() + ";otherCodesKept:" + others.size()));
         count(bound.adopted() ? "adopted" : "issued");
         log.info("Staff loan {} DISBURSED as GetMore voucher {} (coupon {}, {}, {}) after {} attempt(s)",
                 loan.getReference(), voucher.id(), coupon.couponId(), voucher.maskedCode(),
                 bound.adopted() ? "adopted" : "generated", issuance.getAttempts());
-        return Settled.of(SettledKind.ISSUED, voucher);
+        return new Settled(SettledKind.ISSUED, voucher, others.size());
     }
 
     /**
@@ -618,56 +628,188 @@ public class StaffLoanVoucherIssuer {
                 GetMoreCodes.maskedCode(coupon.code()));
     }
 
-    /** [T2'] Unavailable, unknown or unexpected: PENDING again, with back-off, while this attempt holds the claim. */
-    private Outcome retryLater(Claim claim, String outcome, RuntimeException cause, List<String> minted) {
-        String error = masked(cause, minted);
-        Boolean written = write(status -> {
-            LocalDateTime now = now();
-            StaffLoanVoucherIssuance issuance = lockIssuance(claim.issuanceId());
-            if (!issuance.isClaimedBy(claim.claimedAt())) {
-                return false;
+    /**
+     * Best effort, for an ISSUED issuance: withdraws the codes it still keeps sealed, other than the voucher's (live
+     * codes GetMore made beside it, outside the prefix or not confirmed gone, which no search of the prefix would ever
+     * find), and forgets the ones GetMore confirms withdrawn or missing. The voucher's own code, should a lost claimant
+     * have kept it there, is forgotten and never withdrawn. The rest stay sealed, for Credit's next voucher-issuance
+     * call or the borrower's next read. Never throws.
+     *
+     * @return how many are still kept, or -1 when GetMore could not be asked
+     */
+    int withdrawLeftovers(Long issuanceId) {
+        try {
+            GetMoreCalls.requireNoTransaction();
+            Leftovers leftovers = read(status -> leftovers(issuanceId));
+            if (leftovers == null) {
+                return 0;
             }
-            issuance.keepSealedCodes(seal(issuance, minted), now);
-            issuance.retryAt(now.plus(backOff(issuance.getAttempts())), outcome, error, now);
-            issuanceRepository.save(issuance);
-            return true;
-        });
-        if (!Boolean.TRUE.equals(written)) {
-            log.warn("GetMore voucher of staff loan {}: {} ({}), but the claim was taken over meanwhile; nothing"
-                    + " recorded", claim.reference(), outcome, error);
-            count("claim_lost");
-            return Outcome.CLAIM_LOST;
+            if (leftovers.storeMode() != properties.getMode()) {
+                log.warn("GetMore voucher issuance {}: {} other code(s) kept, in the {} store, and GetMore is {} on"
+                        + " this host; not withdrawn", issuanceId, leftovers.codeBySealed().size(),
+                        leftovers.storeMode(), properties.getMode());
+                return leftovers.codeBySealed().size();
+            }
+            List<String> codes = leftovers.codeBySealed().values().stream()
+                    .filter(code -> !code.equalsIgnoreCase(leftovers.voucherCode())).distinct().toList();
+            Set<String> failed = new HashSet<>(coupons.withdraw(codes).failedItems());
+            List<String> gone = leftovers.codeBySealed().entrySet().stream()
+                    .filter(entry -> !failed.contains(entry.getValue())).map(Map.Entry::getKey).toList();
+            int kept = write(status -> {
+                StaffLoanVoucherIssuance issuance = lockIssuance(issuanceId);
+                issuance.forgetSealedCodes(gone, now());
+                issuanceRepository.save(issuance);
+                return issuance.mintedCodeCount();
+            });
+            if (kept == 0) {
+                log.info("GetMore voucher issuance {}: the {} other code(s) it kept are withdrawn", issuanceId,
+                        codes.size());
+            } else {
+                log.error("GetMore voucher issuance {}: {} other code(s) not withdrawn at GetMore {}; kept sealed and"
+                        + " tried again", issuanceId, kept, failed.stream().map(GetMoreCodes::maskedCode).toList());
+            }
+            return kept;
+        } catch (RuntimeException notWithdrawn) {
+            log.warn("GetMore voucher issuance {}: the other codes it keeps could not be withdrawn; kept sealed and"
+                    + " tried again ({})", issuanceId, notWithdrawn.getClass().getSimpleName());
+            return -1;
         }
-        log.warn("GetMore voucher of staff loan {}: {} ({}); tried again later{}", claim.reference(), outcome, error,
-                minted.isEmpty() ? "" : ", " + minted.size() + " minted code(s) kept sealed");
-        count("retry");
-        return Outcome.PENDING;
     }
 
-    /** [T2'] Refused, or not loans' to adopt: PARKED for an operator, with any live codes kept sealed. */
-    private Outcome park(Claim claim, String outcome, String detail, List<String> liveCodes) {
-        String error = GetMoreCodes.maskAll(detail, liveCodes);
-        Boolean written = write(status -> {
+    /** An ISSUED issuance's kept codes, each by its sealed form, and its voucher's code; null when it keeps none. */
+    private Leftovers leftovers(Long issuanceId) {
+        StaffLoanVoucherIssuance issuance = issuanceRepository.findById(issuanceId).orElse(null);
+        if (issuance == null || issuance.getStatus() != StaffLoanVoucherIssuanceStatus.ISSUED
+                || issuance.mintedCodeCount() == 0) {
+            return null;
+        }
+        Map<String, String> codeBySealed = new LinkedHashMap<>();
+        issuance.sealedCodes().forEach(sealed -> codeBySealed.put(sealed, vault.decrypt(sealed)));
+        String voucherCode = issuance.getVoucherId() == null ? null
+                : voucherRepository.findById(issuance.getVoucherId())
+                .map(voucher -> vault.decrypt(voucher.getCodeCiphertext())).orElse(null);
+        return new Leftovers(issuance.getStoreMode(), codeBySealed, voucherCode);
+    }
+
+    /** What {@link #withdrawLeftovers} works from. Holds codes in memory only, and never in toString. */
+    private record Leftovers(GetMoreMode storeMode, Map<String, String> codeBySealed, String voucherCode) {
+
+        @Override
+        public String toString() {
+            return "Leftovers[storeMode=" + storeMode + ", codes=" + codeBySealed.size() + "]";
+        }
+    }
+
+    /**
+     * [T2'] Unavailable, unknown or unexpected: PENDING again, with back-off, while this attempt holds the claim; any
+     * minted codes kept sealed. A loan cancelled meanwhile sends it to CANCELLING instead, and it is cleaned up.
+     */
+    private Outcome retryLater(Claim claim, String outcome, RuntimeException cause, List<String> minted) {
+        String error = masked(cause, minted);
+        Recorded recorded = write(status -> {
             LocalDateTime now = now();
             StaffLoanVoucherIssuance issuance = lockIssuance(claim.issuanceId());
-            if (!liveCodes.isEmpty()) {
-                issuance.keepSealedCodes(seal(issuance, liveCodes), now);
-            }
+            issuance.keepSealedCodes(seal(issuance, minted), now);
             if (!issuance.isClaimedBy(claim.claimedAt())) {
-                issuanceRepository.save(issuance);
-                return false;
+                return lost(issuance, !minted.isEmpty(), now);
             }
-            StaffLoan loan = loanRepository.findById(claim.staffLoanId()).orElseThrow();
-            parkNow(issuance, loan, outcome, error, now);
-            return true;
+            if (cancelledMeanwhile(claim, issuance, outcome, now)) {
+                return Recorded.LOAN_CANCELLED;
+            }
+            issuance.retryAt(now.plus(backOff(issuance.getAttempts())), outcome, error, now);
+            issuanceRepository.save(issuance);
+            return Recorded.RECORDED;
         });
-        if (!Boolean.TRUE.equals(written)) {
-            log.warn("GetMore voucher of staff loan {}: {}, but the claim was taken over meanwhile", claim.reference(),
-                    outcome);
-            count("claim_lost");
-            return Outcome.CLAIM_LOST;
+        return switch (recorded) {
+            case CLAIM_LOST -> {
+                log.warn("GetMore voucher of staff loan {}: {} ({}), but the claim was taken over meanwhile; nothing"
+                        + " recorded{}", claim.reference(), outcome, error,
+                        minted.isEmpty() ? "" : " but its " + minted.size() + " minted code(s), kept sealed");
+                count("claim_lost");
+                yield Outcome.CLAIM_LOST;
+            }
+            case LOAN_CANCELLED -> cancelledAfterTheCall(claim);
+            case RECORDED -> {
+                log.warn("GetMore voucher of staff loan {}: {} ({}); tried again later{}", claim.reference(), outcome,
+                        error, minted.isEmpty() ? "" : ", " + minted.size() + " minted code(s) kept sealed");
+                count("retry");
+                yield Outcome.PENDING;
+            }
+        };
+    }
+
+    /**
+     * [T2'] Refused, or not loans' to adopt: PARKED for an operator, with any live codes kept sealed. A loan cancelled
+     * meanwhile sends it to CANCELLING instead, and it is cleaned up.
+     */
+    private Outcome park(Claim claim, String outcome, String detail, List<String> liveCodes) {
+        String error = GetMoreCodes.maskAll(detail, liveCodes);
+        Recorded recorded = write(status -> {
+            LocalDateTime now = now();
+            StaffLoanVoucherIssuance issuance = lockIssuance(claim.issuanceId());
+            issuance.keepSealedCodes(seal(issuance, liveCodes), now);
+            if (!issuance.isClaimedBy(claim.claimedAt())) {
+                return lost(issuance, !liveCodes.isEmpty(), now);
+            }
+            if (cancelledMeanwhile(claim, issuance, outcome, now)) {
+                return Recorded.LOAN_CANCELLED;
+            }
+            StaffLoan loan = loanRepository.findById(claim.staffLoanId()).orElseThrow(() -> notFound(
+                    claim.staffLoanId()));
+            parkNow(issuance, loan, outcome, error, now);
+            return Recorded.RECORDED;
+        });
+        return switch (recorded) {
+            case CLAIM_LOST -> {
+                log.warn("GetMore voucher of staff loan {}: {}, but the claim was taken over meanwhile",
+                        claim.reference(), outcome);
+                count("claim_lost");
+                yield Outcome.CLAIM_LOST;
+            }
+            case LOAN_CANCELLED -> cancelledAfterTheCall(claim);
+            case RECORDED -> Outcome.PARKED;
+        };
+    }
+
+    /**
+     * The claim was taken over: only the codes this attempt kept are written. Kept on an issuance abandoned meanwhile
+     * they would be on a row no cleanup reads again, so it goes back to CANCELLING, as when a bound coupon cannot be
+     * withdrawn ({@link #withdrawUnwanted}).
+     */
+    private Recorded lost(StaffLoanVoucherIssuance issuance, boolean keptCodes, LocalDateTime now) {
+        if (keptCodes) {
+            if (issuance.getStatus() == StaffLoanVoucherIssuanceStatus.ABANDONED) {
+                issuance.cancelling(now);
+            }
+            issuanceRepository.save(issuance);
         }
-        return Outcome.PARKED;
+        return Recorded.CLAIM_LOST;
+    }
+
+    /**
+     * Whether the loan was cancelled while this attempt called GetMore (an employment change cancels it under a live
+     * claim, counting on the attempt to follow): if so the issuance, still this attempt's, goes to CANCELLING rather
+     * than PENDING or PARKED, which nothing moves on under a cancelled loan.
+     */
+    private boolean cancelledMeanwhile(Claim claim, StaffLoanVoucherIssuance issuance, String outcome,
+                                       LocalDateTime now) {
+        StaffLoan loan = loanRepository.findById(claim.staffLoanId()).orElseThrow(() -> notFound(
+                claim.staffLoanId()));
+        if (loan.getStatus() != StaffLoanStatus.CANCELLED) {
+            return false;
+        }
+        issuance.cancelling(now);
+        issuanceRepository.save(issuance);
+        log.info("GetMore voucher of staff loan {}: the loan was cancelled while GetMore was called ({}); what the"
+                + " issuance may have left at GetMore is withdrawn", loan.getReference(), outcome);
+        return true;
+    }
+
+    /** After {@link #cancelledMeanwhile} committed: the issuance is cleaned up there and then. */
+    private Outcome cancelledAfterTheCall(Claim claim) {
+        count("cancelled");
+        cleanup(claim.issuanceId());
+        return Outcome.CANCELLING;
     }
 
     /** Parks it in the caller's transaction, audited. */
@@ -720,8 +862,9 @@ public class StaffLoanVoucherIssuer {
         if (found == null || found.getStatus() != StaffLoanVoucherIssuanceStatus.CANCELLING) {
             return Cleanup.NOT_CANCELLING;
         }
+        Set<String> sealedRead = Set.copyOf(found.sealedCodes());
         if (found.neverClaimed() && found.mintedCodeCount() == 0) {
-            return finish(issuanceId, "never claimed: nothing can have been made at GetMore");
+            return finish(issuanceId, sealedRead, "never claimed: nothing can have been made at GetMore");
         }
         GetMoreMode mode = properties.getMode();
         if (found.getStoreMode() != mode) {
@@ -753,16 +896,27 @@ public class StaffLoanVoucherIssuer {
         }
         log.info("GetMore voucher issuance {}: {} code(s) withdrawn on prefix {} ({} already gone)", issuanceId,
                 toWithdraw.size(), found.getCouponPrefix(), deletion.missingItems().size());
-        return finish(issuanceId, toWithdraw.size() + " code(s) withdrawn");
+        return finish(issuanceId, sealedRead, toWithdraw.size() + " code(s) withdrawn");
     }
 
-    /** ABANDONED once no claim can still be minting; until then CANCELLING, WAITING_FOR_CLAIM. */
-    private Cleanup finish(Long issuanceId, String what) {
+    /**
+     * ABANDONED once no claim can still be minting; until then CANCELLING, WAITING_FOR_CLAIM. A sealed code kept on it
+     * since this cleanup read it ({@code sealedRead}: a lost claimant that could not withdraw what it bound) was never
+     * withdrawn, so it stays CANCELLING for the next cleanup instead, and nothing is forgotten.
+     */
+    private Cleanup finish(Long issuanceId, Set<String> sealedRead, String what) {
         Cleanup result = write(status -> {
             LocalDateTime now = now();
             StaffLoanVoucherIssuance issuance = lockIssuance(issuanceId);
             if (issuance.getStatus() != StaffLoanVoucherIssuanceStatus.CANCELLING) {
                 return Cleanup.NOT_CANCELLING;
+            }
+            long added = issuance.sealedCodes().stream().filter(sealed -> !sealedRead.contains(sealed)).count();
+            if (added > 0) {
+                issuance.cleanupLeft(CODES_ADDED, added + " code(s) kept on it while this cleanup ran: withdrawn by"
+                        + " the next one", now);
+                issuanceRepository.save(issuance);
+                return Cleanup.FAILED;
             }
             LocalDateTime lastClaim = issuance.getLastClaimedAt();
             if (lastClaim != null && now.isBefore(lastClaim.plus(staleClaim()))) {
@@ -818,7 +972,8 @@ public class StaffLoanVoucherIssuer {
 
     /**
      * Moves a staff member's issuances on, on a borrower's read (in the background): one due (PENDING past its
-     * back-off, or a stale claim) is attempted, one CANCELLING is cleaned up. A parked one waits for Credit.
+     * back-off, or a stale claim) is attempted, one CANCELLING is cleaned up, and an ISSUED one still keeping codes
+     * other than its voucher's has them withdrawn. A parked one waits for Credit.
      */
     public void refreshFor(Long staffMemberId) {
         GetMoreCalls.requireNoTransaction();
@@ -843,6 +998,9 @@ public class StaffLoanVoucherIssuer {
                 }
             }
         }
+        List<Long> leftovers = read(status -> issuanceRepository.findIssuedKeepingCodesForMember(staffMemberId,
+                ISSUANCES_PER_REFRESH).stream().map(StaffLoanVoucherIssuance::getId).toList());
+        leftovers.forEach(this::withdrawLeftovers);
     }
 
     /**
@@ -851,11 +1009,15 @@ public class StaffLoanVoucherIssuer {
      * PENDING (not one parked PAST_DUE: that loan is to be cancelled), and with {@code generateAgain} allows one more
      * generate, which is Credit stating that GetMore holds no usable coupon on the prefix (only after
      * GENERATED_NOT_FOUND, PREFIX_NOT_HONOURED or ORPHAN_LIVE). Then one attempt, within 30 seconds between calls.
+     * For a loan already cancelled, an issuance still pending, parked or with a stale claim is sent to CANCELLING and
+     * cleaned up; for a loan paid out as its voucher, the codes other than the voucher's that its issuance still keeps
+     * are withdrawn.
      *
      * @throws GetMoreUnavailableException {@code OFF}: GetMore is OFF on this host
      * @throws NotFoundException           no such loan
-     * @throws ConflictException           the loan is not awaiting its voucher, its merchant is not a GetMore store,
-     *                                     it is past due, or {@code generateAgain} does not apply
+     * @throws ConflictException           the loan is not awaiting its voucher (and none of the above applies), its
+     *                                     merchant is not a GetMore store, it is past due, or {@code generateAgain}
+     *                                     does not apply
      * @throws IssuanceInProgressException an attempt is calling GetMore right now
      */
     public StaffLoanVoucherIssuanceResult retry(Long staffLoanId, String reason, boolean generateAgain) {
@@ -866,11 +1028,12 @@ public class StaffLoanVoucherIssuer {
         }
         String by = authService.getLoggedInUsername();
         String why = reason == null ? "" : reason.strip();
-        Long cleanupId = write(status -> prepareRetry(staffLoanId, why, generateAgain, by));
-        if (cleanupId != null) {
-            cleanup(cleanupId);
-        } else {
-            attempt(staffLoanId, Trigger.OPERATOR, Deadline.after(marketTimeZone.clock(), OPERATOR_BUDGET));
+        Next next = write(status -> prepareRetry(staffLoanId, why, generateAgain, by));
+        switch (next.kind()) {
+            case CLEANUP -> cleanup(next.issuanceId());
+            case LEFTOVERS -> withdrawLeftovers(next.issuanceId());
+            case ATTEMPT -> attempt(staffLoanId, Trigger.OPERATOR, Deadline.after(marketTimeZone.clock(),
+                    OPERATOR_BUDGET));
         }
         return read(status -> {
             StaffLoan loan = loanRepository.findById(staffLoanId).orElseThrow(() -> notFound(staffLoanId));
@@ -881,13 +1044,23 @@ public class StaffLoanVoucherIssuer {
         });
     }
 
-    /** @return the issuance to clean up, or null to attempt */
-    private Long prepareRetry(Long staffLoanId, String reason, boolean generateAgain, String by) {
+    /** What Credit's retry does once its transaction commits. */
+    private Next prepareRetry(Long staffLoanId, String reason, boolean generateAgain, String by) {
         LocalDateTime now = now();
         StaffLoan loan = loanRepository.lockById(staffLoanId).orElseThrow(() -> notFound(staffLoanId));
         StaffLoanVoucherIssuance issuance = issuanceRepository.lockByStaffLoanId(staffLoanId).orElse(null);
         if (issuance != null && issuance.getStatus() == StaffLoanVoucherIssuanceStatus.CANCELLING) {
-            return issuance.getId();
+            return Next.cleanup(issuance.getId());
+        }
+        if (loan.getStatus() == StaffLoanStatus.CANCELLED && issuance != null
+                && StaffLoanVoucherIssuanceStatus.OPEN.contains(issuance.getStatus())) {
+            return cancelUnderCancelledLoan(loan, issuance, reason, generateAgain, by, now);
+        }
+        if (issuance != null && issuance.getStatus() == StaffLoanVoucherIssuanceStatus.ISSUED
+                && issuance.mintedCodeCount() > 0 && !generateAgain) {
+            audit(RETRIED_EVENT, loan, issuance, by, "reason:" + reason + ";otherCodesKept:"
+                    + issuance.mintedCodeCount());
+            return Next.leftovers(issuance.getId());
         }
         if (loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT) {
             throw new ConflictException("Staff loan " + loan.getReference() + " is " + loan.getStatus()
@@ -902,7 +1075,7 @@ public class StaffLoanVoucherIssuer {
                     + loan.getReference() + " is for " + loan.getMerchant().getMerchantCode() + ", which is not a"
                     + " GetMore store: its voucher is not a GetMore coupon"));
             audit(QUEUED_EVENT, loan, issuance, by, "reason:" + reason);
-            return null;
+            return Next.ATTEMPT;
         }
         if (issuance.isClaimFresh(now, staleClaim())) {
             throw new IssuanceInProgressException(loan.getReference());
@@ -926,14 +1099,36 @@ public class StaffLoanVoucherIssuer {
             issuance.requeue(now);
             issuanceRepository.save(issuance);
             audit(RETRIED_EVENT, loan, issuance, by, "reason:" + reason + ";wasParked:" + parkedAs);
-            return null;
+            return Next.ATTEMPT;
         }
         if (generateAgain) {
             throw new ConflictException("generateAgain applies only to a parked voucher issuance; the voucher of "
                     + loan.getReference() + " is " + issuance.getStatus());
         }
         audit(RETRIED_EVENT, loan, issuance, by, "reason:" + reason + ";was:" + issuance.getStatus());
-        return null;
+        return Next.ATTEMPT;
+    }
+
+    /**
+     * A loan cancelled while its issuance was pending, parked or calling (an employment change leaves a live claim to
+     * its attempt): nothing else moves such an issuance on, so Credit's retry sends it to CANCELLING for a cleanup.
+     * Not while a claim may still be minting; and never with {@code generateAgain}, which is for a loan still to be
+     * paid.
+     */
+    private Next cancelUnderCancelledLoan(StaffLoan loan, StaffLoanVoucherIssuance issuance, String reason,
+                                         boolean generateAgain, String by, LocalDateTime now) {
+        if (issuance.isClaimFresh(now, staleClaim())) {
+            throw new IssuanceInProgressException(loan.getReference());
+        }
+        if (generateAgain) {
+            throw new ConflictException("Staff loan " + loan.getReference() + " is CANCELLED: generateAgain does not"
+                    + " apply; send the request without it to withdraw what its voucher issuance left at GetMore");
+        }
+        String was = issuance.getStatus() + (issuance.getLastOutcome() == null ? "" : " " + issuance.getLastOutcome());
+        issuance.cancelling(now);
+        issuanceRepository.save(issuance);
+        audit(RETRIED_EVENT, loan, issuance, by, "reason:" + reason + ";was:" + was + ";loan:CANCELLED");
+        return Next.cleanup(issuance.getId());
     }
 
     /** Issuances, newest first, optionally of one status. */
@@ -1016,6 +1211,22 @@ public class StaffLoanVoucherIssuer {
         return new NotFoundException("Staff loan " + staffLoanId + " not found");
     }
 
+    /** What Credit's retry does after its transaction: an attempt, a cleanup, or withdrawing leftover codes. */
+    private record Next(NextKind kind, Long issuanceId) {
+
+        static final Next ATTEMPT = new Next(NextKind.ATTEMPT, null);
+
+        static Next cleanup(Long issuanceId) {
+            return new Next(NextKind.CLEANUP, issuanceId);
+        }
+
+        static Next leftovers(Long issuanceId) {
+            return new Next(NextKind.LEFTOVERS, issuanceId);
+        }
+    }
+
+    private enum NextKind { ATTEMPT, CLEANUP, LEFTOVERS }
+
     /** What the claim found: an outcome to return, an issuance to clean up first, or a claim to work. */
     private record ClaimStep(Outcome outcome, Claim claim, Long cleanupId) {
 
@@ -1045,10 +1256,14 @@ public class StaffLoanVoucherIssuer {
 
     private enum SettledKind { ISSUED, LOAN_CANCELLED, LOAN_NOT_AWAITING, CLAIM_LOST }
 
-    private record Settled(SettledKind kind, VoucherResponse voucher) {
+    /** How a settle ended; {@code otherCodes}, on ISSUED, the sealed codes other than the voucher's still kept. */
+    private record Settled(SettledKind kind, VoucherResponse voucher, int otherCodes) {
 
         static Settled of(SettledKind kind, VoucherResponse voucher) {
-            return new Settled(kind, voucher);
+            return new Settled(kind, voucher, 0);
         }
     }
+
+    /** What a failed attempt wrote: its codes only (the claim was lost), its outcome, or CANCELLING. */
+    private enum Recorded { CLAIM_LOST, RECORDED, LOAN_CANCELLED }
 }

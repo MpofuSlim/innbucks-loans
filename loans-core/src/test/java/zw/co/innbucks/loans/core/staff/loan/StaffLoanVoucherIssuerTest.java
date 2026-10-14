@@ -159,6 +159,9 @@ class StaffLoanVoucherIssuerTest {
                 i.<String>getArgument(1)) || rows.stream().anyMatch(r -> r.getCouponPrefix().equals(i.getArgument(1))));
         when(issuances.findForMember(anyLong(), any(), anyInt())).thenAnswer(i -> rows.stream()
                 .filter(r -> i.<Collection<?>>getArgument(1).contains(r.getStatus())).toList());
+        when(issuances.findIssuedKeepingCodesForMember(anyLong(), anyInt())).thenAnswer(i -> rows.stream()
+                .filter(r -> r.getStatus() == StaffLoanVoucherIssuanceStatus.ISSUED
+                        && r.getMintedCodesCiphertext() != null).toList());
         when(issuances.findByStatusInOrderByIdDesc(any(), any())).thenAnswer(i -> new PageImpl<>(rows.stream()
                 .filter(r -> i.<Collection<?>>getArgument(0).contains(r.getStatus())).toList()));
     }
@@ -540,6 +543,201 @@ class StaffLoanVoucherIssuerTest {
         assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
         assertThat(issuance().getLastOutcome()).isEqualTo("WITHDRAWN");
         assertThat(audits()).extracting(AuditLog::getEventType).contains(StaffLoanVoucherIssuer.ABANDONED_EVENT);
+    }
+
+    @Test
+    @DisplayName("the loan is cancelled during the call and GetMore is then unavailable: CANCELLING, never PENDING")
+    void loanCancelledThenUnavailable() {
+        queued();
+        store.onSearch = () -> {
+            if (loan.getStatus() != StaffLoanStatus.CANCELLED) {
+                loan.cancel(NOW, "hc-approver", "Employment status changed to RESIGNED");
+            }
+        };
+        store.searchFailure = new GetMoreUnavailableException(Operation.SEARCH_COUPONS,
+                GetMoreUnavailableException.Reason.READ_FAILED);
+
+        assertThat(attempt(Trigger.ACCEPTANCE)).isEqualTo(Outcome.CANCELLING);
+
+        assertThat(issuance().getStatus()).as("a PENDING one under a cancelled loan would wait for a read that"
+                + " never comes").isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        assertThat(issuance().getLastOutcome()).as("its cleanup could not search either: tried again")
+                .isEqualTo("CLEANUP_FAILED");
+        assertThat(counted("cancelled")).isEqualTo(1);
+        assertThat(counted("retry")).isZero();
+
+        store.searchFailure = null;
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(issuer.cleanup(issuance().getId())).isEqualTo(Cleanup.WITHDRAWN);
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+    }
+
+    @Test
+    @DisplayName("the loan is cancelled during the call, which then parks with live orphans: CANCELLING, and withdrawn")
+    void loanCancelledThenParkedWithLiveOrphans() {
+        queued();
+        String orphan = "SIM-ZZZZZZZZ-" + GetMoreFakes.STORY_RANDOM;   // made outside the prefix
+        store.generateBehaviour = spec -> {
+            store.plant(orphan, spec.ruleId(), 0, NOW);
+            loan.cancel(NOW, "hc-approver", "Employment status changed to RESIGNED");
+            return List.of(orphan);
+        };
+        store.failDeleting = true;
+
+        assertThat(attempt(Trigger.ACCEPTANCE)).isEqualTo(Outcome.CANCELLING);
+
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        assertThat(issuance().sealedCodes().stream().map(vault::decrypt)).as("the live orphan, kept for the cleanup")
+                .containsExactly(orphan);
+        assertThat(issuance().getLastOutcome()).isEqualTo("WITHDRAW_FAILED");
+
+        store.failDeleting = false;
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(issuer.cleanup(issuance().getId())).isEqualTo(Cleanup.WITHDRAWN);
+        assertThat(store.deleted).containsExactly(orphan);
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+    }
+
+    @Test
+    @DisplayName("under a cancelled loan a parked or not-due issuance is cleaned up on the next attempt, not left")
+    void cancelledLoanBeforeParkedOrNotDue() {
+        queued().park(FindOrCreate.FOREIGN_COUPON, "planted", NOW);
+        loan.cancel(NOW, "credit1", "Accepted in error");
+
+        assertThat(attempt(Trigger.BORROWER_READ)).isEqualTo(Outcome.CANCELLING);
+        assertThat(issuance().getStatus()).as("never claimed: nothing can be at GetMore")
+                .isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+
+        rows.clear();
+        loan = loan(LocalDate.of(2026, 11, 20));
+        queued().retryAt(NOW.plusMinutes(10), "UNAVAILABLE_NOT_REACHED", null, NOW);
+        loan.cancel(NOW, "credit1", "Accepted in error");
+        assertThat(attempt(Trigger.BORROWER_READ)).isEqualTo(Outcome.CANCELLING);
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+        assertThat(events).doesNotContain("search", "generate");
+    }
+
+    @Test
+    @DisplayName("Credit's retry of a cancelled loan's parked issuance cleans it up; not while calling, nor generateAgain")
+    void operatorRetryUnderACancelledLoan() {
+        StaffLoanVoucherIssuance row = queued();
+        row.claim(NOW.minusSeconds(5));
+        loan.cancel(NOW, "hc-approver", "Employment status changed to RESIGNED");
+        when(authService.getLoggedInUsername()).thenReturn("credit1");
+        assertThatThrownBy(() -> issuer.retry(164L, "withdraw what is left", false))
+                .isInstanceOf(IssuanceInProgressException.class);
+
+        row.park(FindOrCreate.FOREIGN_COUPON, "planted", NOW);
+        store.plant(PREFIX + "UNUSED0000000001", 43, 0, NOW);
+        clock.advance(Duration.ofMinutes(5));
+        assertThatThrownBy(() -> issuer.retry(164L, "withdraw what is left", true))
+                .isInstanceOf(ConflictException.class).hasMessage("Staff loan SGL-2026-000164 is CANCELLED:"
+                        + " generateAgain does not apply; send the request without it to withdraw what its voucher"
+                        + " issuance left at GetMore");
+        assertThat(row.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.PARKED);
+
+        StaffLoanVoucherIssuanceResult result = issuer.retry(164L, "withdraw what is left", false);
+
+        assertThat(result.issuance().status()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+        assertThat(result.loan().status()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(store.deleted).containsExactly(PREFIX + "UNUSED0000000001");
+        assertThat(store.generateCalls).isZero();
+        assertThat(audits()).filteredOn(a -> a.getEventType().equals(StaffLoanVoucherIssuer.RETRIED_EVENT))
+                .singleElement().satisfies(a -> assertThat(a.getDetail())
+                        .contains("was:PARKED FOREIGN_COUPON", "loan:CANCELLED"));
+    }
+
+    @Test
+    @DisplayName("orphans kept through generateAgain are not dropped at ISSUED: withdrawn after it, or kept to retry")
+    void issuedKeepsAndWithdrawsTheOrphans() {
+        queued();
+        String orphan = "SIM-ZZZZZZZZ-" + GetMoreFakes.STORY_RANDOM;   // made outside the prefix
+        store.generateBehaviour = spec -> {
+            store.plant(orphan, spec.ruleId(), 0, NOW);
+            return List.of(orphan);
+        };
+        store.failDeleting = true;
+        assertThat(attempt(Trigger.ACCEPTANCE)).isEqualTo(Outcome.PARKED);
+        assertThat(issuance().getLastOutcome()).isEqualTo(StaffLoanVoucherIssuer.ORPHAN_LIVE);
+
+        when(authService.getLoggedInUsername()).thenReturn("credit1");
+        store.generateBehaviour = store::mint;
+        StaffLoanVoucherIssuanceResult issued = issuer.retry(164L, "GetMore confirms no coupon is on the prefix",
+                true);
+
+        assertThat(issued.issuance().status()).isEqualTo(StaffLoanVoucherIssuanceStatus.ISSUED);
+        assertThat(issued.issuance().mintedCodes()).as("GetMore would not withdraw it: still kept").isEqualTo(1);
+        assertThat(issuance().sealedCodes().stream().map(vault::decrypt)).containsExactly(orphan);
+        assertThat(issuance().getLastError())
+                .isEqualTo("1 other code(s) GetMore made are live and kept sealed until withdrawn");
+        assertThat(audits()).filteredOn(a -> a.getEventType().equals(StaffLoanVoucherIssuer.ISSUED_EVENT))
+                .singleElement().satisfies(a -> assertThat(a.getDetail()).contains("otherCodesKept:1"));
+
+        store.failDeleting = false;
+        issuer.refreshFor(9L);   // the borrower's next read
+
+        assertThat(store.deleted).containsExactly(orphan);
+        assertThat(issuance().mintedCodeCount()).isZero();
+        assertThat(issuance().getLastError()).isNull();
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ISSUED);
+        assertThat(store.on(PREFIX)).as("the voucher's own coupon is untouched").singleElement()
+                .satisfies(c -> assertThat(c.code()).isEqualTo(CODE));
+    }
+
+    @Test
+    @DisplayName("the voucher's own code kept on its issuance is forgotten, never withdrawn as a leftover")
+    void leftoversNeverWithdrawTheVouchersOwnCode() {
+        queued();
+        assertThat(attempt(Trigger.ACCEPTANCE)).isEqualTo(Outcome.ISSUED);
+        issuance().keepSealedCodes(List.of(vault.encrypt(CODE)), NOW);   // as a lost claimant could have kept it
+
+        issuer.refreshFor(9L);
+
+        assertThat(store.deleted).isEmpty();
+        assertThat(events).doesNotContain("delete");
+        assertThat(issuance().mintedCodeCount()).isZero();
+        assertThat(store.on(PREFIX)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a code kept on the issuance while its cleanup ran is not forgotten: CANCELLING, withdrawn next time")
+    void cleanupKeepsACodeAddedWhileItRan() {
+        StaffLoanVoucherIssuance row = queued();
+        row.claim(NOW.minusMinutes(10));
+        row.cancelling(NOW);
+        String late = "SIM-ZZZZZZZZ-" + GetMoreFakes.STORY_RANDOM;
+        store.onSearch = () -> {
+            if (row.mintedCodeCount() == 0) {   // a lost claimant that could not withdraw what it bound
+                row.keepSealedCodes(List.of(vault.encrypt(late)), NOW);
+            }
+        };
+
+        assertThat(issuer.cleanup(row.getId())).isEqualTo(Cleanup.FAILED);
+
+        assertThat(row.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        assertThat(row.getLastOutcome()).isEqualTo(StaffLoanVoucherIssuer.CODES_ADDED);
+        assertThat(row.sealedCodes().stream().map(vault::decrypt)).containsExactly(late);
+
+        assertThat(issuer.cleanup(row.getId())).isEqualTo(Cleanup.WITHDRAWN);
+        assertThat(row.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.ABANDONED);
+        assertThat(events.stream().filter("delete"::equals).count()).as("the late code was sent for").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a lost claim keeps the codes it minted; on an issuance abandoned meanwhile it sends it back to"
+            + " CANCELLING")
+    void lostClaimKeepsItsMintedCodes() {
+        queued();
+        store.generateBehaviour = spec -> {
+            issuance().cancelling(NOW);
+            issuance().abandoned(NOW);
+            return List.of(CODE);   // answered, but not on the store's search: an unknown outcome
+        };
+
+        assertThat(attempt(Trigger.ACCEPTANCE)).isEqualTo(Outcome.CLAIM_LOST);
+
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        assertThat(issuance().sealedCodes().stream().map(vault::decrypt)).containsExactly(CODE);
     }
 
     @Test

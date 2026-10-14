@@ -53,4 +53,18 @@ public interface StaffLoanVoucherIssuanceRepository extends JpaRepository<StaffL
     List<StaffLoanVoucherIssuance> forMember(@Param("member") Long staffMemberId,
                                              @Param("statuses") Collection<StaffLoanVoucherIssuanceStatus> statuses,
                                              Pageable pageable);
+
+    /**
+     * The ISSUED issuances of a staff member's loans that still keep sealed codes other than their voucher's, newest
+     * first, at most {@code limit}: a borrower's read has them withdrawn.
+     */
+    default List<StaffLoanVoucherIssuance> findIssuedKeepingCodesForMember(Long staffMemberId, int limit) {
+        return keepingCodesForMember(staffMemberId, StaffLoanVoucherIssuanceStatus.ISSUED, PageRequest.of(0, limit));
+    }
+
+    @Query("select i from StaffLoanVoucherIssuance i where i.status = :status and i.mintedCodesCiphertext is not null"
+            + " and i.staffLoanId in (select l.id from StaffLoan l where l.staffMemberId = :member) order by i.id desc")
+    List<StaffLoanVoucherIssuance> keepingCodesForMember(@Param("member") Long staffMemberId,
+                                                         @Param("status") StaffLoanVoucherIssuanceStatus status,
+                                                         Pageable pageable);
 }

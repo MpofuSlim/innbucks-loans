@@ -84,7 +84,10 @@ public class StaffLoanVoucherIssuanceController {
     @Operation(summary = "Try a loan's GetMore voucher again",
             description = "CREDIT_MANAGER or SUPER_ADMIN, with the reason (audited). For a loan awaiting its voucher:"
                     + " makes the issuance of one accepted while GetMore was OFF, puts a PARKED one back to PENDING,"
-                    + " and tries it within 30 seconds; a cancelled loan's issuance is cleaned up instead."
+                    + " and tries it within 30 seconds; a cancelled loan's issuance (cancelling, or left pending or"
+                    + " parked by an attempt under way when the loan was cancelled) is cleaned up instead: whatever it"
+                    + " left at GetMore is withdrawn. For a loan paid out as its voucher whose issuance still keeps"
+                    + " other codes GetMore made (mintedCodes above 0), those are withdrawn."
                     + " generateAgain=true is Credit stating that GetMore holds no usable coupon on the loan's prefix,"
                     + " after GetMore confirmed it: accepted only after GENERATED_NOT_FOUND, PREFIX_NOT_HONOURED or"
                     + " ORPHAN_LIVE, it lets one more coupon be made. A loan parked PAST_DUE is cancelled instead. The"
@@ -126,7 +129,9 @@ public class StaffLoanVoucherIssuanceController {
     static String message(StaffLoanVoucherIssuanceResponse issuance) {
         String voucherOf = "The voucher of " + issuance.loanReference();
         return switch (issuance.status()) {
-            case ISSUED -> voucherOf + " is issued";
+            case ISSUED -> voucherOf + " is issued" + (issuance.mintedCodes() == 0 ? "" : "; "
+                    + issuance.mintedCodes() + " other code(s) GetMore made are still to be withdrawn, tried again on"
+                    + " the borrower's next read, or here");
             case PENDING, CALLING -> voucherOf + " is not issued yet (" + issuance.lastOutcome() + "); it is tried"
                     + " again on the borrower's next read, or here";
             case PARKED -> voucherOf + " is parked (" + issuance.lastOutcome() + ")";

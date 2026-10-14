@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -31,7 +32,8 @@ import java.util.List;
  * <p>An attempt claims it (CALLING) before it calls GetMore, and counts a generate before it is sent, never more than
  * {@code generateAllowance} of them (Magento's generate has no idempotency key; only an operator raises the allowance).
  * Codes GetMore returned that loans could not bind and could not confirm withdrawn are kept here, sealed by the voucher
- * vault, one per line, so a cleanup can withdraw them. No code is ever in plain text here, nor in {@code toString}.</p>
+ * vault, one per line, so a cleanup can withdraw them; an ISSUED one keeps those other than its voucher's until GetMore
+ * confirms them gone. No code is ever in plain text here, nor in {@code toString}.</p>
  */
 @Entity
 @Table(name = "staff_loan_voucher_issuances")
@@ -105,7 +107,10 @@ public class StaffLoanVoucherIssuance {
     @Column(name = "last_claimed_at")
     private LocalDateTime lastClaimedAt;
 
-    /** Codes GetMore returned that were not bound to the voucher, each sealed by the voucher vault, one per line. */
+    /**
+     * Codes GetMore returned that were not bound to the voucher, each sealed by the voucher vault, one per line: kept
+     * until GetMore confirms them gone, ISSUED or not.
+     */
     @Column(name = "minted_codes_ciphertext", columnDefinition = "text")
     private String mintedCodesCiphertext;
 
@@ -186,14 +191,36 @@ public class StaffLoanVoucherIssuance {
         }
     }
 
-    void issued(Long voucherId, LocalDateTime now) {
+    /**
+     * The voucher is kept. {@code otherSealedCodes}: the sealed codes other than the voucher's, still live as far as
+     * loans knows (a lost answer's or an orphan's), kept for withdrawal rather than forgotten.
+     */
+    void issued(Long voucherId, List<String> otherSealedCodes, LocalDateTime now) {
         this.status = StaffLoanVoucherIssuanceStatus.ISSUED;
         this.voucherId = voucherId;
         this.claimedAt = null;
-        this.mintedCodesCiphertext = null;
+        this.mintedCodesCiphertext = otherSealedCodes.isEmpty() ? null
+                : String.join(CODE_SEPARATOR, otherSealedCodes);
         this.lastOutcome = "ISSUED";
-        this.lastError = null;
+        this.lastError = otherSealedCodes.isEmpty() ? null : otherCodesNote(otherSealedCodes.size());
         this.updatedAt = now;
+    }
+
+    /**
+     * Forgets the sealed codes GetMore confirmed gone (withdrawn or missing). An ISSUED one left with none drops the
+     * note of them; one left with some says how many.
+     */
+    void forgetSealedCodes(Collection<String> goneSealed, LocalDateTime now) {
+        List<String> kept = sealedCodes().stream().filter(sealed -> !goneSealed.contains(sealed)).toList();
+        this.mintedCodesCiphertext = kept.isEmpty() ? null : String.join(CODE_SEPARATOR, kept);
+        if (status == StaffLoanVoucherIssuanceStatus.ISSUED) {
+            this.lastError = kept.isEmpty() ? null : otherCodesNote(kept.size());
+        }
+        this.updatedAt = now;
+    }
+
+    private static String otherCodesNote(int count) {
+        return count + " other code(s) GetMore made are live and kept sealed until withdrawn";
     }
 
     /** PENDING again, for an attempt at {@code nextAttemptAt}. */
