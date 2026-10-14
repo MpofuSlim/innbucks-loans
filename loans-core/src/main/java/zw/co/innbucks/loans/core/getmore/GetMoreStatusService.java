@@ -67,12 +67,15 @@ public class GetMoreStatusService {
     }
 
     /**
-     * GetMore's state on this host. With {@code checkRule}, the sales rule is read from GetMore as well; a failure to
-     * read it is part of the answer ({@code ruleError}), never an error of its own.
+     * GetMore's state on this host. Every count is of the store this host is in (LIVE when GetMore is OFF): a host
+     * moved from SIMULATED to LIVE keeps its simulated rows, never synced again, and they are not reported as live work
+     * (§6.3). With {@code checkRule}, the sales rule is read from GetMore as well; a failure to read it is part of the
+     * answer ({@code ruleError}), never an error of its own.
      */
     public GetMoreStatusResponse status(boolean checkRule) {
         GetMoreCalls.requireNoTransaction();
         GetMoreMode mode = properties.getMode();
+        GetMoreMode store = mode == GetMoreMode.OFF ? GetMoreMode.LIVE : mode;
         GetMoreStatusResponse counted = readTransaction.execute(status -> {
             Merchant merchant = merchantRepository.findByStaffLoanMerchantTrue().orElse(null);
             List<String> warnings = new ArrayList<>();
@@ -91,15 +94,16 @@ public class GetMoreStatusService {
             GetMoreDataGuard.merchantWarning(mode, merchant).ifPresent(warnings::add);
             Map<String, Long> issuances = new LinkedHashMap<>();
             for (StaffLoanVoucherIssuanceStatus open : OPEN_ISSUANCES) {
-                issuances.put(open.name(), issuanceRepository.countByStatus(open));
+                issuances.put(open.name(), issuanceRepository.countByStatusAndStoreMode(open, store));
             }
             return new GetMoreStatusResponse(mode, properties.getRuleId(), properties.couponPrefixFor(mode),
                     mode == GetMoreMode.LIVE ? host(properties.getLive().getBaseUrl()) : null, binding.name(),
                     binding.partialSpending(), merchant == null ? null
                     : new GetMoreStatusResponse.StaffLoanMerchant(merchant.getMerchantCode(),
                     merchant.getVoucherStore()), List.copyOf(warnings), issuances,
-                    issueRepository.countByClearedAtIsNull(), voucherRepository.countBySyncBlockedByIsNotNull(),
-                    voucherRepository.countByHeldAmountGreaterThan(BigDecimal.ZERO), null, null);
+                    issueRepository.countOpenForStoreMode(store),
+                    voucherRepository.countByStoreModeAndSyncBlockedByIsNotNull(store),
+                    voucherRepository.countByStoreModeAndHeldAmountGreaterThan(store, BigDecimal.ZERO), null, null);
         });
         if (!checkRule) {
             return counted;

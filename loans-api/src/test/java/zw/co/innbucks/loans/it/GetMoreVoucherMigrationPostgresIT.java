@@ -11,6 +11,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -241,10 +242,11 @@ class GetMoreVoucherMigrationPostgresIT {
                 VALUES (?, ?, ?, 45.50, 104.50, 'store-2', 'getmore-simulator', now(), 'GETMORE_SYNC', 'SIMULATED',
                         ?, 'SIM000000012', ?)
                 """;
-        jdbc.update(spend, voucher, merchant, "GMS:O:12:4550", 12L, LocalDateTime.now());
-        assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:12:4550", 12L, LocalDateTime.now()))
+        LocalDateTime recorded = LocalDateTime.now(ZoneOffset.UTC);
+        jdbc.update(spend, voucher, merchant, "GMS:O:12:4550", 12L, recorded);
+        assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:12:4550", 12L, recorded))
                 .isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:13:5450", null, LocalDateTime.now()))
+        assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:13:5450", null, recorded))
                 .as("a sync row names its order").isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:13:5450", 13L, null))
                 .as("and when it was recorded").isInstanceOf(DataIntegrityViolationException.class);

@@ -229,12 +229,12 @@ class StaffLoanWriteOffServiceTest {
                                                          LocalDateTime expiresAt) {
         return Voucher.builder().id(7L).loanAccount(loan.getReference()).staffMemberId(loan.getStaffMemberId())
                 .status(status).expiresAt(expiresAt).codeSource(VoucherCodeSource.GETMORE)
-                .storeMode(GetMoreMode.SIMULATED).staffLoanId(loan.getId());
+                .storeMode(GetMoreMode.SIMULATED).staffLoanId(loan.getId()).redeemedAmount(new BigDecimal("0.00"));
     }
 
     @Test
-    @DisplayName("a GetMore voucher: untouched, cancel the loan instead; used or held, wait; lapsed but still live at"
-            + " GetMore, sync it first; withdrawn, written off")
+    @DisplayName("a GetMore voucher: untouched, cancel the loan instead; used (refunded back to nothing too) or held,"
+            + " wait; lapsed but still live at GetMore, sync it first; withdrawn, written off")
     void getMoreVoucher() {
         LocalDateTime open = LocalDateTime.of(2026, 12, 20, 21, 59, 59);
         vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.ISSUED, open).build());
@@ -249,6 +249,11 @@ class StaffLoanWriteOffServiceTest {
                 .hasMessageEndingWith(": wait until it expires");
         vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.PARTIALLY_REDEEMED, open).build());
         assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .hasMessageEndingWith(": wait until it expires");
+        vouchers.set(1, getMoreVoucher(chipo, VoucherStatus.ISSUED, open).refundedAmount(new BigDecimal("10.00"))
+                .build());
+        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
+                .as("USD 10.00 spent and refunded: ISSUED again, but a cancellation refuses a used voucher")
                 .hasMessageEndingWith(": wait until it expires");
 
         LocalDateTime lapsed = LocalDateTime.of(2026, 12, 13, 21, 59, 59);

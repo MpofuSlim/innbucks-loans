@@ -9,7 +9,8 @@ import java.util.Map;
 /**
  * Where GetMore stands on this host, for Credit, Finance and the super-admin: the mode and its settings, the Staff
  * Grocery Loan's merchant and whether it is a GetMore store, anything that needs attention ({@code warnings}), how many
- * voucher issuances are open in each state, and how many vouchers a sync found a problem with or holds a sale for.
+ * voucher issuances are open in each state, and how many vouchers a sync found a problem with or holds a sale for. The
+ * counts are of the store this host is in (LIVE when GetMore is OFF): rows of another store are never counted.
  *
  * @param couponPrefix    the configured prefix codes are issued under in this mode (each issuance adds its own nonce)
  * @param liveHost        GetMore's host when LIVE, otherwise null

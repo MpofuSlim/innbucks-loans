@@ -505,6 +505,58 @@ class SwaggerExamplesTest {
                 .isEqualByComparingTo(spends.path("balance").decimalValue());
         assertThat(spends.path("spent").decimalValue()).isEqualByComparingTo(face.subtract(left));
         assertThat(spends.path("balanceAsOf").asString()).isEqualTo(tile.path("balanceAsOf").asString());
+
+        // Staff's view of the same voucher: its sales and refund walk the balance down to what is left, each named by
+        // the order the borrower's list names, and the day's settlement report adds up to the same money.
+        JsonNode detail = JSON.readTree(GetMoreApiExamples.VOUCHER_9_DETAIL).path("data");
+        assertThat(detail.path("voucher").path("balance").decimalValue()).isEqualByComparingTo(left);
+        BigDecimal walked = face;
+        List<String> orders = new ArrayList<>();
+        for (JsonNode sale : detail.path("redemptions")) {
+            walked = walked.subtract(sale.path("amount").decimalValue());
+            assertThat(sale.path("balanceAfter").decimalValue()).isEqualByComparingTo(walked);
+            assertThat(sale.path("source").asString()).isEqualTo("GETMORE_SYNC");
+            orders.add(sale.path("externalOrderNumber").asString());
+        }
+        for (JsonNode given : detail.path("refunds")) {
+            walked = walked.add(given.path("amount").decimalValue());
+            assertThat(given.path("balanceAfter").decimalValue()).isEqualByComparingTo(walked);
+        }
+        assertThat(walked).isEqualByComparingTo(left);
+        List<String> spentOn = new ArrayList<>();
+        spends.path("movements").forEach(movement -> {
+            if ("SPEND".equals(movement.path("kind").asString())) {
+                spentOn.add(movement.path("orderNumber").asString());
+            }
+        });
+        assertThat(orders).isEqualTo(spentOn);
+        assertThat(detail.path("refunds").get(0).path("amount").decimalValue()).isEqualByComparingTo(refund);
+
+        JsonNode report = JSON.readTree(GetMoreApiExamples.SETTLEMENT_REPORT_GETMORE).path("data");
+        JsonNode totals = report.path("totals").get(0);
+        assertThat(totals.path("issuedValue").decimalValue()).isEqualByComparingTo(face);
+        assertThat(totals.path("redeemedValue").decimalValue()).isEqualByComparingTo(first.add(second));
+        assertThat(totals.path("refundedValue").decimalValue()).isEqualByComparingTo(refund);
+        assertThat(totals.path("netRedeemedValue").decimalValue()).isEqualByComparingTo(face.subtract(left));
+        assertThat(report.path("byMerchant").get(0).path("netRedeemedValue"))
+                .isEqualTo(totals.path("netRedeemedValue"));
+        assertThat(report.path("redemptionsByOutlet").get(0).path("netRedeemedValue"))
+                .isEqualTo(totals.path("netRedeemedValue"));
+        assertThat(report.path("simulated").asBoolean()).isTrue();
+        List<String> references = new ArrayList<>();
+        for (JsonNode line : report.path("lines")) {
+            if (line.hasNonNull("merchantReference")) {
+                references.add(line.path("merchantReference").asString());
+            }
+            assertThat(line.path("voucherId").asLong()).isEqualTo(9);
+            assertThat(line.path("loanAccount").asString()).isEqualTo(reference);
+            assertThat(line.path("maskedCode").asString()).isEqualTo(GetMoreCodes.maskedCode(code));
+            assertThat(line.has("occurredAt")).as(line.path("event").asString())
+                    .isEqualTo(!"ISSUED".equals(line.path("event").asString()));
+        }
+        assertThat(references).contains(detail.path("redemptions").get(0).path("merchantReference").asString(),
+                        detail.path("redemptions").get(1).path("merchantReference").asString(),
+                        detail.path("refunds").get(0).path("merchantReference").asString());
     }
 
     static Stream<Class<?>> controllers() {

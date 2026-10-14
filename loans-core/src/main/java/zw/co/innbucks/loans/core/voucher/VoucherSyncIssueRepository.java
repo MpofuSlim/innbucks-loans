@@ -3,6 +3,9 @@ package zw.co.innbucks.loans.core.voucher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
 import java.util.List;
 
@@ -19,5 +22,8 @@ public interface VoucherSyncIssueRepository extends JpaRepository<VoucherSyncIss
 
     Page<VoucherSyncIssue> findAllByOrderByFirstSeenAtAscIdAsc(Pageable pageable);
 
-    long countByClearedAtIsNull();
+    /** Open issues of the vouchers of one GetMore store. */
+    @Query("select count(i) from VoucherSyncIssue i where i.clearedAt is null and i.voucherId in"
+            + " (select v.id from Voucher v where v.storeMode = :mode)")
+    long countOpenForStoreMode(@Param("mode") GetMoreMode storeMode);
 }

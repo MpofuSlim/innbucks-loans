@@ -1045,6 +1045,201 @@ public final class GetMoreApiExamples {
               "message": "Voucher 9 is the GetMore coupon of loan SGL-2026-000164: cancel the loan instead (POST /lending/v1/staff-loans/164/cancel)"
             }""";
 
+    /**
+     * Voucher 9 as staff open it after the refund: its two sales and the credit memo, each read back by a sync of the
+     * simulated store (GetMore's own time as redeemedAt or refundedAt, recordedAt when loans read it), and no open sync
+     * issue.
+     */
+    public static final String VOUCHER_9_DETAIL = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "voucher":""" + VOUCHER_9_AFTER_REFUND + """
+            ,
+                "redemptions": [
+                  {
+                    "id": 44,
+                    "merchantReference": "GMS:O:12:4550",
+                    "amount": 45.50,
+                    "balanceAfter": 104.50,
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "redeemedBy": "getmore-simulator",
+                    "redeemedAt": "2026-10-14T10:31:02+02:00",
+                    "source": "GETMORE_SYNC",
+                    "externalOrderNumber": "SIM000000012",
+                    "recordedAt": "2026-10-14T10:31:02+02:00"
+                  },
+                  {
+                    "id": 45,
+                    "merchantReference": "GMS:O:13:5450",
+                    "amount": 54.50,
+                    "balanceAfter": 50.00,
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "redeemedBy": "getmore-simulator",
+                    "redeemedAt": "2026-10-14T10:35:40+02:00",
+                    "source": "GETMORE_SYNC",
+                    "externalOrderNumber": "SIM000000013",
+                    "recordedAt": "2026-10-14T10:37:15+02:00"
+                  }
+                ],
+                "deliveries": [
+                  {
+                    "id": 21,
+                    "channel": "WHATSAPP",
+                    "recipient": "****0064",
+                    "template": "VOUCHER_ISSUED_GETMORE",
+                    "templateVersion": 1,
+                    "status": "SENT",
+                    "gatewayReference": null,
+                    "failureReason": null,
+                    "requestedBy": "system",
+                    "attemptedAt": "2026-10-14T10:20:08+02:00"
+                  }
+                ],
+                "refunds": [
+                  {
+                    "id": 3,
+                    "merchantReference": "GMS:CM:3",
+                    "creditMemoNumber": "SIMCM00000003",
+                    "externalOrderId": 12,
+                    "amount": 10.00,
+                    "balanceAfter": 60.00,
+                    "refundedAt": "2026-10-14T10:39:58+02:00",
+                    "recordedAt": "2026-10-14T10:39:58+02:00",
+                    "recordedBy": "getmore-simulator"
+                  }
+                ],
+                "syncIssues": []
+              }
+            }""";
+
+    /**
+     * Staging's settlement report for 14 October so far (before the simulator expired voucher 9): it was issued, both
+     * its sales and the refund were read back, each on the day loans read it with GetMore's own time as occurredAt,
+     * and the report says simulated, since only a SIMULATED host reports simulated vouchers.
+     */
+    public static final String SETTLEMENT_REPORT_GETMORE = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "date": "2026-10-14",
+                "generatedAt": "2026-10-14T10:42:00+02:00",
+                "totals": [
+                  {
+                    "currency": "USD",
+                    "issuedCount": 1,
+                    "issuedValue": 150.00,
+                    "redemptionCount": 2,
+                    "redeemedValue": 100.00,
+                    "refundCount": 1,
+                    "refundedValue": 10.00,
+                    "netRedeemedValue": 90.00,
+                    "cancelledCount": 0,
+                    "cancelledValue": 0.00,
+                    "expiredCount": 0,
+                    "expiredUnredeemedValue": 0.00
+                  }
+                ],
+                "byMerchant": [
+                  {
+                    "merchantCode": "getmore-groceries",
+                    "merchantName": "GetMore Groceries",
+                    "currency": "USD",
+                    "issuedCount": 1,
+                    "issuedValue": 150.00,
+                    "redemptionCount": 2,
+                    "redeemedValue": 100.00,
+                    "refundCount": 1,
+                    "refundedValue": 10.00,
+                    "netRedeemedValue": 90.00,
+                    "cancelledCount": 0,
+                    "cancelledValue": 0.00,
+                    "expiredCount": 0,
+                    "expiredUnredeemedValue": 0.00
+                  }
+                ],
+                "redemptionsByOutlet": [
+                  {
+                    "merchantCode": "getmore-groceries",
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "currency": "USD",
+                    "redemptionCount": 2,
+                    "redeemedValue": 100.00,
+                    "refundCount": 1,
+                    "refundedValue": 10.00,
+                    "netRedeemedValue": 90.00
+                  }
+                ],
+                "lines": [
+                  {
+                    "event": "ISSUED",
+                    "at": "2026-10-14T10:20:07+02:00",
+                    "voucherId": 9,
+                    "merchantCode": "getmore-groceries",
+                    "maskedCode": "****8B1C",
+                    "loanAccount": "SGL-2026-000164",
+                    "customerReference": "E1064",
+                    "currency": "USD",
+                    "amount": 150.00,
+                    "outletId": null,
+                    "outletName": null,
+                    "merchantReference": null
+                  },
+                  {
+                    "event": "REDEEMED",
+                    "at": "2026-10-14T10:31:02+02:00",
+                    "occurredAt": "2026-10-14T10:31:02+02:00",
+                    "voucherId": 9,
+                    "merchantCode": "getmore-groceries",
+                    "maskedCode": "****8B1C",
+                    "loanAccount": "SGL-2026-000164",
+                    "customerReference": "E1064",
+                    "currency": "USD",
+                    "amount": 45.50,
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "merchantReference": "GMS:O:12:4550"
+                  },
+                  {
+                    "event": "REDEEMED",
+                    "at": "2026-10-14T10:37:15+02:00",
+                    "occurredAt": "2026-10-14T10:35:40+02:00",
+                    "voucherId": 9,
+                    "merchantCode": "getmore-groceries",
+                    "maskedCode": "****8B1C",
+                    "loanAccount": "SGL-2026-000164",
+                    "customerReference": "E1064",
+                    "currency": "USD",
+                    "amount": 54.50,
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "merchantReference": "GMS:O:13:5450"
+                  },
+                  {
+                    "event": "REFUNDED",
+                    "at": "2026-10-14T10:39:58+02:00",
+                    "occurredAt": "2026-10-14T10:39:58+02:00",
+                    "voucherId": 9,
+                    "merchantCode": "getmore-groceries",
+                    "maskedCode": "****8B1C",
+                    "loanAccount": "SGL-2026-000164",
+                    "customerReference": "E1064",
+                    "currency": "USD",
+                    "amount": 10.00,
+                    "outletId": "store-2",
+                    "outletName": "GetMore Avondale",
+                    "merchantReference": "GMS:CM:3"
+                  }
+                ],
+                "simulated": true
+              }
+            }""";
+
     public static final String VOUCHER_9_CODE = """
             {
               "code": "OK",

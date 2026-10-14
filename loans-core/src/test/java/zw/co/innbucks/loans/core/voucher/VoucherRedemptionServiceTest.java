@@ -243,6 +243,11 @@ class VoucherRedemptionServiceTest {
                                 + " sales)");
             }
             assertThat(validator.validate(redeem(TestVouchers.CODE, "10.00", "GM-POS-1"))).isEmpty();
+            assertThat(validator.validate(redeem(TestVouchers.CODE, "10.00", "AVD-T3-000981\n")))
+                    .as("a line break is not a reserved prefix: the till's reference is accepted, as before").isEmpty();
+            assertThat(validator.validate(redeem(TestVouchers.CODE, "10.00", "GMS:CM:3\r\n")))
+                    .extracting(jakarta.validation.ConstraintViolation::getMessage)
+                    .containsExactly("reference must not start with GM: or GMS: (reserved for GetMore's own sales)");
         }
 
         assertThatThrownBy(() -> service.redeem(redeem(TestVouchers.CODE, "10.00", " GM:O:12:4550")))

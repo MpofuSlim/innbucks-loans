@@ -57,6 +57,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -120,11 +121,13 @@ class GetMoreWebContractTest {
         when(binding.name()).thenReturn("SIMULATED_PER_COUPON");
         when(binding.partialSpending()).thenReturn(true);
         when(merchantRepository.findByStaffLoanMerchantTrue()).thenReturn(Optional.of(merchant(VoucherStore.GETMORE)));
-        when(issuanceRepository.countByStatus(any())).thenReturn(0L);
-        when(issuanceRepository.countByStatus(StaffLoanVoucherIssuanceStatus.PARKED)).thenReturn(1L);
-        when(issueRepository.countByClearedAtIsNull()).thenReturn(1L);
-        when(voucherRepository.countBySyncBlockedByIsNotNull()).thenReturn(1L);
-        when(voucherRepository.countByHeldAmountGreaterThan(BigDecimal.ZERO)).thenReturn(0L);
+        when(issuanceRepository.countByStatusAndStoreMode(any(), any())).thenReturn(0L);
+        when(issuanceRepository.countByStatusAndStoreMode(StaffLoanVoucherIssuanceStatus.PARKED, GetMoreMode.SIMULATED))
+                .thenReturn(1L);
+        when(issueRepository.countOpenForStoreMode(GetMoreMode.SIMULATED)).thenReturn(1L);
+        when(voucherRepository.countByStoreModeAndSyncBlockedByIsNotNull(GetMoreMode.SIMULATED)).thenReturn(1L);
+        when(voucherRepository.countByStoreModeAndHeldAmountGreaterThan(GetMoreMode.SIMULATED, BigDecimal.ZERO))
+                .thenReturn(2L);
         when(coupons.rule(43)).thenReturn(RULE_43);
     }
 
@@ -175,7 +178,7 @@ class GetMoreWebContractTest {
                 .andExpect(jsonPath("$.data.issuances.ISSUED").doesNotExist())
                 .andExpect(jsonPath("$.data.openSyncIssues").value(1))
                 .andExpect(jsonPath("$.data.blockedVouchers").value(1))
-                .andExpect(jsonPath("$.data.heldVouchers").value(0))
+                .andExpect(jsonPath("$.data.heldVouchers").value(2))
                 .andExpect(jsonPath("$.data.rule").doesNotExist())
                 .andExpect(jsonPath("$.data.ruleError").doesNotExist());
         verify(coupons, never()).rule(anyLong());
@@ -211,6 +214,31 @@ class GetMoreWebContractTest {
         mvc.perform(as("SUPER_ADMIN", get("/lending/v1/getmore").param("checkRule", "true")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.ruleError").value("GETMORE_REJECTED: NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("counts are of this host's store only: a host moved to LIVE never reports its simulated rows")
+    void countsOfThisHostsStoreOnly() throws Exception {
+        properties.setMode(GetMoreMode.LIVE);
+        when(issuanceRepository.countByStatusAndStoreMode(StaffLoanVoucherIssuanceStatus.PENDING, GetMoreMode.LIVE))
+                .thenReturn(3L);
+
+        mvc.perform(as("CREDIT_MANAGER", get("/lending/v1/getmore")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mode").value("LIVE"))
+                .andExpect(jsonPath("$.data.issuances.PENDING").value(3))
+                .andExpect(jsonPath("$.data.issuances.PARKED").value(0))
+                .andExpect(jsonPath("$.data.openSyncIssues").value(0))
+                .andExpect(jsonPath("$.data.blockedVouchers").value(0))
+                .andExpect(jsonPath("$.data.heldVouchers").value(0));
+
+        properties.setMode(GetMoreMode.OFF);
+        mvc.perform(as("CREDIT_MANAGER", get("/lending/v1/getmore")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.issuances.PENDING").value(3))
+                .andExpect(jsonPath("$.data.openSyncIssues").value(0));
+        verify(issueRepository, times(2)).countOpenForStoreMode(GetMoreMode.LIVE);
+        verify(issueRepository, never()).countOpenForStoreMode(GetMoreMode.SIMULATED);
     }
 
     @Test

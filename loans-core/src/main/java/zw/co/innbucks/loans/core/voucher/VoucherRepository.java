@@ -35,11 +35,11 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long>, JpaSpec
     /** The voucher a GetMore coupon was kept as, in its store: one per coupon ({@code uq_vouchers_external_coupon}). */
     Optional<Voucher> findByStoreModeAndExternalCouponId(GetMoreMode storeMode, Long externalCouponId);
 
-    /** GetMore vouchers whose last sync stopped at a blocking issue. */
-    long countBySyncBlockedByIsNotNull();
+    /** GetMore vouchers of one store whose last sync stopped at a blocking issue. */
+    long countByStoreModeAndSyncBlockedByIsNotNull(GetMoreMode storeMode);
 
-    /** GetMore vouchers with a sale ordered at the store and not yet invoiced, as last synced. */
-    long countByHeldAmountGreaterThan(BigDecimal amount);
+    /** GetMore vouchers of one store with a sale ordered there and not yet invoiced, as last synced. */
+    long countByStoreModeAndHeldAmountGreaterThan(GetMoreMode storeMode, BigDecimal amount);
 
     /**
      * A staff member's GetMore vouchers in {@code mode} that a borrower's read may refresh: not cancelled, expiring

@@ -255,15 +255,18 @@ public class StaffLoanWriteOffService {
 
     /**
      * A voucher that can still be spent stops a write-off, with what to do instead. Loans' own voucher can be cancelled
-     * while nothing is spent; a GetMore coupon is cancelled only with its loan, while nothing is spent or held at
-     * GetMore's till.
+     * while nothing is spent; a GetMore coupon is cancelled only with its loan, and only if nothing was ever spent from
+     * it, refunded or held at GetMore's till: the cancellation's own rule, so a coupon whose spend was refunded back to
+     * nothing (ISSUED again) is not sent to a cancel that refuses it.
      */
     private ConflictException voucherOpen(StaffLoan loan, Voucher voucher, LocalDateTime now) {
         boolean untouched = voucher.statusAt(now) == VoucherStatus.ISSUED;
         String how;
         if (voucher.isGetMore()) {
-            how = untouched && voucher.getHeldAmount().signum() == 0 ? "cancel the loan instead (POST"
-                    + " /lending/v1/staff-loans/" + loan.getId() + "/cancel)" : "wait until it expires";
+            boolean neverUsed = untouched && voucher.getHeldAmount().signum() == 0
+                    && voucher.getRedeemedAmount().signum() == 0 && voucher.getRefundedAmount().signum() == 0;
+            how = neverUsed ? "cancel the loan instead (POST /lending/v1/staff-loans/" + loan.getId() + "/cancel)"
+                    : "wait until it expires";
         } else {
             how = untouched ? "cancel the voucher or wait until it expires" : "wait until it expires";
         }

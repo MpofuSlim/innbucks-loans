@@ -48,7 +48,7 @@ public class VoucherRedemptionRequest {
      */
     @NotBlank(message = "reference is required")
     @Size(max = 64, message = "reference must be at most 64 characters")
-    @Pattern(regexp = "^(?!GMS?:).*$", message = RESERVED_REFERENCE)
+    @Pattern(regexp = "(?s)^(?!GMS?:).*$", message = RESERVED_REFERENCE)
     private String reference;
 
     static final String RESERVED_REFERENCE = "reference must not start with GM: or GMS: (reserved for GetMore's own"

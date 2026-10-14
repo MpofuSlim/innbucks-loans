@@ -127,10 +127,13 @@ public class VoucherController {
 
     @Operation(summary = "A voucher",
             description = "With every purchase made with it (redemptions) and every attempt to send it (deliveries),"
-                    + " oldest first. The code is masked.")
+                    + " oldest first. A GetMore voucher also has the refunds read back from GetMore and its open sync"
+                    + " issues; a sale a sync read back carries GetMore's order number and when loans recorded it. The"
+                    + " code is masked.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Success",
-                    content = @Content(examples = @ExampleObject(VoucherApiExamples.VOUCHER_7_DETAIL))),
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "Loans' own voucher", value = VoucherApiExamples.VOUCHER_7_DETAIL),
+                    @ExampleObject(name = "A GetMore voucher", value = GetMoreApiExamples.VOUCHER_9_DETAIL)})),
             @ApiResponse(responseCode = "401", description = "No valid token",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
             @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE, SUPER_ADMIN or VOUCHER_SUPPORT",
@@ -303,8 +306,10 @@ public class VoucherController {
                     + " merchant.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
-                    content = {@Content(mediaType = "application/json",
-                            examples = @ExampleObject(VoucherApiExamples.SETTLEMENT_REPORT)),
+                    content = {@Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "Loans' own vouchers", value = VoucherApiExamples.SETTLEMENT_REPORT),
+                            @ExampleObject(name = "GetMore, on staging",
+                                    value = GetMoreApiExamples.SETTLEMENT_REPORT_GETMORE)}),
                             @Content(mediaType = "text/csv")}),
             @ApiResponse(responseCode = "400", description = "A day still to come, or an unknown format",
                     content = @Content(examples = @ExampleObject("""

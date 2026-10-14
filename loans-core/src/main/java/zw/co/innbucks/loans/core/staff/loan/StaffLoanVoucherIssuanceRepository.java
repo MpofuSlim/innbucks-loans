@@ -36,7 +36,8 @@ public interface StaffLoanVoucherIssuanceRepository extends JpaRepository<StaffL
     Page<StaffLoanVoucherIssuance> findByStatusInOrderByIdDesc(Collection<StaffLoanVoucherIssuanceStatus> statuses,
                                                               Pageable pageable);
 
-    long countByStatus(StaffLoanVoucherIssuanceStatus status);
+    /** Issuances of one GetMore store in {@code status}. */
+    long countByStatusAndStoreMode(StaffLoanVoucherIssuanceStatus status, GetMoreMode storeMode);
 
     /**
      * The issuances of a staff member's loans in {@code statuses}, newest first, at most {@code limit}: what a

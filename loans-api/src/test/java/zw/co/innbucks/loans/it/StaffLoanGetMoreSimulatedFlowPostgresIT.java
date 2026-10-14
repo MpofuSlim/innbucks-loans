@@ -34,6 +34,7 @@ import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserGroup;
 import zw.co.innbucks.loans.core.user.UserRepository;
 import zw.co.innbucks.loans.core.voucher.GetMoreDispatcher;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
 import zw.co.innbucks.loans.core.voucher.GetMoreSyncTrigger;
 import zw.co.innbucks.loans.core.voucher.GetMoreVoucherSync;
 import zw.co.innbucks.loans.core.voucher.VoucherExpiryJob;
@@ -47,6 +48,7 @@ import java.net.http.HttpResponse;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
@@ -356,11 +358,18 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
         try {
             List<Future<Object>> both = List.of(pool.submit(syncNow), pool.submit(syncNow));
             start.countDown();
-            Set<Object> outcomes = new HashSet<>();
+            List<Object> outcomes = new ArrayList<>();
             for (Future<Object> one : both) {
                 outcomes.add(one.get(30, TimeUnit.SECONDS));
             }
-            assertThat(outcomes).as("each sync ends without an error").isNotEmpty();
+            // The voucher's lock serialises them: one records the sale and the refund, the other then finds nothing
+            // new (or, past the lock's wait, is turned away BUSY), never a second copy of either.
+            assertThat(outcomes).as("one sync records, the other has nothing left to record")
+                    .containsOnlyOnce(GetMoreSyncResult.Outcome.SYNCED)
+                    .hasSize(2)
+                    .allMatch(outcome -> outcome == GetMoreSyncResult.Outcome.SYNCED
+                            || outcome == GetMoreSyncResult.Outcome.UNCHANGED
+                            || outcome == GetMoreSyncResult.Outcome.BUSY);
         } finally {
             pool.shutdownNow();
         }
@@ -371,6 +380,24 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
                 accepted.voucherIdOrZero())).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT redeemed_amount FROM vouchers WHERE id = ?", BigDecimal.class,
                 accepted.voucherIdOrZero())).isEqualByComparingTo("25.00");
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("GET /getmore counts this host's store only, in the database: issuances, sync issues, held vouchers")
+    void statusCountsThisStore() throws Exception {
+        JsonNode status = portal("GET", "/lending/v1/getmore", UserGroup.CREDIT_MANAGER, null, 200).path("data");
+
+        assertThat(status.path("mode").asString()).isEqualTo("SIMULATED");
+        assertThat(status.path("heldVouchers").asLong()).as("the sale held at the till in step 5")
+                .isEqualTo(jdbc.queryForObject("SELECT count(*) FROM vouchers WHERE store_mode = 'SIMULATED'"
+                        + " AND held_amount > 0", Long.class)).isPositive();
+        assertThat(status.path("openSyncIssues").asLong()).isEqualTo(jdbc.queryForObject("SELECT count(*) FROM"
+                + " voucher_sync_issues i JOIN vouchers v ON v.id = i.voucher_id WHERE i.cleared_at IS NULL"
+                + " AND v.store_mode = 'SIMULATED'", Long.class));
+        assertThat(status.path("issuances").path("CANCELLING").asLong()).isEqualTo(jdbc.queryForObject(
+                "SELECT count(*) FROM staff_loan_voucher_issuances WHERE status = 'CANCELLING'"
+                        + " AND store_mode = 'SIMULATED'", Long.class));
     }
 
     // ---- the borrower -----------------------------------------------------------------------------------------------
