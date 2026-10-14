@@ -39,7 +39,8 @@ import java.time.Duration;
  *       irreversible and pay out; the services that move money classify every
  *       failure instead, and a caller that wants a retry writes it.</li>
  *   <li><b>Redirects followed for GET only</b>, as {@code HttpURLConnection}
- *       did; a POST is never re-sent to another location.</li>
+ *       did; a POST is never re-sent to another location. A client can turn
+ *       them off entirely ({@link #requestFactory(Duration, Duration, boolean)}).</li>
  *   <li><b>No cookie store and no transparent compression.</b> One client is
  *       shared by every integration, so a cookie one upstream set must never
  *       ride along to another; and the request headers stay what they were.</li>
@@ -106,17 +107,36 @@ public final class OutboundHttp implements AutoCloseable {
      * waits longer for the pool than it would have for a connect.
      */
     public PooledRequestFactory requestFactory(Duration connectTimeout, Duration responseTimeout) {
+        return requestFactory(connectTimeout, responseTimeout, true);
+    }
+
+    /**
+     * As {@link #requestFactory(Duration, Duration)}, choosing whether a redirect is followed at all. With
+     * {@code followRedirects} false a 3xx comes back to the caller as it was answered, for a GET too: a client that
+     * signs each request over its exact URL (GetMore's OAuth 1.0a) must never have the signed headers replayed
+     * against a location they were not signed for.
+     */
+    public PooledRequestFactory requestFactory(Duration connectTimeout, Duration responseTimeout,
+                                               boolean followRedirects) {
         Duration connect = positiveOr(connectTimeout, properties.getConnectTimeout());
         Duration poolWait = properties.getConnectionRequestTimeout();
         return new PooledRequestFactory(httpClient,
                 connect,
                 positiveOr(responseTimeout, properties.getResponseTimeout()),
-                connect.compareTo(poolWait) < 0 ? connect : poolWait);
+                connect.compareTo(poolWait) < 0 ? connect : poolWait,
+                followRedirects);
     }
 
     /** Millisecond overload for the clients whose timeouts are configured as {@code *-ms} ints. */
     public PooledRequestFactory requestFactory(long connectTimeoutMs, long responseTimeoutMs) {
-        return requestFactory(Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(responseTimeoutMs));
+        return requestFactory(connectTimeoutMs, responseTimeoutMs, true);
+    }
+
+    /** Millisecond overload of {@link #requestFactory(Duration, Duration, boolean)}. */
+    public PooledRequestFactory requestFactory(long connectTimeoutMs, long responseTimeoutMs,
+                                               boolean followRedirects) {
+        return requestFactory(Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(responseTimeoutMs),
+                followRedirects);
     }
 
     public PoolingHttpClientConnectionManager connectionManager() {
@@ -173,13 +193,16 @@ public final class OutboundHttp implements AutoCloseable {
         private final Duration connectTimeout;
         private final Duration responseTimeout;
         private final Duration connectionRequestTimeout;
+        private final boolean followRedirects;
 
         PooledRequestFactory(CloseableHttpClient httpClient, Duration connectTimeout,
-                             Duration responseTimeout, Duration connectionRequestTimeout) {
+                             Duration responseTimeout, Duration connectionRequestTimeout,
+                             boolean followRedirects) {
             super(httpClient);
             this.connectTimeout = connectTimeout;
             this.responseTimeout = responseTimeout;
             this.connectionRequestTimeout = connectionRequestTimeout;
+            this.followRedirects = followRedirects;
             setReadTimeout(responseTimeout);
             setConnectionRequestTimeout(connectionRequestTimeout);
         }
@@ -187,6 +210,8 @@ public final class OutboundHttp implements AutoCloseable {
         public Duration connectTimeout() { return connectTimeout; }
         public Duration responseTimeout() { return responseTimeout; }
         public Duration connectionRequestTimeout() { return connectionRequestTimeout; }
+        /** False: no redirect is followed, whatever the method (a GET is otherwise followed, a POST never). */
+        public boolean followsRedirects() { return followRedirects; }
 
         /** The request config every request through this factory carries. */
         public RequestConfig effectiveRequestConfig() {
@@ -198,6 +223,7 @@ public final class OutboundHttp implements AutoCloseable {
         protected RequestConfig mergeRequestConfig(RequestConfig clientConfig) {
             return RequestConfig.copy(super.mergeRequestConfig(clientConfig))
                     .setConnectTimeout(Timeout.of(connectTimeout))
+                    .setRedirectsEnabled(followRedirects)
                     .build();
         }
 

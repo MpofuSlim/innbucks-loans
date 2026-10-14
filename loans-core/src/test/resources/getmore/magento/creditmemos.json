@@ -1,0 +1,17 @@
+{
+  "items": [
+    {"entity_id": 301, "increment_id": "000000301", "order_id": 5013, "state": 2, "discount_amount": -10.0000,
+     "subtotal": 10.0000, "grand_total": 0.0000, "created_at": "2026-10-16 09:11:58"},
+    {"entity_id": 302, "increment_id": "000000302", "order_id": 5013, "state": 3, "discount_amount": -5.0000,
+     "subtotal": 5.0000, "grand_total": 0.0000, "created_at": "2026-10-16 10:00:00"},
+    {"entity_id": 303, "increment_id": "000000303", "order_id": 5012, "state": 1, "discount_amount": -4.0000,
+     "subtotal": 4.0000, "grand_total": 0.0000, "created_at": "2026-10-16 11:30:00"}
+  ],
+  "search_criteria": {
+    "filter_groups": [{"filters": [{"field": "order_id", "value": "5012,5013", "condition_type": "in"}]}],
+    "sort_orders": [{"field": "entity_id", "direction": "ASC"}],
+    "page_size": 50,
+    "current_page": 1
+  },
+  "total_count": 3
+}

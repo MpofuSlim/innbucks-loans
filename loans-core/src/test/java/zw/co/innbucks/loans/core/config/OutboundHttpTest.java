@@ -151,6 +151,27 @@ class OutboundHttpTest {
     }
 
     @Test
+    @DisplayName("a factory with redirects off answers the 3xx itself, for a GET too: nothing is replayed elsewhere")
+    void noRedirectFactoryDoesNotFollowGet() {
+        wireMock.stubFor(get(urlEqualTo("/old")).willReturn(aResponse().withStatus(302).withHeader("Location", "/new")));
+        wireMock.stubFor(get(urlEqualTo("/new")).willReturn(ok("moved")));
+        RestClient noRedirects = RestClient.builder()
+                .baseUrl("http://localhost:" + wireMock.port())
+                .requestFactory(http.requestFactory(500, 2000, false))
+                .build();
+
+        ResponseEntity<Void> got = noRedirects.get().uri("/old").header("Authorization", "OAuth signed-for-old")
+                .retrieve().toBodilessEntity();
+
+        assertThat(got.getStatusCode().value()).isEqualTo(302);
+        wireMock.verify(1, getRequestedFor(urlEqualTo("/old")));
+        wireMock.verify(0, getRequestedFor(urlEqualTo("/new")));
+        assertThat(http.requestFactory(500, 2000, false).effectiveRequestConfig().isRedirectsEnabled()).isFalse();
+        assertThat(http.requestFactory(500, 2000).effectiveRequestConfig().isRedirectsEnabled())
+                .as("the two-argument factories keep following a GET's redirect").isTrue();
+    }
+
+    @Test
     @DisplayName("a cookie one upstream sets is never sent back: the shared client keeps no cookie store")
     void noCookieStore() {
         wireMock.stubFor(get(urlEqualTo("/login")).willReturn(ok("x").withHeader("Set-Cookie", "SESSION=abc; Path=/")));
