@@ -228,6 +228,22 @@ public class Voucher {
     }
 
     /**
+     * GETMORE: whether, as of {@code now}, it is still in a state a cancellation of its loan accepts (what was spent
+     * from it is checked apart): open, or stopped on a cancellation's way. That is stopped by the bank (a cancellation
+     * that could not finish, or whose withdrawal's answer was lost), or stopped because its coupon is gone at GetMore
+     * and loans has recorded it gone (a cancellation's own withdrawal that applied while loans recorded nothing, seen
+     * by the next sync). Not one that lapsed on its own, ran out, or was expired by the simulator.
+     */
+    public boolean cancellableWithLoan(LocalDateTime now) {
+        VoucherStatus at = statusAt(now);
+        if (at == VoucherStatus.ISSUED) {
+            return true;
+        }
+        return at == VoucherStatus.EXPIRED && (stoppedReason == VoucherStopReason.BANK_STOPPED
+                || (stoppedReason == VoucherStopReason.STORE_WITHDRAWN && couponWithdrawnAt != null));
+    }
+
+    /**
      * The code as staff without the entitlement see it (FR-SGL-040): loans' grouped digits, or GetMore's one masked
      * form, {@code ****8B1C}.
      */

@@ -116,9 +116,13 @@ public class StaffLoanController {
                     + " is read first (nothing spent, refunded or held at the till, no open sync issue), the coupon is"
                     + " withdrawn, GetMore is read again, and loan and voucher are CANCELLED; nothing is owed. A spend"
                     + " that raced in, or a write-off, leaves the loan standing with its voucher stopped (409). When"
-                    + " GetMore cannot be read or answers no (502, 503), nothing changed in loans unless the message"
-                    + " says the coupon is withdrawn; repeating the request is safe. The message says what became of"
-                    + " the coupon. The borrower may apply again once it is cancelled.")
+                    + " GetMore cannot be read or refuses (503, 502 GETMORE_REJECTED), nothing changed in loans unless"
+                    + " the message says the coupon is withdrawn; when the withdrawal's answer was lost (502"
+                    + " GETMORE_OUTCOME_UNKNOWN) the voucher is stopped, its coupon perhaps gone, and the loan stands."
+                    + " Repeating the request is safe in every case. The message says what became of the coupon,"
+                    + " including one of a cancelled issuance used at GetMore after the cancel"
+                    + " (COUPON_USED_AFTER_CANCEL, parked for Credit). The borrower may apply again once it is"
+                    + " cancelled.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cancelled", content = @Content(examples = {
                     @ExampleObject(name = "Awaiting payout", value = StaffLoanApiExamples.CANCELLED),

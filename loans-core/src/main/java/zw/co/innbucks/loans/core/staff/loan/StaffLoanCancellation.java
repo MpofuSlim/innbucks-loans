@@ -54,11 +54,13 @@ import java.util.List;
  *   <li><b>Paid out as a GetMore voucher of this host's mode</b>: cancelled only if nothing was ever spent from it,
  *       as GetMore's own records say, not only loans': the voucher is synced (refused while GetMore cannot be read, or
  *       an open blocking sync issue stands, or anything was ever spent, refunded or held at the till); its coupon is
- *       withdrawn at GetMore (nothing changes in loans if that fails); synced again, to catch a sale that reached the
- *       till just before the withdrawal; and only then, with the loan and the voucher locked, both are cancelled. A
- *       second sync that cannot complete stops the voucher (its code is dead at GetMore anyway) and leaves the loan to
- *       a repeat of the request, which is safe. A spend that raced in, a write-off approved or pending meanwhile, or
- *       the loan no longer DISBURSED: the voucher is stopped and the loan stands.</li>
+ *       withdrawn at GetMore (nothing changes in loans if GetMore refuses or cannot be asked); synced again, to catch a
+ *       sale that reached the till just before the withdrawal; and only then, with the loan and the voucher locked,
+ *       both are cancelled. A withdrawal whose answer was lost, or a second sync that cannot complete, stops the
+ *       voucher (BANK_STOPPED: its code may be dead at GetMore already) and leaves the loan to a repeat of the request,
+ *       which is safe: the repeat finds a stopped, untouched voucher and finishes. A spend that raced in, a write-off
+ *       approved or pending meanwhile, or the loan no longer DISBURSED: the voucher is stopped and the loan
+ *       stands.</li>
  *   <li><b>Anything else</b>: refused, as before.</li>
  * </ul>
  *
@@ -73,6 +75,9 @@ public class StaffLoanCancellation {
     static final String CANCELLED_WITHDRAWN = "Cancelled. The voucher's coupon is withdrawn at GetMore.";
     static final String CANCELLED_WITHDRAWAL_PENDING = "Cancelled. Withdrawing the voucher's coupon at GetMore is still"
             + " pending; it is retried on the next voucher-issuance call or payday sync.";
+    static final String CANCELLED_COUPON_USED = "Cancelled. A coupon of this loan was used at GetMore after it was"
+            + " cancelled; the voucher issuance is parked for the Credit department ("
+            + StaffLoanVoucherIssuer.COUPON_USED_AFTER_CANCEL + ").";
 
     /** The loan as it now stands, and what became of its GetMore coupon, in words. */
     public record Result(StaffLoanResponse loan, String message) {
@@ -140,7 +145,8 @@ public class StaffLoanCancellation {
      *                                     write-off; or a spend raced in (its voucher is then stopped)
      * @throws GetMoreUnavailableException GetMore could not be read or asked; repeat the request
      * @throws GetMoreRejectedException    GetMore refused to withdraw the coupon; nothing changed in loans
-     * @throws GetMoreOutcomeUnknownException the withdrawal's answer was lost; repeat the request, it is safe
+     * @throws GetMoreOutcomeUnknownException the withdrawal's answer was lost: the voucher is stopped and the loan
+     *                                        stands; repeat the request, it is safe
      */
     public Result cancel(Long staffLoanId, String reason) {
         GetMoreCalls.requireNoTransaction();
@@ -149,11 +155,8 @@ public class StaffLoanCancellation {
         First first = write(status -> first(staffLoanId, by, why));
         return switch (first.kind()) {
             case CANCELLED -> new Result(first.loan(), CANCELLED);
-            case CANCELLING -> {
-                StaffLoanVoucherIssuer.Cleanup cleanup = issuer.cleanup(first.issuanceId());
-                yield new Result(first.loan(), cleanup.withdrawn() ? CANCELLED_WITHDRAWN
-                        : CANCELLED_WITHDRAWAL_PENDING);
-            }
+            case CANCELLING -> new Result(first.loan(), cleanupMessage(first.issuanceId(),
+                    issuer.cleanup(first.issuanceId())));
             case GETMORE -> sync.withVoucherLock(first.voucherId(),
                     () -> cancelPaidOut(staffLoanId, first.voucherId(), by, why));
         };
@@ -182,13 +185,45 @@ public class StaffLoanCancellation {
                 + "; only a loan awaiting disbursement can be cancelled");
     }
 
+    /** What became of a cancelled loan's issuance after its cleanup, in words. */
+    private String cleanupMessage(Long issuanceId, StaffLoanVoucherIssuer.Cleanup cleanup) {
+        return switch (cleanup) {
+            case WITHDRAWN, WAITING_FOR_CLAIM -> CANCELLED_WITHDRAWN;
+            case COUPON_USED -> CANCELLED_COUPON_USED;
+            case FAILED -> CANCELLED_WITHDRAWAL_PENDING;
+            case NOT_CANCELLING -> afterAnotherCleanup(issuanceId);
+        };
+    }
+
+    /** Another cleanup moved the issuance on first: what it ended as. */
+    private String afterAnotherCleanup(Long issuanceId) {
+        StaffLoanVoucherIssuance issuance = read(status -> issuanceRepository.findById(issuanceId).orElse(null));
+        if (issuance == null) {
+            return CANCELLED_WITHDRAWAL_PENDING;
+        }
+        if (issuance.getStatus() == StaffLoanVoucherIssuanceStatus.ABANDONED) {
+            return CANCELLED_WITHDRAWN;
+        }
+        if (issuance.getStatus() == StaffLoanVoucherIssuanceStatus.PARKED
+                && StaffLoanVoucherIssuer.COUPON_USED_AFTER_CANCEL.equals(issuance.getLastOutcome())) {
+            return CANCELLED_COUPON_USED;
+        }
+        return CANCELLED_WITHDRAWAL_PENDING;
+    }
+
     /** The paid-out case, holding the voucher's sync lock. */
     private Result cancelPaidOut(Long staffLoanId, Long voucherId, String by, String reason) {
         GetMoreSyncResult before = sync.sync(voucherId, GetMoreSyncTrigger.CANCELLATION);
         Touch touch = read(status -> touch(voucherId));
         requireUnused(voucherId, before, touch);
 
-        GetMoreCouponDeletion deletion = coupons.withdraw(List.of(touch.code()));
+        GetMoreCouponDeletion deletion;
+        try {
+            deletion = coupons.withdraw(List.of(touch.code()));
+        } catch (GetMoreOutcomeUnknownException unknown) {
+            stopAfterLostWithdrawal(voucherId, touch, unknown);
+            throw unknown;
+        }
         if (deletion.failedItems().contains(touch.code())) {
             throw new GetMoreRejectedException(GetMoreException.Operation.DELETE_COUPONS,
                     GetMoreRejectedException.Reason.INVALID, "GetMore did not withdraw the coupon of voucher "
@@ -224,8 +259,8 @@ public class StaffLoanCancellation {
 
     /**
      * Refuses a voucher GetMore could not be read for, one with an open blocking sync issue, one ever used (spent,
-     * refunded, held at the till, an order standing at GetMore), and one that lapsed or was stopped other than by an
-     * earlier cancellation.
+     * refunded, held at the till, an order standing at GetMore), and one that lapsed or was stopped other than on an
+     * earlier cancellation's way ({@link Voucher#cancellableWithLoan}).
      */
     private void requireUnused(Long voucherId, GetMoreSyncResult synced, Touch touch) {
         if (!synced.outcome().read()) {
@@ -241,11 +276,33 @@ public class StaffLoanCancellation {
                     + money(touch.currency(), touch.spent()) + " spent, " + money(touch.currency(), touch.held())
                     + " held at the till); a loan whose voucher was used cannot be cancelled.");
         }
-        if (touch.status() != VoucherStatus.ISSUED && !(touch.status() == VoucherStatus.EXPIRED
-                && touch.stopped() == VoucherStopReason.BANK_STOPPED)) {
+        if (!touch.cancellable()) {
             throw new ConflictException("Voucher " + voucherId + " of " + touch.loanAccount() + " is "
                     + touch.status() + (touch.stopped() == null ? "" : " (" + touch.stopped() + ")")
                     + "; only a loan whose voucher can still be spent can be cancelled.");
+        }
+    }
+
+    /**
+     * The withdrawal's answer was lost: it may have applied. If it did, the repeat's first sync finds the coupon gone
+     * and would stop the voucher STORE_WITHDRAWN; stopped by the bank now, the voucher stays BANK_STOPPED (a closed
+     * voucher is not stopped again), so the repeat takes the documented path and finishes. If it did not, the code is
+     * withdrawn by the repeat, or by the next sync as a lapsed one. Best effort: a failure here is logged, and the
+     * repeat still finishes, since a coupon GetMore reports gone is recorded withdrawn and accepted too.
+     */
+    private void stopAfterLostWithdrawal(Long voucherId, Touch touch, GetMoreOutcomeUnknownException unknown) {
+        try {
+            writeTransaction.executeWithoutResult(status -> voucherService.stopGetMoreNow(voucherId,
+                    VoucherStopReason.BANK_STOPPED, now()));
+            log.warn("Cancelling staff loan {}: the answer to withdrawing the coupon of voucher {} ({}) was lost; the"
+                    + " voucher is stopped and the loan stands until the cancel is repeated", touch.loanAccount(),
+                    voucherId, GetMoreCodes.maskedCode(touch.code()));
+        } catch (RuntimeException notStopped) {
+            unknown.addSuppressed(notStopped);
+            log.warn("Cancelling staff loan {}: the answer to withdrawing the coupon of voucher {} ({}) was lost, and"
+                    + " the voucher could not be stopped ({}); the loan stands until the cancel is repeated",
+                    touch.loanAccount(), voucherId, GetMoreCodes.maskedCode(touch.code()),
+                    notStopped.getClass().getSimpleName());
         }
     }
 
@@ -293,9 +350,10 @@ public class StaffLoanCancellation {
         }
         boolean rows = redemptionRepository.existsByVoucherId(voucherId)
                 || refundRepository.existsByVoucherId(voucherId);
+        LocalDateTime now = now();
         return new Touch(vault.decrypt(voucher.getCodeCiphertext()), voucher.getLoanAccount(), voucher.getCurrency(),
                 voucher.getRedeemedAmount(), voucher.getHeldAmount(), voucher.getRefundedAmount(), rows, blocked,
-                voucher.statusAt(now()), voucher.getStoppedReason());
+                voucher.statusAt(now), voucher.getStoppedReason(), voucher.cancellableWithLoan(now));
     }
 
     private StaffLoanResponse response(StaffLoan loan) {
@@ -339,7 +397,7 @@ public class StaffLoanCancellation {
     /** What the voucher shows. Holds its code in memory only. */
     private record Touch(String code, String loanAccount, String currency, BigDecimal spent, BigDecimal held,
                          BigDecimal refunded, boolean rows, VoucherSyncIssueKind blockedBy, VoucherStatus status,
-                         VoucherStopReason stopped) {
+                         VoucherStopReason stopped, boolean cancellable) {
 
         /** Anything ever spent, refunded or held, or any row recording it. */
         boolean used() {

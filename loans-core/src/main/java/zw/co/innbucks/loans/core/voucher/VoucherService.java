@@ -489,8 +489,8 @@ public class VoucherService {
 
     /**
      * Cancels a GetMore voucher with its loan, in the cancellation's transaction, once its coupon is withdrawn at
-     * GetMore. Only a voucher nothing was ever spent from: nothing spent, refunded or held, and ISSUED, or stopped by
-     * the bank before anything was spent.
+     * GetMore. Only a voucher nothing was ever spent from: nothing spent, refunded or held, and ISSUED, or stopped on a
+     * cancellation's way before anything was spent ({@link Voucher#cancellableWithLoan}).
      *
      * @throws ConflictException it is not a GetMore voucher, or it was used
      */
@@ -500,9 +500,7 @@ public class VoucherService {
         VoucherStatus status = voucher.statusAt(now);
         boolean untouched = voucher.getRedeemedAmount().signum() == 0 && voucher.getRefundedAmount().signum() == 0
                 && voucher.getHeldAmount().signum() == 0;
-        boolean cancellable = status == VoucherStatus.ISSUED
-                || (status == VoucherStatus.EXPIRED && voucher.getStoppedReason() == VoucherStopReason.BANK_STOPPED);
-        if (!untouched || !cancellable) {
+        if (!untouched || !voucher.cancellableWithLoan(now)) {
             throw new ConflictException("Voucher " + voucherId + " is " + status + " with " + voucher.getCurrency()
                     + " " + voucher.getRedeemedAmount() + " spent, " + voucher.getRefundedAmount() + " refunded and "
                     + voucher.getHeldAmount() + " held at the till: a voucher that was used cannot be cancelled");

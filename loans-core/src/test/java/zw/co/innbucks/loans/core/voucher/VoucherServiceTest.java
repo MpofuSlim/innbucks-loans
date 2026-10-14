@@ -461,6 +461,19 @@ class VoucherServiceTest {
         assertThat(service.cancelGetMoreForLoan(9L, "credit1", "x", now).status())
                 .as("stopped by the bank with nothing spent").isEqualTo(VoucherStatus.CANCELLED);
 
+        when(vouchers.lockById(9L)).thenReturn(Optional.of(TestVouchers.getMoreIssued(vault)
+                .status(VoucherStatus.EXPIRED).stoppedReason(VoucherStopReason.STORE_WITHDRAWN)
+                .expiresAt(now.minusMinutes(5)).couponWithdrawnAt(now.minusMinutes(5)).build()));
+        assertThat(service.cancelGetMoreForLoan(9L, "credit1", "x", now).status())
+                .as("its coupon gone at GetMore, recorded withdrawn, nothing spent: a cancellation's own withdrawal")
+                .isEqualTo(VoucherStatus.CANCELLED);
+
+        when(vouchers.lockById(9L)).thenReturn(Optional.of(TestVouchers.getMoreIssued(vault)
+                .status(VoucherStatus.EXPIRED).stoppedReason(VoucherStopReason.SIMULATOR_EXPIRED)
+                .expiresAt(now.minusMinutes(5)).couponWithdrawnAt(now.minusMinutes(5)).build()));
+        assertThatThrownBy(() -> service.cancelGetMoreForLoan(9L, "credit1", "x", now))
+                .as("expired by the simulator").isInstanceOf(ConflictException.class);
+
         when(vouchers.lockById(7L)).thenReturn(Optional.of(TestVouchers.issued(vault).build()));
         assertThatThrownBy(() -> service.cancelGetMoreForLoan(7L, "credit1", "x", now))
                 .isInstanceOf(ConflictException.class).hasMessage("Voucher 7 is not a GetMore voucher");

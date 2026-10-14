@@ -63,6 +63,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -269,6 +270,40 @@ class StaffLoanCancellationTest {
                 + " pending; it is retried on the next voucher-issuance call or payday sync.");
     }
 
+    @Test
+    @DisplayName("(c) the message says what the cleanup found: a coupon used after the cancel, or another cleanup done")
+    void awaitingCleanupOutcomes() {
+        loan = loanBuilder(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
+        issuance(StaffLoanVoucherIssuanceStatus.PARKED, null);
+        when(issuer.cleanup(101L)).thenReturn(Cleanup.COUPON_USED);
+        assertThat(cancel().message()).isEqualTo("Cancelled. A coupon of this loan was used at GetMore after it was"
+                + " cancelled; the voucher issuance is parked for the Credit department (COUPON_USED_AFTER_CANCEL).");
+
+        loan = loanBuilder(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
+        StaffLoanVoucherIssuance done = issuance(StaffLoanVoucherIssuanceStatus.PARKED, null);
+        when(issuer.cleanup(101L)).thenAnswer(i -> {
+            done.abandoned(NOW_UTC);   // another cleanup finished first
+            return Cleanup.NOT_CANCELLING;
+        });
+        when(issuances.findById(101L)).thenAnswer(i -> Optional.of(done));
+        assertThat(cancel().message()).as("everything is withdrawn already")
+                .isEqualTo("Cancelled. The voucher's coupon is withdrawn at GetMore.");
+
+        loan = loanBuilder(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
+        StaffLoanVoucherIssuance parked = issuance(StaffLoanVoucherIssuanceStatus.PARKED, null);
+        when(issuer.cleanup(101L)).thenAnswer(i -> {
+            parked.park(StaffLoanVoucherIssuer.COUPON_USED_AFTER_CANCEL, "used", NOW_UTC);
+            return Cleanup.NOT_CANCELLING;
+        });
+        when(issuances.findById(101L)).thenAnswer(i -> Optional.of(parked));
+        assertThat(cancel().message()).contains("(COUPON_USED_AFTER_CANCEL)");
+
+        loan = loanBuilder(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
+        issuance(StaffLoanVoucherIssuanceStatus.PARKED, null);
+        when(issuer.cleanup(101L)).thenReturn(Cleanup.WAITING_FOR_CLAIM);
+        assertThat(cancel().message()).isEqualTo("Cancelled. The voucher's coupon is withdrawn at GetMore.");
+    }
+
     // ---- paid out as its GetMore voucher ---------------------------------------------------------------------------
 
     @Test
@@ -369,7 +404,7 @@ class StaffLoanCancellationTest {
     }
 
     @Test
-    @DisplayName("a voucher that lapsed, or was stopped other than by a cancellation, keeps its loan")
+    @DisplayName("a voucher that lapsed, or was stopped other than on a cancellation's way, keeps its loan")
     void lapsedVoucherRefuses() {
         voucher.set(voucher().expiresAt(NOW_UTC.minusSeconds(1)).build());
         assertThatThrownBy(this::cancel).isInstanceOf(ConflictException.class)
@@ -403,20 +438,74 @@ class StaffLoanCancellationTest {
     }
 
     @Test
-    @DisplayName("GetMore will not withdraw, or its answer is lost: nothing changes in loans")
-    void withdrawalFails() {
+    @DisplayName("GetMore will not withdraw: nothing changes in loans")
+    void withdrawalRefused() {
         when(coupons.withdraw(any())).thenReturn(new GetMoreCouponDeletion(List.of(CODE), List.of()));
         assertThatThrownBy(this::cancel).isInstanceOf(GetMoreRejectedException.class)
                 .hasMessageContaining("GetMore did not withdraw the coupon of voucher 9 (****8B1C)")
                 .hasMessageNotContaining(CODE);
 
-        when(coupons.withdraw(any())).thenThrow(new GetMoreOutcomeUnknownException(Operation.DELETE_COUPONS,
-                "read timed out"));
-        assertThatThrownBy(this::cancel).isInstanceOf(GetMoreOutcomeUnknownException.class);
-
         verify(voucherService, never()).markCouponWithdrawn(anyLong(), any());
         verify(voucherService, never()).stopGetMoreNow(anyLong(), any(), any());
         assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
+    }
+
+    @Test
+    @DisplayName("the withdrawal's answer is lost but it applied: the voucher is stopped, and the repeat cancels both")
+    void withdrawalAnswerLostThenRepeat() {
+        doAnswer(i -> {   // stopped by the bank; nothing is known yet of the coupon at GetMore
+            voucher.set(voucher().status(VoucherStatus.EXPIRED).expiresAt(NOW_UTC)
+                    .stoppedReason(VoucherStopReason.BANK_STOPPED).build());
+            events.add("stopped");
+            return true;
+        }).when(voucherService).stopGetMoreNow(eq(9L), eq(VoucherStopReason.BANK_STOPPED), any());
+        when(coupons.withdraw(any())).thenThrow(new GetMoreOutcomeUnknownException(Operation.DELETE_COUPONS,
+                "read timed out"));
+
+        assertThatThrownBy(this::cancel).isInstanceOf(GetMoreOutcomeUnknownException.class);
+
+        verify(voucherService).stopGetMoreNow(eq(9L), eq(VoucherStopReason.BANK_STOPPED), any());
+        verify(voucherService, never()).markCouponWithdrawn(anyLong(), any());
+        verify(voucherService, never()).cancelGetMoreForLoan(anyLong(), any(), any(), any());
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
+
+        // The delete had applied: the repeat's first sync finds the coupon gone. The voucher, already stopped, stays
+        // BANK_STOPPED (a closed voucher is not stopped again, so never STORE_WITHDRAWN), recorded withdrawn.
+        syncs.add(() -> {
+            voucher.set(voucher().status(VoucherStatus.EXPIRED).expiresAt(NOW_UTC)
+                    .stoppedReason(VoucherStopReason.BANK_STOPPED).couponWithdrawnAt(NOW_UTC).build());
+            return synced(Outcome.SYNCED, 0);
+        });
+        doReturn(new GetMoreCouponDeletion(List.of(), List.of(CODE))).when(coupons).withdraw(any());
+
+        StaffLoanCancellation.Result repeated = cancel();
+
+        assertThat(repeated.loan().status()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(repeated.message()).isEqualTo("Cancelled. The voucher's coupon is withdrawn at GetMore.");
+        verify(voucherService).cancelGetMoreForLoan(9L, "credit1", "Accepted in error", NOW_UTC);
+    }
+
+    @Test
+    @DisplayName("withdrawn, but recording it failed: the repeat finds the coupon gone (STORE_WITHDRAWN) and cancels")
+    void withdrawnButNotRecordedThenRepeat() {
+        doThrow(new IllegalStateException("database went away")).doNothing()
+                .when(voucherService).markCouponWithdrawn(eq(9L), any());
+
+        assertThatThrownBy(this::cancel).isInstanceOf(IllegalStateException.class);
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
+
+        syncs.add(() -> {   // the next sync: the coupon is gone at GetMore, the open voucher stopped STORE_WITHDRAWN
+            voucher.set(voucher().status(VoucherStatus.EXPIRED).expiresAt(NOW_UTC)
+                    .stoppedReason(VoucherStopReason.STORE_WITHDRAWN).couponWithdrawnAt(NOW_UTC).build());
+            return synced(Outcome.SYNCED, 0);
+        });
+        when(coupons.withdraw(any())).thenReturn(new GetMoreCouponDeletion(List.of(), List.of(CODE)));
+
+        StaffLoanCancellation.Result repeated = cancel();
+
+        assertThat(repeated.loan().status()).isEqualTo(StaffLoanStatus.CANCELLED);
+        verify(voucherService).cancelGetMoreForLoan(9L, "credit1", "Accepted in error", NOW_UTC);
+        verify(voucherService, never()).stopGetMoreNow(anyLong(), any(), any());
     }
 
     @Test
