@@ -439,8 +439,10 @@ class GetMoreStoreConfigTest {
                 .run(context -> refused(context, "loans.getmore.page-size must be at most 300"));
         runner.withPropertyValues("loans.getmore.rule-id=0")
                 .run(context -> refused(context, "loans.getmore.rule-id"));
-        runner.withPropertyValues("loans.getmore.code-length=7")
-                .run(context -> refused(context, "loans.getmore.code-length must be at least 8"));
+        runner.withPropertyValues("loans.getmore.code-length=11")
+                .run(context -> refused(context, "loans.getmore.code-length must be at least 12"));
+        runner.withPropertyValues("loans.getmore.code-length=12")
+                .run(context -> assertThat(context).hasNotFailed());
         runner.withPropertyValues("loans.getmore.clock-skew=")   // a blank GETMORE_CLOCK_SKEW keeps the default
                 .run(context -> assertThat(context.getBean(GetMoreProperties.class).getClockSkew())
                         .isEqualTo(Duration.ofMinutes(2)));

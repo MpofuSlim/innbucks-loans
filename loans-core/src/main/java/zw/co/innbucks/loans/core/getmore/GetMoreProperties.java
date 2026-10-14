@@ -51,8 +51,12 @@ public class GetMoreProperties {
             message = "loans.getmore.coupon-prefix must be 2 to 8 of A-Z and 0-9, then a dash, e.g. INN-"
                     + " (GETMORE_COUPON_PREFIX)")
     private String couponPrefix = "INN-";
-    /** The store's random characters after the prefix and nonce ({@code GETMORE_CODE_LENGTH}). */
-    @Min(value = 8, message = "loans.getmore.code-length must be at least 8 (GETMORE_CODE_LENGTH)")
+    /**
+     * The store's random characters after the prefix and nonce ({@code GETMORE_CODE_LENGTH}). At least 12: the prefix
+     * and the last 4 characters appear in logs and stored details, so the part never shown keeps at least 8.
+     */
+    @Min(value = 12, message = "loans.getmore.code-length must be at least 12 (GETMORE_CODE_LENGTH): the prefix and"
+            + " the last 4 characters appear in logs")
     @Max(value = 32, message = "loans.getmore.code-length must be at most 32 (GETMORE_CODE_LENGTH)")
     private int codeLength = 16;
     /** Items per page of every search, 1..300 ({@code GETMORE_PAGE_SIZE}). */

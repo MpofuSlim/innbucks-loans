@@ -86,8 +86,8 @@ public class GetMoreCoupons {
      *   <li>nothing found: count the generate ({@link GenerateGuard#beforeGenerate}), generate one code, give the count
      *       back if the store provably did not process it; check the code carries the prefix and length asked for
      *       (else withdraw it at once and park); search again, with no deadline (the code was sent for, so it is
-     *       always looked for), and if it is still not there, or that search fails, the outcome is unknown with the
-     *       code in hand ({@link GetMoreOutcomeUnknownException#mintedCodes()});</li>
+     *       always looked for), and if it is still not there (whatever else is), or that search fails, the outcome is
+     *       unknown with the code in hand ({@link GetMoreOutcomeUnknownException#mintedCodes()});</li>
      *   <li>classify what is on the prefix: a coupon under another rule or created before {@code notBeforeUtc} is
      *       foreign; several, more than one used, is a duplicate; several otherwise keeps the lowest id (or the one
      *       used) and withdraws the rest; a used coupon this call did not generate is not adopted;</li>
@@ -153,6 +153,14 @@ public class GetMoreCoupons {
             }
             if (!found.complete()) {
                 return tooMany(request, generated);
+            }
+            if (!containsAny(found.coupons(), generated)) {
+                // Others on the prefix (an earlier attempt's, say) but not the code just made: Magento's search lags.
+                // Classifying now would adopt over it and leave it live with nobody knowing; reported instead, the
+                // next attempt sees both, keeps one and withdraws the other.
+                throw new GetMoreOutcomeUnknownException(Operation.GENERATE, codes, "the code generated on prefix "
+                        + request.prefix() + " is not found by a search yet (" + found.coupons().size()
+                        + " other coupon(s) on it are)");
             }
         }
         return classify(request, found.coupons(), generated);
@@ -437,6 +445,11 @@ public class GetMoreCoupons {
         log.warn("GetMore: more than {} pages of coupons on prefix {}: parked", MAX_COUPON_PAGES, request.prefix());
         return parked(request, FindOrCreate.TOO_MANY_ON_PREFIX, "more than " + MAX_COUPON_PAGES
                 + " pages of coupons on prefix " + request.prefix(), generated, Withdrawal.NONE);
+    }
+
+    /** Whether any of {@code codes} is among the coupons, without case (Magento compares codes without case). */
+    private static boolean containsAny(List<GetMoreCoupon> coupons, List<String> codes) {
+        return coupons.stream().anyMatch(c -> codes.stream().anyMatch(code -> code.equalsIgnoreCase(c.code())));
     }
 
     /** The reason a search failed, for an operator: the kind, never a code. */

@@ -431,6 +431,44 @@ class GetMoreCouponsTest {
     }
 
     @Test
+    @DisplayName("after a generate, the search finds an older coupon but not the code just made (Magento's search"
+            + " lags): outcome unknown WITH the code, nothing bound or withdrawn; the next attempt keeps one and"
+            + " withdraws the other")
+    void generatedCodeMissingBesideAnOlderCouponIsReportedNotAdoptedOver() {
+        GetMoreCoupon[] older = new GetMoreCoupon[1];
+        GetMoreCoupon[] hidden = new GetMoreCoupon[1];
+        store.generateBehaviour = spec -> {
+            older[0] = store.plant(PREFIX + "AAAABBBBCCCC1111", RULE, 0, FLOOR.plusMinutes(1));
+            List<String> codes = store.mint(spec);
+            hidden[0] = store.coupons.getLast();
+            store.coupons.remove(hidden[0]);   // minted, not yet visible to a search
+            return codes;
+        };
+
+        assertThatThrownBy(this::findOrCreate).isInstanceOfSatisfying(GetMoreOutcomeUnknownException.class, e -> {
+            assertThat(e.mintedCodes()).containsExactlyElementsOf(store.lastMinted);
+            assertThat(e.getMessage()).contains("is not found by a search yet")
+                    .doesNotContain(store.lastMinted.getFirst());
+        });
+        assertThat(binding.bound).isEmpty();
+        assertThat(store.deleted).isEmpty();
+        assertThat(guard.counted).isEqualTo(1);
+        assertThat(guard.givenBack).as("it was processed: the count stays").isZero();
+
+        store.coupons.add(hidden[0]);   // the search catches up
+        FindOrCreate again = findOrCreate();
+
+        assertThat(again).isInstanceOfSatisfying(FindOrCreate.Bound.class, bound -> {
+            assertThat(bound.coupon().couponId()).isEqualTo(older[0].couponId());
+            assertThat(bound.adopted()).isTrue();
+            assertThat(bound.extrasWithdrawnMasked())
+                    .containsExactly(GetMoreCodes.maskedCode(store.lastMinted.getFirst()));
+        });
+        assertThat(store.deleted).containsExactly(store.lastMinted.getFirst());
+        assertThat(store.generateCalls).as("generated once, in total").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("the generated coupon itself fails the adoption floor (GetMore's clock behind loans'): parked"
             + " FOREIGN_COUPON, and the fresh code withdrawn rather than left live")
     void parkedAfterGenerateWithdrawsTheFreshCode() {
