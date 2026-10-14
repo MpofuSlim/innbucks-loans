@@ -25,6 +25,8 @@ import zw.co.innbucks.loans.core.employment.EmploymentEvent;
 import zw.co.innbucks.loans.core.employment.EmploymentEventType;
 import zw.co.innbucks.loans.core.employment.LoanEmploymentEvent;
 import zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction;
+import zw.co.innbucks.loans.core.getmore.CouponActivity;
+import zw.co.innbucks.loans.core.getmore.FindOrCreate;
 import zw.co.innbucks.loans.core.getmore.GetMoreCoupon;
 import zw.co.innbucks.loans.core.getmore.GetMoreCouponDeletion;
 import zw.co.innbucks.loans.core.getmore.GetMoreCouponQuery;
@@ -38,6 +40,8 @@ import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDeletionDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoOrderDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoSearchResultDto;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCoupon;
+import zw.co.innbucks.loans.core.getmore.simulator.SimOrder;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SignedInstrument;
@@ -365,6 +369,29 @@ class SensitiveToStringTest {
         GetMoreException unknown = new GetMoreOutcomeUnknownException(GetMoreException.Operation.GENERATE,
                 List.of(code), null);
         assertThat(unknown.toString()).doesNotContain(random).contains("1 minted code(s)");
+    }
+
+    @Test
+    @DisplayName("find-or-create's outcomes, an activity read and the simulator's rows print a code only as ****8B1C")
+    void getMoreOutcomesAndSimulatorRowsMaskTheCode() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String random = "7KQ2M9XWD4RT8B1C";
+        LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
+        GetMoreCoupon coupon = new GetMoreCoupon(1207, 43, code, 0, 0, 0, null, false, at, 1);
+        GetMoreOrder order = new GetMoreOrder(12, "SIM000000012", code, Set.of(43L), "complete", "USD",
+                new BigDecimal("60.0000"), new BigDecimal("14.5000"), new BigDecimal("-45.5000"),
+                new BigDecimal("-45.5000"), BigDecimal.ZERO, BigDecimal.ZERO, 2, "GetMore", at, at);
+        List<Object> holders = List.of(
+                new FindOrCreate.Parked(FindOrCreate.PREFIX_NOT_HONOURED, "masked detail", List.of(code)),
+                new FindOrCreate.Bound(coupon, true, List.of("****2222")),
+                new CouponActivity(List.of(coupon), List.of(order), List.of(), true),
+                SimCoupon.builder().couponId(1207L).ruleId(43).code(code).createdAt(at).build(),
+                SimOrder.builder().entityId(12L).incrementId("SIM000000012").couponCode(code).state("complete")
+                        .discountAmount(new BigDecimal("-45.5000")).build());
+        for (Object holder : holders) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
+                    .contains("****8B1C");
+        }
     }
 
     @Test

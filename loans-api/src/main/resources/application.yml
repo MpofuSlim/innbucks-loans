@@ -251,7 +251,8 @@ loans:
     delivery-channels: "${VOUCHER_DELIVERY_CHANNELS:WHATSAPP,SMS}"
     code-hmac-key: "${VOUCHER_CODE_HMAC_KEY:}"
     code-encryption-key: "${VOUCHER_CODE_ENCRYPTION_KEY:}"
-    # How often the scheduled-tasks profile marks lapsed vouchers EXPIRED and sends any left PENDING by a stop.
+    # How often the Staff Grocery Loan jobs (`@StaffLoanJobs`) mark lapsed vouchers EXPIRED and send any left PENDING by
+    # a stop.
     sweep-interval: "${VOUCHER_SWEEP_INTERVAL:PT15M}"
   # The Staff Grocery Loan as a borrower takes it in the SuperApp (FR-SGL-012, FR-SGL-026). Three are open business
   # questions, so each is a setting with the working answer as default: the partial draw (OQ-03: any amount from the
@@ -277,6 +278,47 @@ loans:
     # lodge. These move no money.
     # true: the weekly run fires on loans.staff-offers.run-cron and messages every eligible staff member.
     jobs-enabled: "${STAFF_LOANS_JOBS_ENABLED:false}"
+  # GetMore Groceries coupons as Staff Grocery Loan vouchers: issued by GetMore's store when a loan is accepted, spent
+  # in parts at GetMore, its sales and refunds read back from GetMore's orders and credit memos. Nothing is scheduled.
+  # Which loans: those whose merchant record says voucher_store GETMORE (a migration sets it; there is no setting).
+  # OFF (default): nothing calls GetMore; an accepted loan waits AWAITING_DISBURSEMENT with no voucher, as before.
+  # LIVE: GetMore's Magento 2.4 (OAuth 1.0a, HMAC-SHA256, all four keys). Issues nothing until live.amount-model is set.
+  # SIMULATED: STAGING ONLY. An in-process stand-in store; /lending/v1/getmore-simulator/** spends its coupons for
+  # whoever holds simulator.api-key, only on the node named by simulator.allowed-node. ERROR at every boot.
+  getmore:
+    mode: "${GETMORE_MODE:OFF}"
+    rule-id: "${GETMORE_RULE_ID:43}"
+    coupon-prefix: "${GETMORE_COUPON_PREFIX:INN-}"   # [A-Z0-9]{2,8}- ; differs per environment sharing a store
+    code-length: "${GETMORE_CODE_LENGTH:16}"
+    page-size: "${GETMORE_PAGE_SIZE:50}"
+    clock-skew: "${GETMORE_CLOCK_SKEW:PT2M}"         # adoption floor: first claim minus this
+    node-name: "${NODE_NAME:}"                       # the pod's node (Deployment fieldRef), never set by hand
+    issuance:
+      retry-after: "${GETMORE_ISSUANCE_RETRY_AFTER:PT30S}"
+      stale-claim: "${GETMORE_ISSUANCE_STALE_CLAIM:PT5M}"
+      inline-budget: "${GETMORE_ISSUANCE_INLINE_BUDGET:PT10S}"
+    sync:
+      min-interval: "${GETMORE_SYNC_MIN_INTERVAL:PT1M}"
+      after-expiry: "${GETMORE_SYNC_AFTER_EXPIRY:P30D}"
+      lock-wait: "${GETMORE_SYNC_LOCK_WAIT:PT30S}"
+    live:
+      base-url: "${GETMORE_BASE_URL:}"                     # https://qa.getmore.syncrony.com/rest/V1
+      signature-base-url: "${GETMORE_SIGNATURE_BASE_URL:}"
+      consumer-key: "${GETMORE_CONSUMER_KEY:}"
+      consumer-secret: "${GETMORE_CONSUMER_SECRET:}"
+      access-token: "${GETMORE_ACCESS_TOKEN:}"
+      access-token-secret: "${GETMORE_ACCESS_TOKEN_SECRET:}"
+      amount-model: "${GETMORE_LIVE_AMOUNT_MODEL:NONE}"    # NONE | RULE_AMOUNT_SINGLE_USE
+      currency: "${GETMORE_LIVE_CURRENCY:USD}"
+      connect-timeout-ms: "${GETMORE_CONNECT_TIMEOUT_MS:2000}"
+      read-timeout-ms: "${GETMORE_READ_TIMEOUT_MS:10000}"
+    simulator:
+      api-key: "${GETMORE_SIMULATOR_API_KEY:}"
+      allowed-node: "${GETMORE_SIMULATOR_ALLOWED_NODE:}"
+      coupon-prefix: "${GETMORE_SIMULATOR_COUPON_PREFIX:SIM-}"
+      currency: "${GETMORE_SIMULATOR_CURRENCY:USD}"
+      partial-spending: "${GETMORE_SIMULATOR_PARTIAL_SPENDING:true}"
+      enforce-coupon-expiry: "${GETMORE_SIMULATOR_ENFORCE_COUPON_EXPIRY:true}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
   # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
   # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a

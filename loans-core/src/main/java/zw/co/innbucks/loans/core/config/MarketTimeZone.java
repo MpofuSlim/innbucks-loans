@@ -82,6 +82,11 @@ public class MarketTimeZone {
         return zone;
     }
 
+    /** The clock every "now" here reads: for a budget that must agree with them (a deadline across calls). */
+    public Clock clock() {
+        return clock;
+    }
+
     /** Now, as the UTC timestamp the columns store, on this clock: consistent with {@link #today()}. */
     public LocalDateTime nowUtc() {
         return LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
