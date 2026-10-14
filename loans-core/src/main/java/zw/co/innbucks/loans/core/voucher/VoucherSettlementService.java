@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.CurrencyTotals;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport.Event;
@@ -21,30 +23,43 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
  * The daily settlement and reconciliation report (FR-SGL-038): one market day's vouchers issued, redeemed by outlet,
- * cancelled and lapsed, as JSON or as a CSV of every event, for every merchant or for one. Codes are masked
+ * refunded, cancelled and lapsed, as JSON or as a CSV of every event, for every merchant or for one. Codes are masked
  * (FR-SGL-040).
+ *
+ * <p>A till's redemption counts on the day it was made. A GetMore sale or refund counts on the day loans read it back
+ * from GetMore ({@code recorded_at}), with GetMore's own time beside it, so a day already reported never changes when a
+ * sync runs late: what was missed lands on the day it was read. A simulated GetMore voucher (staging) is reported only
+ * on a host whose store is SIMULATED, and the report then says so; anywhere else it is left out.</p>
  */
 @Service
 @RequiredArgsConstructor
 public class VoucherSettlementService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
+    /** The outlet a refund is counted at when the sale it gives back is not on record. */
+    static final String UNKNOWN_OUTLET = "store-unknown";
     private static final String[] CSV_HEADER = {"event", "at", "voucherId", "maskedCode", "loanAccount",
-            "customerReference", "currency", "amount", "outletId", "outletName", "merchantReference", "merchantCode"};
+            "customerReference", "currency", "amount", "outletId", "outletName", "merchantReference", "merchantCode",
+            "occurredAt"};
 
     private final VoucherRepository voucherRepository;
     private final MerchantRepository merchantRepository;
     private final VoucherRedemptionRepository redemptionRepository;
+    private final VoucherRefundRepository refundRepository;
     private final MarketTimeZone marketTimeZone;
+    private final GetMoreProperties getMoreProperties;
 
     /**
      * The report for a market day, today's so far included; a day still to come is refused.
@@ -64,27 +79,55 @@ public class VoucherSettlementService {
         LocalDateTime now = marketTimeZone.nowUtc();
         LocalDateTime from = marketTimeZone.startOfDayUtc(day);
         LocalDateTime to = marketTimeZone.endOfDayUtc(day);
+        boolean simulatedHost = getMoreProperties.getMode() == GetMoreMode.SIMULATED;
         List<Line> lines = new ArrayList<>();
         Map<String, String> merchantNames = new TreeMap<>();
-        voucherRepository.findByIssuedAtBetweenOrderByIdAsc(from, to).forEach(voucher ->
-                lines.add(line(Event.ISSUED, voucher.getIssuedAt(), voucher, voucher.getFaceValue(), merchantNames)));
-        List<VoucherRedemption> redemptions = redemptionRepository.findByRedeemedAtBetweenOrderByIdAsc(from, to);
-        Map<Long, Voucher> redeemed = voucherRepository.findAllById(redemptions.stream()
-                        .map(VoucherRedemption::getVoucherId).distinct().toList()).stream()
-                .collect(Collectors.toMap(Voucher::getId, Function.identity()));
+        voucherRepository.findByIssuedAtBetweenOrderByIdAsc(from, to).stream()
+                .filter(voucher -> reported(voucher, simulatedHost))
+                .forEach(voucher -> lines.add(line(Event.ISSUED, voucher.getIssuedAt(), voucher,
+                        voucher.getFaceValue(), merchantNames)));
+        List<VoucherRedemption> redemptions = new ArrayList<>(redemptionRepository
+                .findBySourceAndRedeemedAtBetweenOrderByIdAsc(VoucherRedemptionSource.TILL, from, to));
+        redemptions.addAll(redemptionRepository.findBySourceAndRecordedAtBetweenOrderByIdAsc(
+                VoucherRedemptionSource.GETMORE_SYNC, from, to));
+        List<VoucherRefund> refunds = refundRepository.findByRecordedAtBetweenOrderByIdAsc(from, to);
+        Set<Long> voucherIds = new TreeSet<>();
+        redemptions.forEach(redemption -> voucherIds.add(redemption.getVoucherId()));
+        refunds.forEach(refund -> voucherIds.add(refund.getVoucherId()));
+        Map<Long, Voucher> vouchers = voucherIds.isEmpty() ? Map.of() : voucherRepository.findAllById(voucherIds)
+                .stream().collect(Collectors.toMap(Voucher::getId, Function.identity()));
         redemptions.forEach(redemption -> {
-            Voucher voucher = redeemed.get(redemption.getVoucherId());
-            lines.add(new Line(Event.REDEEMED, redemption.getRedeemedAt(), voucher.getId(),
-                    named(voucher, merchantNames), voucher.maskedCode(), voucher.getLoanAccount(),
-                    voucher.getCustomerReference(), voucher.getCurrency(), redemption.getAmount(),
-                    redemption.getOutletId(), redemption.getOutletName(), redemption.getMerchantReference()));
+            Voucher voucher = vouchers.get(redemption.getVoucherId());
+            if (!reported(voucher, simulatedHost)) {
+                return;
+            }
+            boolean synced = redemption.getSource() == VoucherRedemptionSource.GETMORE_SYNC;
+            lines.add(new Line(Event.REDEEMED, synced ? redemption.getRecordedAt() : redemption.getRedeemedAt(),
+                    synced ? redemption.getRedeemedAt() : null, voucher.getId(), named(voucher, merchantNames),
+                    voucher.maskedCode(), voucher.getLoanAccount(), voucher.getCustomerReference(),
+                    voucher.getCurrency(), redemption.getAmount(), redemption.getOutletId(),
+                    redemption.getOutletName(), redemption.getMerchantReference()));
         });
-        voucherRepository.findByCancelledAtBetweenOrderByIdAsc(from, to).forEach(voucher ->
-                lines.add(line(Event.CANCELLED, voucher.getCancelledAt(), voucher, voucher.getFaceValue(),
-                        merchantNames)));
+        Map<List<Long>, VoucherRedemption> saleOfOrder = salesOfRefundedOrders(refunds);
+        refunds.forEach(refund -> {
+            Voucher voucher = vouchers.get(refund.getVoucherId());
+            if (!reported(voucher, simulatedHost)) {
+                return;
+            }
+            VoucherRedemption sale = saleOfOrder.get(List.of(refund.getVoucherId(), refund.getExternalOrderId()));
+            lines.add(new Line(Event.REFUNDED, refund.getRecordedAt(), refund.getRefundedAt(), voucher.getId(),
+                    named(voucher, merchantNames), voucher.maskedCode(), voucher.getLoanAccount(),
+                    voucher.getCustomerReference(), voucher.getCurrency(), refund.getAmount(),
+                    sale == null ? UNKNOWN_OUTLET : sale.getOutletId(), sale == null ? null : sale.getOutletName(),
+                    refund.getMerchantReference()));
+        });
+        voucherRepository.findByCancelledAtBetweenOrderByIdAsc(from, to).stream()
+                .filter(voucher -> reported(voucher, simulatedHost))
+                .forEach(voucher -> lines.add(line(Event.CANCELLED, voucher.getCancelledAt(), voucher,
+                        voucher.getFaceValue(), merchantNames)));
         voucherRepository.findByExpiresAtBetweenAndStatusInOrderByIdAsc(from, to, EnumSet.of(VoucherStatus.EXPIRED,
                         VoucherStatus.ISSUED, VoucherStatus.PARTIALLY_REDEEMED)).stream()
-                .filter(voucher -> voucher.lapsed(now))
+                .filter(voucher -> reported(voucher, simulatedHost) && voucher.lapsed(now))
                 .forEach(voucher -> lines.add(line(Event.EXPIRED, voucher.getExpiresAt(), voucher, voucher.balance(),
                         merchantNames)));
         if (merchant != null) {
@@ -92,7 +135,28 @@ public class VoucherSettlementService {
         }
         lines.sort(Comparator.comparing(Line::at).thenComparing(Line::voucherId));
         return new VoucherSettlementReport(day, merchant, now, totals(lines), byMerchant(lines, merchantNames),
-                byOutlet(lines), lines);
+                byOutlet(lines), lines, simulatedHost ? Boolean.TRUE : null);
+    }
+
+    /**
+     * Whether a voucher belongs in this host's report: a simulated GetMore voucher only where the store is SIMULATED
+     * (a staging test's rows must never reach a real settlement).
+     */
+    private static boolean reported(Voucher voucher, boolean simulatedHost) {
+        return voucher != null && (voucher.getStoreMode() != GetMoreMode.SIMULATED || simulatedHost);
+    }
+
+    /** The first recorded sale of each refunded order, by voucher and order: the outlet a refund is counted at. */
+    private Map<List<Long>, VoucherRedemption> salesOfRefundedOrders(List<VoucherRefund> refunds) {
+        if (refunds.isEmpty()) {
+            return Map.of();
+        }
+        Map<List<Long>, VoucherRedemption> sales = new HashMap<>();
+        redemptionRepository.findByVoucherIdInOrderByIdAsc(refunds.stream().map(VoucherRefund::getVoucherId)
+                        .collect(Collectors.toCollection(TreeSet::new))).stream()
+                .filter(sale -> sale.getExternalOrderId() != null)
+                .forEach(sale -> sales.putIfAbsent(List.of(sale.getVoucherId(), sale.getExternalOrderId()), sale));
+        return sales;
     }
 
     /** The report's events as CSV, one row each, for a spreadsheet. */
@@ -104,7 +168,8 @@ public class VoucherSettlementService {
                             String.valueOf(line.voucherId()), cell(line.maskedCode()), cell(line.loanAccount()),
                             cell(line.customerReference()), line.currency(), line.amount().toPlainString(),
                             cell(line.outletId()), cell(line.outletName()), cell(line.merchantReference()),
-                            cell(line.merchantCode())))
+                            cell(line.merchantCode()),
+                            line.occurredAt() == null ? "" : marketTimeZone.render(line.occurredAt())))
                     .append("\r\n");
         }
         return out.toString();
@@ -112,7 +177,7 @@ public class VoucherSettlementService {
 
     private static Line line(Event event, LocalDateTime at, Voucher voucher, BigDecimal amount,
                              Map<String, String> merchantNames) {
-        return new Line(event, at, voucher.getId(), named(voucher, merchantNames), voucher.maskedCode(),
+        return new Line(event, at, null, voucher.getId(), named(voucher, merchantNames), voucher.maskedCode(),
                 voucher.getLoanAccount(), voucher.getCustomerReference(), voucher.getCurrency(), amount, null, null,
                 null);
     }
@@ -131,6 +196,7 @@ public class VoucherSettlementService {
         byCurrency.forEach((currency, events) -> totals.add(new CurrencyTotals(currency,
                 count(events, Event.ISSUED), sum(events, Event.ISSUED),
                 count(events, Event.REDEEMED), sum(events, Event.REDEEMED),
+                count(events, Event.REFUNDED), sum(events, Event.REFUNDED), net(events),
                 count(events, Event.CANCELLED), sum(events, Event.CANCELLED),
                 count(events, Event.EXPIRED), sum(events, Event.EXPIRED))));
         return totals;
@@ -145,6 +211,7 @@ public class VoucherSettlementService {
         grouped.forEach((key, events) -> totals.add(new MerchantTotals(key.get(0), merchantNames.get(key.get(0)),
                 key.get(1), count(events, Event.ISSUED), sum(events, Event.ISSUED),
                 count(events, Event.REDEEMED), sum(events, Event.REDEEMED),
+                count(events, Event.REFUNDED), sum(events, Event.REFUNDED), net(events),
                 count(events, Event.CANCELLED), sum(events, Event.CANCELLED),
                 count(events, Event.EXPIRED), sum(events, Event.EXPIRED))));
         return totals;
@@ -152,16 +219,27 @@ public class VoucherSettlementService {
 
     private static List<OutletTotals> byOutlet(List<Line> lines) {
         Map<List<String>, List<Line>> grouped = new LinkedHashMap<>();
-        lines.stream().filter(line -> line.event() == Event.REDEEMED)
+        lines.stream().filter(line -> line.event() == Event.REDEEMED || line.event() == Event.REFUNDED)
                 .sorted(Comparator.comparing(Line::merchantCode).thenComparing(Line::outletId)
                         .thenComparing(Line::currency))
                 .forEach(line -> grouped.computeIfAbsent(List.of(line.merchantCode(), line.outletId(),
                         line.currency()), key -> new ArrayList<>()).add(line));
         List<OutletTotals> totals = new ArrayList<>();
-        grouped.forEach((key, redemptions) -> totals.add(new OutletTotals(key.get(0), key.get(1),
-                redemptions.getLast().outletName(), key.get(2), redemptions.size(),
-                sum(redemptions, Event.REDEEMED))));
+        grouped.forEach((key, events) -> totals.add(new OutletTotals(key.get(0), key.get(1), outletName(events),
+                key.get(2), count(events, Event.REDEEMED), sum(events, Event.REDEEMED),
+                count(events, Event.REFUNDED), sum(events, Event.REFUNDED), net(events))));
         return totals;
+    }
+
+    /** The outlet's name as its last purchase that day gave it, or its last refund when it had no purchase. */
+    private static String outletName(List<Line> events) {
+        List<Line> purchases = events.stream().filter(line -> line.event() == Event.REDEEMED).toList();
+        return (purchases.isEmpty() ? events : purchases).getLast().outletName();
+    }
+
+    /** What was redeemed less what was refunded. */
+    private static BigDecimal net(List<Line> lines) {
+        return sum(lines, Event.REDEEMED).subtract(sum(lines, Event.REFUNDED));
     }
 
     private static long count(List<Line> lines, Event event) {

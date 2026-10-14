@@ -43,6 +43,7 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
 import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
@@ -197,7 +198,8 @@ class StaffLoanJourneyServiceTest {
 
         BorrowerVoucherResponse voucher = new BorrowerVoucherResponse(VoucherStatus.ISSUED,
                 new BigDecimal("300.00"), new BigDecimal("300.00"), "USD", NOW_UTC.plusDays(30),
-                "**** **** **** 8406", "4829 1506 7331 8406", "4829150673318406");
+                "**** **** **** 8406", "4829 1506 7331 8406", "4829150673318406", VoucherCodeSource.LOANS, true,
+                new BigDecimal("0.00"), null, null);
         when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(voucher));
         when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
                 .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
@@ -243,7 +245,8 @@ class StaffLoanJourneyServiceTest {
         when(loans.findByStaffMemberId(eq(2L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(cancelled, repaid)));
         BorrowerVoucherResponse lapsed = new BorrowerVoucherResponse(VoucherStatus.EXPIRED, new BigDecimal("300.00"),
-                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null);
+                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null,
+                VoucherCodeSource.LOANS, true, new BigDecimal("180.00"), null, null);
         when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(lapsed));
 
         List<StaffLoanView> views = journey.loans(2L, PageRequest.of(1, 5)).getContent();

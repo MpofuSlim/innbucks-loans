@@ -33,6 +33,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreCouponQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreCouponUpdate;
 import zw.co.innbucks.loans.core.getmore.GetMoreException;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
@@ -65,6 +66,14 @@ import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
 import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.GetMoreSpendPlan;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncTrigger;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherCommand;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherLedger;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
+import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -397,6 +406,32 @@ class SensitiveToStringTest {
             assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
                     .contains("****8B1C");
         }
+    }
+
+    @Test
+    @DisplayName("a GetMore voucher's command, sync snapshots and result print neither the code nor the whole number")
+    void getMoreVoucherTypesMaskTheCode() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String random = "7KQ2M9XWD4RT8B1C";
+        LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
+        GetMoreVoucherCommand command = new GetMoreVoucherCommand(164L, "SGL-2026-000164", 3L, 9L, "E1064",
+                "Rutendo Chari", "+263771640064", new BigDecimal("150.00"), "USD", GetMoreMode.SIMULATED, 1207L, 43L,
+                code, "SIM-K7Q2M3XW-");
+        GetMoreSyncResult result = new GetMoreSyncResult(GetMoreSyncResult.Outcome.SYNCED, 1, 0,
+                new BigDecimal("0.00"), 1, List.of(), false, null);
+        List<Object> holders = List.of(command, result,
+                new GetMoreSpendPlan.Snapshot(9L, 3L, GetMoreMode.SIMULATED, code, 43L, new BigDecimal("150.00"), "USD",
+                        at, false, BigDecimal.ZERO, null),
+                new GetMoreVoucherLedger.Snapshot(9L, code, at, new CouponActivity(List.of(), List.of(), List.of(),
+                        true), List.of(), false, false, null, true, GetMoreSyncTrigger.OPERATOR),
+                new BorrowerVoucherResponse(VoucherStatus.ISSUED, new BigDecimal("150.00"), new BigDecimal("150.00"),
+                        "USD", at, "****8B1C", code, code, VoucherCodeSource.GETMORE, true, BigDecimal.ZERO, true, at));
+        for (Object holder : holders) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
+                    .doesNotContain("771640064");
+        }
+        assertThat(command.toString()).contains("****8B1C", "****0064", "couponId=1207");
+        assertThat(result.toString()).contains("outcome=SYNCED");
     }
 
     @Test

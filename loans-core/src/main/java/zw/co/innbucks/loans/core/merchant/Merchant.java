@@ -60,4 +60,13 @@ public class Merchant extends BaseEntity {
     @Column(name = "staff_loan_merchant", nullable = false)
     private boolean staffLoanMerchant;
 
+    /**
+     * Whose codes its vouchers carry: loans' own, or GetMore's store's. A record, set by a reviewed migration (V37
+     * makes {@code getmore-groceries} GETMORE), never a setting, and not part of the merchant API.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "voucher_store", length = 16, nullable = false)
+    @Builder.Default
+    private VoucherStore voucherStore = VoucherStore.LOANS;
+
 }

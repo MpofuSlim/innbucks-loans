@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import java.math.BigDecimal;
@@ -37,7 +38,8 @@ class StaffLoanViewTest {
 
     private static BorrowerVoucherResponse voucher(VoucherStatus status, String balance) {
         return new BorrowerVoucherResponse(status, new BigDecimal("300.00"), new BigDecimal(balance), "USD",
-                LocalDateTime.of(2026, 11, 5, 21, 59, 59), "**** **** **** 8406", null, null);
+                LocalDateTime.of(2026, 11, 5, 21, 59, 59), "**** **** **** 8406", null, null, VoucherCodeSource.LOANS,
+                true, new BigDecimal("300.00").subtract(new BigDecimal(balance)), null, null);
     }
 
     @Test

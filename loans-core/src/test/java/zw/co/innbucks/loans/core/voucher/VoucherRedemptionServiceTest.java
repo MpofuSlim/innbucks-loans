@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
@@ -27,7 +28,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * A merchant's till (FR-SGL-036): checking a voucher, spending it in part or in full, every refusal by its code, a
- * retried redemption answered once rather than spent twice, and another merchant's voucher refused as unknown.
+ * retried redemption answered once rather than spent twice, and another merchant's voucher refused as unknown. A
+ * GetMore coupon is never spent here, and a till's reference may not take a GetMore sync's key.
  */
 class VoucherRedemptionServiceTest {
 
@@ -203,5 +205,50 @@ class VoucherRedemptionServiceTest {
         when(redemptions.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("uq_voucher_redemptions"));
 
         refused(() -> service.redeem(redeem(TestVouchers.CODE, "10.00", "GM-POS-1")), VoucherRefusal.REFERENCE_REUSED);
+    }
+    @Test
+    @DisplayName("a GetMore code at the till is malformed (it has letters): refused before any lookup, check or spend")
+    void getMoreCodeRefused() {
+        refused(() -> service.validate(new VoucherValidationRequest(TestVouchers.GETMORE_CODE, "GM-AVD-01")),
+                VoucherRefusal.INVALID_VOUCHER_CODE);
+        refused(() -> service.redeem(redeem(TestVouchers.GETMORE_CODE, "10.00", "GM-POS-1")),
+                VoucherRefusal.INVALID_VOUCHER_CODE);
+        verify(vouchers, never()).findByCodeHmac(anyString());
+        verify(vouchers, never()).lockByCodeHmac(anyString());
+    }
+
+    @Test
+    @DisplayName("a GetMore voucher found all the same is refused as unknown, after the lookup; nothing spent")
+    void getMoreVoucherGuardedAfterLookup() {
+        voucher = TestVouchers.getMoreIssued(vault).codeHmac(vault.fingerprint(TestVouchers.CODE)).build();
+
+        refused(() -> service.validate(new VoucherValidationRequest(TestVouchers.CODE, "GM-AVD-01")),
+                VoucherRefusal.VOUCHER_NOT_FOUND);
+        refused(() -> service.redeem(redeem(TestVouchers.CODE, "10.00", "GM-POS-1")), VoucherRefusal.VOUCHER_NOT_FOUND);
+        verify(redemptions, never()).findByMerchantIdAndMerchantReference(any(), anyString());
+        verify(redemptions, never()).saveAndFlush(any());
+        assertThat(voucher.getRedeemedAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("a till reference starting GM: or GMS: is a GetMore sync's key: refused by validation and the service")
+    void getMoreReferenceRefused() {
+        try (jakarta.validation.ValidatorFactory factory = jakarta.validation.Validation
+                .buildDefaultValidatorFactory()) {
+            jakarta.validation.Validator validator = factory.getValidator();
+            for (String reserved : new String[]{"GM:O:12:4550", "GMS:CM:3"}) {
+                assertThat(validator.validate(redeem(TestVouchers.CODE, "10.00", reserved)))
+                        .extracting(jakarta.validation.ConstraintViolation::getMessage)
+                        .containsExactly("reference must not start with GM: or GMS: (reserved for GetMore's own"
+                                + " sales)");
+            }
+            assertThat(validator.validate(redeem(TestVouchers.CODE, "10.00", "GM-POS-1"))).isEmpty();
+        }
+
+        assertThatThrownBy(() -> service.redeem(redeem(TestVouchers.CODE, "10.00", " GM:O:12:4550")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("reference must not start with GM: or GMS: (reserved for GetMore's own sales)");
+        verify(vouchers, never()).lockByCodeHmac(anyString());
+        verify(redemptions, never()).saveAndFlush(any());
     }
 }

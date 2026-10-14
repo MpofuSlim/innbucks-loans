@@ -17,6 +17,7 @@ import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.voucher.VoucherCodeResponse;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherDeliveryStatus;
 import zw.co.innbucks.loans.core.voucher.VoucherProduct;
 import zw.co.innbucks.loans.core.voucher.VoucherRedemptionResult;
@@ -63,7 +64,8 @@ class VoucherWebContractTest {
             "getmore-groceries", "GetMore Groceries", "SGL-2026-000151", "BRNET-20261003-0002", "E1001", "Nyasha Dube", "****4471", "**** **** **** 2151",
             new BigDecimal("250.00"), new BigDecimal("0.00"), new BigDecimal("250.00"), "USD",
             LocalDateTime.of(2026, 10, 3, 6, 5, 41), LocalDateTime.of(2026, 11, 2, 21, 59, 59), VoucherStatus.ISSUED,
-            null, null, null, null, null, VoucherDeliveryStatus.PENDING, null, LocalDateTime.of(2026, 10, 4, 7, 2, 17));
+            null, null, null, null, null, VoucherDeliveryStatus.PENDING, null, LocalDateTime.of(2026, 10, 4, 7, 2, 17),
+            VoucherCodeSource.LOANS, null, null, null, null, null, null, null, null);
     private static final VoucherRedemptionResult REDEEMED = new VoucherRedemptionResult("GM-POS-88412",
             "**** **** **** 8406", new BigDecimal("180.00"), new BigDecimal("120.00"), "USD",
             VoucherStatus.PARTIALLY_REDEEMED, "GM-AVD-01", LocalDateTime.of(2026, 10, 3, 15, 42, 10), false);
@@ -259,7 +261,7 @@ class VoucherWebContractTest {
     void settlementForOneMerchant() throws Exception {
         when(settlement.report(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn(
                 new VoucherSettlementReport(LocalDate.of(2026, 10, 3), "getmore-groceries",
-                        LocalDateTime.of(2026, 10, 4, 4, 30), List.of(), List.of(), List.of(), List.of()));
+                        LocalDateTime.of(2026, 10, 4, 4, 30), List.of(), List.of(), List.of(), List.of(), null));
         when(settlement.csv(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn("event,at\r\n");
         when(settlement.report(LocalDate.of(2026, 10, 3), "nobody"))
                 .thenThrow(new NotFoundException("Merchant nobody not found"));
