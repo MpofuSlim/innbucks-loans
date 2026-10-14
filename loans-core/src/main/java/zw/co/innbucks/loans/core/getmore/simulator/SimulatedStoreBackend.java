@@ -57,7 +57,8 @@ import java.util.function.Function;
  *   <li><b>GET</b> an unknown or deleted coupon or rule: 404 "No such entity.".</li>
  *   <li><b>PUT</b>: the body merged into the row, the usage limits reset from the rule, {@code expiration_date}
  *       stored (and, assumption A4, enforced at the simulated till); a rule that does not allow the coupon's type is
- *       400 "Error occurred when saving coupon: %1".</li>
+ *       400 "Error occurred when saving coupon: %1". Not Magento: a coupon that has an allowance or an order keeps its
+ *       code (the same 400), because the simulated balance finds its orders by the code's text.</li>
  *   <li><b>deleteByCodes</b>: with {@code ignoreInvalidCoupons} false and any code missing, 400 "Some coupons are
  *       invalid." and nothing deleted; otherwise deleted, the rest reported missing; a code sent in another case is
  *       deleted AND reported missing (Magento compares the strings exactly); orders keep their code's text.</li>
@@ -175,6 +176,11 @@ public class SimulatedStoreBackend {
         if (update.code() != null && !update.code().equals(coupon.getCode())) {
             if (update.code().isBlank() || coupons.codeTakenByAnother(update.code(), couponId)) {
                 throw saveError("The coupon code is already in use or is not valid.");
+            }
+            if (coupon.getAllowance() != null || !orders.findByCouponCodeIgnoringCase(coupon.getCode()).isEmpty()) {
+                // Not Magento: the simulated balance finds a coupon's orders by its code's text (assumption A1), so
+                // a rename would orphan them and let the whole allowance be spent again.
+                throw saveError("A simulated coupon keeps its code once it has an allowance or an order.");
             }
             coupon.setCode(update.code());
         }

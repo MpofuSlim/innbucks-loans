@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.getmore.simulator;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.CannotCreateTransactionException;
 import zw.co.innbucks.loans.core.getmore.GetMoreCalls;
 import zw.co.innbucks.loans.core.getmore.GetMoreCodes;
 import zw.co.innbucks.loans.core.getmore.GetMoreCoupon;
@@ -15,9 +16,12 @@ import zw.co.innbucks.loans.core.getmore.GetMoreException.Operation;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
+import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMorePage;
 import zw.co.innbucks.loans.core.getmore.GetMoreSalesRule;
 import zw.co.innbucks.loans.core.getmore.GetMoreStore;
+import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
+import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException.Reason;
 
 import java.util.List;
 import java.util.Objects;
@@ -31,8 +35,9 @@ import java.util.function.Supplier;
  *
  * <p>Each call, like the live client's: no transaction open; then any fault a tester queued
  * ({@link SimulatorFaults#before}); then the backend, which commits in a transaction of its own, so what the store
- * did outlives a rollback of loans' work; then a write's lost answer, if one was queued. Never retried. One INFO line
- * per call, codes masked.
+ * did outlives a rollback of loans' work; then a write's lost answer, if one was queued. Never retried. Every failure
+ * leaves as one of the port's three kinds ({@link #classify}), as the live client's do. One INFO line per call, codes
+ * masked.
  *
  * <p><b>Not Magento</b>, and said so at every boot and in every test action's answer
  * ({@link #ASSUMPTIONS}): A1 each coupon is worth its own allowance; A2 it can be spent in parts; A3 a refund restores
@@ -132,7 +137,32 @@ public final class SimulatedGetMoreStore implements GetMoreStore {
                     elapsedMs(started));
             log.warn("{}", failure.getMessage());
             throw failure;
+        } catch (IllegalArgumentException badArgument) {
+            throw badArgument;   // a caller's argument refused before the store acted, as the live client does
+        } catch (RuntimeException failure) {
+            GetMoreException classified = classify(operation, failure);
+            log.info("GetMore {} (simulated) -> {} in {}ms", operation, failure.getClass().getSimpleName(),
+                    elapsedMs(started));
+            log.warn("{}", classified.getMessage());
+            throw classified;
         }
+    }
+
+    /**
+     * Any other failure of the backend (its database, mostly), in the port's three kinds as the live client reports a
+     * transport failure, so the code above the port runs the same path as live: a transaction that never began
+     * applied nothing ({@code NOT_REACHED}, so a generate's count is given back); any other failure of a write may
+     * have committed (outcome unknown); a read failed ({@code READ_FAILED}). Only the class name is kept: a message
+     * can carry SQL and its values.
+     */
+    static GetMoreException classify(Operation operation, RuntimeException failure) {
+        String kind = failure.getClass().getSimpleName();
+        if (failure instanceof CannotCreateTransactionException) {
+            return new GetMoreUnavailableException(operation, Reason.NOT_REACHED, kind);
+        }
+        return operation.isWrite()
+                ? new GetMoreOutcomeUnknownException(operation, "the simulated store failed: " + kind)
+                : new GetMoreUnavailableException(operation, Reason.READ_FAILED, kind);
     }
 
     private static long elapsedMs(long startedNanos) {

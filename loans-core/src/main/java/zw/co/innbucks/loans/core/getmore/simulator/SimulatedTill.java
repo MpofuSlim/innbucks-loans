@@ -38,8 +38,9 @@ import java.util.UUID;
  *
  * <p>Assumptions, not Magento ({@link SimulatedGetMoreStore#ASSUMPTIONS}): a coupon's balance is its allowance less
  * what its orders took plus what refunds gave back ({@link SimulatedBalance}); a held (not yet invoiced) sale counts
- * against it, as at a real till; with spending in parts on, any amount from 0.01 to the balance, any number of times,
- * and with it off exactly the balance; the coupon's {@code expiration_date} is enforced when enforcement is on.
+ * against it, as at a real till; with spending in parts on, any amount from 0.01 to the balance (in cents), any number
+ * of times, and with it off exactly the balance; the coupon's {@code expiration_date} is enforced when enforcement is
+ * on. A coupon is spent only in the currency its allowance was bound in.
  */
 @Slf4j
 @Component
@@ -50,6 +51,7 @@ public class SimulatedTill {
     static final int MAX_OUTLET_ID = 64;
     static final int MAX_OUTLET_NAME = 120;
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
+    private static final BigDecimal MIN_AMOUNT = new BigDecimal("0.01");
 
     private final SimCouponRepository coupons;
     private final SimRuleRepository rules;
@@ -103,7 +105,8 @@ public class SimulatedTill {
         String storeCurrency = simulator().getCurrency();
         String saleCurrency = isBlank(currency) ? storeCurrency : currency.strip().toUpperCase(Locale.ROOT);
 
-        SimCoupon coupon = coupons.lockLiveByCode(nonBlank(code))
+        String codeAsTyped = nonBlank(code);
+        SimCoupon coupon = coupons.lockLiveByCode(codeAsTyped)
                 .orElseThrow(() -> notValid(code));
         if (!isBlank(reference)) {
             Optional<SimOrder> earlier = orders.findBySaleReference(saleReference);
@@ -128,6 +131,11 @@ public class SimulatedTill {
         if (coupon.getAllowance() == null || usedUp(coupon)) {
             throw notValid(coupon.getCode());
         }
+        if (!saleCurrency.equals(coupon.getAllowanceCurrency())) {
+            // The store's currency changed after the coupon was bound: its balance cannot be spent in another one.
+            throw new SimulatorRefusedException(SimulatorRefusal.SIM_CURRENCY_MISMATCH, "This coupon is worth "
+                    + coupon.getAllowanceCurrency() + ", not " + saleCurrency);
+        }
         BigDecimal balance = balanceOf(coupon);
         if (spend.compareTo(balance) > 0) {
             throw new SimulatorRefusedException(SimulatorRefusal.SIM_INSUFFICIENT_BALANCE,
@@ -142,7 +150,9 @@ public class SimulatedTill {
         stores.insertIfAbsent(outlet, outletShownAs, now);
         SimStore shop = stores.findByOutletCode(outlet).orElseThrow();
         String orderNumber = String.format("SIM%09d", orders.nextOrderNumber());
-        int inserted = orders.insertIfAbsent(orderNumber, saleReference, coupon.getCode(),
+        // The code as the till received it, in the shopper's case: Magento records the code applied to the quote as
+        // given and finds the coupon without case, so a live order's coupon_code can differ in case from the coupon.
+        int inserted = orders.insertIfAbsent(orderNumber, saleReference, codeAsTyped,
                 String.valueOf(rule.getRuleId()), shop.getStoreId(), shop.magentoStoreName(),
                 invoiced ? SimOrder.COMPLETE : SimOrder.PROCESSING, saleCurrency, basket, basket.subtract(spend),
                 spend.negate(), invoiced ? spend.negate() : ZERO, now);
@@ -336,16 +346,18 @@ public class SimulatedTill {
                 "No simulated sale has order number " + orderNumber);
     }
 
-    /** An amount above 0 with at most 4 decimals, as the store's columns hold it. */
+    /**
+     * An amount of at least 0.01 with at most 2 decimals (assumption A2: a sale is any amount from 0.01, in the cents
+     * loans' voucher ledger records), held at the store's 4-decimal scale.
+     */
     private static BigDecimal money(BigDecimal amount, String name) {
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException(name + " must be above 0");
         }
-        try {
-            return amount.setScale(4, RoundingMode.UNNECESSARY);
-        } catch (ArithmeticException tooPrecise) {
-            throw new IllegalArgumentException(name + " has more than 4 decimals");
+        if (amount.compareTo(MIN_AMOUNT) < 0 || amount.stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException(name + " must be at least 0.01 with at most 2 decimals");
         }
+        return amount.setScale(4, RoundingMode.UNNECESSARY);
     }
 
     /** {@code USD 104.50}. */

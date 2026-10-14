@@ -59,6 +59,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -112,6 +113,7 @@ class SimulatedGetMoreStorePostgresIT {
         faults.clear();
         properties.getSimulator().setPartialSpending(true);
         properties.getSimulator().setEnforceCouponExpiry(true);
+        properties.getSimulator().setCurrency(USD);
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------
@@ -501,6 +503,96 @@ class SimulatedGetMoreStorePostgresIT {
         GetMoreCoupon coupon = boundCoupon("150.00");
         refusedAs(SimulatorRefusal.SIM_CURRENCY_MISMATCH, () -> till.sell(coupon.code(), BigDecimal.TEN, "ZWG", null,
                 "GM-AVD", null, null, true));
+    }
+
+    @Test
+    @DisplayName("the store's currency changed after the coupon was bound: its allowance is never spent in another"
+            + " currency")
+    void allowanceCurrencyEnforcedAfterAStoreCurrencyChange() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+        properties.getSimulator().setCurrency("ZWG");
+
+        assertThatThrownBy(() -> sell(coupon, "10.00")).isInstanceOfSatisfying(SimulatorRefusedException.class, e -> {
+            assertThat(e.getRefusal()).isEqualTo(SimulatorRefusal.SIM_CURRENCY_MISMATCH);
+            assertThat(e.getMessage()).isEqualTo("This coupon is worth USD, not ZWG");
+        });
+        refusedAs(SimulatorRefusal.SIM_CURRENCY_MISMATCH, () -> till.sell(coupon.code(), BigDecimal.TEN, USD, null,
+                "GM-AVD", null, null, true));
+        assertThat(ordersOf(coupon)).isEmpty();
+
+        properties.getSimulator().setCurrency(USD);
+        assertThat(sell(coupon, "10.00").balance()).isEqualByComparingTo("140.00");
+    }
+
+    @Test
+    @DisplayName("a PUT may not rename a coupon that has an allowance or an order (its balance finds its orders by"
+            + " code); a fresh one still can be")
+    void renameRefusedOnceTheCouponCarriesValue() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+        String prefix = coupon.code().substring(0, coupon.code().length() - 16);
+        String renamed = prefix + "RENAMED000000000";
+
+        assertThatThrownBy(() -> store.updateCoupon(coupon.couponId(), new GetMoreCouponUpdate(RULE, renamed, 1, null)))
+                .as("bound, nothing sold").isInstanceOfSatisfying(GetMoreRejectedException.class,
+                        e -> assertThat(e.renderedMessage()).isEqualTo("Error occurred when saving coupon: A simulated"
+                                + " coupon keeps its code once it has an allowance or an order."));
+        sell(coupon, "45.50");
+        assertThatThrownBy(() -> store.updateCoupon(coupon.couponId(), new GetMoreCouponUpdate(RULE, renamed, 1, null)))
+                .as("bound and sold").isInstanceOf(GetMoreRejectedException.class);
+        assertThat(store.coupon(coupon.couponId()).code()).isEqualTo(coupon.code());
+        refusedAs(SimulatorRefusal.SIM_INSUFFICIENT_BALANCE, () -> sell(coupon, "104.51"));
+
+        String fresh = store.generateCoupons(GetMoreCouponSpec.single(RULE, newPrefix(), 16)).getFirst();
+        GetMoreCoupon unbound = store.searchCoupons(GetMoreCouponQuery.byCode(fresh, 1, 50)).items().getFirst();
+        String freshRenamed = fresh.substring(0, fresh.length() - 16) + "RENAMED000000000";
+        assertThat(store.updateCoupon(unbound.couponId(), new GetMoreCouponUpdate(RULE, freshRenamed, 1, null)).code())
+                .isEqualTo(freshRenamed);
+    }
+
+    @Test
+    @DisplayName("a sale keeps the code as the till typed it, in its case (Magento's quote does): read back by prefix,"
+            + " counted in the balance, in the activity, and refundable")
+    void saleKeepsTheCodeAsTyped() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+        String typed = coupon.code().toLowerCase(Locale.ROOT);
+        String prefix = coupon.code().substring(0, coupon.code().length() - 16);
+
+        SimSale lower = till.sell(typed, new BigDecimal("45.50"), null, null, "GM-AVD", null, null, true);
+        SimSale upper = sell(coupon, "4.50");
+
+        assertThat(upper.balance()).isEqualByComparingTo("100.00");
+        List<GetMoreOrder> orders = store.orders(GetMoreOrderQuery.byPrefix(prefix, 1, 50)).items();
+        assertThat(orders).extracting(GetMoreOrder::couponCode).containsExactly(typed, coupon.code());
+        assertThat(coupons.activity(prefix, Set.of(), Deadline.none()).ordersOnPrefix())
+                .extracting(GetMoreOrder::entityId).containsExactly(lower.orderId(), upper.orderId());
+
+        SimRefund refund = till.refund(lower.orderNumber(), new BigDecimal("5.50"), null);
+        assertThat(refund.balance()).isEqualByComparingTo("105.50");
+        assertThat(till.lookup(coupon.code()).balance()).isEqualByComparingTo("105.50");
+        refusedAs(SimulatorRefusal.SIM_INSUFFICIENT_BALANCE, () -> till.sell(typed, new BigDecimal("105.51"), null,
+                null, "GM-AVD", null, null, true));
+    }
+
+    @Test
+    @DisplayName("amounts are cents (assumption A2: from 0.01): a sub-cent or 3-decimal sale, basket or refund is"
+            + " refused, and nothing is written")
+    void amountsAreCents() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+
+        for (String amount : List.of("0.001", "10.005", "0.0001")) {
+            assertThatThrownBy(() -> sell(coupon, amount)).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("amount must be at least 0.01 with at most 2 decimals");
+        }
+        assertThatThrownBy(() -> till.sell(coupon.code(), BigDecimal.TEN, null, new BigDecimal("12.345"), "GM-AVD",
+                null, null, true)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("basketTotal must be at least 0.01 with at most 2 decimals");
+        assertThat(ordersOf(coupon)).isEmpty();
+
+        SimSale sale = sell(coupon, "10.50");
+        assertThat(sell(coupon, "0.01").balance()).isEqualByComparingTo("139.49");
+        assertThatThrownBy(() -> till.refund(sale.orderNumber(), new BigDecimal("0.005"), null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(store.creditMemos(new GetMoreCreditMemoQuery(List.of(sale.orderId()), 1, 50)).items()).isEmpty();
     }
 
     @Test
