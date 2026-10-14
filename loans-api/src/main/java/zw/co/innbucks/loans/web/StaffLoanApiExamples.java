@@ -76,7 +76,10 @@ public final class StaffLoanApiExamples {
                     "expiresAt": "2026-11-05T23:59:59+02:00",
                     "maskedCode": "**** **** **** 8406",
                     "code": "4829 1506 7331 8406",
-                    "scanValue": "4829150673318406"
+                    "scanValue": "4829150673318406",
+                    "store": "LOANS",
+                    "partialSpending": true,
+                    "spent": 180.00
                   }
                 }""";
 
@@ -121,7 +124,10 @@ public final class StaffLoanApiExamples {
                       "expiresAt": "2026-11-05T23:59:59+02:00",
                       "maskedCode": "**** **** **** 8406",
                       "code": null,
-                      "scanValue": null
+                      "scanValue": null,
+                      "store": "LOANS",
+                      "partialSpending": true,
+                      "spent": 180.00
                     }
                   }
                 ],
@@ -292,6 +298,169 @@ public final class StaffLoanApiExamples {
               "message": "Created",
               "data": """ + LOAN_143_AWAITING + """
 
+            }""";
+
+    // --- GetMore: Rutendo Chari (E1064) accepts SGL-2026-000164 for USD 150.00 on Wednesday 14 October; GetMore's
+    // (simulated) store issues it as voucher 9 at once (GetMoreApiExamples tells the rest). ---
+
+    private static final String LOAN_164_TERMS = """
+                  "amount": 150.00,
+                  "currency": "USD",
+                  "totalRepayable": 150.00,
+                  "outstandingBalance": 150.00,
+                  "repaymentDate": "2026-11-20",
+                  "merchantName": "GetMore Groceries",
+                  "acceptedAt": "2026-10-14T10:20:05+02:00",""";
+
+    private static final String LOAN_164_ISSUED = """
+            {
+                  "reference": "SGL-2026-000164",
+                  "status": "DISBURSED",
+                  "statusMessage": "Your voucher is ready to spend at GetMore Groceries.",
+            """ + LOAN_164_TERMS + """
+
+                  "voucher": {
+                    "status": "ISSUED",
+                    "faceValue": 150.00,
+                    "balance": 150.00,
+                    "currency": "USD",
+                    "expiresAt": "2026-11-13T23:59:59+02:00",
+                    "maskedCode": "****8B1C",
+                    "code": "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C",
+                    "scanValue": "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C",
+                    "store": "GETMORE",
+                    "partialSpending": true,
+                    "spent": 0.00,
+                    "simulated": true,
+                    "balanceAsOf": "2026-10-14T10:20:07+02:00"
+                  }
+                }""";
+
+    private static final String LOAN_164_PENDING = """
+            {
+                  "reference": "SGL-2026-000164",
+                  "status": "AWAITING_DISBURSEMENT",
+                  "statusMessage": "Your loan is approved. Your voucher is being prepared and will appear here shortly.",
+            """ + LOAN_164_TERMS + """
+
+                  "voucher": null,
+                  "voucherIssuance": "PENDING"
+                }""";
+
+    // After USD 45.50 and USD 54.50 spent and USD 10.00 refunded, as the 10:40 sync read it.
+    private static final String LOAN_164_SPENT = """
+            {
+                  "reference": "SGL-2026-000164",
+                  "status": "DISBURSED",
+                  "statusMessage": "You have USD 60.00 left to spend at GetMore Groceries.",
+            """ + LOAN_164_TERMS + """
+
+                  "voucher": {
+                    "status": "PARTIALLY_REDEEMED",
+                    "faceValue": 150.00,
+                    "balance": 60.00,
+                    "currency": "USD",
+                    "expiresAt": "2026-11-13T23:59:59+02:00",
+                    "maskedCode": "****8B1C",
+                    "code": "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C",
+                    "scanValue": "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C",
+                    "store": "GETMORE",
+                    "partialSpending": true,
+                    "spent": 90.00,
+                    "simulated": true,
+                    "balanceAsOf": "2026-10-14T10:40:03+02:00"
+                  }
+                }""";
+
+    public static final String ACCEPTED_WITH_VOUCHER = """
+            {
+              "code": "CREATED",
+              "message": "Created",
+              "data": """ + LOAN_164_ISSUED + """
+
+            }""";
+
+    public static final String ACCEPTED_VOUCHER_PENDING = """
+            {
+              "code": "CREATED",
+              "message": "Created",
+              "data": """ + LOAN_164_PENDING + """
+
+            }""";
+
+    public static final String HOME_VOUCHER_PENDING = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loan": """ + LOAN_164_PENDING + """
+            ,
+                "offer": null,
+                "canApply": false,
+                "unavailable": null
+              }
+            }""";
+
+    public static final String HOME_GETMORE_VOUCHER = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loan": """ + LOAN_164_SPENT + """
+            ,
+                "offer": null,
+                "canApply": false,
+                "unavailable": null
+              }
+            }""";
+
+    public static final String VOUCHER_SPENDS = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loanReference": "SGL-2026-000164",
+                "faceValue": 150.00,
+                "spent": 90.00,
+                "held": 0.00,
+                "balance": 60.00,
+                "currency": "USD",
+                "balanceAsOf": "2026-10-14T10:40:03+02:00",
+                "partialSpending": true,
+                "simulated": true,
+                "movements": [
+                  {
+                    "kind": "SPEND",
+                    "amount": 45.50,
+                    "balanceAfter": 104.50,
+                    "at": "2026-10-14T10:31:02+02:00",
+                    "outlet": "GetMore Avondale",
+                    "orderNumber": "SIM000000012"
+                  },
+                  {
+                    "kind": "SPEND",
+                    "amount": 54.50,
+                    "balanceAfter": 50.00,
+                    "at": "2026-10-14T10:35:40+02:00",
+                    "outlet": "GetMore Avondale",
+                    "orderNumber": "SIM000000013"
+                  },
+                  {
+                    "kind": "REFUND",
+                    "amount": 10.00,
+                    "balanceAfter": 60.00,
+                    "at": "2026-10-14T10:39:58+02:00",
+                    "outlet": "GetMore Avondale",
+                    "orderNumber": "SIM000000012"
+                  }
+                ]
+              }
+            }""";
+
+    public static final String VOUCHER_SPENDS_NONE = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Loan SGL-2026-000164 has no voucher yet"
             }""";
 
     public static final String DECLINED_ACTIVE_LOAN = """
@@ -501,7 +670,7 @@ public final class StaffLoanApiExamples {
     public static final String CANCELLED = """
             {
               "code": "OK",
-              "message": "Success",
+              "message": "Cancelled",
               "data": """ + STAFF_LOAN_143_HEAD + """
 
                   "status": "CANCELLED",

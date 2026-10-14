@@ -78,14 +78,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * claims (generate, search, PUT, deleteByCodes), one simulator assumption (the till: spending in parts, refunds,
  * expiry), or a concurrency rule (two tills, one coupon; two first sales at one outlet; one reference twice). The
  * {@code it} profile is not a deployment, so the node check is skipped; the key is 48 characters and shared with
- * nothing.
+ * nothing. The voucher code keys are set because SIMULATED refuses to start without them ({@code GetMoreDataGuard}).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles({"api", "it"})
 @EnabledIf("zw.co.innbucks.loans.it.ItPostgres#available")
 @TestPropertySource(properties = {
         "loans.getmore.mode=SIMULATED",
-        "loans.getmore.simulator.api-key=it-sim-3f9a1c7e5b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a1c3e"})
+        "loans.getmore.simulator.api-key=it-sim-3f9a1c7e5b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a1c3e",
+        "loans.vouchers.code-hmac-key=it-voucher-hmac-key-0123456789abcdef0123456789",
+        "loans.vouchers.code-encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="})
 class SimulatedGetMoreStorePostgresIT {
 
     private static final long RULE = 43;

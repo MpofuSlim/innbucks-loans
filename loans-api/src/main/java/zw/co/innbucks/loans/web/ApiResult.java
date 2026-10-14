@@ -30,6 +30,10 @@ public record ApiResult<T>(
         return new ApiResult<>("CREATED", "Created", data);
     }
 
+    public static <T> ApiResult<T> created(String message, T data) {
+        return new ApiResult<>("CREATED", message, data);
+    }
+
     public static <T> ApiResult<T> error(String code, String message) {
         return new ApiResult<>(code, message, null);
     }

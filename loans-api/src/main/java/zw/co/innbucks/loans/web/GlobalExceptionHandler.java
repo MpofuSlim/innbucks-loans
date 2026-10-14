@@ -26,6 +26,11 @@ import zw.co.innbucks.loans.core.borrower.AssertionRejectedException;
 import zw.co.innbucks.loans.core.borrower.BorrowerSignInUnavailableException;
 import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.document.DocumentProblem;
+import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
+import zw.co.innbucks.loans.core.getmore.GetMoreRejectedException;
+import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
+import zw.co.innbucks.loans.core.getmore.simulator.SimulatorRefusedException;
+import zw.co.innbucks.loans.core.staff.loan.IssuanceInProgressException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanRequestInvalidException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
@@ -109,6 +114,12 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResult<Void>> unreadableBody(HttpMessageNotReadableException ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof RequestBodyTooLargeException tooLarge) {
+                log.warn("Request body refused: {}", tooLarge.getMessage());
+                return error(HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE", tooLarge.getMessage());
+            }
+        }
         log.warn("Unreadable request body: {}", ex.getMessage());
         return error(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST",
                 "Malformed request body - check enum values and yyyy-MM-dd dates");
@@ -197,6 +208,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> applicationPending(PendingApplicationException ex) {
         log.info("Application refused: loan {} for this applicant is still in flight", ex.getPendingLoanId());
         return error(HttpStatus.CONFLICT, "APPLICATION_PENDING", ex.getMessage());
+    }
+
+    /**
+     * An attempt holds the loan's GetMore voucher issuance and may be calling GetMore right now: repeat in a minute.
+     * Checked before {@link ConflictException}, its parent.
+     */
+    @ExceptionHandler(IssuanceInProgressException.class)
+    public ResponseEntity<ApiResult<Void>> issuanceInProgress(IssuanceInProgressException ex) {
+        log.info("Refused while a voucher issuance is calling GetMore: {}", ex.getMessage());
+        return error(HttpStatus.CONFLICT, "VOUCHER_ISSUANCE_IN_PROGRESS", ex.getMessage());
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -358,6 +379,41 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> vouchersUnavailable(VouchersUnavailableException ex) {
         log.error("Voucher call refused: {}", ex.getMessage());
         return error(HttpStatus.SERVICE_UNAVAILABLE, "VOUCHERS_UNAVAILABLE", ex.getMessage());
+    }
+
+    /**
+     * GetMore could not be asked, or did not process the request: OFF on this host, unreachable, refusing the
+     * credentials, busy with another sync of the voucher. Nothing was changed by it; the message names the reason.
+     */
+    @ExceptionHandler(GetMoreUnavailableException.class)
+    public ResponseEntity<ApiResult<Void>> getMoreUnavailable(GetMoreUnavailableException ex) {
+        log.warn("GetMore unavailable: {}", ex.getMessage());
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "GETMORE_UNAVAILABLE", ex.getMessage());
+    }
+
+    /** GetMore's store refused, and applied nothing; its message (every code masked) says why. */
+    @ExceptionHandler(GetMoreRejectedException.class)
+    public ResponseEntity<ApiResult<Void>> getMoreRejected(GetMoreRejectedException ex) {
+        log.warn("GetMore rejected: {}", ex.getMessage());
+        return error(HttpStatus.BAD_GATEWAY, "GETMORE_REJECTED", ex.getMessage());
+    }
+
+    /** A write to GetMore may or may not have applied: its answer was lost. Repeating the request is safe. */
+    @ExceptionHandler(GetMoreOutcomeUnknownException.class)
+    public ResponseEntity<ApiResult<Void>> getMoreOutcomeUnknown(GetMoreOutcomeUnknownException ex) {
+        log.warn("GetMore outcome unknown: {}", ex.getMessage());
+        return error(HttpStatus.BAD_GATEWAY, "GETMORE_OUTCOME_UNKNOWN", ex.getMessage()
+                + ". Repeat the request: it is safe");
+    }
+
+    /**
+     * STAGING ONLY: the simulated GetMore store's till refused a test action (SIM_COUPON_NOT_FOUND,
+     * SIM_INSUFFICIENT_BALANCE, NOT_A_SIMULATED_VOUCHER, ...). Nothing was applied.
+     */
+    @ExceptionHandler(SimulatorRefusedException.class)
+    public ResponseEntity<ApiResult<Void>> simulatorRefused(SimulatorRefusedException ex) {
+        log.warn("GetMore simulator refused: {}", ex.getRefusal());
+        return error(HttpStatus.valueOf(ex.getRefusal().httpStatus()), ex.getRefusal().name(), ex.getMessage());
     }
 
     /** The SMS, email or WhatsApp provider refused or could not be reached; nothing was changed. */

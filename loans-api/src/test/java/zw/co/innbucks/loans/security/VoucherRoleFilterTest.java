@@ -23,6 +23,8 @@ import zw.co.innbucks.loans.controller.VoucherController;
 import zw.co.innbucks.loans.controller.VoucherRedemptionController;
 import zw.co.innbucks.loans.core.loan.CreditDecisionService;
 import zw.co.innbucks.loans.core.user.UserGroup;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherSync;
 import zw.co.innbucks.loans.core.voucher.VoucherRedemptionService;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementService;
@@ -62,6 +64,7 @@ class VoucherRoleFilterTest {
     @MockitoBean VoucherService voucherService;
     @MockitoBean VoucherSettlementService settlementService;
     @MockitoBean VoucherRedemptionService redemptionService;
+    @MockitoBean GetMoreVoucherSync getMoreSync;
 
     @Autowired WebApplicationContext context;
 
@@ -79,6 +82,8 @@ class VoucherRoleFilterTest {
         givenToken("credit", UserGroup.CREDIT_MANAGER);
         when(creditDecisionService.reasonCodes(any())).thenReturn(List.of());
         when(voucherService.vouchers(any(), any(), any(), any(), any(), any(), any())).thenReturn(Page.empty());
+        when(getMoreSync.sync(any(), any())).thenReturn(new GetMoreSyncResult(GetMoreSyncResult.Outcome.UNCHANGED, 0,
+                0, null, 0, List.of(), false, null));
     }
 
     private void givenToken(String username, UserGroup... groups) {
@@ -104,6 +109,7 @@ class VoucherRoleFilterTest {
                     .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                     .andExpect(jsonPath("$.message").value("Forbidden - insufficient role"));
             mvc.perform(as(till, get("/lending/v1/vouchers"))).andExpect(status().isForbidden());
+            mvc.perform(as(till, post("/lending/v1/vouchers/9/getmore-syncs"))).andExpect(status().isForbidden());
             mvc.perform(as(till, post("/lending/v1/loans").contentType(MediaType.APPLICATION_JSON).content("{}")))
                     .andExpect(status().isForbidden());
         }
@@ -121,12 +127,15 @@ class VoucherRoleFilterTest {
     }
 
     @Test
-    @DisplayName("VOUCHER_SUPPORT alone reaches the voucher screens only; held with another role, that role's too")
+    @DisplayName("VOUCHER_SUPPORT alone reaches the voucher screens (a GetMore sync included) only; held with another"
+            + " role, that role's too")
     void voucherSupportConfinedWhenAlone() throws Exception {
         mvc.perform(as("support", get("/lending/v1/vouchers"))).andExpect(status().isOk());
         mvc.perform(as("support", get("/lending/v1/credit-reason-codes"))).andExpect(status().isForbidden());
         mvc.perform(as("support", post("/lending/v1/voucher-validations").contentType(MediaType.APPLICATION_JSON)
                 .content(VoucherApiExamples.VALIDATION_REQUEST))).andExpect(status().isForbidden());
+
+        mvc.perform(as("support", post("/lending/v1/vouchers/9/getmore-syncs"))).andExpect(status().isOk());
 
         mvc.perform(as("support-credit", get("/lending/v1/credit-reason-codes"))).andExpect(status().isOk());
         mvc.perform(as("support-credit", get("/lending/v1/vouchers"))).andExpect(status().isOk());

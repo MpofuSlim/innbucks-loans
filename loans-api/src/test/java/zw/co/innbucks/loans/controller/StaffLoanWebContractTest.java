@@ -21,9 +21,18 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.borrower.AssertionRejectedException;
+import zw.co.innbucks.loans.core.exception.ConflictException;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.getmore.GetMoreException;
+import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
+import zw.co.innbucks.loans.core.getmore.GetMoreRejectedException;
+import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.staff.loan.AcceptStaffLoanRequest;
 import zw.co.innbucks.loans.core.staff.loan.DrawRules;
+import zw.co.innbucks.loans.core.staff.loan.IssuanceInProgressException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanAcceptance;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanCancellation;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanAppliedOffer;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDecline;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
@@ -37,7 +46,14 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
 import zw.co.innbucks.loans.core.staff.loan.StepUpRequiredException;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherSpendsResponse;
+import zw.co.innbucks.loans.core.voucher.GetMoreDispatcher;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
+import zw.co.innbucks.loans.core.voucher.VoucherService;
+import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
+import zw.co.innbucks.loans.web.GetMoreApiExamples;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 import zw.co.innbucks.loans.web.StaffLoanApiExamples;
 
@@ -88,6 +104,10 @@ class StaffLoanWebContractTest {
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean StaffLoanJourneyService journeyService;
     @MockitoBean StaffLoanService loanService;
+    @MockitoBean StaffLoanAcceptance acceptance;
+    @MockitoBean StaffLoanCancellation cancellation;
+    @MockitoBean GetMoreDispatcher getMoreDispatcher;
+    @MockitoBean VoucherService voucherService;
 
     @Autowired WebApplicationContext context;
 
@@ -206,16 +226,18 @@ class StaffLoanWebContractTest {
     @Test
     @DisplayName("accept: 201 with the loan; the device, address and agent are handed over as evidence")
     void accept201() throws Exception {
-        when(journeyService.accept(eq(2L), any(), any())).thenReturn(LOAN);
+        when(acceptance.accept(eq(2L), any(), any())).thenReturn(LOAN);
 
         mvc.perform(accept().header("X-Forwarded-For", "196.27.112.45").header("User-Agent", "InnBucks/2.4.1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.reference").value("SGL-2026-000143"))
-                .andExpect(jsonPath("$.data.status").value("AWAITING_DISBURSEMENT"));
+                .andExpect(jsonPath("$.data.status").value("AWAITING_DISBURSEMENT"))
+                .andExpect(jsonPath("$.data.voucherIssuance").doesNotExist());
 
         ArgumentCaptor<AcceptStaffLoanRequest> request = ArgumentCaptor.forClass(AcceptStaffLoanRequest.class);
         ArgumentCaptor<SigningContext> signing = ArgumentCaptor.forClass(SigningContext.class);
-        verify(journeyService).accept(eq(2L), request.capture(), signing.capture());
+        verify(acceptance).accept(eq(2L), request.capture(), signing.capture());
+        verifyNoInteractions(journeyService);
         assertThat(request.getValue().agreementSha256()).isEqualTo(StaffLoanApiExamples.AGREEMENT_SHA256);
         assertThat(request.getValue().toString()).doesNotContain("eyJ");
         assertThat(signing.getValue().deviceId()).isEqualTo("a1f3c9e2-7b4d");
@@ -226,23 +248,23 @@ class StaffLoanWebContractTest {
     @Test
     @DisplayName("accept: each refusal is its own status and code")
     void acceptRefusals() throws Exception {
-        doThrow(new StepUpRequiredException()).when(journeyService).accept(anyLong(), any(), any());
+        doThrow(new StepUpRequiredException()).when(acceptance).accept(anyLong(), any(), any());
         mvc.perform(accept()).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("STEP_UP_REQUIRED"));
 
-        doThrow(new AssertionRejectedException("replayed jti")).when(journeyService).accept(anyLong(), any(), any());
+        doThrow(new AssertionRejectedException("replayed jti")).when(acceptance).accept(anyLong(), any(), any());
         mvc.perform(accept()).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("ASSERTION_REJECTED"));
 
-        doThrow(new StaffLoanTermsChangedException()).when(journeyService).accept(anyLong(), any(), any());
+        doThrow(new StaffLoanTermsChangedException()).when(acceptance).accept(anyLong(), any(), any());
         mvc.perform(accept()).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TERMS_CHANGED"));
 
-        doThrow(new StaffLoanTermsUnavailableException()).when(journeyService).accept(anyLong(), any(), any());
+        doThrow(new StaffLoanTermsUnavailableException()).when(acceptance).accept(anyLong(), any(), any());
         mvc.perform(accept()).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("STAFF_LOAN_TERMS_UNAVAILABLE"));
 
-        doThrow(new StaffLoanDeclinedException(StaffLoanDecline.OFFER_NOT_AVAILABLE)).when(journeyService)
+        doThrow(new StaffLoanDeclinedException(StaffLoanDecline.OFFER_NOT_AVAILABLE)).when(acceptance)
                 .accept(anyLong(), any(), any());
         mvc.perform(accept()).andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.data.reason").value("OFFER_NOT_AVAILABLE"));
@@ -257,7 +279,7 @@ class StaffLoanWebContractTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.data.agreementSha256").exists())
                 .andExpect(jsonPath("$.data.assertion").value("assertion is required"));
-        verifyNoInteractions(journeyService);
+        verifyNoInteractions(journeyService, acceptance);
     }
 
     @Test
@@ -291,9 +313,133 @@ class StaffLoanWebContractTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.data.reason").value("reason is required"));
 
+        when(cancellation.cancel(eq(143L), any())).thenReturn(new StaffLoanCancellation.Result(null, "Cancelled"));
         mvc.perform(as("CREDIT_MANAGER", post("/lending/v1/staff-loans/143/cancel"))
                         .contentType(MediaType.APPLICATION_JSON).content(StaffLoanApiExamples.CANCEL_REQUEST))
-                .andExpect(status().isOk());
-        verify(loanService).cancel(143L, "Accepted in error: the borrower asked to cancel before payout");
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Cancelled"));
+        verify(cancellation).cancel(143L, "Accepted in error: the borrower asked to cancel before payout");
+        verifyNoInteractions(loanService);
+    }
+
+    @Test
+    @DisplayName("cancelling a GetMore loan: the message says what became of the coupon; each refusal its own code")
+    void cancelGetMore() throws Exception {
+        when(cancellation.cancel(eq(164L), any())).thenReturn(new StaffLoanCancellation.Result(null,
+                "Cancelled. The voucher's coupon is withdrawn at GetMore."));
+        mvc.perform(cancel164()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Cancelled. The voucher's coupon is withdrawn at GetMore."));
+
+        doThrow(new IssuanceInProgressException("SGL-2026-000164")).when(cancellation).cancel(eq(164L), any());
+        mvc.perform(cancel164()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VOUCHER_ISSUANCE_IN_PROGRESS"))
+                .andExpect(jsonPath("$.message").value("A voucher for SGL-2026-000164 is being issued right now; try"
+                        + " again in a minute."));
+
+        doThrow(new ConflictException("The voucher of SGL-2026-000164 has been used (USD 45.50 spent, USD 0.00 held at"
+                + " the till); a loan whose voucher was used cannot be cancelled.")).when(cancellation)
+                .cancel(eq(164L), any());
+        mvc.perform(cancel164()).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        doThrow(new GetMoreRejectedException(GetMoreException.Operation.DELETE_COUPONS,
+                GetMoreRejectedException.Reason.INVALID, "GetMore did not withdraw the coupon of voucher 9 (****8B1C);"
+                + " nothing was changed in loans")).when(cancellation).cancel(eq(164L), any());
+        mvc.perform(cancel164()).andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("GETMORE_REJECTED"));
+
+        doThrow(new GetMoreOutcomeUnknownException(GetMoreException.Operation.DELETE_COUPONS, "the answer was lost"))
+                .when(cancellation).cancel(eq(164L), any());
+        mvc.perform(cancel164()).andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("GETMORE_OUTCOME_UNKNOWN"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.endsWith(
+                        "Repeat the request: it is safe")));
+
+        doThrow(new GetMoreUnavailableException(null, GetMoreUnavailableException.Reason.READ_FAILED,
+                "Cannot read voucher 9 at GetMore right now; try again.")).when(cancellation).cancel(eq(164L), any());
+        mvc.perform(cancel164()).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("GETMORE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("GetMore unavailable (READ_FAILED): Cannot read voucher 9 at"
+                        + " GetMore right now; try again."));
+    }
+
+    private static MockHttpServletRequestBuilder cancel164() {
+        return as("CREDIT_MANAGER", post("/lending/v1/staff-loans/164/cancel"))
+                .contentType(MediaType.APPLICATION_JSON).content(StaffLoanApiExamples.CANCEL_REQUEST);
+    }
+
+    @Test
+    @DisplayName("accept for a GetMore store: 201 DISBURSED with the voucher and its code as GetMore made it")
+    void acceptWithVoucher() throws Exception {
+        BorrowerVoucherResponse voucher = new BorrowerVoucherResponse(VoucherStatus.ISSUED, new BigDecimal("150.00"),
+                new BigDecimal("150.00"), "USD", LocalDateTime.of(2026, 11, 13, 21, 59, 59), "****8B1C",
+                GetMoreApiExamples.CODE_9, GetMoreApiExamples.CODE_9, VoucherCodeSource.GETMORE, true,
+                new BigDecimal("0.00"), true, LocalDateTime.of(2026, 10, 14, 8, 20, 7));
+        when(acceptance.accept(eq(2L), any(), any())).thenReturn(new StaffLoanView("SGL-2026-000164",
+                StaffLoanStatus.DISBURSED, "Your voucher is ready to spend at GetMore Groceries.",
+                new BigDecimal("150.00"), "USD", new BigDecimal("150.00"), new BigDecimal("150.00"),
+                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 14, 8, 20, 5), voucher,
+                null));
+
+        mvc.perform(accept())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("DISBURSED"))
+                .andExpect(jsonPath("$.data.voucher.code").value("SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C"))
+                .andExpect(jsonPath("$.data.voucher.scanValue").value("SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C"))
+                .andExpect(jsonPath("$.data.voucher.store").value("GETMORE"))
+                .andExpect(jsonPath("$.data.voucher.simulated").value(true))
+                .andExpect(jsonPath("$.data.voucherIssuance").doesNotExist());
+
+        when(acceptance.accept(eq(2L), any(), any())).thenReturn(new StaffLoanView("SGL-2026-000164",
+                StaffLoanStatus.AWAITING_DISBURSEMENT, "Your loan is approved. Your voucher is being prepared and will"
+                + " appear here shortly.", new BigDecimal("150.00"), "USD", new BigDecimal("150.00"),
+                new BigDecimal("150.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries",
+                LocalDateTime.of(2026, 10, 14, 8, 20, 5), null, StaffLoanView.VoucherIssuance.PENDING));
+        mvc.perform(accept())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("AWAITING_DISBURSEMENT"))
+                .andExpect(jsonPath("$.data.voucher").isEmpty())
+                .andExpect(jsonPath("$.data.voucherIssuance").value("PENDING"));
+    }
+
+    @Test
+    @DisplayName("each read of the tile, the loans and the spends brings the borrower's GetMore vouchers up to date")
+    void readsRefresh() throws Exception {
+        when(journeyService.home(2L)).thenReturn(new StaffLoanHome(null, null, true, null));
+        when(journeyService.loans(eq(2L), any())).thenReturn(new PageImpl<>(List.of()));
+        when(voucherService.spendsFor(2L, "SGL-2026-000164")).thenReturn(null);
+
+        mvc.perform(as("borrower", get(JOURNEY))).andExpect(status().isOk());
+        mvc.perform(as("borrower", get(JOURNEY + "/loans"))).andExpect(status().isOk());
+        mvc.perform(as("borrower", get(JOURNEY + "/loans/SGL-2026-000164/voucher-spends"))).andExpect(status().isOk());
+
+        verify(getMoreDispatcher, org.mockito.Mockito.times(3)).refresh(2L);
+    }
+
+    @Test
+    @DisplayName("voucher spends: the borrower's own loan, oldest first; another's (or none yet) is a 404")
+    void voucherSpends() throws Exception {
+        when(voucherService.spendsFor(2L, "SGL-2026-000164")).thenReturn(new BorrowerVoucherSpendsResponse(
+                "SGL-2026-000164", new BigDecimal("150.00"), new BigDecimal("90.00"), new BigDecimal("0.00"),
+                new BigDecimal("60.00"), "USD", LocalDateTime.of(2026, 10, 14, 8, 40, 3), true, true, List.of(
+                new BorrowerVoucherSpendsResponse.Movement(BorrowerVoucherSpendsResponse.Kind.SPEND,
+                        new BigDecimal("45.50"), new BigDecimal("104.50"), LocalDateTime.of(2026, 10, 14, 8, 31, 2),
+                        "GetMore Avondale", "SIM000000012"),
+                new BorrowerVoucherSpendsResponse.Movement(BorrowerVoucherSpendsResponse.Kind.REFUND,
+                        new BigDecimal("10.00"), new BigDecimal("60.00"), LocalDateTime.of(2026, 10, 14, 8, 39, 58),
+                        "GetMore Avondale", "SIM000000012"))));
+        when(voucherService.spendsFor(2L, "SGL-2026-000151")).thenThrow(new NotFoundException(
+                "Loan SGL-2026-000151 has no voucher yet"));
+
+        mvc.perform(as("borrower", get(JOURNEY + "/loans/SGL-2026-000164/voucher-spends")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.balance").value(60.00))
+                .andExpect(jsonPath("$.data.movements[0].kind").value("SPEND"))
+                .andExpect(jsonPath("$.data.movements[1].kind").value("REFUND"))
+                .andExpect(jsonPath("$.data.movements[1].orderNumber").value("SIM000000012"));
+        mvc.perform(as("borrower", get(JOURNEY + "/loans/SGL-2026-000151/voucher-spends")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Loan SGL-2026-000151 has no voucher yet"));
+        mvc.perform(as("CREDIT_MANAGER", get(JOURNEY + "/loans/SGL-2026-000164/voucher-spends")))
+                .andExpect(status().isForbidden());
     }
 }

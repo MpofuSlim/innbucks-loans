@@ -38,7 +38,8 @@ public final class VoucherApiExamples {
                   "cancellationReason": null,
                   "deliveryStatus": "SENT",
                   "deliveredChannel": "WHATSAPP",
-                  "deliveryUpdatedAt": "2026-10-06T09:14:23+02:00"
+                  "deliveryUpdatedAt": "2026-10-06T09:14:23+02:00",
+                  "codeSource": "LOANS"
                 }""";
 
     private static final String VOUCHER_8_HEAD = """
@@ -61,7 +62,8 @@ public final class VoucherApiExamples {
                   "expiresAt": "2026-11-07T23:59:59+02:00",
                   "lastRedeemedAt": null,
                   "lastRedeemedOutlet": null,
-                  "deliveredChannel": null,""";
+                  "deliveredChannel": null,
+                  "codeSource": "LOANS",""";
 
     private static final String VOUCHER_8 = VOUCHER_8_HEAD + """
 
@@ -104,7 +106,8 @@ public final class VoucherApiExamples {
                     "outletId": "GM-AVD-01",
                     "outletName": "GetMore Avondale",
                     "redeemedBy": "getmore-pos",
-                    "redeemedAt": "2026-10-08T17:42:10+02:00"
+                    "redeemedAt": "2026-10-08T17:42:10+02:00",
+                    "source": "TILL"
                   }
                 ],
                 "deliveries": [
@@ -253,6 +256,9 @@ public final class VoucherApiExamples {
                     "issuedValue": 250.00,
                     "redemptionCount": 1,
                     "redeemedValue": 180.00,
+                    "refundCount": 0,
+                    "refundedValue": 0.00,
+                    "netRedeemedValue": 180.00,
                     "cancelledCount": 0,
                     "cancelledValue": 0.00,
                     "expiredCount": 0,
@@ -268,6 +274,9 @@ public final class VoucherApiExamples {
                     "issuedValue": 250.00,
                     "redemptionCount": 1,
                     "redeemedValue": 180.00,
+                    "refundCount": 0,
+                    "refundedValue": 0.00,
+                    "netRedeemedValue": 180.00,
                     "cancelledCount": 0,
                     "cancelledValue": 0.00,
                     "expiredCount": 0,
@@ -281,7 +290,10 @@ public final class VoucherApiExamples {
                     "outletName": "GetMore Avondale",
                     "currency": "USD",
                     "redemptionCount": 1,
-                    "redeemedValue": 180.00
+                    "redeemedValue": 180.00,
+                    "refundCount": 0,
+                    "refundedValue": 0.00,
+                    "netRedeemedValue": 180.00
                   }
                 ],
                 "lines": [

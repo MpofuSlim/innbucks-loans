@@ -42,8 +42,12 @@ import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDeletionDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoOrderDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoSearchResultDto;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCaller;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCodeRequest;
 import zw.co.innbucks.loans.core.getmore.simulator.SimCoupon;
 import zw.co.innbucks.loans.core.getmore.simulator.SimOrder;
+import zw.co.innbucks.loans.core.getmore.simulator.SimSaleRequest;
+import zw.co.innbucks.loans.core.getmore.simulator.SimulatorApiKey;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SignedInstrument;
@@ -435,6 +439,27 @@ class SensitiveToStringTest {
         }
         assertThat(command.toString()).contains("****8B1C", "****0064", "couponId=1207");
         assertThat(result.toString()).contains("outcome=SYNCED");
+    }
+
+    @Test
+    @DisplayName("the simulator's test actions print neither a code they were given nor the api key they were opened"
+            + " with")
+    void simulatorRequestsHideTheCodeAndTheKey() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String key = "staging-getmore-simulator-key-0123456789abcdef";
+        SimSaleRequest sale = new SimSaleRequest(null, code, new BigDecimal("45.50"), "USD", new BigDecimal("60.00"),
+                "GM-AVD", "GetMore Avondale", "AVD-T3-000981", true);
+        SimCodeRequest expiry = new SimCodeRequest(null, code, "test lapse");
+        SimulatorApiKey apiKey = new SimulatorApiKey(key);
+        SimCaller caller = new SimCaller("10.42.0.17", "196.27.112.45", SimulatorApiKey.fingerprint(key));
+
+        for (Object holder : List.of(sale, expiry, apiKey, caller)) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(code)
+                    .doesNotContain("7KQ2M9XWD4RT8B1C").doesNotContain(key);
+        }
+        assertThat(sale.toString()).contains("code=(given)", "amount=45.50");
+        assertThat(new SimSaleRequest("SGL-2026-000164", null, BigDecimal.ONE, null, null, "GM-AVD", null, null, null)
+                .toString()).contains("loanReference=SGL-2026-000164", "code=null");
     }
 
     @Test

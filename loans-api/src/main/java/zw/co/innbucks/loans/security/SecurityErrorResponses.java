@@ -24,7 +24,22 @@ final class SecurityErrorResponses {
     static final String PASSWORD_CHANGE_REQUIRED_BODY =
             "{\"code\":\"PASSWORD_CHANGE_REQUIRED\",\"message\":\"Change your temporary password before continuing\"}";
 
+    /** STAGING ONLY: a GetMore simulator action without the simulator's api key ({@link SimulatorApiKeyFilter}). */
+    static final String API_KEY_REFUSED_BODY =
+            "{\"code\":\"UNAUTHORIZED\",\"message\":\"Invalid or missing api key\"}";
+    /** A body declared larger than the endpoint takes ({@link SimulatorApiKeyFilter}). */
+    static final String PAYLOAD_TOO_LARGE_BODY =
+            "{\"code\":\"PAYLOAD_TOO_LARGE\",\"message\":\"The request body must be at most %d bytes\"}";
+
     private SecurityErrorResponses() {
+    }
+
+    static void apiKeyRefused(HttpServletResponse response) throws IOException {
+        write(response, HttpStatus.UNAUTHORIZED, API_KEY_REFUSED_BODY);
+    }
+
+    static void payloadTooLarge(HttpServletResponse response, long limitBytes) throws IOException {
+        write(response, HttpStatus.CONTENT_TOO_LARGE, PAYLOAD_TOO_LARGE_BODY.formatted(limitBytes));
     }
 
     static void unauthorized(HttpServletRequest request, HttpServletResponse response,

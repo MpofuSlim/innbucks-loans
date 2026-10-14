@@ -248,7 +248,7 @@ public class SimulatedTill {
                 coupon.getCouponId(), GetMoreCodes.maskedCode(coupon.getCode()),
                 shown(order.getOrderCurrencyCode(), balance));
         return new SimRefund(memo.getEntityId(), memo.getIncrementId(), order.getEntityId(), order.getIncrementId(),
-                SimShapes.creditMemo(memo), refund, order.getOrderCurrencyCode(), balance, false);
+                coupon.getCouponId(), SimShapes.creditMemo(memo), refund, order.getOrderCurrencyCode(), balance, false);
     }
 
     /**
@@ -314,8 +314,8 @@ public class SimulatedTill {
         SimCoupon coupon = coupons.findAnyByCode(order.getCouponCode()).orElseThrow();
         log.info("GetMore simulator: credit memo {} replayed for its reference", earlier.getIncrementId());
         return new SimRefund(earlier.getEntityId(), earlier.getIncrementId(), order.getEntityId(),
-                order.getIncrementId(), SimShapes.creditMemo(earlier), earlier.getDiscountAmount().abs(),
-                order.getOrderCurrencyCode(), balanceOf(coupon), true);
+                order.getIncrementId(), coupon.getCouponId(), SimShapes.creditMemo(earlier),
+                earlier.getDiscountAmount().abs(), order.getOrderCurrencyCode(), balanceOf(coupon), true);
     }
 
     private BigDecimal balanceOf(SimCoupon coupon) {

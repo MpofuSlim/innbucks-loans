@@ -118,6 +118,20 @@ public final class StaffLoanWriteOffApiExamples {
               "message": "Staff loan SGL-2026-000143's voucher 7 can still be spent, until 2026-11-05T23:59:59+02:00; a loan whose value can still be drawn cannot be written off: wait until it expires"
             }""";
 
+    // Rutendo Chari's SGL-2026-000164 (the GetMore examples), paid out as GetMore coupon voucher 9: untouched, it is
+    // cancelled rather than written off; lapsed, its coupon is withdrawn at GetMore first.
+    public static final String GETMORE_VOUCHER_UNTOUCHED = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2026-000164's voucher 9 can still be spent, until 2026-11-13T23:59:59+02:00; a loan whose value can still be drawn cannot be written off: cancel the loan instead (POST /lending/v1/staff-loans/164/cancel)"
+            }""";
+
+    public static final String GETMORE_COUPON_LIVE = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2026-000164's voucher 9 has lapsed but its GetMore coupon is still live; sync it first (POST /lending/v1/vouchers/9/getmore-syncs), which withdraws it"
+            }""";
+
     public static final String NOT_PAID_OUT = """
             {
               "code": "CONFLICT",

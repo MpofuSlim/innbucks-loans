@@ -91,6 +91,22 @@ final class SimShapes {
         return frozen(out);
     }
 
+    /** A coupon as the port answered it (a PUT's answer), in the same shape as {@link #coupon(SimCoupon)}. */
+    static Map<String, Object> coupon(GetMoreCoupon c) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("coupon_id", c.couponId());
+        out.put("rule_id", c.ruleId());
+        out.put("code", GetMoreCodes.maskedCode(c.code()));
+        putIfPresent(out, "usage_limit", c.usageLimit());
+        putIfPresent(out, "usage_per_customer", c.usagePerCustomer());
+        out.put("times_used", c.timesUsed());
+        putIfPresent(out, "expiration_date", time(c.expirationDateUtc()));
+        out.put("is_primary", c.primary() ? Boolean.TRUE : null);
+        putIfPresent(out, "created_at", time(c.createdAtUtc()));
+        putIfPresent(out, "type", c.type());
+        return frozen(out);
+    }
+
     static Map<String, Object> rule(SimRule r) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("rule_id", r.getRuleId());

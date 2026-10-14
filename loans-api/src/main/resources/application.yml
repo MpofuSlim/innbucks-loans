@@ -221,9 +221,9 @@ loans:
     expiry-days: "${DRAFT_EXPIRY_DAYS:30}"
     expiry-cron: "${DRAFT_EXPIRY_CRON:0 30 1 * * *}"
   # Staff Grocery Loan offers (FR-SGL-015, FR-SGL-018). The weekly run fires on run-cron (second minute hour day
-  # month weekday), read on the market's clock, only where the scheduled-tasks profile is on; a run can always be
-  # started from the admin portal. Offers stay open validity-days. A run is refused when the staff register's latest
-  # payroll reconciliation is more than max-reconciliation-age-days old.
+  # month weekday), read on the market's clock, only where the Staff Grocery Loan jobs (`@StaffLoanJobs`) run; a run
+  # can always be started from the admin portal. Offers stay open validity-days. A run is refused when the staff
+  # register's latest payroll reconciliation is more than max-reconciliation-age-days old.
   staff-offers:
     run-cron: "${STAFF_OFFERS_RUN_CRON:0 0 8 * * MON}"
     validity-days: "${STAFF_OFFERS_VALIDITY_DAYS:7}"
@@ -236,7 +236,7 @@ loans:
       capped-reminder-weeks: "${STAFF_NOTIFICATIONS_CAPPED_REMINDER_WEEKS:4}"
       # Paces the launch broadcast and the weekly run's messages (FR-GEN-007); 0 sends without pause.
       messages-per-second: "${STAFF_NOTIFICATIONS_MESSAGES_PER_SECOND:5}"
-      # How often the scheduled-tasks profile picks up messages left PENDING by a stop.
+      # How often the Staff Grocery Loan jobs (`@StaffLoanJobs`) pick up messages left PENDING by a stop.
       sweep-interval: "${STAFF_NOTIFICATIONS_SWEEP_INTERVAL:PT5M}"
   # Grocery vouchers (FR-SGL-033 to 040). A code is code-length digits (a multiple of 4, 12 to 24), the last a Damm
   # check digit; codes already issued keep their length. A voucher is good until the end of the validity-days'th market

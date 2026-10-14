@@ -25,7 +25,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
+import zw.co.innbucks.loans.core.getmore.GetMoreUnavailableException;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncTrigger;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherSync;
 import zw.co.innbucks.loans.core.voucher.VoucherCodeResponse;
 import zw.co.innbucks.loans.core.voucher.VoucherDeliveryStatus;
 import zw.co.innbucks.loans.core.voucher.VoucherDetailResponse;
@@ -37,6 +42,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
+import zw.co.innbucks.loans.web.GetMoreApiExamples;
 import zw.co.innbucks.loans.web.PageResponse;
 import zw.co.innbucks.loans.web.Paging;
 import zw.co.innbucks.loans.web.VoucherApiExamples;
@@ -47,12 +53,15 @@ import java.time.LocalDate;
 import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Vouchers", description = "Staff Grocery Loan vouchers (FR-SGL-033 to FR-SGL-040). A loan is paid out as a"
-        + " voucher of the merchant it was accepted for (GET /staff-loan-merchant), never as cash: one per"
-        + " disbursement, worth what was disbursed, sent to the customer by WhatsApp (SMS when WhatsApp fails), spent"
-        + " at that merchant's tills only, in one go or over several purchases, until it expires. The code is 16"
-        + " digits, the last a check digit, shown as 4829 1506 7331 8406 and sent as 4829-1506-7331-8406. Everywhere"
-        + " here it is masked; only a VOUCHER_SUPPORT user can see it in full, one voucher at a time and on the"
-        + " record. Vouchers are issued by the disbursement, never from a screen.")
+        + " voucher of the merchant it was accepted for (GET /staff-loan-merchant), never as cash: one per loan, worth"
+        + " what was lent, sent to the customer by WhatsApp (SMS when WhatsApp fails), spent at that merchant only, in"
+        + " one go or over several purchases, until it expires. Loans' own code (codeSource LOANS) is 16 digits, the"
+        + " last a check digit, shown as 4829 1506 7331 8406 and sent as 4829-1506-7331-8406, spent at the merchant's"
+        + " tills through loans. A GetMore Groceries voucher (codeSource GETMORE) is a coupon GetMore's store issued"
+        + " when the loan was accepted, e.g. SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C, shown and sent exactly as made, spent at"
+        + " GetMore, its spends and refunds read back from GetMore by a sync (redemptions, refunds, heldAmount)."
+        + " Everywhere here a code is masked; only a VOUCHER_SUPPORT user can see it in full, one voucher at a time and on the"
+        + " record. Vouchers are issued by the payout, never from a screen.")
 @RestController
 @RequestMapping(ApiPaths.BASE)
 @RequiredArgsConstructor
@@ -63,6 +72,7 @@ public class VoucherController {
     private static final String CANCELLERS = "hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN')";
     private static final String SENDERS = "hasAnyRole('CREDIT_MANAGER','SUPER_ADMIN','VOUCHER_SUPPORT')";
     private static final String REPORT_READERS = "hasAnyRole('FINANCE','CREDIT_MANAGER','SUPER_ADMIN')";
+    private static final String SYNCERS = "hasAnyRole('CREDIT_MANAGER','FINANCE','SUPER_ADMIN','VOUCHER_SUPPORT')";
     private static final String REASON_MISSING = """
             {
               "code": "VALIDATION_ERROR",
@@ -74,6 +84,7 @@ public class VoucherController {
 
     private final VoucherService voucherService;
     private final VoucherSettlementService settlementService;
+    private final GetMoreVoucherSync getMoreSync;
 
     @Operation(summary = "Vouchers",
             description = "Newest first, codes masked. status is as of now: an open voucher past its expiry is EXPIRED"
@@ -135,11 +146,13 @@ public class VoucherController {
 
     @Operation(summary = "Show a voucher's code in full",
             description = "VOUCHER_SUPPORT only (FR-SGL-040): no other role, SUPER_ADMIN included, sees a code. Give the"
-                    + " reason; it is audited with your name each time. code is for reading out, scanValue (digits"
-                    + " only) for a QR code or a till.")
+                    + " reason; it is audited with your name each time. code is for reading out, scanValue for a QR"
+                    + " code or a till: loans' own code grouped to read and digits only to scan, a GetMore code"
+                    + " exactly as GetMore made it in both.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Success",
-                    content = @Content(examples = @ExampleObject(VoucherApiExamples.VOUCHER_7_CODE))),
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "Loans' own code", value = VoucherApiExamples.VOUCHER_7_CODE),
+                    @ExampleObject(name = "A GetMore code", value = GetMoreApiExamples.VOUCHER_9_CODE)})),
             @ApiResponse(responseCode = "400", description = "No reason given",
                     content = @Content(examples = @ExampleObject(REASON_MISSING))),
             @ApiResponse(responseCode = "401", description = "No valid token",
@@ -163,7 +176,8 @@ public class VoucherController {
     @Operation(summary = "Cancel a voucher",
             description = "CREDIT_MANAGER or SUPER_ADMIN. Only before anything has been spent with it, and before it"
                     + " expires; audited with the reason. What becomes of the loan and the money paid to the merchant"
-                    + " is a separate decision.")
+                    + " is a separate decision. A GetMore voucher is cancelled only with its loan"
+                    + " (POST /staff-loans/{id}/cancel), never on its own.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cancelled",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.VOUCHER_8_CANCELLED))),
@@ -175,12 +189,14 @@ public class VoucherController {
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "404", description = "No such voucher",
                     content = @Content(examples = @ExampleObject(VoucherApiExamples.NOT_FOUND_8))),
-            @ApiResponse(responseCode = "409", description = "Spent from, expired, or already closed",
-                    content = @Content(examples = @ExampleObject("""
+            @ApiResponse(responseCode = "409", description = "Spent from, expired, already closed, or a GetMore"
+                    + " voucher", content = @Content(examples = {
+                    @ExampleObject(name = "Spent from", value = """
                             {
                               "code": "CONFLICT",
                               "message": "Voucher 7 has been partly spent and cannot be cancelled"
-                            }""")))
+                            }"""),
+                    @ExampleObject(name = "A GetMore voucher", value = GetMoreApiExamples.VOUCHER_CANCEL_GETMORE)}))
     })
     @PostMapping("/vouchers/{voucherId}/cancellation")
     @PreAuthorize(CANCELLERS)
@@ -190,6 +206,50 @@ public class VoucherController {
                                              @Valid @RequestBody VoucherReasonRequest request) {
         return ApiResult.ok("Voucher " + voucherId + " cancelled", voucherService.cancel(voucherId,
                 request.getReason()));
+    }
+
+    @Operation(summary = "Sync a GetMore voucher with GetMore",
+            description = "CREDIT_MANAGER, FINANCE, SUPER_ADMIN or VOUCHER_SUPPORT. Reads the voucher's sales (orders)"
+                    + " and refunds (credit memos) back from GetMore now and records what is new: one redemption per"
+                    + " sale per invoiced amount, one refund per credit memo, what is held at the till (ordered, not"
+                    + " yet invoiced), and any problem as a sync issue (a blocking one stops the voucher's ledger"
+                    + " there: outcome BLOCKED). A lapsed voucher's code is withdrawn at GetMore. Also what to do"
+                    + " before writing off a loan whose lapsed GetMore coupon is still live. Codes are never shown.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Read and recorded",
+                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.SYNCED))),
+            @ApiResponse(responseCode = "401", description = "No valid token",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not CREDIT_MANAGER, FINANCE, SUPER_ADMIN or"
+                    + " VOUCHER_SUPPORT", content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "404", description = "No such voucher",
+                    content = @Content(examples = @ExampleObject(VoucherApiExamples.NOT_FOUND_8))),
+            @ApiResponse(responseCode = "409", description = "Not a GetMore voucher of this host's store mode",
+                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.SYNC_NOT_GETMORE))),
+            @ApiResponse(responseCode = "503", description = "GetMore could not be read, or another sync of the"
+                    + " voucher is running: try again", content = @Content(examples = {
+                    @ExampleObject(name = "Unreadable", value = GetMoreApiExamples.SYNC_UNAVAILABLE),
+                    @ExampleObject(name = "Busy", value = GetMoreApiExamples.SYNC_BUSY),
+                    @ExampleObject(name = "Vouchers off", value = VoucherApiExamples.UNAVAILABLE)}))
+    })
+    @PostMapping("/vouchers/{voucherId}/getmore-syncs")
+    @PreAuthorize(SYNCERS)
+    public ApiResult<GetMoreSyncResult> sync(@PathVariable Long voucherId) {
+        GetMoreSyncResult result = getMoreSync.sync(voucherId, GetMoreSyncTrigger.OPERATOR);
+        return switch (result.outcome()) {
+            case SYNCED -> ApiResult.ok("Voucher " + voucherId + " synced with GetMore", result);
+            case UNCHANGED -> ApiResult.ok("Voucher " + voucherId + " is up to date with GetMore", result);
+            case BLOCKED -> ApiResult.ok("Voucher " + voucherId + " synced up to a blocking issue ("
+                    + (result.voucher() == null ? "see its sync issues" : result.voucher().syncBlockedBy()) + ")",
+                    result);
+            case SKIPPED, MODE_MISMATCH -> throw new ConflictException("Voucher " + voucherId
+                    + " is not a GetMore voucher of this host's store mode");
+            case UNAVAILABLE -> throw new GetMoreUnavailableException(null, GetMoreUnavailableException.Reason
+                    .READ_FAILED, "Cannot read voucher " + voucherId + " at GetMore right now; try again.");
+            case BUSY, STALE_SNAPSHOT, CONFLICT_RETRY -> throw new GetMoreUnavailableException(null,
+                    GetMoreUnavailableException.Reason.BUSY, "Another sync of voucher " + voucherId
+                    + " is running; try again.");
+        };
     }
 
     @Operation(summary = "Send a voucher again",
@@ -230,12 +290,17 @@ public class VoucherController {
 
     @Operation(summary = "Daily settlement and reconciliation report",
             description = "FINANCE, CREDIT_MANAGER or SUPER_ADMIN (FR-SGL-038). One market day: vouchers issued (the"
-                    + " value paid to the merchant's settlement account at disbursement), redeemed (by outlet),"
-                    + " cancelled, and lapsed with something left (expiredUnredeemedValue), with totals per currency,"
-                    + " the same per merchant (byMerchant: what each merchant is settled on), and every event as a"
-                    + " line, codes masked. merchantCode limits it to one merchant. Today's report covers the day so"
-                    + " far. format=csv downloads the lines as a spreadsheet, voucher-settlement-<date>.csv, or"
-                    + " voucher-settlement-<date>-<merchantCode>.csv for one merchant.")
+                    + " credit extended as each voucher; nothing is paid to the merchant until payday), redeemed (by"
+                    + " outlet), refunded (a GetMore sale given back), cancelled, and lapsed with something left"
+                    + " (expiredUnredeemedValue), with totals per currency (redeemedValue every purchase,"
+                    + " netRedeemedValue less refunds), the same per merchant (byMerchant: what each merchant is"
+                    + " settled on), and every event as a line, codes masked. A GetMore sale or refund is on the day"
+                    + " loans read it back from GetMore, with GetMore's own time as occurredAt, so a past day never"
+                    + " changes; a simulated GetMore voucher is reported only on a host whose store is SIMULATED,"
+                    + " and the report then says simulated: true. merchantCode limits it to one merchant. Today's"
+                    + " report covers the day so far. format=csv downloads the lines as a spreadsheet,"
+                    + " voucher-settlement-<date>.csv, or voucher-settlement-<date>-<merchantCode>.csv for one"
+                    + " merchant.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success",
                     content = {@Content(mediaType = "application/json",

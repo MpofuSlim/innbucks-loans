@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -30,6 +31,15 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long>, JpaSpec
     boolean existsByStoreMode(GetMoreMode storeMode);
 
     long countByStoreMode(GetMoreMode storeMode);
+
+    /** The voucher a GetMore coupon was kept as, in its store: one per coupon ({@code uq_vouchers_external_coupon}). */
+    Optional<Voucher> findByStoreModeAndExternalCouponId(GetMoreMode storeMode, Long externalCouponId);
+
+    /** GetMore vouchers whose last sync stopped at a blocking issue. */
+    long countBySyncBlockedByIsNotNull();
+
+    /** GetMore vouchers with a sale ordered at the store and not yet invoiced, as last synced. */
+    long countByHeldAmountGreaterThan(BigDecimal amount);
 
     /**
      * A staff member's GetMore vouchers in {@code mode} that a borrower's read may refresh: not cancelled, expiring

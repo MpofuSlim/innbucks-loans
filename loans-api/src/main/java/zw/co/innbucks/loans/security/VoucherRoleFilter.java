@@ -27,8 +27,9 @@ import java.util.Set;
  *   <li>A token holding MERCHANT_TILL, a merchant's till integration, reaches the validation and redemption endpoints
  *       and its own password change, and nothing else, whatever other role it holds: an outside party's credential is
  *       never also a staff one.</li>
- *   <li>A token holding VOUCHER_SUPPORT and no other role reaches the voucher screens and its own password change.
- *       Held with another role, that role's endpoints are open to it as usual.</li>
+ *   <li>A token holding VOUCHER_SUPPORT and no other role reaches the voucher screens (a GetMore voucher's sync
+ *       included) and its own password change. Held with another role, that role's endpoints are open to it as
+ *       usual.</li>
  * </ul>
  * Anything else is the same 403 a role check gives. Runs after {@link TemporaryPasswordFilter}, so a temporary password
  * is still changed first. Deliberately not a bean, for the reason {@link TemporaryPasswordFilter} gives.
@@ -47,7 +48,8 @@ final class VoucherRoleFilter extends OncePerRequestFilter {
             PATHS.matcher(HttpMethod.GET, ApiPaths.BASE + "/vouchers"),
             PATHS.matcher(HttpMethod.GET, ApiPaths.BASE + "/vouchers/{voucherId}"),
             PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/vouchers/{voucherId}/code-reveals"),
-            PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/vouchers/{voucherId}/deliveries"));
+            PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/vouchers/{voucherId}/deliveries"),
+            PATHS.matcher(HttpMethod.POST, ApiPaths.BASE + "/vouchers/{voucherId}/getmore-syncs"));
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
