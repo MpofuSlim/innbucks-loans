@@ -237,6 +237,64 @@ class VoucherSettlementServiceTest {
                 + "E1064,USD,10.00,store-2,GetMore Avondale,GM:CM:3,getmore-groceries,2026-10-02T17:10:00+02:00\r\n");
     }
 
+    private static VoucherRedemption spend(long id, long voucherId, String amount, LocalDateTime recordedAt) {
+        return VoucherRedemption.builder().id(id).voucherId(voucherId).merchantId(3L)
+                .merchantReference("GM:O:" + id + ":1").amount(new BigDecimal(amount))
+                .balanceAfter(new BigDecimal("0.00")).outletId("store-2").redeemedBy("getmore-sync")
+                .redeemedAt(SOLD).source(VoucherRedemptionSource.GETMORE_SYNC).storeMode(GetMoreMode.LIVE)
+                .externalOrderId(id).recordedAt(recordedAt).build();
+    }
+
+    private Voucher.VoucherBuilder lapsedGetMore(long id, VoucherStatus status, LocalDateTime lapse) {
+        return TestVouchers.getMoreIssued(vault).id(id).storeMode(GetMoreMode.LIVE).status(status).expiresAt(lapse);
+    }
+
+    @Test
+    @DisplayName("a lapsed GetMore voucher shows what it had left at the end of its day: a late sync never moves it")
+    void getMoreLapseIsAsOfItsDay() {
+        LocalDateTime lapse = LocalDateTime.of(2026, 10, 3, 21, 59, 59, 999_999_000);
+        LocalDateTime before = LocalDateTime.of(2026, 10, 1, 9, 0);
+        LocalDateTime late = LocalDateTime.of(2026, 10, 4, 4, 0);
+        // Voucher 9: 90.00 of 150.00 spent before its lapse, 60.00 left; a sale of 20.00 made the day before the
+        // lapse is only read back the morning after.
+        Voucher nine = lapsedGetMore(9L, VoucherStatus.EXPIRED, lapse).redeemedAmount(new BigDecimal("90.00")).build();
+        // Voucher 10: spent out by its lapse (REDEEMED), then a refund of 15.00 read back after it reopened it as
+        // EXPIRED with money on it. On its day nothing was left to lapse.
+        Voucher ten = lapsedGetMore(10L, VoucherStatus.REDEEMED, lapse).redeemedAmount(new BigDecimal("150.00"))
+                .build();
+        when(vouchers.findByExpiresAtBetweenAndStatusInOrderByIdAsc(eq(FROM), eq(TO), anyCollection()))
+                .thenReturn(List.of(nine, ten));
+        when(redemptions.findByVoucherIdInOrderByIdAsc(any())).thenReturn(List.of(spend(50L, 9L, "90.00", before),
+                spend(51L, 10L, "150.00", before)));
+        when(refunds.findByVoucherIdInOrderByIdAsc(any())).thenReturn(List.of());
+
+        VoucherSettlementReport first = service.report(DAY, null);
+        assertThat(first.lines()).filteredOn(line -> line.event() == Event.EXPIRED)
+                .extracting(Line::voucherId, Line::amount).containsExactly(tuple(9L, new BigDecimal("60.00")));
+
+        // The late sync: voucher 9 now has 40.00 left (REDEEMED would be the same story), voucher 10 is EXPIRED with
+        // the refund on it. Both rows were recorded after the day ended.
+        Voucher nineNow = lapsedGetMore(9L, VoucherStatus.EXPIRED, lapse).redeemedAmount(new BigDecimal("110.00"))
+                .build();
+        Voucher tenNow = lapsedGetMore(10L, VoucherStatus.EXPIRED, lapse).redeemedAmount(new BigDecimal("135.00"))
+                .refundedAmount(new BigDecimal("15.00")).build();
+        when(vouchers.findByExpiresAtBetweenAndStatusInOrderByIdAsc(eq(FROM), eq(TO), anyCollection()))
+                .thenReturn(List.of(nineNow, tenNow));
+        when(redemptions.findByVoucherIdInOrderByIdAsc(any())).thenReturn(List.of(spend(50L, 9L, "90.00", before),
+                spend(51L, 10L, "150.00", before), spend(52L, 9L, "20.00", late)));
+        when(refunds.findByVoucherIdInOrderByIdAsc(any())).thenReturn(List.of(VoucherRefund.builder().id(4L)
+                .voucherId(10L).merchantId(3L).merchantReference("GM:CM:4").storeMode(GetMoreMode.LIVE)
+                .externalOrderId(51L).externalCreditmemoId(4L).amount(new BigDecimal("15.00"))
+                .balanceAfter(new BigDecimal("15.00")).refundedAt(late).recordedAt(late).recordedBy("getmore-sync")
+                .build()));
+
+        VoucherSettlementReport again = service.report(DAY, null);
+        assertThat(again.lines()).filteredOn(line -> line.event() == Event.EXPIRED)
+                .as("the day already reported is unchanged").containsExactlyElementsOf(first.lines().stream()
+                        .filter(line -> line.event() == Event.EXPIRED).toList());
+        assertThat(again.totals()).isEqualTo(first.totals());
+    }
+
     @Test
     @DisplayName("a simulated voucher's rows are left out where the store is not simulated, and reported where it is")
     void simulatedRows() {

@@ -362,6 +362,43 @@ class GetMoreVoucherSyncTest {
     }
 
     @Test
+    @DisplayName("a coupon expiry date never confirmed is set by the sync, tried again after a failure, then not again")
+    void expiryDateRepeated() {
+        store.updateFailure = new GetMoreUnavailableException(Operation.UPDATE_COUPON,
+                GetMoreUnavailableException.Reason.NOT_REACHED, "connection refused");
+
+        sync();
+        assertThat(voucher.getCouponExpirySetAt()).as("GetMore did not confirm it").isNull();
+
+        store.updateFailure = null;
+        clock.advance(Duration.ofMinutes(2));
+        sync();
+        assertThat(store.expiriesSet).containsExactly(TestVouchers.GETMORE_EXPIRES_AT);
+        assertThat(voucher.getCouponExpirySetAt()).isEqualTo(LocalDateTime.ofInstant(clock.instant(),
+                ZoneOffset.UTC));
+
+        clock.advance(Duration.ofMinutes(2));
+        sync();
+        assertThat(store.expiriesSet).as("confirmed once, never sent again").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("no expiry date is set on a lapsed voucher's coupon (it is withdrawn) nor a closed one's")
+    void noExpiryDateWhenClosed() {
+        clock.set(TestVouchers.GETMORE_EXPIRES_AT.plusMinutes(1).toInstant(ZoneOffset.UTC));
+        sync();
+        assertThat(store.deleted).containsExactly(CODE);
+
+        voucher = TestVouchers.getMoreIssued(vault).status(VoucherStatus.CANCELLED).build();
+        store.coupons.add(coupon(1207, CODE, 0));
+        clock.set(START.plusSeconds(60));
+        sync();
+
+        assertThat(store.expiriesSet).isEmpty();
+        assertThat(voucher.getCouponExpirySetAt()).isNull();
+    }
+
+    @Test
     @DisplayName("other unused coupons on the prefix are withdrawn; a used one stays, as a warning")
     void extrasWithdrawn() {
         store.coupons.add(coupon(1300, PREFIX + "AAAAAAAAAAAA1300", 0));
@@ -579,6 +616,9 @@ class GetMoreVoucherSyncTest {
         final List<GetMoreCreditMemo> memos = new CopyOnWriteArrayList<>();
         final List<String> deleted = new CopyOnWriteArrayList<>();
         final List<Long> lookedUp = new CopyOnWriteArrayList<>();
+        /** The expiry dates PUT on the voucher's coupon, in order. */
+        final List<LocalDateTime> expiriesSet = new CopyOnWriteArrayList<>();
+        volatile RuntimeException updateFailure;
         final List<String> events;
         volatile RuntimeException orderFailure;
         volatile Runnable onSearch;
@@ -621,7 +661,15 @@ class GetMoreVoucherSyncTest {
 
         @Override
         public GetMoreCoupon updateCoupon(long couponId, GetMoreCouponUpdate update) {
-            throw new AssertionError("a sync never updates a coupon");
+            GetMoreCalls.requireNoTransaction();
+            if (updateFailure != null) {
+                throw updateFailure;
+            }
+            GetMoreCoupon coupon = coupons.stream().filter(c -> c.couponId() == couponId).findFirst().orElseThrow();
+            assertThat(update.code()).isEqualTo(coupon.code());
+            assertThat(update.ruleId()).isEqualTo(coupon.ruleId());
+            expiriesSet.add(update.expirationDateUtc());
+            return coupon;
         }
 
         @Override

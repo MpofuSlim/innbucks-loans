@@ -29,6 +29,12 @@ public interface StaffLoanVoucherIssuanceRepository extends JpaRepository<StaffL
     @Query("select i from StaffLoanVoucherIssuance i where i.id = :id")
     Optional<StaffLoanVoucherIssuance> lockById(@Param("id") Long id);
 
+    /**
+     * Whether any issuance is for a store: a LIVE one names a loan of GetMore's real store, and may hold real coupons'
+     * codes sealed, even before any voucher was kept (GetMoreDataGuard).
+     */
+    boolean existsByStoreMode(GetMoreMode storeMode);
+
     /** Whether a prefix is taken in a store: a new issuance's nonce is drawn again if so. */
     boolean existsByStoreModeAndCouponPrefix(GetMoreMode storeMode, String couponPrefix);
 

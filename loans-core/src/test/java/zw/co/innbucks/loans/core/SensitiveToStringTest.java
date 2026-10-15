@@ -423,14 +423,14 @@ class SensitiveToStringTest {
         LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
         GetMoreVoucherCommand command = new GetMoreVoucherCommand(164L, "SGL-2026-000164", 3L, 9L, "E1064",
                 "Rutendo Chari", "+263771640064", new BigDecimal("150.00"), "USD", GetMoreMode.SIMULATED, 1207L, 43L,
-                code, "SIM-K7Q2M3XW-");
+                code, "SIM-K7Q2M3XW-", null);
         GetMoreSyncResult result = new GetMoreSyncResult(GetMoreSyncResult.Outcome.SYNCED, 1, 0,
                 new BigDecimal("0.00"), 1, List.of(), false, null);
         List<Object> holders = List.of(command, result,
                 new GetMoreSpendPlan.Snapshot(9L, 3L, GetMoreMode.SIMULATED, code, 43L, new BigDecimal("150.00"), "USD",
                         at, false, BigDecimal.ZERO, null),
                 new GetMoreVoucherLedger.Snapshot(9L, code, at, new CouponActivity(List.of(), List.of(), List.of(),
-                        true), List.of(), false, false, null, true, GetMoreSyncTrigger.OPERATOR),
+                        true), List.of(), false, false, false, null, true, GetMoreSyncTrigger.OPERATOR),
                 new BorrowerVoucherResponse(VoucherStatus.ISSUED, new BigDecimal("150.00"), new BigDecimal("150.00"),
                         "USD", at, "****8B1C", code, code, VoucherCodeSource.GETMORE, true, BigDecimal.ZERO, true, at));
         for (Object holder : holders) {

@@ -5,6 +5,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreCodes;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * A GetMore coupon to keep as a Staff Grocery Loan's voucher, once GetMore's store has made it and it is bound to the
@@ -13,11 +14,13 @@ import java.math.BigDecimal;
  * @param codeAsStored the code exactly as GetMore returned it: what is sealed, sent and shown; its fingerprint is taken
  *                     of the normalised form
  * @param codePrefix   the issuance's own prefix, nonce included
+ * @param expiresAt    when it lapses: the expiry the issuance checked GetMore's rule against
+ *                     ({@link VoucherService#expiryFor} of its claim); null for the full validity from now
  */
 public record GetMoreVoucherCommand(Long staffLoanId, String loanAccount, Long merchantId, Long staffMemberId,
                                     String customerReference, String customerName, String customerMsisdn,
                                     BigDecimal faceValue, String currency, GetMoreMode storeMode, Long couponId,
-                                    Long ruleId, String codeAsStored, String codePrefix) {
+                                    Long ruleId, String codeAsStored, String codePrefix, LocalDateTime expiresAt) {
 
     /** Never the code ({@code ****8B1C}) nor the whole number. */
     @Override
@@ -26,6 +29,7 @@ public record GetMoreVoucherCommand(Long staffLoanId, String loanAccount, Long m
                 + merchantId + ", staffMemberId=" + staffMemberId + ", customerReference=" + customerReference
                 + ", customerMsisdn=" + MsisdnUtils.mask(customerMsisdn) + ", faceValue=" + faceValue + ", currency="
                 + currency + ", storeMode=" + storeMode + ", couponId=" + couponId + ", ruleId=" + ruleId + ", code="
-                + GetMoreCodes.maskedCode(codeAsStored) + ", codePrefix=" + codePrefix + "]";
+                + GetMoreCodes.maskedCode(codeAsStored) + ", codePrefix=" + codePrefix + ", expiresAt=" + expiresAt
+                + "]";
     }
 }

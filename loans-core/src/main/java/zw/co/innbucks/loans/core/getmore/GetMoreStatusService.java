@@ -75,7 +75,7 @@ public class GetMoreStatusService {
     public GetMoreStatusResponse status(boolean checkRule) {
         GetMoreCalls.requireNoTransaction();
         GetMoreMode mode = properties.getMode();
-        GetMoreMode store = mode == GetMoreMode.OFF ? GetMoreMode.LIVE : mode;
+        GetMoreMode store = storeOfThisHost();
         GetMoreStatusResponse counted = readTransaction.execute(status -> {
             Merchant merchant = merchantRepository.findByStaffLoanMerchantTrue().orElse(null);
             List<String> warnings = new ArrayList<>();
@@ -122,18 +122,29 @@ public class GetMoreStatusService {
                 rule, ruleError);
     }
 
-    /** Sync issues, oldest first: only the open ones with {@code open}, every one ever seen without. */
+    /**
+     * Sync issues of the vouchers of this host's store (LIVE when GetMore is OFF), oldest first: only the open ones
+     * with {@code open}, every one ever seen without. Of the same store as {@link #status}'s count, for the same
+     * reason: a simulated voucher left on a host moved to LIVE is never synced there, and its issues never clear.
+     */
     public Page<VoucherSyncIssueResponse> syncIssues(boolean open, Pageable pageable) {
+        GetMoreMode store = storeOfThisHost();
         return readTransaction.execute(status -> {
             Pageable page = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
-            Page<VoucherSyncIssue> issues = open ? issueRepository.findByClearedAtIsNullOrderByFirstSeenAtAscIdAsc(page)
-                    : issueRepository.findAllByOrderByFirstSeenAtAscIdAsc(page);
+            Page<VoucherSyncIssue> issues = open ? issueRepository.findOpenForStoreMode(store, page)
+                    : issueRepository.findAllForStoreMode(store, page);
             List<Long> voucherIds = issues.getContent().stream().map(VoucherSyncIssue::getVoucherId).distinct()
                     .toList();
             Map<Long, String> loans = voucherIds.isEmpty() ? Map.of() : voucherRepository.findAllById(voucherIds)
                     .stream().collect(Collectors.toMap(Voucher::getId, Voucher::getLoanAccount));
             return issues.map(issue -> VoucherSyncIssueResponse.of(issue, loans.get(issue.getVoucherId())));
         });
+    }
+
+    /** The store this host's records are reported for: its mode's, or LIVE when GetMore is OFF. */
+    private GetMoreMode storeOfThisHost() {
+        GetMoreMode mode = properties.getMode();
+        return mode == GetMoreMode.OFF ? GetMoreMode.LIVE : mode;
     }
 
     /** {@code GETMORE_UNAVAILABLE: AUTH}, {@code GETMORE_REJECTED: NOT_FOUND}: the API's code and the reason. */

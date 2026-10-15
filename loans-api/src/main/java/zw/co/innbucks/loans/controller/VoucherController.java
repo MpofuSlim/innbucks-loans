@@ -298,10 +298,11 @@ public class VoucherController {
                     + " (expiredUnredeemedValue), with totals per currency (redeemedValue every purchase,"
                     + " netRedeemedValue less refunds), the same per merchant (byMerchant: what each merchant is"
                     + " settled on), and every event as a line, codes masked. A GetMore sale or refund is on the day"
-                    + " loans read it back from GetMore, with GetMore's own time as occurredAt, so a past day never"
-                    + " changes; a simulated GetMore voucher is reported only on a host whose store is SIMULATED,"
-                    + " and the report then says simulated: true. merchantCode limits it to one merchant. Today's"
-                    + " report covers the day so far. format=csv downloads the lines as a spreadsheet,"
+                    + " loans read it back from GetMore, with GetMore's own time as occurredAt, and a lapsed GetMore"
+                    + " voucher shows what it had left as loans had recorded it by the end of that day, so a past"
+                    + " day never changes; a simulated GetMore voucher is reported only on a host whose store is"
+                    + " SIMULATED, and the report then says simulated: true. merchantCode limits it to one merchant."
+                    + " Today's report covers the day so far. format=csv downloads the lines as a spreadsheet,"
                     + " voucher-settlement-<date>.csv, or voucher-settlement-<date>-<merchantCode>.csv for one"
                     + " merchant.")
     @ApiResponses({

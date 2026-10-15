@@ -51,7 +51,8 @@ import java.util.function.Supplier;
  *       ({@link GetMoreCoupons#activity}). A failed read writes nothing (UNAVAILABLE). Then, best effort: other
  *       unused coupons on the prefix are withdrawn; a coupon missing from a complete read is looked up, and "No such
  *       entity" means GetMore deleted it (the voucher is stopped, STORE_WITHDRAWN); a lapsed voucher's code is
- *       withdrawn, the only real stop at Magento.</li>
+ *       withdrawn, the only real stop at Magento; an open voucher whose coupon's expiry date was never confirmed has
+ *       it set.</li>
  *   <li><b>Apply</b>, in one transaction under the voucher's row lock ({@link GetMoreVoucherLedger}); then the audit
  *       rows, once it has committed.</li>
  * </ol>
@@ -188,11 +189,13 @@ public class GetMoreVoucherSync {
         boolean gone = own == null && activity.complete() && !read.couponWithdrawn() && gone(read);
         boolean withdrawnNow = !gone && read.lapsed() && !read.cancelled() && !read.couponWithdrawn()
                 && withdrawLapsed(read);
+        boolean expirySet = own != null && read.open() && !read.lapsed() && !read.couponExpirySet()
+                && setExpiry(read, own);
 
         GetMoreVoucherLedger.Applied applied;
         try {
             applied = ledger.apply(new GetMoreVoucherLedger.Snapshot(voucherId, read.code(), read.snapshotStartedAt(),
-                    activity, syncIssues, gone, withdrawnNow, own == null ? null : own.timesUsed(),
+                    activity, syncIssues, gone, withdrawnNow, expirySet, own == null ? null : own.timesUsed(),
                     binding.partialSpending(), trigger), mode);
         } catch (DataIntegrityViolationException conflict) {
             log.warn("GetMore sync of voucher {} ({}, {}): a row it was adding was added at the same moment; nothing"
@@ -235,6 +238,7 @@ public class GetMoreVoucherSync {
                 .forEach(refund -> ordersWithRefunds.add(refund.getExternalOrderId()));
         return new Read(null, view, vault.decrypt(voucher.getCodeCiphertext()), voucher.getCodePrefix(),
                 voucher.getExternalCouponId(), voucher.lapsed(now), voucher.getStatus() == VoucherStatus.CANCELLED,
+                voucher.getStatus().isOpen(), voucher.getExpiresAt(), voucher.getCouponExpirySetAt() != null,
                 voucher.getCouponWithdrawnAt() != null, ordersWithRefunds, now.truncatedTo(ChronoUnit.MICROS));
     }
 
@@ -295,6 +299,26 @@ public class GetMoreVoucherSync {
         }
     }
 
+    /**
+     * Tells GetMore when an open voucher's coupon lapses, when that was never confirmed: the PUT after issue is best
+     * effort and is not even sent once an acceptance has run out of its time, so the sync is what repeats it. Magento
+     * stores the date and ignores it; the simulator enforces it (A4). Best effort: a failure is tried again by the next
+     * sync.
+     *
+     * @return whether GetMore confirmed it
+     */
+    private boolean setExpiry(Read read, GetMoreCoupon own) {
+        try {
+            coupons.setExpiry(own, read.expiresAt());
+            return true;
+        } catch (RuntimeException notSet) {
+            log.warn("GetMore: the expiry date of voucher {}'s coupon ({}) was not set; the next sync tries again: {}",
+                    read.voucher().id(), GetMoreCodes.maskedCode(read.code()), GetMoreCodes.maskAll(
+                            String.valueOf(notSet.getMessage()), List.of(read.code())));
+            return false;
+        }
+    }
+
     /** Withdraws a lapsed voucher's code: Magento ignores a coupon's expiry date, so deleting it is the only stop. */
     private boolean withdrawLapsed(Read read) {
         try {
@@ -321,11 +345,13 @@ public class GetMoreVoucherSync {
 
     /** What the read found. The code is in memory only, and never in toString. */
     private record Read(GetMoreSyncResult early, VoucherResponse voucher, String code, String prefix, long couponId,
-                        boolean lapsed, boolean cancelled, boolean couponWithdrawn, Set<Long> ordersWithRefunds,
+                        boolean lapsed, boolean cancelled, boolean open, LocalDateTime expiresAt,
+                        boolean couponExpirySet, boolean couponWithdrawn, Set<Long> ordersWithRefunds,
                         LocalDateTime snapshotStartedAt) {
 
         static Read early(GetMoreSyncResult result) {
-            return new Read(result, result.voucher(), null, null, 0, false, false, false, Set.of(), null);
+            return new Read(result, result.voucher(), null, null, 0, false, false, false, null, false, false,
+                    Set.of(), null);
         }
 
         @Override

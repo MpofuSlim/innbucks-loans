@@ -55,6 +55,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -143,7 +144,7 @@ class GetMoreWebContractTest {
     @Test
     @DisplayName("SUPER_ADMIN, CREDIT_MANAGER and FINANCE read both; everyone else is refused, anonymous with a 401")
     void readers() throws Exception {
-        when(issueRepository.findByClearedAtIsNullOrderByFirstSeenAtAscIdAsc(any())).thenReturn(Page.empty());
+        when(issueRepository.findOpenForStoreMode(any(), any())).thenReturn(Page.empty());
         for (String role : List.of("SUPER_ADMIN", "CREDIT_MANAGER", "FINANCE")) {
             mvc.perform(as(role, get("/lending/v1/getmore"))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value("OK"));
@@ -239,6 +240,22 @@ class GetMoreWebContractTest {
                 .andExpect(jsonPath("$.data.openSyncIssues").value(0));
         verify(issueRepository, times(2)).countOpenForStoreMode(GetMoreMode.LIVE);
         verify(issueRepository, never()).countOpenForStoreMode(GetMoreMode.SIMULATED);
+
+        // The list Credit opens from that count is of the same store: a simulated voucher's issue, which can never
+        // clear on this host, is not listed beside the live ones.
+        when(issueRepository.findOpenForStoreMode(any(), any())).thenReturn(Page.empty());
+        when(issueRepository.findAllForStoreMode(any(), any())).thenReturn(Page.empty());
+        for (GetMoreMode mode : List.of(GetMoreMode.LIVE, GetMoreMode.OFF)) {
+            properties.setMode(mode);
+            mvc.perform(as("CREDIT_MANAGER", get("/lending/v1/voucher-sync-issues")))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.items").isEmpty());
+            mvc.perform(as("CREDIT_MANAGER", get("/lending/v1/voucher-sync-issues").param("open", "false")))
+                    .andExpect(status().isOk());
+        }
+        verify(issueRepository, times(2)).findOpenForStoreMode(eq(GetMoreMode.LIVE), any());
+        verify(issueRepository, times(2)).findAllForStoreMode(eq(GetMoreMode.LIVE), any());
+        verify(issueRepository, never()).findOpenForStoreMode(eq(GetMoreMode.SIMULATED), any());
+        verify(issueRepository, never()).findAllForStoreMode(eq(GetMoreMode.SIMULATED), any());
     }
 
     @Test
@@ -281,10 +298,10 @@ class GetMoreWebContractTest {
                 .detail("order SIM000000021 spent 80.00, which would take the voucher to 230.00 spent of 150.00")
                 .firstSeenAt(LocalDateTime.of(2026, 10, 14, 9, 2, 44))
                 .lastSeenAt(LocalDateTime.of(2026, 10, 14, 9, 15, 9)).build();
-        when(issueRepository.findByClearedAtIsNullOrderByFirstSeenAtAscIdAsc(any()))
-                .thenAnswer(call -> new PageImpl<>(List.of(overspent), call.<Pageable>getArgument(0), 1));
-        when(issueRepository.findAllByOrderByFirstSeenAtAscIdAsc(any()))
-                .thenAnswer(call -> new PageImpl<>(List.of(overspent), call.<Pageable>getArgument(0), 1));
+        when(issueRepository.findOpenForStoreMode(eq(GetMoreMode.SIMULATED), any()))
+                .thenAnswer(call -> new PageImpl<>(List.of(overspent), call.<Pageable>getArgument(1), 1));
+        when(issueRepository.findAllForStoreMode(eq(GetMoreMode.SIMULATED), any()))
+                .thenAnswer(call -> new PageImpl<>(List.of(overspent), call.<Pageable>getArgument(1), 1));
         when(voucherRepository.findAllById(List.of(12L)))
                 .thenReturn(List.of(Voucher.builder().id(12L).loanAccount("SGL-2026-000171").build()));
 
@@ -297,15 +314,15 @@ class GetMoreWebContractTest {
                 .andExpect(jsonPath("$.data.items[0].blocking").value(true))
                 .andExpect(jsonPath("$.data.items[0].clearedAt").isEmpty())
                 .andExpect(jsonPath("$.data.size").value(20));
-        verify(issueRepository).findByClearedAtIsNullOrderByFirstSeenAtAscIdAsc(PageRequest.of(0, 20));
-        verify(issueRepository, never()).findAllByOrderByFirstSeenAtAscIdAsc(any());
+        verify(issueRepository).findOpenForStoreMode(GetMoreMode.SIMULATED, PageRequest.of(0, 20));
+        verify(issueRepository, never()).findAllForStoreMode(any(), any());
 
         mvc.perform(as("FINANCE", get("/lending/v1/voucher-sync-issues").param("open", "false")
                         .param("page", "1").param("size", "500")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.page").value(1))
                 .andExpect(jsonPath("$.data.size").value(100));
-        verify(issueRepository).findAllByOrderByFirstSeenAtAscIdAsc(argThat(page ->
+        verify(issueRepository).findAllForStoreMode(eq(GetMoreMode.SIMULATED), argThat(page ->
                 page.getPageNumber() == 1 && page.getPageSize() == 100));
     }
 }

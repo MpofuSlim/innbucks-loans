@@ -543,7 +543,7 @@ refund every simulated voucher: it must never be set where salaries are collecte
 **Why production cannot simulate by accident:** OFF is the default; SIMULATED needs
 a 32-character key that exists only in staging's Secret; it refuses to boot off its
 node, with any live GetMore credential present, or on a database holding real
-GetMore vouchers; it announces itself at ERROR on every boot; its beans, its
+GetMore vouchers or voucher issuances; it announces itself at ERROR on every boot; its beans, its
 security chain and its controller exist only in SIMULATED; LIVE refuses to boot with
 either simulator key set; and the loans Deployment is applied only on staging
 (section 4). `loans.example.env` keeps the simulator keys commented out, marked

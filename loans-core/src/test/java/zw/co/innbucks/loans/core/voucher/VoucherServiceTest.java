@@ -288,7 +288,7 @@ class VoucherServiceTest {
     private static GetMoreVoucherCommand getMoreCommand(String codeAsReturned, long couponId) {
         return new GetMoreVoucherCommand(164L, "SGL-2026-000164", 3L, 9L, "E1064", "Rutendo Chari", "0771640064",
                 new BigDecimal("150"), "USD", GetMoreMode.SIMULATED, couponId, 43L, codeAsReturned,
-                TestVouchers.GETMORE_PREFIX);
+                TestVouchers.GETMORE_PREFIX, null);
     }
 
     @Test
@@ -332,6 +332,35 @@ class VoucherServiceTest {
     }
 
     private static final String LIVE_REFERENCE = VoucherService.getMoreDisbursementReference(GetMoreMode.LIVE, 1207L);
+
+    @Test
+    @DisplayName("a GetMore voucher lapses when its issuance's claim reckoned; never already lapsed, nor past the full"
+            + " validity")
+    void issueFromGetMoreWithTheClaimsExpiry() {
+        // Kept at 00:00:10 on 15 October in Harare; claimed at 23:59:50 the day before, so the last day checked
+        // against GetMore's rule was 13 November, not 14 November.
+        LocalDateTime keptAt = LocalDateTime.of(2026, 10, 14, 22, 0, 10);
+        service = withClock(keptAt);
+        LocalDateTime claimed = service.expiryFor(LocalDateTime.of(2026, 10, 14, 21, 59, 50));
+        assertThat(claimed).isEqualTo(LocalDateTime.of(2026, 11, 13, 21, 59, 59, 999_999_000));
+        GetMoreVoucherCommand base = getMoreCommand(TestVouchers.GETMORE_CODE, 1207L);
+        java.util.function.Function<LocalDateTime, GetMoreVoucherCommand> expiring = at -> new GetMoreVoucherCommand(
+                base.staffLoanId(), base.loanAccount(), base.merchantId(), base.staffMemberId(),
+                base.customerReference(), base.customerName(), base.customerMsisdn(), base.faceValue(),
+                base.currency(), base.storeMode(), base.couponId(), base.ruleId(), base.codeAsStored(),
+                base.codePrefix(), at);
+
+        service.issueFromGetMore(expiring.apply(claimed));
+
+        ArgumentCaptor<Voucher> saved = ArgumentCaptor.forClass(Voucher.class);
+        verify(vouchers).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getExpiresAt()).isEqualTo(claimed);
+
+        assertThatThrownBy(() -> service.issueFromGetMore(expiring.apply(keptAt)))
+                .isInstanceOf(ValidationException.class).hasMessageStartingWith("expiresAt");
+        assertThatThrownBy(() -> service.issueFromGetMore(expiring.apply(service.expiryFor(keptAt).plusDays(1))))
+                .isInstanceOf(ValidationException.class).hasMessageStartingWith("expiresAt");
+    }
 
     @Test
     @DisplayName("kept again for the same coupon: the voucher already kept, nothing sent; another coupon is a 409")

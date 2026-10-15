@@ -398,6 +398,16 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
         assertThat(status.path("issuances").path("CANCELLING").asLong()).isEqualTo(jdbc.queryForObject(
                 "SELECT count(*) FROM staff_loan_voucher_issuances WHERE status = 'CANCELLING'"
                         + " AND store_mode = 'SIMULATED'", Long.class));
+
+        // The list behind that count, over the same store, in the database: open ones, then every one.
+        JsonNode open = portal("GET", "/lending/v1/voucher-sync-issues", UserGroup.CREDIT_MANAGER, null, 200)
+                .path("data");
+        assertThat(open.path("totalItems").asLong()).isEqualTo(status.path("openSyncIssues").asLong());
+        JsonNode every = portal("GET", "/lending/v1/voucher-sync-issues?open=false", UserGroup.CREDIT_MANAGER, null,
+                200).path("data");
+        assertThat(every.path("totalItems").asLong()).isEqualTo(jdbc.queryForObject("SELECT count(*) FROM"
+                + " voucher_sync_issues i JOIN vouchers v ON v.id = i.voucher_id WHERE v.store_mode = 'SIMULATED'",
+                Long.class));
     }
 
     // ---- the borrower -----------------------------------------------------------------------------------------------

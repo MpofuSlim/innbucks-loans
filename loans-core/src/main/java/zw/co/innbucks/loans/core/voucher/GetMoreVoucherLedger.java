@@ -51,12 +51,13 @@ public class GetMoreVoucherLedger {
      * @param syncIssues        issues the sync itself saw (extra coupons on the prefix)
      * @param couponGone        GetMore answered "No such entity" for the voucher's coupon
      * @param withdrawnNow      the sync withdrew the lapsed code at GetMore
+     * @param expirySet         GetMore confirmed the coupon's expiry date, set by the sync
      * @param ownTimesUsed      Magento's use count of the voucher's own coupon; null when it was not on the prefix
      * @param partialSpending   whether a coupon can be spent over several purchases in this store
      */
     public record Snapshot(Long voucherId, String code, LocalDateTime snapshotStartedAt, CouponActivity activity,
-                           List<Issue> syncIssues, boolean couponGone, boolean withdrawnNow, Integer ownTimesUsed,
-                           boolean partialSpending, GetMoreSyncTrigger trigger) {
+                           List<Issue> syncIssues, boolean couponGone, boolean withdrawnNow, boolean expirySet,
+                           Integer ownTimesUsed, boolean partialSpending, GetMoreSyncTrigger trigger) {
 
         public Snapshot {
             syncIssues = syncIssues == null ? List.of() : List.copyOf(syncIssues);
@@ -109,6 +110,9 @@ public class GetMoreVoucherLedger {
         boolean withdrawnBefore = voucher.getCouponWithdrawnAt() != null;
         if (snapshot.couponGone() || snapshot.withdrawnNow()) {
             voucher.couponWithdrawn(now);
+        }
+        if (snapshot.expirySet()) {
+            voucher.couponExpirySet(now);
         }
         VoucherStopReason stopped = null;
         if (snapshot.couponGone() && voucher.stopNow(VoucherStopReason.STORE_WITHDRAWN, now)) {

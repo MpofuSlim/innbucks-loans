@@ -8,6 +8,7 @@ import zw.co.innbucks.loans.core.getmore.simulator.SimCouponRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.merchant.VoucherStore;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceRepository;
 
 import java.util.Optional;
 
@@ -20,8 +21,10 @@ import java.util.Optional;
  *
  * <ul>
  *   <li>LIVE or SIMULATED without both voucher code keys: refused, since a GetMore code could not be stored.</li>
- *   <li>SIMULATED on a database holding a LIVE GetMore voucher: refused. A database that holds real coupons is a
- *       production one, whatever its env file says.</li>
+ *   <li>SIMULATED on a database holding a LIVE GetMore voucher, or a LIVE voucher issuance: refused. A database that
+ *       holds real coupons is a production one, whatever its env file says, and so is one that has issued for GetMore's
+ *       real store at all: LIVE with {@code GETMORE_LIVE_AMOUNT_MODEL=NONE} parks every accepted loan's issuance with
+ *       no voucher, and an issuance can keep real coupons' codes sealed (a lost answer, live orphans).</li>
  *   <li>LIVE or OFF with rows in the simulated store: a WARN. LIVE with simulated vouchers: a WARN with how many
  *       (their syncs are skipped, and the reports leave them out).</li>
  *   <li>Not OFF while the Staff Grocery Loan's merchant is not a GetMore store: a WARN, since every loan accepted will
@@ -36,6 +39,7 @@ public class GetMoreDataGuard {
     private final GetMoreMode mode;
 
     public GetMoreDataGuard(GetMoreProperties properties, VoucherCodeVault vault, VoucherRepository voucherRepository,
+                            StaffLoanVoucherIssuanceRepository issuanceRepository,
                             SimCouponRepository simCouponRepository, MerchantRepository merchantRepository) {
         this.mode = properties.getMode();
         if (mode != GetMoreMode.OFF && !vault.isConfigured()) {
@@ -43,10 +47,12 @@ public class GetMoreDataGuard {
                     + " VOUCHER_CODE_ENCRYPTION_KEY are required to store GetMore codes: set both, or set"
                     + " GETMORE_MODE=OFF");
         }
-        if (mode == GetMoreMode.SIMULATED && voucherRepository.existsByStoreMode(GetMoreMode.LIVE)) {
+        if (mode == GetMoreMode.SIMULATED && (voucherRepository.existsByStoreMode(GetMoreMode.LIVE)
+                || issuanceRepository.existsByStoreMode(GetMoreMode.LIVE))) {
             throw new IllegalStateException("GETMORE_MODE is SIMULATED but this database holds real GetMore vouchers"
-                    + " (store mode LIVE): a database that holds GetMore's real coupons never simulates. Set"
-                    + " GETMORE_MODE=LIVE or OFF.");
+                    + " or voucher issuances (store mode LIVE, in vouchers or staff_loan_voucher_issuances): a"
+                    + " database that holds GetMore's real coupons, or has issued for its real store, never"
+                    + " simulates. Set GETMORE_MODE=LIVE or OFF.");
         }
         if (mode != GetMoreMode.SIMULATED) {
             long simulatedCoupons = simCouponRepository.count();

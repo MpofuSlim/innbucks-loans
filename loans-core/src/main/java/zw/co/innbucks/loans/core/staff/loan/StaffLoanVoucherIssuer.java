@@ -80,10 +80,11 @@ import java.util.stream.Collectors;
  *   <li><b>Call</b>: {@link GetMoreCoupons#findOrCreate}: the prefix is searched before any generate, a generate is
  *       counted in the issuance before it is sent and never beyond its allowance, and only a coupon made on or after
  *       the first claim (less the clock skew), under the rule, unused, is adopted.</li>
- *   <li><b>Settle</b>: the loan, then the issuance, locked; still this attempt's claim and the loan still awaiting,
- *       the coupon is kept as the voucher ({@link VoucherService#issueFromGetMore}), the loan DISBURSED and the
- *       issuance ISSUED in one commit. A loan cancelled meanwhile sends the issuance to CANCELLING and its coupons are
- *       withdrawn; a claim lost meanwhile withdraws the coupon this attempt bound.</li>
+ *   <li><b>Settle</b>: the loan, then the issuance, locked; still this attempt's claim, the loan still awaiting and
+ *       its payday cut-off still to come, the coupon is kept as the voucher ({@link VoucherService#issueFromGetMore}),
+ *       lapsing when the claim reckoned it would, the loan DISBURSED and the issuance ISSUED in one commit. A loan
+ *       cancelled meanwhile sends the issuance to CANCELLING and its coupons are withdrawn; a claim lost meanwhile, or
+ *       a payday begun meanwhile (parked), withdraws the coupon this attempt bound.</li>
  * </ol>
  *
  * <p>What GetMore could not do is recorded on the issuance and never thrown: unavailable or an unknown outcome waits
@@ -540,11 +541,20 @@ public class StaffLoanVoucherIssuer {
                     + " while coupon " + coupon.couponId() + " was made; it is withdrawn", now);
             return Settled.of(SettledKind.LOAN_NOT_AWAITING, null);
         }
+        if (!now.isBefore(marketTimeZone.startOfDayUtc(loan.getDueDate()))) {
+            // The claim checked this at its own time; an attempt that ran past a market midnight checks it again.
+            parkNow(issuance, loan, PAST_DUE, "the loan's payday (" + loan.getDueDate() + ") began while coupon "
+                    + coupon.couponId() + " was made: a voucher issued now would be on no collection; it is"
+                    + " withdrawn; cancel the loan", now);
+            return Settled.of(SettledKind.LOAN_NOT_AWAITING, null);
+        }
+        // The expiry the claim checked the store's rule against, not one counted from now: an attempt that ran past a
+        // market midnight would otherwise give the voucher a last day the rule was never checked for.
         VoucherResponse voucher = voucherService.issueFromGetMore(new GetMoreVoucherCommand(loan.getId(),
                 loan.getReference(), issuance.getMerchantId(), loan.getStaffMemberId(), loan.getEmployeeNumber(),
                 loan.getFullName(), loan.getMsisdn(), issuance.getFaceValue(), issuance.getCurrency(),
                 issuance.getStoreMode(), coupon.couponId(), coupon.ruleId(), coupon.code(),
-                issuance.getCouponPrefix()));
+                issuance.getCouponPrefix(), voucherService.expiryFor(claim.claimedAt())));
         loan.voucherIssued(voucher.issuedAt(), voucher.disbursementReference());
         loanRepository.save(loan);
         List<String> others = issuance.sealedCodes().stream()
@@ -570,7 +580,8 @@ public class StaffLoanVoucherIssuer {
     /**
      * Best effort, after the voucher is kept: tells GetMore when the coupon lapses. Magento stores it and does not
      * enforce it (the simulator does); a lapsed code is withdrawn by the next sync that touches it. Not started once
-     * the attempt's budget has run out.
+     * the attempt's budget has run out. Whenever it is not set here, the voucher's next sync sets it, and every sync
+     * after repeats that until GetMore confirms it ({@code coupon_expiry_set_at}).
      */
     private void setExpiry(Claim claim, GetMoreCoupon coupon, VoucherResponse voucher, Deadline deadline) {
         try {
@@ -578,8 +589,8 @@ public class StaffLoanVoucherIssuer {
             coupons.setExpiry(coupon, voucher.expiresAt());
             voucherService.markCouponExpirySet(voucher.id(), now());
         } catch (RuntimeException notSet) {
-            log.warn("GetMore voucher {} of staff loan {}: the coupon's expiry date was not set at GetMore ({});"
-                            + " a lapsed code is still withdrawn by the next sync", voucher.id(), claim.reference(),
+            log.warn("GetMore voucher {} of staff loan {}: the coupon's expiry date was not set at GetMore ({}); the"
+                            + " voucher's next sync sets it", voucher.id(), claim.reference(),
                     GetMoreCodes.maskAll(String.valueOf(notSet.getMessage()), List.of(coupon.code())));
         }
     }

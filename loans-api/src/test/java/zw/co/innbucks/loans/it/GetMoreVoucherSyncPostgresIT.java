@@ -108,7 +108,7 @@ class GetMoreVoucherSyncPostgresIT {
         VoucherResponse voucher = new TransactionTemplate(transactionManager).execute(status ->
                 vouchers.issueFromGetMore(new GetMoreVoucherCommand(loan, reference, merchant(), member, employee,
                         "Rutendo Chari", "0" + msisdn.substring(3), new BigDecimal("150"), "USD",
-                        GetMoreMode.SIMULATED, coupon.couponId(), 43L, coupon.code(), prefix)));
+                        GetMoreMode.SIMULATED, coupon.couponId(), 43L, coupon.code(), prefix, null)));
         return new Issued(voucher.id(), member, reference, coupon.code());
     }
 

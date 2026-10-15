@@ -40,8 +40,10 @@ import java.util.stream.Collectors;
  *
  * <p>A till's redemption counts on the day it was made. A GetMore sale or refund counts on the day loans read it back
  * from GetMore ({@code recorded_at}), with GetMore's own time beside it, so a day already reported never changes when a
- * sync runs late: what was missed lands on the day it was read. A simulated GetMore voucher (staging) is reported only
- * on a host whose store is SIMULATED, and the report then says so; anywhere else it is left out.</p>
+ * sync runs late: what was missed lands on the day it was read. A lapsed GetMore voucher is reported with what it had
+ * left at the end of the day it lapsed, as loans had recorded it by then, for the same reason. A simulated GetMore
+ * voucher (staging) is reported only on a host whose store is SIMULATED, and the report then says so; anywhere else it
+ * is left out.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -125,11 +127,19 @@ public class VoucherSettlementService {
                 .filter(voucher -> reported(voucher, simulatedHost))
                 .forEach(voucher -> lines.add(line(Event.CANCELLED, voucher.getCancelledAt(), voucher,
                         voucher.getFaceValue(), merchantNames)));
-        voucherRepository.findByExpiresAtBetweenAndStatusInOrderByIdAsc(from, to, EnumSet.of(VoucherStatus.EXPIRED,
-                        VoucherStatus.ISSUED, VoucherStatus.PARTIALLY_REDEEMED)).stream()
-                .filter(voucher -> reported(voucher, simulatedHost) && voucher.lapsed(now))
-                .forEach(voucher -> lines.add(line(Event.EXPIRED, voucher.getExpiresAt(), voucher, voucher.balance(),
-                        merchantNames)));
+        List<Voucher> lapsed = voucherRepository.findByExpiresAtBetweenAndStatusInOrderByIdAsc(from, to,
+                        EnumSet.of(VoucherStatus.EXPIRED, VoucherStatus.ISSUED, VoucherStatus.PARTIALLY_REDEEMED,
+                                VoucherStatus.REDEEMED)).stream()
+                .filter(voucher -> reported(voucher, simulatedHost) && voucher.lapsed(now)
+                        && (voucher.isGetMore() || voucher.getStatus() != VoucherStatus.REDEEMED))
+                .toList();
+        Map<Long, BigDecimal> getMoreLeft = getMoreLeftAt(lapsed, to);
+        lapsed.forEach(voucher -> {
+            BigDecimal left = voucher.isGetMore() ? getMoreLeft.get(voucher.getId()) : voucher.balance();
+            if (left.signum() != 0) {
+                lines.add(line(Event.EXPIRED, voucher.getExpiresAt(), voucher, left, merchantNames));
+            }
+        });
         if (merchant != null) {
             lines.removeIf(line -> !merchant.equals(line.merchantCode()));
         }
@@ -144,6 +154,35 @@ public class VoucherSettlementService {
      */
     private static boolean reported(Voucher voucher, boolean simulatedHost) {
         return voucher != null && (voucher.getStoreMode() != GetMoreMode.SIMULATED || simulatedHost);
+    }
+
+    /**
+     * What each lapsed GetMore voucher had left at {@code to}, the end of the report day: its face less the spends,
+     * plus the refunds, loans had recorded by then. Not its balance now: GetMore's sales and refunds keep arriving
+     * after the lapse (a sale held and invoiced later, a sync run days after the sale, a late spend, a refund); each
+     * lands on the day it is recorded, and must not also move the day the voucher lapsed. A voucher spent out by then
+     * had nothing to lapse, whatever its status says now.
+     */
+    private Map<Long, BigDecimal> getMoreLeftAt(List<Voucher> lapsed, LocalDateTime to) {
+        Map<Long, BigDecimal> left = new HashMap<>();
+        lapsed.stream().filter(Voucher::isGetMore).forEach(voucher -> left.put(voucher.getId(),
+                voucher.getFaceValue()));
+        if (left.isEmpty()) {
+            return left;
+        }
+        Set<Long> ids = new TreeSet<>(left.keySet());
+        redemptionRepository.findByVoucherIdInOrderByIdAsc(ids).stream()
+                .filter(spend -> recordedBy(spend.getRecordedAt(), spend.getRedeemedAt(), to))
+                .forEach(spend -> left.merge(spend.getVoucherId(), spend.getAmount().negate(), BigDecimal::add));
+        refundRepository.findByVoucherIdInOrderByIdAsc(ids).stream()
+                .filter(refund -> recordedBy(refund.getRecordedAt(), refund.getRefundedAt(), to))
+                .forEach(refund -> left.merge(refund.getVoucherId(), refund.getAmount(), BigDecimal::add));
+        return left;
+    }
+
+    /** Whether a row was on record by {@code to}: by when loans recorded it, or when it was made if that is unknown. */
+    private static boolean recordedBy(LocalDateTime recordedAt, LocalDateTime madeAt, LocalDateTime to) {
+        return !(recordedAt != null ? recordedAt : madeAt).isAfter(to);
     }
 
     /** The first recorded sale of each refunded order, by voucher and order: the outlet a refund is counted at. */

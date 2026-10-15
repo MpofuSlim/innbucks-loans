@@ -397,9 +397,12 @@ public class VoucherService {
      * borrower once that commits, exactly as {@link #issue} does. The code is fingerprinted in its normalised form and
      * sealed exactly as GetMore returned it. The disbursement reference names the coupon ({@code GETMORE-<couponId>},
      * {@code GETMORE-SIM-} when simulated), and asked again for the same coupon it returns the voucher already kept.
+     * It lapses at the command's {@code expiresAt}, the one the issuance checked GetMore's rule against, which must
+     * still be to come and no later than a voucher issued now would get.
      *
      * @throws VouchersUnavailableException the voucher code keys are not configured
-     * @throws ValidationException          the command is incomplete, or names no merchant there is
+     * @throws ValidationException          the command is incomplete, names no merchant there is, or its expiry has
+     *                                      passed or is later than a voucher issued now would get
      * @throws ConflictException            the loan already has a voucher of another coupon, or the coupon's
      *                                      disbursement reference or code is another voucher's
      */
@@ -431,6 +434,7 @@ public class VoucherService {
             throw new ConflictException("GetMore coupon " + command.couponId() + " ("
                     + GetMoreCodes.maskedCode(command.codeAsStored()) + ") has the code of another voucher");
         }
+        LocalDateTime expiresAt = getMoreExpiry(command, now);
         String code = command.codeAsStored();
         Voucher voucher;
         try {
@@ -451,7 +455,7 @@ public class VoucherService {
                     .redeemedAmount(zero())
                     .currency(command.currency())
                     .issuedAt(now)
-                    .expiresAt(expiryFor(now))
+                    .expiresAt(expiresAt)
                     .status(VoucherStatus.ISSUED)
                     .deliveryStatus(VoucherDeliveryStatus.PENDING)
                     .deliveryUpdatedAt(now)
@@ -631,6 +635,24 @@ public class VoucherService {
     public LocalDateTime expiryFor(LocalDateTime issuedAt) {
         LocalDate lastDay = marketTimeZone.localDay(issuedAt).plusDays(properties.getValidityDays());
         return marketTimeZone.endOfDayUtc(lastDay).truncatedTo(ChronoUnit.MICROS);
+    }
+
+    /**
+     * When a GetMore voucher kept at {@code now} lapses: the command's expiry (the one GetMore's rule was checked
+     * against), or the full validity from now when it names none. Refused when it is not after {@code now} (the
+     * voucher would be born lapsed) or later than the full validity (the issuance's claim cannot be in the future).
+     */
+    private LocalDateTime getMoreExpiry(GetMoreVoucherCommand command, LocalDateTime now) {
+        LocalDateTime longest = expiryFor(now);
+        if (command.expiresAt() == null) {
+            return longest;
+        }
+        LocalDateTime expiresAt = command.expiresAt().truncatedTo(ChronoUnit.MICROS);
+        if (!expiresAt.isAfter(now) || expiresAt.isAfter(longest)) {
+            throw new ValidationException("expiresAt (" + expiresAt + ") must be after now and no later than "
+                    + longest);
+        }
+        return expiresAt;
     }
 
     /** A code no voucher has; a clash is next to impossible (10^15 codes), and is simply drawn again. */

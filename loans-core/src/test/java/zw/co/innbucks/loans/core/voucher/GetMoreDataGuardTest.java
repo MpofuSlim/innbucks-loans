@@ -8,6 +8,7 @@ import zw.co.innbucks.loans.core.getmore.simulator.SimCouponRepository;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
 import zw.co.innbucks.loans.core.merchant.VoucherStore;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceRepository;
 
 import java.util.Optional;
 
@@ -28,13 +29,14 @@ class GetMoreDataGuardTest {
 
     private final VoucherCodeVault vault = mock(VoucherCodeVault.class);
     private final VoucherRepository vouchers = mock(VoucherRepository.class);
+    private final StaffLoanVoucherIssuanceRepository issuances = mock(StaffLoanVoucherIssuanceRepository.class);
     private final SimCouponRepository simCoupons = mock(SimCouponRepository.class);
     private final MerchantRepository merchants = mock(MerchantRepository.class);
 
     private GetMoreDataGuard guard(GetMoreMode mode) {
         GetMoreProperties properties = new GetMoreProperties();
         properties.setMode(mode);
-        return new GetMoreDataGuard(properties, vault, vouchers, simCoupons, merchants);
+        return new GetMoreDataGuard(properties, vault, vouchers, issuances, simCoupons, merchants);
     }
 
     private static Merchant merchant(VoucherStore store) {
@@ -63,9 +65,26 @@ class GetMoreDataGuardTest {
 
         assertThatThrownBy(() -> guard(GetMoreMode.SIMULATED))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("this database holds real GetMore vouchers (store mode LIVE)")
+                .hasMessageContaining("this database holds real GetMore vouchers or voucher issuances (store mode"
+                        + " LIVE")
                 .hasMessageContaining("Set GETMORE_MODE=LIVE or OFF");
         assertThatCode(() -> guard(GetMoreMode.LIVE)).as("LIVE on its own data").doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SIMULATED on a database with a LIVE issuance and no LIVE voucher yet: refused all the same")
+    void simulatedNeverOnRealIssuances() {
+        // LIVE with no amount model parks every accepted loan's issuance, voucherless; one can hold real codes sealed.
+        when(vault.isConfigured()).thenReturn(true);
+        when(vouchers.existsByStoreMode(GetMoreMode.LIVE)).thenReturn(false);
+        when(issuances.existsByStoreMode(GetMoreMode.LIVE)).thenReturn(true);
+
+        assertThatThrownBy(() -> guard(GetMoreMode.SIMULATED))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("staff_loan_voucher_issuances")
+                .hasMessageContaining("Set GETMORE_MODE=LIVE or OFF");
+        assertThatCode(() -> guard(GetMoreMode.LIVE)).doesNotThrowAnyException();
+        assertThatCode(() -> guard(GetMoreMode.OFF)).doesNotThrowAnyException();
     }
 
     @Test

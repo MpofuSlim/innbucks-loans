@@ -508,6 +508,38 @@ class StaffLoanVoucherIssuerTest {
     }
 
     @Test
+    @DisplayName("payday begins while the coupon is made: parked PAST_DUE at the settle, no voucher, coupon withdrawn")
+    void paydayBeganDuringTheCall() {
+        loan = loan(LocalDate.of(2026, 10, 15));
+        queued();
+        // 00:00:01 on 15 October in Harare: the claim was made the day before, when the cut-off was still to come.
+        store.onGenerate = () -> clock.advance(Duration.between(START, Instant.parse("2026-10-14T22:00:01Z")));
+
+        assertThat(attempt(Trigger.BORROWER_READ)).isEqualTo(Outcome.PARKED);
+
+        verify(voucherService, never()).issueFromGetMore(any());
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(issuance().getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.PARKED);
+        assertThat(issuance().getLastOutcome()).isEqualTo(StaffLoanVoucherIssuer.PAST_DUE);
+        assertThat(store.deleted).containsExactly(CODE);
+    }
+
+    @Test
+    @DisplayName("an attempt that runs past a market midnight keeps the expiry its claim checked GetMore's rule for")
+    void expiryIsTheClaimsAcrossMidnight() {
+        clock.advance(Duration.between(START, Instant.parse("2026-10-14T21:59:50Z")));   // 23:59:50 in Harare
+        queued();
+        store.onGenerate = () -> clock.advance(Duration.ofSeconds(20));   // 00:00:10 on 15 October
+
+        assertThat(attempt(Trigger.BORROWER_READ)).isEqualTo(Outcome.ISSUED);
+
+        ArgumentCaptor<GetMoreVoucherCommand> command = ArgumentCaptor.forClass(GetMoreVoucherCommand.class);
+        verify(voucherService).issueFromGetMore(command.capture());
+        assertThat(command.getValue().expiresAt()).as("the end of 13 November in Harare, 30 days from the claim's day")
+                .isEqualTo(LocalDateTime.of(2026, 11, 13, 21, 59, 59, 999_999_000));
+    }
+
+    @Test
     @DisplayName("lost claim and the withdrawal fails: the coupon is kept sealed; an abandoned issuance cancels again")
     void lostClaimWithdrawalFails() {
         queued();

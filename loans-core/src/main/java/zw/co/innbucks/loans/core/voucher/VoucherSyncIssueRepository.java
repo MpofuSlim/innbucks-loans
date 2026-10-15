@@ -17,10 +17,19 @@ public interface VoucherSyncIssueRepository extends JpaRepository<VoucherSyncIss
 
     boolean existsByVoucherIdAndBlockingTrueAndClearedAtIsNull(Long voucherId);
 
-    /** Open issues, oldest first: what an operator has to look at. */
-    Page<VoucherSyncIssue> findByClearedAtIsNullOrderByFirstSeenAtAscIdAsc(Pageable pageable);
+    /** Open issues of the vouchers of one GetMore store, oldest first: what an operator has to look at. */
+    @Query(value = "select i from VoucherSyncIssue i where i.clearedAt is null and i.voucherId in"
+            + " (select v.id from Voucher v where v.storeMode = :mode) order by i.firstSeenAt asc, i.id asc",
+            countQuery = "select count(i) from VoucherSyncIssue i where i.clearedAt is null and i.voucherId in"
+                    + " (select v.id from Voucher v where v.storeMode = :mode)")
+    Page<VoucherSyncIssue> findOpenForStoreMode(@Param("mode") GetMoreMode storeMode, Pageable pageable);
 
-    Page<VoucherSyncIssue> findAllByOrderByFirstSeenAtAscIdAsc(Pageable pageable);
+    /** Every issue of the vouchers of one GetMore store, cleared or not, oldest first. */
+    @Query(value = "select i from VoucherSyncIssue i where i.voucherId in"
+            + " (select v.id from Voucher v where v.storeMode = :mode) order by i.firstSeenAt asc, i.id asc",
+            countQuery = "select count(i) from VoucherSyncIssue i where i.voucherId in"
+                    + " (select v.id from Voucher v where v.storeMode = :mode)")
+    Page<VoucherSyncIssue> findAllForStoreMode(@Param("mode") GetMoreMode storeMode, Pageable pageable);
 
     /** Open issues of the vouchers of one GetMore store. */
     @Query("select count(i) from VoucherSyncIssue i where i.clearedAt is null and i.voucherId in"
