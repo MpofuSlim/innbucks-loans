@@ -495,6 +495,27 @@ simulator action, on cancelling, and on `POST /lending/v1/vouchers/{id}/getmore-
 A loan paid out as an unused GetMore voucher can be cancelled; its coupon is
 withdrawn at GetMore. A full code never goes in a URL, a log line or an audit row.
 
+**Payday.** `GET /lending/v1/staff-loan-collections/{payday}` (FINANCE,
+CREDIT_MANAGER, SUPER_ADMIN; `?format=csv` for payroll) states, for each loan due
+on that payday (day `STAFF_LOANS_REPAYMENT_DAY`), what to collect from salary as
+its voucher stood at the cut-off, 00:00 market time on the payday: the whole
+repayment under `DEBT_STANDS`, what was spent under `REDUCED_TO_AMOUNT_SPENT`, and
+whether that is final (a voucher still open, stopped by the bank or GetMore, not
+read since the cut-off, blocked by a sync issue or with a sale held at the till is
+not). It also states what to pay GetMore for the cycle: every sale less every
+refund of the store's vouchers made before the cut-off and not paid by an earlier
+payday. Written-off loans are listed apart, recovered outside payroll. Read GetMore
+first with `POST .../{payday}/getmore-syncs?after=0&limit=50`, repeating with
+`nextAfter` until it is null (it also withdraws what cancelled loans' issuances
+left at GetMore). `POST .../{payday}/finalisation` (FINANCE, SUPER_ADMIN), from the
+cut-off on, keeps the lines as sent to payroll and marks the GetMore rows paid, in
+one step; with anything not final it needs `acceptNonFinal` and a reason. A sale or
+refund made before the cut-off but read after it is paid in the next payday, shown
+`late`, and listed against its loan. Nothing here moves money, no job runs it, and
+a loan's outstanding amount (arrears, write-off) is unchanged. A SIMULATED host's
+statement covers the simulated store only and says "SIMULATED: not for payroll";
+every other host's covers the LIVE store and leaves simulated loans out.
+
 **The simulator: staging only, bound to its node.** With `GETMORE_MODE=SIMULATED`
 loans refuses to start unless all of these hold:
 
@@ -734,4 +755,5 @@ Capital and Credit user needs one.
 
 Arrears and active loans come from loans' own records for now. Other InnBucks
 facilities, and the balance once disbursed, are the core banking system's to
-report when that integration lands.
+report when that integration lands. What to collect on each payday, and what to pay
+GetMore for it, is the payday statement (section 10, "Payday").

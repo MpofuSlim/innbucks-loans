@@ -43,6 +43,7 @@ import zw.co.innbucks.loans.controller.StaffGradeLimitController;
 import zw.co.innbucks.loans.controller.StaffArrearsOverrideController;
 import zw.co.innbucks.loans.controller.StaffLimitOverrideController;
 import zw.co.innbucks.loans.controller.StaffLoanArrearsReportController;
+import zw.co.innbucks.loans.controller.StaffLoanCollectionController;
 import zw.co.innbucks.loans.controller.StaffLoanWriteOffController;
 import zw.co.innbucks.loans.controller.StaffLoanController;
 import zw.co.innbucks.loans.controller.StaffLoanMerchantController;
@@ -67,6 +68,7 @@ import zw.co.innbucks.loans.core.loan.CreditWorkbenchService;
 import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanAgreement;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanCollectionService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.voucher.VoucherCodes;
 
@@ -114,7 +116,7 @@ class SwaggerExamplesTest {
             BorrowerNotificationController.class, StaffLoanMerchantController.class,
             StaffArrearsOverrideController.class, StaffLoanWriteOffController.class,
             StaffLoanArrearsReportController.class, GetMoreController.class, GetMoreSimulatorController.class,
-            StaffLoanVoucherIssuanceController.class);
+            StaffLoanVoucherIssuanceController.class, StaffLoanCollectionController.class);
 
     record Example(String where, String json) {
         @Override
@@ -557,6 +559,76 @@ class SwaggerExamplesTest {
         assertThat(references).contains(detail.path("redemptions").get(0).path("merchantReference").asString(),
                         detail.path("redemptions").get(1).path("merchantReference").asString(),
                         detail.path("refunds").get(0).path("merchantReference").asString());
+    }
+
+    @Test
+    void theCollectionExamplesTellTheGetMoreStory() {
+        // On payday, 20 November, Rutendo's SGL-2026-000164 is collected in full (the debt stands) and GetMore is paid
+        // what voucher 9 sold less what it refunded. Every figure on the statement must be the GetMore story's own.
+        JsonNode accepted = JSON.readTree(StaffLoanApiExamples.ACCEPTED_WITH_VOUCHER).path("data");
+        JsonNode expired = JSON.readTree(GetMoreApiExamples.EXPIRED).path("data").path("voucher");
+        BigDecimal first = JSON.readTree(GetMoreApiExamples.SALE_REQUEST).path("amount").decimalValue();
+        BigDecimal second = JSON.readTree(GetMoreApiExamples.SALE_HELD_REQUEST).path("amount").decimalValue();
+        BigDecimal refund = JSON.readTree(GetMoreApiExamples.REFUND_REQUEST).path("amount").decimalValue();
+        JsonNode member = null;
+        for (JsonNode item : JSON.readTree(ApiExamples.STAFF_MEMBERS).path("data").path("items")) {
+            if (item.path("employeeNumber").asString().equals("E1064")) {
+                member = item;
+            }
+        }
+        assertThat(member).isNotNull();
+
+        JsonNode report = JSON.readTree(StaffLoanCollectionApiExamples.REPORT);
+        JsonNode before = JSON.readTree(StaffLoanCollectionApiExamples.REPORT_BEFORE_SYNC);
+        JsonNode finalised = JSON.readTree(StaffLoanCollectionApiExamples.FINALISED);
+        for (JsonNode body : List.of(report, before, finalised)) {
+            JsonNode data = body.path("data");
+            assertThat(body.path("message").asString()).contains(StaffLoanCollectionService.NOT_FOR_PAYROLL);
+            assertThat(data.path("payday").asString()).isEqualTo(accepted.path("repaymentDate").asString());
+            assertThat(data.path("simulated").asBoolean()).isTrue();
+            JsonNode line = data.path("lines").get(0);
+            assertThat(line.path("loanReference").asString()).isEqualTo(accepted.path("reference").asString());
+            assertThat(line.path("staffLoanId").asLong()).isEqualTo(164);
+            assertThat(line.path("employeeNumber").asString()).isEqualTo(member.path("employeeNumber").asString());
+            assertThat(line.path("fullName").asString()).isEqualTo(member.path("fullName").asString());
+            assertThat(line.path("voucherId").asLong()).isEqualTo(expired.path("id").asLong());
+            assertThat(line.path("voucherStateAtCutoff").asString()).isEqualTo(expired.path("status").asString());
+            assertThat(line.path("stoppedReason").asString()).isEqualTo(expired.path("stoppedReason").asString());
+            assertThat(line.path("faceValue").decimalValue()).isEqualByComparingTo(accepted.path("amount")
+                    .decimalValue());
+            assertThat(line.path("spentNet").decimalValue()).isEqualByComparingTo(expired.path("redeemedAmount")
+                    .decimalValue()).isEqualByComparingTo(first.add(second).subtract(refund));
+            assertThat(line.path("refunded").decimalValue()).isEqualByComparingTo(refund);
+            assertThat(line.path("treatment").asString()).isEqualTo("DEBT_STANDS");
+            assertThat(line.path("amountToCollect").decimalValue()).as("the debt stands")
+                    .isEqualByComparingTo(accepted.path("totalRepayable").decimalValue());
+            assertThat(data.path("totals").get(0).path("amountToCollect").decimalValue())
+                    .isEqualByComparingTo(line.path("amountToCollect").decimalValue());
+            JsonNode settlement = data.path("merchantSettlement");
+            assertThat(settlement.path("merchantName").asString()).isEqualTo(accepted.path("merchantName").asString());
+            assertThat(settlement.path("totals").get(0).path("spends").decimalValue())
+                    .isEqualByComparingTo(first.add(second));
+            assertThat(settlement.path("totals").get(0).path("refunds").decimalValue()).isEqualByComparingTo(refund);
+            assertThat(settlement.path("totals").get(0).path("net").decimalValue())
+                    .isEqualByComparingTo(line.path("spentNet").decimalValue());
+            assertThat(settlement.path("lines").get(0).path("voucherId").asLong()).isEqualTo(9);
+        }
+        // Before the payday sync the voucher was last read when the simulator expired it: stale, and not final.
+        JsonNode stale = before.path("data").path("lines").get(0);
+        assertThat(stale.path("lastSyncedAt").asString()).isEqualTo(expired.path("syncedAt").asString());
+        assertThat(stale.path("final").asBoolean()).isFalse();
+        assertThat(stale.path("flags").get(0).asString()).isEqualTo("STALE");
+        assertThat(before.path("data").path("merchantSettlement").path("staleVouchers").asInt()).isEqualTo(1);
+        assertThat(JSON.readTree(StaffLoanCollectionApiExamples.NOT_FINAL).path("message").asString())
+                .startsWith("1 line is not final and 1 voucher is stale");
+        // After it, and as finalised: the same line, final.
+        assertThat(finalised.path("data").path("lines")).isEqualTo(report.path("data").path("lines"));
+        assertThat(report.path("data").path("lines").get(0).path("final").asBoolean()).isTrue();
+        assertThat(finalised.path("message").asString()).isEqualTo("Collections for 20 Nov 2026 finalised: 1 loan,"
+                + " USD 150.00 to collect; USD 90.00 to pay GetMore Groceries (SIMULATED: not for payroll)");
+        assertThat(OffsetDateTime.parse(finalised.path("data").path("finalisedAt").asString()))
+                .isAfter(OffsetDateTime.parse(report.path("data").path("lines").get(0).path("lastSyncedAt")
+                        .asString()));
     }
 
     static Stream<Class<?>> controllers() {

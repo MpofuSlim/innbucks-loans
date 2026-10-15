@@ -61,6 +61,42 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long>, JpaSpec
                                    @Param("getMore") VoucherCodeSource getMore,
                                    @Param("cancelled") VoucherStatus cancelled, Pageable pageable);
 
+    /**
+     * The GetMore vouchers of one store whose spends or refunds can fall into a payday's cycle, a page at a time by id
+     * (keyset: ids above {@code after}, at most {@code limit}): issued before its cut-off ({@code issuedBefore}) and
+     * expiring no earlier than {@code expiresFrom} (the previous payday's cut-off less the sync's after-expiry window,
+     * since a sale can still be invoiced or refunded that long after a voucher lapses). Every status: a sale that
+     * reached a cancelled one is still GetMore's to bill.
+     */
+    default List<Long> findGetMoreIdsForCycle(GetMoreMode mode, LocalDateTime issuedBefore,
+                                              LocalDateTime expiresFrom, long after, int limit) {
+        return getMoreIdsForCycle(mode, issuedBefore, expiresFrom, after, VoucherCodeSource.GETMORE,
+                PageRequest.of(0, limit));
+    }
+
+    @Query("select v.id from Voucher v where v.codeSource = :getMore and v.storeMode = :mode"
+            + " and v.issuedAt < :issuedBefore and v.expiresAt >= :expiresFrom and v.id > :after order by v.id")
+    List<Long> getMoreIdsForCycle(@Param("mode") GetMoreMode mode, @Param("issuedBefore") LocalDateTime issuedBefore,
+                                  @Param("expiresFrom") LocalDateTime expiresFrom, @Param("after") long after,
+                                  @Param("getMore") VoucherCodeSource getMore, Pageable pageable);
+
+    /**
+     * How many of the vouchers {@link #findGetMoreIdsForCycle} walks were last read from GetMore before
+     * {@code syncedBefore} (the payday's cut-off), or never: what the payday sync has still to reach.
+     */
+    default long countGetMoreStaleForCycle(GetMoreMode mode, LocalDateTime issuedBefore, LocalDateTime expiresFrom,
+                                           LocalDateTime syncedBefore) {
+        return getMoreStaleForCycle(mode, issuedBefore, expiresFrom, syncedBefore, VoucherCodeSource.GETMORE);
+    }
+
+    @Query("select count(v) from Voucher v where v.codeSource = :getMore and v.storeMode = :mode"
+            + " and v.issuedAt < :issuedBefore and v.expiresAt >= :expiresFrom"
+            + " and (v.syncedAt is null or v.syncedAt < :syncedBefore)")
+    long getMoreStaleForCycle(@Param("mode") GetMoreMode mode, @Param("issuedBefore") LocalDateTime issuedBefore,
+                              @Param("expiresFrom") LocalDateTime expiresFrom,
+                              @Param("syncedBefore") LocalDateTime syncedBefore,
+                              @Param("getMore") VoucherCodeSource getMore);
+
     Optional<Voucher> findByCodeHmac(String codeHmac);
 
     boolean existsByCodeHmac(String codeHmac);

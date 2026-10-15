@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface VoucherSyncIssueRepository extends JpaRepository<VoucherSyncIssue, Long> {
@@ -16,6 +17,9 @@ public interface VoucherSyncIssueRepository extends JpaRepository<VoucherSyncIss
     List<VoucherSyncIssue> findByVoucherIdAndClearedAtIsNullOrderByIdAsc(Long voucherId);
 
     boolean existsByVoucherIdAndBlockingTrueAndClearedAtIsNull(Long voucherId);
+
+    /** Open issues of these vouchers: what a payday statement's lines still have against them. */
+    long countByVoucherIdInAndClearedAtIsNull(Collection<Long> voucherIds);
 
     /** Open issues of the vouchers of one GetMore store, oldest first: what an operator has to look at. */
     @Query(value = "select i from VoucherSyncIssue i where i.clearedAt is null and i.voucherId in"

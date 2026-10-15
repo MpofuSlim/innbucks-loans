@@ -25,11 +25,14 @@ import tools.jackson.databind.json.JsonMapper;
 import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.simulator.SimRefund;
 import zw.co.innbucks.loans.core.getmore.simulator.SimSale;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedTill;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatorFaults;
 import zw.co.innbucks.loans.core.merchant.MerchantRepository;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanProperties;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuer;
+import zw.co.innbucks.loans.core.staff.loan.UnredeemedVoucherTreatment;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserGroup;
 import zw.co.innbucks.loans.core.user.UserRepository;
@@ -50,6 +53,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -73,7 +80,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * parts and refund some, and every reader (the tile, the spends, the portal) shows the same balance; a till of loans
  * refuses the code; the simulator expires it. Then the hard cases: a generate whose answer is lost, adopted on a later
  * read without a second coupon; a paid-out loan cancelled with its coupon; one with a sale held at the till refused;
- * and two syncs at once recording each sale and refund once.
+ * and two syncs at once recording each sale and refund once. Last, payday: the statement before and after the payday
+ * sync, the debt that stands and the loan reduced to what was spent, finalising it, and a refund recorded after that
+ * landing late in the next payday.
  *
  * <p>GetMore work a read queues runs on the reading thread here (a {@code GetMoreDispatcher} on {@code Runnable::run}),
  * so what a read moved on is in place when the next request is sent, and the clock is a {@link SettableClock}, so a
@@ -150,6 +159,7 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
     @Autowired private UserRepository userRepository;
     @Autowired private MerchantRepository merchantRepository;
     @Autowired private GetMoreProperties properties;
+    @Autowired private StaffLoanProperties staffLoanProperties;
 
     private final HttpClient http = HttpClient.newBuilder().proxy(HttpClient.Builder.NO_PROXY).build();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -467,6 +477,152 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
         } finally {
             properties.getSimulator().setPartialSpending(true);
         }
+    }
+
+    // ---- payday ---------------------------------------------------------------------------------------------------
+
+    @Test
+    @Order(10)
+    @DisplayName("payday: what each loan owes at the cut-off, the payday sync, finalising, and a refund recorded late")
+    void payday() throws Exception {
+        // A loan reduced to what is spent: 100.00 spent, 10.00 back, expired by the simulator with 60.00 unspent.
+        staffLoanProperties.setUnredeemedVoucherTreatment(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT);
+        Accepted reduced;
+        try {
+            reduced = borrow(member("E1076", "263771640076"));
+        } finally {
+            staffLoanProperties.setUnredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS);
+        }
+        JsonNode sold = simulator("POST", "/sales", sale(reduced.reference(), "45.50", "AVD-T3-007001", true), 201);
+        String soldOrder = sold.path("data").path("store").path("order").path("increment_id").asString();
+        simulator("POST", "/sales", sale(reduced.reference(), "54.50", "AVD-T3-007002", true), 201);
+        simulator("POST", "/refunds", """
+                { "orderNumber": "%s", "amount": 10.00, "reference": "AVD-RF-0071" }""".formatted(soldOrder), 201);
+        simulator("POST", "/coupon-expiries",
+                "{ \"loanReference\": \"" + reduced.reference() + "\", \"reason\": \"test lapse\" }", 200);
+
+        LocalDate payday = jdbc.queryForObject("SELECT due_date FROM staff_loans WHERE employee_number = 'E1064'",
+                LocalDate.class);
+        assertThat(jdbc.queryForObject("SELECT due_date FROM staff_loans WHERE id = ?", LocalDate.class,
+                reduced.loanId())).isEqualTo(payday);
+        String statement = "/lending/v1/staff-loan-collections/" + payday;
+
+        // Before the cut-off: a preview, every voucher read before it, and nothing can be finalised yet.
+        JsonNode early = portal("GET", statement, UserGroup.FINANCE, null, 200);
+        assertThat(early.path("message").asString()).isEqualTo("SIMULATED: not for payroll");
+        assertThat(lineOf(early, "E1064").path("flags").toString()).contains("STALE");
+        assertThat(portal("POST", statement + "/finalisation", UserGroup.FINANCE, null, 409).path("message")
+                .asString()).startsWith("The cut-off has not passed yet");
+
+        // 10:00 on payday in Harare: the payday sync reads every voucher that can fall in the cycle, page by page.
+        LocalDateTime cutoff = LocalDateTime.ofInstant(payday.atStartOfDay(ZoneId.of("Africa/Harare"))
+                .toInstant(), ZoneOffset.UTC);
+        CLOCK.advance(Duration.between(CLOCK.instant(), cutoff.plusHours(8).toInstant(ZoneOffset.UTC)));
+        int unavailable = 0;
+        long after = 0;
+        int pages = 0;
+        do {
+            JsonNode page = portal("POST", statement + "/getmore-syncs?after=" + after + "&limit=2",
+                    UserGroup.FINANCE, null, 200).path("data");
+            unavailable += page.path("unavailable").asInt();
+            after = page.path("nextAfter").isNull() ? -1 : page.path("nextAfter").asLong();
+            pages++;
+        } while (after >= 0 && pages < 20);
+        assertThat(after).as("walked to the end").isEqualTo(-1);
+        assertThat(unavailable).isZero();
+
+        JsonNode report = portal("GET", statement, UserGroup.CREDIT_MANAGER, null, 200).path("data");
+        assertThat(report.path("simulated").asBoolean()).isTrue();
+        assertThat(report.path("merchantSettlement").path("staleVouchers").asInt()).isZero();
+        JsonNode debt = lineOf(report, "E1064");
+        assertThat(debt.path("treatment").asString()).isEqualTo("DEBT_STANDS");
+        assertThat(debt.path("voucherStateAtCutoff").asString()).isEqualTo("EXPIRED");
+        assertThat(debt.path("stoppedReason").asString()).isEqualTo("SIMULATOR_EXPIRED");
+        assertThat(debt.path("spentNet").decimalValue()).isEqualByComparingTo("90.00");
+        assertThat(debt.path("amountToCollect").decimalValue()).isEqualByComparingTo("150.00");
+        assertThat(debt.path("final").asBoolean()).isTrue();
+        JsonNode spentOnly = lineOf(report, "E1076");
+        assertThat(spentOnly.path("treatment").asString()).isEqualTo("REDUCED_TO_AMOUNT_SPENT");
+        assertThat(spentOnly.path("amountToCollect").decimalValue()).isEqualByComparingTo("90.00");
+        assertThat(spentOnly.path("final").asBoolean()).as("final once expired").isTrue();
+        JsonNode held = lineOf(report, "E1073");
+        assertThat(held.path("final").asBoolean()).isFalse();
+        assertThat(held.path("flags").toString()).contains("HELD_SALES");
+        assertThat(report.toString()).as("a cancelled loan owes nothing and is not listed")
+                .doesNotContain("\"employeeNumber\":\"E1072\"");
+        BigDecimal unsettledNet = jdbc.queryForObject("""
+                SELECT coalesce((SELECT sum(amount) FROM voucher_redemptions WHERE source = 'GETMORE_SYNC'
+                                   AND store_mode = 'SIMULATED' AND settlement_cycle IS NULL AND redeemed_at < ?), 0)
+                     - coalesce((SELECT sum(amount) FROM voucher_refunds WHERE store_mode = 'SIMULATED'
+                                   AND settlement_cycle IS NULL AND refunded_at < ?), 0)
+                """, BigDecimal.class, cutoff, cutoff);
+        assertThat(report.path("merchantSettlement").path("totals").get(0).path("net").decimalValue())
+                .isEqualByComparingTo(unsettledNet);
+
+        // The sale still held at the till is not final: refused without acceptNonFinal, finalised with it.
+        assertThat(portal("POST", statement + "/finalisation", UserGroup.FINANCE, null, 409).path("message")
+                .asString()).startsWith("1 line is not final and 0 vouchers are stale");
+        portal("POST", statement + "/finalisation", UserGroup.CREDIT_MANAGER, null, 403);
+        JsonNode finalised = portal("POST", statement + "/finalisation", UserGroup.FINANCE,
+                "{ \"acceptNonFinal\": true, \"reason\": \"E1073's held sale is collected next month\" }", 200);
+        assertThat(finalised.path("message").asString()).startsWith("Collections for ")
+                .endsWith("(SIMULATED: not for payroll)");
+        assertThat(finalised.path("data").path("finalised").asBoolean()).isTrue();
+        assertThat(jdbc.queryForMap("SELECT store_mode, non_final_lines, stale_vouchers, reason FROM"
+                + " staff_loan_collection_cycles WHERE payday = ?", payday))
+                .containsEntry("store_mode", "SIMULATED").containsEntry("non_final_lines", 1)
+                .containsEntry("stale_vouchers", 0)
+                .containsEntry("reason", "E1073's held sale is collected next month");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM staff_loan_collection_lines WHERE payday = ?",
+                Integer.class, payday)).isEqualTo(finalised.path("data").path("lines").size());
+        assertThat(jdbc.queryForObject("SELECT amount_to_collect FROM staff_loan_collection_lines WHERE"
+                + " staff_loan_id = ?", BigDecimal.class, reduced.loanId())).isEqualByComparingTo("90.00");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM voucher_redemptions WHERE source = 'GETMORE_SYNC'"
+                + " AND redeemed_at < ? AND settlement_cycle IS NULL", Integer.class, cutoff)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs WHERE event_type ="
+                + " 'STAFF_LOAN_COLLECTION_FINALISED'", Integer.class)).isEqualTo(1);
+        portal("POST", statement + "/finalisation", UserGroup.SUPER_ADMIN, null, 409);
+
+        // A refund GetMore made before the cut-off, read only now: late in the next payday, and listed on this one.
+        SimRefund late = till.refund(soldOrder, new BigDecimal("5.00"), "AVD-RF-0072");
+        jdbc.update("UPDATE getmore_sim_creditmemos SET created_at = ? WHERE increment_id = ?",
+                cutoff.minusHours(2), late.creditMemoNumber());
+        assertThat(sync.sync(reduced.voucherIdOrZero(), GetMoreSyncTrigger.OPERATOR).refundsRecorded()).isEqualTo(1);
+
+        JsonNode kept = portal("GET", statement, UserGroup.FINANCE, null, 200).path("data");
+        assertThat(lineOf(kept, "E1076").path("amountToCollect").decimalValue()).as("as sent to payroll")
+                .isEqualByComparingTo("90.00");
+        assertThat(lineOf(kept, "E1076").path("spentNet").decimalValue()).as("as known when finalised")
+                .isEqualByComparingTo("90.00");
+        assertThat(kept.path("lateAdjustments").size()).isEqualTo(1);
+        JsonNode adjustment = kept.path("lateAdjustments").get(0);
+        assertThat(adjustment.path("loanReference").asString()).isEqualTo(reduced.reference());
+        assertThat(adjustment.path("refunds").decimalValue()).isEqualByComparingTo("5.00");
+        assertThat(adjustment.path("net").decimalValue()).isEqualByComparingTo("-5.00");
+        JsonNode next = portal("GET", "/lending/v1/staff-loan-collections/" + payday.plusMonths(1),
+                UserGroup.FINANCE, null, 200).path("data").path("merchantSettlement");
+        assertThat(next.path("previousCycle").path("payday").asString()).isEqualTo(payday.toString());
+        JsonNode lateLine = null;
+        for (JsonNode line : next.path("lines")) {
+            if (line.path("voucherId").asLong() == reduced.voucherIdOrZero()) {
+                lateLine = line;
+            }
+        }
+        assertThat(lateLine).isNotNull();
+        assertThat(lateLine.path("late").asBoolean()).isTrue();
+        assertThat(lateLine.path("refunds").decimalValue()).isEqualByComparingTo("5.00");
+        assertThat(lateLine.path("net").decimalValue()).isEqualByComparingTo("-5.00");
+    }
+
+    /** The statement line of a loan, by its borrower's employee number. */
+    private static JsonNode lineOf(JsonNode statement, String employeeNumber) {
+        JsonNode lines = statement.has("data") ? statement.path("data").path("lines") : statement.path("lines");
+        for (JsonNode line : lines) {
+            if (line.path("employeeNumber").asString().equals(employeeNumber)) {
+                return line;
+            }
+        }
+        throw new AssertionError("no line for " + employeeNumber + " in " + lines);
     }
 
     // ---- the borrower -----------------------------------------------------------------------------------------------
