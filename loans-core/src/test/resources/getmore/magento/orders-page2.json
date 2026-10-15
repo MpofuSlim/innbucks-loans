@@ -1,0 +1,16 @@
+{
+  "items": [
+    {"entity_id": 5020, "increment_id": "000000520", "coupon_code": "INN-K7Q2M3XW-7KQ2M9XWD4RT8B1C",
+     "applied_rule_ids": "43", "state": "processing", "order_currency_code": "USD",
+     "subtotal": 30.0000, "grand_total": 10.0000, "discount_amount": -20.0000,
+     "store_id": 1, "store_name": "GetMore\nBorrowdale\nDefault Store View",
+     "created_at": "2026-10-17 11:00:00", "updated_at": "2026-10-17 11:00:00"}
+  ],
+  "search_criteria": {
+    "filter_groups": [{"filters": [{"field": "coupon_code", "value": "INN-K7Q2M3XW-%", "condition_type": "like"}]}],
+    "sort_orders": [{"field": "entity_id", "direction": "ASC"}],
+    "page_size": 2,
+    "current_page": 2
+  },
+  "total_count": 3
+}

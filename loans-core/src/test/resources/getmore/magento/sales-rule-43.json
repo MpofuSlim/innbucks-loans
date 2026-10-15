@@ -1,0 +1,41 @@
+{
+  "rule_id": 43,
+  "name": "InnBucks Staff Grocery",
+  "store_labels": [{"store_id": 0, "store_label": "InnBucks voucher"}],
+  "description": "Staff Grocery Loan vouchers",
+  "website_ids": [1],
+  "customer_group_ids": [0, 1],
+  "from_date": "2026-10-01",
+  "to_date": "2027-09-30",
+  "uses_per_customer": 0,
+  "is_active": true,
+  "condition": {
+    "condition_type": "Magento\\SalesRule\\Model\\Rule\\Condition\\Combine",
+    "conditions": [
+      {"condition_type": "Magento\\SalesRule\\Model\\Rule\\Condition\\Address", "conditions": [],
+       "aggregator_type": "all", "operator": ">=", "attribute_name": "base_subtotal", "value": "1"}
+    ],
+    "aggregator_type": "all",
+    "value": "1"
+  },
+  "action_condition": {
+    "condition_type": "Magento\\SalesRule\\Model\\Rule\\Condition\\Product\\Combine",
+    "conditions": [],
+    "aggregator_type": "all",
+    "value": "1"
+  },
+  "stop_rules_processing": true,
+  "is_advanced": true,
+  "sort_order": 0,
+  "simple_action": "cart_fixed",
+  "discount_amount": 50,
+  "discount_qty": 0,
+  "discount_step": 0,
+  "apply_to_shipping": false,
+  "times_used": 12,
+  "is_rss": false,
+  "coupon_type": "SPECIFIC_COUPON",
+  "use_auto_generation": true,
+  "uses_per_coupon": 1,
+  "simple_free_shipping": "0"
+}

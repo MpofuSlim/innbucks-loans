@@ -25,6 +25,24 @@ import zw.co.innbucks.loans.core.employment.EmploymentEvent;
 import zw.co.innbucks.loans.core.employment.EmploymentEventType;
 import zw.co.innbucks.loans.core.employment.LoanEmploymentEvent;
 import zw.co.innbucks.loans.core.employment.LoanEmploymentEventAction;
+import zw.co.innbucks.loans.core.getmore.CouponActivity;
+import zw.co.innbucks.loans.core.getmore.FindOrCreate;
+import zw.co.innbucks.loans.core.getmore.GetMoreCoupon;
+import zw.co.innbucks.loans.core.getmore.GetMoreCouponDeletion;
+import zw.co.innbucks.loans.core.getmore.GetMoreCouponQuery;
+import zw.co.innbucks.loans.core.getmore.GetMoreCouponUpdate;
+import zw.co.innbucks.loans.core.getmore.GetMoreException;
+import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
+import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
+import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.live.MagentoSearchCriteria;
+import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDeletionDto;
+import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDto;
+import zw.co.innbucks.loans.core.getmore.live.dto.MagentoOrderDto;
+import zw.co.innbucks.loans.core.getmore.live.dto.MagentoSearchResultDto;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCoupon;
+import zw.co.innbucks.loans.core.getmore.simulator.SimOrder;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SignedInstrument;
@@ -49,8 +67,10 @@ import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -304,6 +324,79 @@ class SensitiveToStringTest {
         }
         assertThat(batch.toString()).contains("batch-42");
         assertThat(approval.toString()).contains("000000042", "ecnumber=*****67A").doesNotContain("1234567A");
+    }
+
+    @Test
+    @DisplayName("GetMore's settings print none of the four OAuth values or the simulator's API key")
+    void getMorePropertiesHideCredentials() {
+        GetMoreProperties getMore = new GetMoreProperties();
+        getMore.getLive().setBaseUrl("https://qa.getmore.syncrony.com/rest/V1");
+        getMore.getLive().setConsumerKey("ck-secret-value-0123456789abcdef");
+        getMore.getLive().setConsumerSecret("cs-secret-value-0123456789abcdef");
+        getMore.getLive().setAccessToken("tk-secret-value-0123456789abcdef");
+        getMore.getLive().setAccessTokenSecret("ts-secret-value-0123456789abcdef");
+        getMore.getSimulator().setApiKey("sim-secret-value-0123456789abcdefgh");
+
+        assertThat(getMore.toString()).doesNotContain("ck-secret-value", "cs-secret-value", "tk-secret-value",
+                "ts-secret-value", "sim-secret-value").contains("qa.getmore.syncrony.com", "OFF");
+    }
+
+    @Test
+    @DisplayName("a GetMore coupon code is printed only as ****8B1C, whatever holds it")
+    void getMoreRecordsMaskTheCode() {
+        String code = "INN-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String random = "7KQ2M9XWD4RT8B1C";
+        LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
+        List<Object> holders = List.of(
+                new GetMoreCoupon(1207, 43, code, 0, 0, 0, null, false, at, 1),
+                new GetMoreCouponUpdate(43, code, 1, at),
+                new GetMoreCouponDeletion(List.of(code), List.of(code)),
+                GetMoreCouponQuery.byCode(code, 1, 50),
+                GetMoreOrderQuery.byCode(code, 1, 50),
+                new GetMoreOrder(5012, "000000512", code, Set.of(43L), "complete", "USD", BigDecimal.TEN,
+                        BigDecimal.ZERO, new BigDecimal("-10"), new BigDecimal("-10"), BigDecimal.ZERO,
+                        BigDecimal.ZERO, 1, "GetMore", at, at),
+                new MagentoCouponDto(1207L, 43L, code, 0, 0, 0, null, false, null, 1),
+                new MagentoOrderDto(5012L, "000000512", code, "43", "complete", "USD", null, null, null, null, null,
+                        null, 1, "GetMore", null, null),
+                new MagentoCouponDeletionDto(List.of(code), List.of()),
+                new MagentoSearchResultDto<>(List.of(new MagentoCouponDto(1207L, 43L, code, 0, 0, 0, null, false,
+                        null, 1)), 1));
+        for (Object holder : holders) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random);
+        }
+        assertThat(holders.get(0).toString()).contains("****8B1C", "couponId=1207");
+        MagentoSearchCriteria.Filter byCode = new MagentoSearchCriteria.Filter("code", code, "eq");
+        assertThat(byCode.toString()).doesNotContain(random).contains("value=****8B1C", "field=code", "eq");
+        assertThat(new MagentoSearchCriteria.Filter("code", "INN-K7Q2M3XW-%", "like").toString())
+                .as("a prefix is not a code: shown as it is").contains("value=INN-K7Q2M3XW-%");
+
+        GetMoreException unknown = new GetMoreOutcomeUnknownException(GetMoreException.Operation.GENERATE,
+                List.of(code), null);
+        assertThat(unknown.toString()).doesNotContain(random).contains("1 minted code(s)");
+    }
+
+    @Test
+    @DisplayName("find-or-create's outcomes, an activity read and the simulator's rows print a code only as ****8B1C")
+    void getMoreOutcomesAndSimulatorRowsMaskTheCode() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String random = "7KQ2M9XWD4RT8B1C";
+        LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
+        GetMoreCoupon coupon = new GetMoreCoupon(1207, 43, code, 0, 0, 0, null, false, at, 1);
+        GetMoreOrder order = new GetMoreOrder(12, "SIM000000012", code, Set.of(43L), "complete", "USD",
+                new BigDecimal("60.0000"), new BigDecimal("14.5000"), new BigDecimal("-45.5000"),
+                new BigDecimal("-45.5000"), BigDecimal.ZERO, BigDecimal.ZERO, 2, "GetMore", at, at);
+        List<Object> holders = List.of(
+                new FindOrCreate.Parked(FindOrCreate.PREFIX_NOT_HONOURED, "masked detail", List.of(code)),
+                new FindOrCreate.Bound(coupon, true, List.of("****2222")),
+                new CouponActivity(List.of(coupon), List.of(order), List.of(), true),
+                SimCoupon.builder().couponId(1207L).ruleId(43).code(code).createdAt(at).build(),
+                SimOrder.builder().entityId(12L).incrementId("SIM000000012").couponCode(code).state("complete")
+                        .discountAmount(new BigDecimal("-45.5000")).build());
+        for (Object holder : holders) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
+                    .contains("****8B1C");
+        }
     }
 
     @Test

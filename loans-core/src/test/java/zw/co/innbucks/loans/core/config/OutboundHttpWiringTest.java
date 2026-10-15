@@ -7,6 +7,8 @@ import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.GetMoreStoreConfig;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyClientConfig;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppClientConfig;
@@ -20,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Every outbound client in loans draws on the ONE pool and keeps its own timeouts: the RestTemplate
  * that carries every Ndasenda and InnBucks call (booking, deposit, lodgement), and the notification
- * API and WhatsApp RestClients. A client built on a default factory, or a fresh
+ * API, WhatsApp and GetMore RestClients. A client built on a default factory, or a fresh
  * {@code SimpleClientHttpRequestFactory}, fails here.
  */
 class OutboundHttpWiringTest {
@@ -38,6 +40,8 @@ class OutboundHttpWiringTest {
         ClientHttpRequestFactory intercepting = template.getRequestFactory();
         ClientHttpRequestFactory pooled = ((AbstractClientHttpRequestFactoryWrapper) intercepting).getDelegate();
         assertPooled(pooled, 10_000, 60_000);
+        assertThat(((OutboundHttp.PooledRequestFactory) pooled).followsRedirects())
+                .as("a GET's redirect is still followed here (a POST's never is)").isTrue();
     }
 
     @Test
@@ -54,6 +58,21 @@ class OutboundHttpWiringTest {
         wa.setConnectTimeoutMs(2500);
         wa.setReadTimeoutMs(10500);
         assertPooled(factoryOf(new WhatsAppClientConfig().whatsAppRestClient(wa, POOL)), 2500, 10500);
+    }
+
+    @Test
+    @DisplayName("GetMore's RestClient: pooled, with its properties' timeouts (2000/10000 shipped), redirects OFF")
+    void getMoreClient() {
+        GetMoreProperties getMore = new GetMoreProperties();
+        assertThat(getMore.getLive().getConnectTimeoutMs()).isEqualTo(2000);
+        assertThat(getMore.getLive().getReadTimeoutMs()).isEqualTo(10000);
+
+        ClientHttpRequestFactory factory = factoryOf(GetMoreStoreConfig.getMoreRestClient(getMore, POOL));
+
+        assertPooled(factory, 2000, 10000);
+        assertThat(((OutboundHttp.PooledRequestFactory) factory).followsRedirects()).isFalse();
+        assertThat(((OutboundHttp.PooledRequestFactory) factory).effectiveRequestConfig().isRedirectsEnabled())
+                .as("a redirect would replay GetMore's signed Authorization against another path").isFalse();
     }
 
     @Test

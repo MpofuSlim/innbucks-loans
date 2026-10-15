@@ -45,6 +45,11 @@ import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.config.LoggingInterceptor;
 import zw.co.innbucks.loans.core.config.OutboundHttp;
 import zw.co.innbucks.loans.core.config.RestConfig;
+import zw.co.innbucks.loans.core.getmore.GetMoreException;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.getmore.GetMoreStoreConfig;
+import zw.co.innbucks.loans.core.getmore.live.MagentoGetMoreStore;
+import zw.co.innbucks.loans.core.getmore.live.MagentoOAuth1Signer;
 import zw.co.innbucks.loans.core.notifications.WhatsAppClientConfig;
 import zw.co.innbucks.loans.core.notifications.WhatsAppNotificationClient;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
@@ -53,6 +58,7 @@ import zw.co.innbucks.loans.security.ApiSecurityConfig;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
+import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -71,9 +77,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Distributed tracing with loans' packaged {@code application.yml}, the real Boot tracing auto-configuration and the
  * real {@link TracingConfig}, over real HTTP (fleet convention, CLAUDE.md "Tracing"): the gateway's
- * {@code traceparent} is continued into the log MDC, partners — built by loans' OWN client factories — never receive
- * it, the propagation guard admits only a fleet Service name, {@code @Async} keeps the trace without carrying the
- * caller's authentication, and with no endpoint there is no exporter.
+ * {@code traceparent} is continued into the log MDC, partners — built by loans' OWN client factories, GetMore's
+ * included — never receive it, the propagation guard admits only a fleet Service name, {@code @Async} keeps the trace
+ * without carrying the caller's authentication, and with no endpoint there is no exporter.
  *
  * <p>The database, JPA and Flyway are switched off as in {@code PrometheusEndpointTest}: tracing and its wiring are
  * what is under test, not the application's beans.
@@ -221,6 +227,35 @@ class TracingTest {
         inObservation(() -> whatsApp.sendCustomNotification("+263771234567", "Hello"));
 
         WIREMOCK.verify(postRequestedFor(urlEqualTo("/api/messages/custom-notification"))
+                .withoutHeader("traceparent")
+                .withoutHeader("tracestate")
+                .withoutHeader("baggage"));
+    }
+
+    @Test
+    void getMoreFactorySendsNoTrace() {
+        GetMoreProperties properties = new GetMoreProperties();
+        GetMoreProperties.Live live = properties.getLive();
+        live.setBaseUrl("http://localhost:" + WIREMOCK.port() + "/rest/V1");
+        live.setConsumerKey("ck-tracing-test");
+        live.setConsumerSecret("cs-tracing-test");
+        live.setAccessToken("tk-tracing-test");
+        live.setAccessTokenSecret("ts-tracing-test");
+        MagentoGetMoreStore getMore = new MagentoGetMoreStore(
+                GetMoreStoreConfig.getMoreRestClient(properties, POOL), live,
+                new MagentoOAuth1Signer(live, Clock.systemUTC(), MagentoOAuth1Signer::secureNonce));
+
+        // The stub answers {} for everything, which is not a sales rule: what is sent is under test, not the answer.
+        inObservation(() -> {
+            try {
+                getMore.salesRule(43);
+            } catch (GetMoreException notARule) {
+                // expected
+            }
+        });
+
+        WIREMOCK.verify(1, anyRequestedFor(urlEqualTo("/rest/V1/salesRules/43")));
+        WIREMOCK.verify(anyRequestedFor(urlEqualTo("/rest/V1/salesRules/43"))
                 .withoutHeader("traceparent")
                 .withoutHeader("tracestate")
                 .withoutHeader("baggage"));

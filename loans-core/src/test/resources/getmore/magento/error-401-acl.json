@@ -1,0 +1,1 @@
+{"message":"The consumer isn't authorized to access %resources.","parameters":{"resources":"Magento_SalesRule::quote"}}
