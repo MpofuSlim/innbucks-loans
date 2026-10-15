@@ -33,6 +33,12 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
                                      @Param("disbursed") StaffLoanStatus disbursed,
                                      @Param("writtenOff") StaffLoanStatus writtenOff);
 
+    /** The loans due on a payday in {@code statuses}, with their merchant: who a collection statement is about. */
+    @Query("select l from StaffLoan l join fetch l.merchant where l.dueDate = :payday and l.status in :statuses"
+            + " order by l.id")
+    List<StaffLoan> findDueOn(@Param("payday") LocalDate payday,
+                              @Param("statuses") Collection<StaffLoanStatus> statuses);
+
     /** A loan by its reference ({@code SGL-2026-000164}). */
     Optional<StaffLoan> findByReference(String reference);
 

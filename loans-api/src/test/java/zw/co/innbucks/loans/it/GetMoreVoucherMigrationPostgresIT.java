@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
@@ -18,9 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * V37 on real Postgres: what a GetMore voucher's rows may and may not hold, and that everything written before it (and
- * everything the build before it writes, after a rollback) still passes. Rows go in by SQL, exactly as the columns'
- * defaults and constraints see them.
+ * V37 and V38 on real Postgres: what a GetMore voucher's rows may and may not hold, what a finalised payday's cycle
+ * and lines may hold, and that everything written before them (and everything the build before them writes, after a
+ * rollback) still passes. Rows go in by SQL, exactly as the columns' defaults and constraints see them.
  */
 @EnabledIf("zw.co.innbucks.loans.it.ItPostgres#available")
 class GetMoreVoucherMigrationPostgresIT {
@@ -250,5 +252,78 @@ class GetMoreVoucherMigrationPostgresIT {
                 .as("a sync row names its order").isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update(spend, voucher, merchant, "GMS:O:13:5450", 13L, null))
                 .as("and when it was recorded").isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // ---- V38: payday collection cycles -------------------------------------------------------------------------------
+
+    private static final String CYCLE = """
+            INSERT INTO staff_loan_collection_cycles (payday, store_mode, cutoff, finalised_at, finalised_by,
+                                                      non_final_lines, stale_vouchers, reason)
+            VALUES (?, ?, '2026-11-19 22:00:00', '2026-11-20 06:05:30', 'finance1', ?, ?, ?)
+            """;
+    private static final LocalDate PAYDAY = LocalDate.of(2026, 11, 20);
+
+    @Test
+    @DisplayName("V38: rows from before it stay unsettled; a payday is finalised once per store, with why when needed")
+    void collectionCycles() {
+        migrateTo("37");
+        long loan = disbursedLoan();
+        long voucher = getMoreVoucher(loan, Map.of());
+        jdbc.update("""
+                INSERT INTO voucher_redemptions (voucher_id, merchant_id, merchant_reference, amount, balance_after,
+                                                 outlet_id, redeemed_by, redeemed_at, source, store_mode,
+                                                 external_order_id, recorded_at)
+                VALUES (?, ?, 'GMS:O:12:4550', 45.50, 104.50, 'store-2', 'getmore-simulator', ?, 'GETMORE_SYNC',
+                        'SIMULATED', 12, ?)
+                """, voucher, merchant, ISSUED.plusMinutes(11), ISSUED.plusMinutes(11));
+
+        migrateTo("38");
+
+        assertThat(jdbc.queryForObject("SELECT settlement_cycle FROM voucher_redemptions", Date.class))
+                .as("unsettled until a payday is finalised").isNull();
+        assertThat(jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE indexname IN"
+                + " ('ix_voucher_redemptions_unsettled', 'ix_voucher_refunds_unsettled')", String.class)).hasSize(2);
+
+        jdbc.update(CYCLE, PAYDAY, "SIMULATED", 0, 0, null);
+        assertThatThrownBy(() -> jdbc.update(CYCLE, PAYDAY, "SIMULATED", 0, 0, null)).as("a payday once per store")
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update(CYCLE, PAYDAY, "LIVE", 0, 0, null);
+        assertThatThrownBy(() -> jdbc.update(CYCLE, PAYDAY.plusMonths(1), "OFF", 0, 0, null)).as("OFF is no store")
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(CYCLE, PAYDAY.plusMonths(1), "SIMULATED", 1, 0, null))
+                .as("a line not final needs a reason").isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(CYCLE, PAYDAY.plusMonths(1), "SIMULATED", 0, 2, null))
+                .as("so does a stale voucher").isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update(CYCLE, PAYDAY.plusMonths(1), "SIMULATED", 1, 2, "GetMore was down before the payroll run");
+
+        String line = """
+                INSERT INTO staff_loan_collection_lines (payday, store_mode, staff_loan_id, treatment, currency,
+                                                         amount_to_collect, final, flags)
+                VALUES (?, ?, ?, 'DEBT_STANDS', 'USD', ?, TRUE, '')
+                """;
+        jdbc.update(line, PAYDAY, "SIMULATED", loan, new BigDecimal("150.00"));
+        assertThatThrownBy(() -> jdbc.update(line, PAYDAY, "SIMULATED", loan, new BigDecimal("150.00")))
+                .as("one line per loan per payday").isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(line, PAYDAY.minusMonths(1), "SIMULATED", loan,
+                new BigDecimal("150.00"))).as("only on a finalised payday")
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(line, PAYDAY, "LIVE", loan, new BigDecimal("-0.01")))
+                .as("never below zero").isInstanceOf(DataIntegrityViolationException.class);
+
+        // Stamping takes only rows no payday has taken yet, so a second finalisation can never re-take one.
+        String stamp = "UPDATE voucher_redemptions SET settlement_cycle = ? WHERE id IN (SELECT id FROM"
+                + " voucher_redemptions) AND settlement_cycle IS NULL";
+        assertThat(jdbc.update(stamp, PAYDAY)).isEqualTo(1);
+        assertThat(jdbc.update(stamp, PAYDAY.plusMonths(1))).isZero();
+        assertThat(jdbc.queryForObject("SELECT settlement_cycle FROM voucher_redemptions", Date.class)
+                .toLocalDate()).isEqualTo(PAYDAY);
+        jdbc.update("""
+                INSERT INTO voucher_refunds (voucher_id, merchant_id, merchant_reference, store_mode,
+                                             external_order_id, external_creditmemo_id, amount, balance_after,
+                                             refunded_at, recorded_at, recorded_by)
+                VALUES (?, ?, 'GMS:CM:3', 'SIMULATED', 12, 3, 10.00, 114.50, now(), now(), 'getmore-simulator')
+                """, voucher, merchant);
+        assertThat(jdbc.queryForObject("SELECT settlement_cycle FROM voucher_refunds", Date.class))
+                .as("a refund written by the build before V38 starts unsettled").isNull();
     }
 }

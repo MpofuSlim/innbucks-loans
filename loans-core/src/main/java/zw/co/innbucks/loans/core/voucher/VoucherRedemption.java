@@ -16,6 +16,7 @@ import lombok.ToString;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -26,7 +27,9 @@ import java.time.LocalDateTime;
  * <p>A GetMore voucher's spends are read back from GetMore's orders instead
  * ({@link VoucherRedemptionSource#GETMORE_SYNC}): one row per order per invoiced level, under
  * {@code GM:O:<order>:<level in cents>} ({@code GMS:} when simulated), so a level is recorded once however often it is
- * read. Its {@code redeemedAt} is GetMore's own time for the sale and {@code recordedAt} when loans read it.</p>
+ * read. Its {@code redeemedAt} is GetMore's own time for the sale and {@code recordedAt} when loans read it. A
+ * finalised payday stamps the rows it paid GetMore for ({@code settlementCycle}), so one recorded after that falls into
+ * the next payday instead of being lost.</p>
  */
 @Entity
 @Table(name = "voucher_redemptions")
@@ -94,4 +97,11 @@ public class VoucherRedemption {
     /** GETMORE_SYNC only: when loans read it back. */
     @Column(name = "recorded_at")
     private LocalDateTime recordedAt;
+
+    /**
+     * GETMORE_SYNC only: the payday whose finalised collection cycle paid GetMore for it; null until one did. Written
+     * only by the finalisation's own update, never through the entity, so a save can never take it back.
+     */
+    @Column(name = "settlement_cycle", insertable = false, updatable = false)
+    private LocalDate settlementCycle;
 }

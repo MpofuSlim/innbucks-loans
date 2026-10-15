@@ -16,12 +16,13 @@ import lombok.ToString;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
  * A refund of a GetMore sale, read back from a credit memo in state 2 (refunded): what it gave back to the voucher, and
  * what was left on it after. Each memo is recorded once (its {@code GM:CM:<id>} reference, {@code GMS:} when
- * simulated); never changed. Kept apart from {@link VoucherRedemption} so no reader of spends can take a refund for
+ * simulated); never changed, but for the payday it was settled in. Kept apart from {@link VoucherRedemption} so no reader of spends can take a refund for
  * one.
  */
 @Entity
@@ -79,4 +80,11 @@ public class VoucherRefund {
 
     @Column(name = "recorded_by", nullable = false)
     private String recordedBy;
+
+    /**
+     * The payday whose finalised collection cycle took it off what GetMore was paid; null until one did. Written only
+     * by the finalisation's own update, never through the entity.
+     */
+    @Column(name = "settlement_cycle", insertable = false, updatable = false)
+    private LocalDate settlementCycle;
 }
