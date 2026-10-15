@@ -51,7 +51,7 @@ public class SimulatedTill {
     static final int MAX_REFERENCE = 64;
     static final int MAX_OUTLET_ID = 64;
     static final int MAX_OUTLET_NAME = 120;
-    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4, RoundingMode.UNNECESSARY);
     private static final BigDecimal MIN_AMOUNT = new BigDecimal("0.01");
     /** The most the store's NUMERIC(12,4) amount columns hold in cents: refused above, never a database overflow. */
     static final BigDecimal MAX_AMOUNT = new BigDecimal("99999999.99");

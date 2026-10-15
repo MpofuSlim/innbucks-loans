@@ -64,7 +64,7 @@ final class MagentoFailures {
     static GetMoreException classify(Operation op, Raw raw, Collection<String> knownCodes) {
         int status = raw.status();
         Optional<MagentoErrorBody> envelope = raw.truncated() ? Optional.empty() : MagentoErrorBody.parse(raw.body());
-        String rendered = rendered(envelope, knownCodes);
+        String rendered = rendered(envelope.orElse(null), knownCodes);
         if (status == 401) {
             return new GetMoreUnavailableException(op, Reason.AUTH, status, rendered);
         }
@@ -102,9 +102,12 @@ final class MagentoFailures {
      * a store message that cannot be rendered is left out rather than allowed to escape (a write would lose its
      * "maybe applied").
      */
-    private static String rendered(Optional<MagentoErrorBody> envelope, Collection<String> knownCodes) {
+    private static String rendered(MagentoErrorBody envelope, Collection<String> knownCodes) {
+        if (envelope == null) {
+            return null;
+        }
         try {
-            return envelope.map(e -> e.render(knownCodes)).orElse(null);
+            return envelope.render(knownCodes);
         } catch (RuntimeException unrenderable) {
             return null;
         }
