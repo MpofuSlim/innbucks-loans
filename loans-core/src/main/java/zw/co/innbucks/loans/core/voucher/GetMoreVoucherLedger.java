@@ -164,9 +164,10 @@ public class GetMoreVoucherLedger {
                     + ";expiresAt:" + voucher.getExpiresAt()));
         }
 
+        boolean withdrawnAfter = voucher.getCouponWithdrawnAt() != null;
         boolean changed = !plan.spends().isEmpty() || !plan.refunds().isEmpty() || stopped != null
                 || heldBefore.compareTo(voucher.getHeldAmount()) != 0 || statusBefore != voucher.getStatus()
-                || withdrawnBefore != (voucher.getCouponWithdrawnAt() != null);
+                || withdrawnBefore != withdrawnAfter;
         Outcome outcome = plan.blockedBy() != null ? Outcome.BLOCKED : changed ? Outcome.SYNCED : Outcome.UNCHANGED;
         List<VoucherSyncIssueResponse> open = issueRepository.findByVoucherIdAndClearedAtIsNullOrderByIdAsc(
                 voucher.getId()).stream().map(issue -> VoucherSyncIssueResponse.of(issue, voucher.getLoanAccount()))
