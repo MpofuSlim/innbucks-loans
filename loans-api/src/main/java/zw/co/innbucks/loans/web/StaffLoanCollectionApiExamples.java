@@ -166,7 +166,27 @@ public final class StaffLoanCollectionApiExamples {
                 "blocked": 0,
                 "unavailable": 0,
                 "cleanedUp": 0,
-                "nextAfter": null
+                "nextAfter": null,
+                "stoppedEarly": false
+              }
+            }""";
+
+    /**
+     * A first page during a GetMore outage: vouchers 9, 10 and 11 could not be read, one after another, so the page
+     * stops there rather than wait out every voucher's timeouts.
+     */
+    public static final String SYNC_STOPPED_EARLY = """
+            {
+              "code": "OK",
+              "message": "Payday 20 Nov 2026: 0 synced, 0 unchanged, 0 blocked, 3 unavailable; 0 cancelled voucher issuances cleaned up; stopped early, GetMore is slow or not answering: repeat with after=11 once it answers",
+              "data": {
+                "synced": 0,
+                "unchanged": 0,
+                "blocked": 0,
+                "unavailable": 3,
+                "cleanedUp": 0,
+                "nextAfter": 11,
+                "stoppedEarly": true
               }
             }""";
 
@@ -255,5 +275,12 @@ public final class StaffLoanCollectionApiExamples {
             {
               "code": "CONFLICT",
               "message": "1 line is not final and 1 voucher is stale: sync first (POST /lending/v1/staff-loan-collections/2026-11-20/getmore-syncs) or finalise with acceptNonFinal and a reason"
+            }""";
+
+    /** Rows this finalisation was settling were found settled already: it keeps nothing. */
+    public static final String SETTLED_CONCURRENTLY = """
+            {
+              "code": "CONFLICT",
+              "message": "GetMore sales or refunds of payday 20 Nov 2026 were settled by another finalisation while this one ran; nothing was finalised, read it again"
             }""";
 }

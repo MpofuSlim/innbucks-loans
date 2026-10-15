@@ -61,15 +61,18 @@ public class StaffLoanCollectionController {
     @Operation(summary = "A payday's collection statement",
             description = "FINANCE, CREDIT_MANAGER or SUPER_ADMIN. The payday must be a repayment day. Each loan due"
                     + " that payday has a line (written-off loans, recovered outside payroll, are in excluded with"
-                    + " what they owe): amountToCollect, and final, which is false while more can change it: the"
-                    + " voucher not read from GetMore since the cut-off (STALE), a blocking sync issue (SYNC_BLOCKED),"
-                    + " a sale held at the till (HELD_SALES), the voucher still open under REDUCED_TO_AMOUNT_SPENT,"
-                    + " or stopped by the bank or GetMore under DEBT_STANDS (couldRiseTo says how far it could go)."
+                    + " what they owe, as are loans whose voucher is in the other GetMore store: SIMULATED on a live"
+                    + " host, LIVE on staging's simulated one): amountToCollect, and final, which is false while more"
+                    + " can change it: the voucher not read from GetMore since the cut-off (STALE), a blocking sync"
+                    + " issue (SYNC_BLOCKED), a sale held at the till (HELD_SALES), the voucher still open under"
+                    + " REDUCED_TO_AMOUNT_SPENT, or stopped by the bank or GetMore under DEBT_STANDS (couldRiseTo"
+                    + " says how far it could go); or, under either, its GetMore rows coming to below zero or above"
+                    + " the repayment (ROWS_INCONSISTENT: the amount is held within those; check the rows)."
                     + " merchantSettlement is what to pay GetMore: every sale less every refund of the store's"
                     + " vouchers made before the cut-off and not paid for by an earlier payday; a row recorded after"
                     + " the previous payday was finalised is late. Until finalised it is a preview; after, the lines"
                     + " are what was sent to payroll, and a sale or refund made before the cut-off but recorded"
-                    + " after is in lateAdjustments. format=csv downloads the lines as"
+                    + " after the payday was finalised is in lateAdjustments. format=csv downloads the lines as"
                     + " staff-loan-collections-<payday>.csv (-SIMULATED on staging).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = {
@@ -116,11 +119,15 @@ public class StaffLoanCollectionController {
                     + " expiring no earlier than the previous payday's cut-off less the sync window), whatever loan"
                     + " they belong to, by voucher id: start with after=0 and repeat with nextAfter until it is null."
                     + " The first page also withdraws what cancelled loans' voucher issuances left at GetMore. A"
-                    + " voucher GetMore could not be read for is counted unavailable and the rest go on; sync again"
-                    + " before finalising.")
+                    + " voucher GetMore could not be read for is counted unavailable and the rest go on, but a page"
+                    + " stops early (stoppedEarly true, nextAfter the voucher it got to) once GetMore could not be"
+                    + " read for 3 vouchers in a row, or after 60 seconds; sync again before finalising.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "One page synced",
-                    content = @Content(examples = @ExampleObject(StaffLoanCollectionApiExamples.SYNCED))),
+            @ApiResponse(responseCode = "200", description = "One page synced, or stopped early",
+                    content = @Content(examples = {
+                            @ExampleObject(name = "Synced", value = StaffLoanCollectionApiExamples.SYNCED),
+                            @ExampleObject(name = "Stopped early",
+                                    value = StaffLoanCollectionApiExamples.SYNC_STOPPED_EARLY)})),
             @ApiResponse(responseCode = "400", description = "Not a repayment day, or a bad page",
                     content = @Content(examples = {
                             @ExampleObject(name = "Not a payday", value = StaffLoanCollectionApiExamples.NOT_A_PAYDAY),
@@ -149,8 +156,10 @@ public class StaffLoanCollectionController {
             description = "FINANCE or SUPER_ADMIN. In one step: keeps the payday's lines as they are sent to payroll"
                     + " and settles the GetMore sales and refunds its statement pays for, so one recorded later is"
                     + " paid in the next payday. Refused before the cut-off, a second time, and after a later payday"
-                    + " was finalised. A payday with a line not final, or a voucher not read from GetMore since the"
-                    + " cut-off, is refused unless acceptNonFinal is true with a reason (kept and audited). The body"
+                    + " was finalised. One payday at a time is finalised in a store; one that found the rows it was"
+                    + " settling already settled by another is refused and nothing is kept. A payday with a line not"
+                    + " final, or a voucher not read from GetMore since the cut-off, is refused unless acceptNonFinal"
+                    + " is true with a reason (kept and audited). The body"
                     + " may be left out. On staging the simulated store's own rows are settled and the answer says it"
                     + " is not for payroll.")
     @ApiResponses({
@@ -166,13 +175,16 @@ public class StaffLoanCollectionController {
             @ApiResponse(responseCode = "403", description = "Not FINANCE or SUPER_ADMIN",
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "409", description = "Already finalised, before the cut-off, after a later"
-                    + " payday, or not final", content = @Content(examples = {
+                    + " payday, not final, or its rows settled by another finalisation while it ran",
+                    content = @Content(examples = {
                     @ExampleObject(name = "Already finalised", value = StaffLoanCollectionApiExamples.ALREADY_FINALISED),
                     @ExampleObject(name = "Before the cut-off",
                             value = StaffLoanCollectionApiExamples.CUTOFF_NOT_PASSED),
                     @ExampleObject(name = "A later payday finalised",
                             value = StaffLoanCollectionApiExamples.LATER_FINALISED),
-                    @ExampleObject(name = "Not final", value = StaffLoanCollectionApiExamples.NOT_FINAL)}))
+                    @ExampleObject(name = "Not final", value = StaffLoanCollectionApiExamples.NOT_FINAL),
+                    @ExampleObject(name = "Settled by another finalisation",
+                            value = StaffLoanCollectionApiExamples.SETTLED_CONCURRENTLY)}))
     })
     @PostMapping("/staff-loan-collections/{payday}/finalisation")
     @PreAuthorize(FINALISERS)
@@ -193,6 +205,8 @@ public class StaffLoanCollectionController {
         return "Payday " + DAY.format(payday) + ": " + sync.synced() + " synced, " + sync.unchanged() + " unchanged, "
                 + sync.blocked() + " blocked, " + sync.unavailable() + " unavailable; " + sync.cleanedUp()
                 + " cancelled voucher " + (sync.cleanedUp() == 1 ? "issuance" : "issuances") + " cleaned up; "
-                + (sync.nextAfter() == null ? "done" : "more to sync: repeat with after=" + sync.nextAfter());
+                + (sync.stoppedEarly() ? "stopped early, GetMore is slow or not answering: repeat with after="
+                + sync.nextAfter() + " once it answers"
+                : sync.nextAfter() == null ? "done" : "more to sync: repeat with after=" + sync.nextAfter());
     }
 }

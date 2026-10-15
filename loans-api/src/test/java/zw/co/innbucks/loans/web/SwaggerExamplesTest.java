@@ -76,6 +76,7 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -621,6 +622,9 @@ class SwaggerExamplesTest {
         assertThat(before.path("data").path("merchantSettlement").path("staleVouchers").asInt()).isEqualTo(1);
         assertThat(JSON.readTree(StaffLoanCollectionApiExamples.NOT_FINAL).path("message").asString())
                 .startsWith("1 line is not final and 1 voucher is stale");
+        assertThat(JSON.readTree(StaffLoanCollectionApiExamples.SETTLED_CONCURRENTLY).path("message").asString())
+                .isEqualTo(StaffLoanCollectionService.settledConcurrently(LocalDate.parse(
+                        accepted.path("repaymentDate").asString())));
         // After it, and as finalised: the same line, final.
         assertThat(finalised.path("data").path("lines")).isEqualTo(report.path("data").path("lines"));
         assertThat(report.path("data").path("lines").get(0).path("final").asBoolean()).isTrue();

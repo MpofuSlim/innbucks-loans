@@ -41,6 +41,8 @@ import zw.co.innbucks.loans.core.voucher.VoucherSyncIssueRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -58,6 +60,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
@@ -77,8 +80,8 @@ import static zw.co.innbucks.loans.core.voucher.VoucherSettlementService.cell;
  * loan's whole repayment (Q2).</p>
  *
  * <p>On staging's SIMULATED host it describes the simulated store, says so, and is not for payroll; on every other host
- * (OFF included) it describes the LIVE store, and a loan paid out as a simulated coupon is excluded. The payday sync
- * reads GetMore page by page on request; no job runs any of this.</p>
+ * (OFF included) it describes the LIVE store. A loan whose voucher is (or is being issued) in the other store is
+ * excluded either way. The payday sync reads GetMore page by page on request; no job runs any of this.</p>
  */
 @Slf4j
 @Service
@@ -91,6 +94,12 @@ public class StaffLoanCollectionService {
     public static final String NOT_FOR_PAYROLL = "SIMULATED: not for payroll";
     static final int DEFAULT_SYNC_PAGE = 50;
     static final int MAX_SYNC_PAGE = 200;
+    /** A payday sync page stops after this many vouchers in a row GetMore could not be read for. */
+    static final int SYNC_STOP_AFTER_UNAVAILABLE = 3;
+    /** A payday sync page starts no voucher after this long: a slow GetMore never pins a request for minutes. */
+    static final Duration SYNC_PAGE_BUDGET = Duration.ofSeconds(60);
+    /** The advisory lock a finalisation takes, per store. */
+    static final String FINALISATION_LOCK = "staff-loan-collections:";
     /** Rows stamped per statement: an IN list well inside what a driver binds. */
     static final int STAMP_CHUNK = 500;
     static final int MAX_REASON = 255;
@@ -194,7 +203,8 @@ public class StaffLoanCollectionService {
      * stamps the GetMore sales and refunds its settlement takes, so one recorded later is paid in the next payday.
      * Refused before the cut-off, a second time, after a later payday was finalised, and, unless
      * {@code acceptNonFinal} with a reason, while a line is not final or a voucher was not read from GetMore since the
-     * cut-off. Audited.
+     * cut-off. The store's finalisations run one at a time (a transaction-scoped advisory lock taken before anything
+     * is read), so each sees what the previous one committed. Audited.
      *
      * @return the finalised statement
      * @throws ValidationException not a repayment day; {@code acceptNonFinal} with no reason
@@ -212,6 +222,9 @@ public class StaffLoanCollectionService {
             throw new ValidationException("reason must be at most " + MAX_REASON + " characters");
         }
         GetMoreMode mode = period.storeMode();
+        // First, before anything is read: two finalisations of one store, of one payday or two, could otherwise both
+        // pass the checks below against what neither has committed yet.
+        cycleRepository.lockStore(FINALISATION_LOCK + mode);
         if (cycleRepository.find(payday, mode).isPresent()) {
             throw new ConflictException(alreadyFinalised(period));
         }
@@ -251,8 +264,7 @@ public class StaffLoanCollectionService {
                 != preview.spendIds().size()
                 || stamp(preview.refundIds(), ids -> refundRepository.stampSettlementCycle(ids, payday))
                 != preview.refundIds().size()) {
-            throw new ConflictException("GetMore sales or refunds of payday " + DAY.format(payday) + " were settled"
-                    + " by another finalisation while this one ran; nothing was finalised, read it again");
+            throw new ConflictException(settledConcurrently(payday));
         }
         StaffLoanCollectionReport finalised = build(period, cycle).report();
         auditService.record(AuditLog.builder()
@@ -276,7 +288,10 @@ public class StaffLoanCollectionService {
      * voucher id: issued before the cut-off, expiring no earlier than the previous payday's cut-off less the sync's
      * after-expiry window), whatever loan they belong to; the first page also cleans up every cancelled loan's voucher
      * issuance in this store. Called with no transaction open; a voucher that cannot be read is counted and the rest
-     * go on.
+     * go on, but the page stops early once GetMore could not be read for {@value #SYNC_STOP_AFTER_UNAVAILABLE}
+     * vouchers in a row, or when it has run {@link #SYNC_PAGE_BUDGET}: each voucher's calls are bounded only by their
+     * timeouts, and a slow GetMore must not hold a request for many minutes. A page that stopped early says so and
+     * gives the voucher it got to as {@code nextAfter}.
      *
      * @param after the last voucher id of the previous page; null or 0 for the first
      * @param limit 1 to 200; null for 50
@@ -310,11 +325,20 @@ public class StaffLoanCollectionService {
         }
         List<Long> ids = voucherRepository.findGetMoreIdsForCycle(mode, period.cutoff(), period.expiresFrom(), from,
                 size);
+        Instant deadline = marketTimeZone.clock().instant().plus(SYNC_PAGE_BUDGET);
         int synced = 0;
         int unchanged = 0;
         int blocked = 0;
         int unavailable = 0;
+        int unavailableInARow = 0;
+        int handled = 0;
+        Long last = null;
+        boolean stoppedEarly = false;
         for (Long voucherId : ids) {
+            if (handled > 0 && !marketTimeZone.clock().instant().isBefore(deadline)) {
+                stoppedEarly = true;
+                break;
+            }
             GetMoreSyncResult.Outcome outcome;
             try {
                 outcome = sync.sync(voucherId, GetMoreSyncTrigger.PAYDAY).outcome();
@@ -329,12 +353,25 @@ public class StaffLoanCollectionService {
                 case BLOCKED -> blocked++;
                 default -> unavailable++;
             }
+            handled++;
+            last = voucherId;
+            unavailableInARow = outcome == GetMoreSyncResult.Outcome.UNAVAILABLE ? unavailableInARow + 1 : 0;
+            if (unavailableInARow >= SYNC_STOP_AFTER_UNAVAILABLE && handled < ids.size()) {
+                stoppedEarly = true;
+                break;
+            }
         }
-        Long nextAfter = ids.size() == size ? ids.getLast() : null;
+        Long nextAfter = stoppedEarly || ids.size() == size ? last : null;
+        if (stoppedEarly) {
+            log.warn("Payday {} sync of the {} store after voucher {} stopped early at voucher {} ({} of {} on the"
+                            + " page, {} in a row GetMore could not be read for)", payday, mode, from, last, handled,
+                    ids.size(), unavailableInARow);
+        }
         log.info("Payday {} sync of the {} store after voucher {}: {} synced, {} unchanged, {} blocked, {}"
                         + " unavailable, {} cancelled issuance(s) cleaned up; next after {}", payday, mode, from, synced,
                 unchanged, blocked, unavailable, cleanedUp, nextAfter);
-        return new StaffLoanCollectionReport.Sync(synced, unchanged, blocked, unavailable, cleanedUp, nextAfter);
+        return new StaffLoanCollectionReport.Sync(synced, unchanged, blocked, unavailable, cleanedUp, nextAfter,
+                stoppedEarly);
     }
 
     // ---- the statement ---------------------------------------------------------------------------------------------
@@ -359,6 +396,9 @@ public class StaffLoanCollectionService {
         }
         Map<Long, Voucher> vouchers = loans.isEmpty() ? Map.of() : voucherRepository.findByStaffLoanIdIn(
                 loans.keySet()).stream().collect(Collectors.toMap(Voucher::getStaffLoanId, Function.identity()));
+        Map<Long, StaffLoanVoucherIssuance> issuances = loans.isEmpty() ? Map.of()
+                : issuanceRepository.findByStaffLoanIdIn(loans.keySet()).stream().collect(Collectors.toMap(
+                StaffLoanVoucherIssuance::getStaffLoanId, Function.identity()));
 
         List<StaffLoan> lineLoans = new ArrayList<>();
         List<Excluded> excluded = new ArrayList<>();
@@ -369,7 +409,8 @@ public class StaffLoanCollectionService {
             if (finalised && kept.containsKey(loan.getId())) {
                 continue;
             }
-            ExclusionReason reason = exclusion(loan, vouchers.get(loan.getId()), period.simulated());
+            ExclusionReason reason = exclusion(loan, vouchers.get(loan.getId()), issuances.get(loan.getId()),
+                    period.storeMode());
             if (reason == null && finalised) {
                 reason = ExclusionReason.NOT_IN_FINALISED_CYCLE;
             }
@@ -380,33 +421,44 @@ public class StaffLoanCollectionService {
                         loan.getStatus(), reason, loan.getCurrency(), loan.outstanding()));
             }
         }
-        if (excluded.stream().anyMatch(exclusion -> exclusion.reason() == ExclusionReason.SIMULATED)) {
-            log.info("Staff Grocery Loan collections for {}: {} simulated GetMore loan(s) left out (GetMore is {}"
-                            + " here)", payday, excluded.stream()
-                            .filter(exclusion -> exclusion.reason() == ExclusionReason.SIMULATED).count(),
-                    getMore.getMode());
+        long otherStore = excluded.stream().filter(exclusion -> exclusion.reason() == ExclusionReason.SIMULATED
+                || exclusion.reason() == ExclusionReason.LIVE).count();
+        if (otherStore > 0) {
+            log.info("Staff Grocery Loan collections for {}: {} GetMore loan(s) of another store left out (this"
+                    + " statement is the {} store's; GetMore is {} here)", payday, otherStore, mode, getMore.getMode());
         }
 
-        List<Long> lineVoucherIds = lineLoans.stream().map(loan -> vouchers.get(loan.getId()))
-                .filter(Objects::nonNull).map(Voucher::getId).toList();
-        Map<Long, List<VoucherRedemption>> lineSpends = lineVoucherIds.isEmpty() ? Map.of()
-                : redemptionRepository.findByVoucherIdInOrderByIdAsc(lineVoucherIds).stream()
-                .collect(Collectors.groupingBy(VoucherRedemption::getVoucherId));
-        Map<Long, List<VoucherRefund>> lineRefunds = lineVoucherIds.isEmpty() ? Map.of()
-                : refundRepository.findByVoucherIdInOrderByIdAsc(lineVoucherIds).stream()
-                .collect(Collectors.groupingBy(VoucherRefund::getVoucherId));
-
-        List<Line> lines = lineLoans.stream().map(loan -> line(loan, vouchers.get(loan.getId()),
-                kept.get(loan.getId()), lineSpends, lineRefunds, period, finalised)).toList();
-        List<LateAdjustment> late = finalised ? lateAdjustments(lineLoans, vouchers, lineSpends, lineRefunds,
-                period) : List.of();
-
+        // The settlement's rows are read BEFORE the lines' rows, and until finalised a line counts only rows that read
+        // saw, or that an earlier payday paid for. A sale or refund a sync records in between is then in neither, and
+        // is late next payday: what a finalisation keeps for a loan and the rows it stamps can never disagree.
         List<VoucherRedemption> spends = finalised
                 ? redemptionRepository.findBySettlementCycleAndStoreModeOrderByIdAsc(payday, mode)
                 : redemptionRepository.findUnsettledBefore(mode, period.cutoff());
         List<VoucherRefund> refunds = finalised
                 ? refundRepository.findBySettlementCycleAndStoreModeOrderByIdAsc(payday, mode)
                 : refundRepository.findUnsettledBefore(mode, period.cutoff());
+        Set<Long> settlingSpends = spends.stream().map(VoucherRedemption::getId).collect(Collectors.toSet());
+        Set<Long> settlingRefunds = refunds.stream().map(VoucherRefund::getId).collect(Collectors.toSet());
+
+        List<Long> lineVoucherIds = lineLoans.stream().map(loan -> vouchers.get(loan.getId()))
+                .filter(Objects::nonNull).map(Voucher::getId).toList();
+        Map<Long, List<VoucherRedemption>> lineSpends = lineVoucherIds.isEmpty() ? Map.of()
+                : redemptionRepository.findByVoucherIdInOrderByIdAsc(lineVoucherIds).stream()
+                .filter(spend -> finalised || spend.getSettlementCycle() != null
+                        || settlingSpends.contains(spend.getId()))
+                .collect(Collectors.groupingBy(VoucherRedemption::getVoucherId));
+        Map<Long, List<VoucherRefund>> lineRefunds = lineVoucherIds.isEmpty() ? Map.of()
+                : refundRepository.findByVoucherIdInOrderByIdAsc(lineVoucherIds).stream()
+                .filter(refund -> finalised || refund.getSettlementCycle() != null
+                        || settlingRefunds.contains(refund.getId()))
+                .collect(Collectors.groupingBy(VoucherRefund::getVoucherId));
+
+        List<Line> lines = lineLoans.stream().map(loan -> line(loan, vouchers.get(loan.getId()),
+                issuances.get(loan.getId()), kept.get(loan.getId()), lineSpends, lineRefunds, period, finalised))
+                .toList();
+        List<LateAdjustment> late = finalised ? lateAdjustments(lineLoans, vouchers, lineSpends, lineRefunds,
+                period) : List.of();
+
         int staleVouchers = finalised ? cycle.getStaleVouchers()
                 : (int) voucherRepository.countGetMoreStaleForCycle(mode, period.cutoff(), period.expiresFrom(),
                 period.cutoff());
@@ -424,31 +476,49 @@ public class StaffLoanCollectionService {
     }
 
     /**
-     * Why a loan due on the payday has no line, or null when it has one: written off (recovered outside payroll), or
-     * paid out as a simulated coupon on a host that is not simulated.
+     * Why a loan due on the payday has no line, or null when it has one: its voucher is (or is being issued) in the
+     * other GetMore store than the statement's, whatever the loan's status, so a simulated loan is never presented as
+     * real debt and a real one never lands on a simulated statement; or it was written off (recovered outside
+     * payroll).
      */
-    private static ExclusionReason exclusion(StaffLoan loan, Voucher voucher, boolean simulatedHost) {
+    private static ExclusionReason exclusion(StaffLoan loan, Voucher voucher, StaffLoanVoucherIssuance issuance,
+                                             GetMoreMode storeMode) {
+        GetMoreMode store = store(loan, voucher, issuance);
+        if (store != null && store != storeMode) {
+            return store == GetMoreMode.SIMULATED ? ExclusionReason.SIMULATED : ExclusionReason.LIVE;
+        }
         if (loan.getStatus() == StaffLoanStatus.WRITTEN_OFF) {
             return ExclusionReason.WRITTEN_OFF;
-        }
-        if (!simulatedHost && simulated(loan, voucher)) {
-            return ExclusionReason.SIMULATED;
         }
         return null;
     }
 
-    /** Paid out as a coupon of staging's simulated store. */
-    private static boolean simulated(StaffLoan loan, Voucher voucher) {
-        return loan.isSimulatedGetMore() || (voucher != null && voucher.getStoreMode() == GetMoreMode.SIMULATED);
+    /**
+     * The GetMore store a loan was paid out in, or is being issued its voucher in: SIMULATED when paid out as a
+     * simulated coupon, else its voucher's store, else its issuance's; null when it has neither.
+     */
+    private static GetMoreMode store(StaffLoan loan, Voucher voucher, StaffLoanVoucherIssuance issuance) {
+        if (loan.isSimulatedGetMore()) {
+            return GetMoreMode.SIMULATED;
+        }
+        if (voucher != null && voucher.getStoreMode() != null) {
+            return voucher.getStoreMode();
+        }
+        return issuance == null ? null : issuance.getStoreMode();
+    }
+
+    /** Paid out as (or being issued) a coupon of staging's simulated store. */
+    private static boolean simulated(StaffLoan loan, Voucher voucher, StaffLoanVoucherIssuance issuance) {
+        return store(loan, voucher, issuance) == GetMoreMode.SIMULATED;
     }
 
     /**
      * One loan's line. Before finalisation, what it owes now ({@link StaffLoanOwed#at}); after, what was sent to
      * payroll, beside its voucher as it was known then (the rows a payday up to this one had paid for).
      */
-    private Line line(StaffLoan loan, Voucher voucher, StaffLoanCollectionLine kept,
-                      Map<Long, List<VoucherRedemption>> spends, Map<Long, List<VoucherRefund>> refunds,
-                      Period period, boolean finalised) {
+    private Line line(StaffLoan loan, Voucher voucher, StaffLoanVoucherIssuance issuance,
+                      StaffLoanCollectionLine kept, Map<Long, List<VoucherRedemption>> spends,
+                      Map<Long, List<VoucherRefund>> refunds, Period period, boolean finalised) {
         StaffLoanOwed.VoucherAtCutoff atCutoff = voucher == null ? null : StaffLoanOwed.VoucherAtCutoff.of(voucher,
                 spends.getOrDefault(voucher.getId(), List.of()), refunds.getOrDefault(voucher.getId(), List.of()),
                 period.cutoff(), finalised ? period.payday() : null);
@@ -456,12 +526,12 @@ public class StaffLoanCollectionService {
         UnredeemedVoucherTreatment treatment;
         String currency;
         if (kept == null) {
-            owed = StaffLoanOwed.at(loan, atCutoff);
+            owed = owed(loan, atCutoff, () -> StaffLoanOwed.at(loan, atCutoff));
             treatment = loan.getUnredeemedVoucherTreatment();
             currency = loan.getCurrency();
         } else {
-            StaffLoanOwed known = StaffLoanOwed.of(loan.getDisbursedAt() != null, kept.getTreatment(),
-                    loan.getTotalRepayable(), loan.getAmount(), atCutoff);
+            StaffLoanOwed known = owed(loan, atCutoff, () -> StaffLoanOwed.of(loan.getDisbursedAt() != null,
+                    kept.getTreatment(), loan.getTotalRepayable(), loan.getAmount(), atCutoff));
             owed = new StaffLoanOwed(kept.getAmountToCollect(), kept.isFinalAmount(), known.openBalance(),
                     kept.isFinalAmount() ? null : known.couldRiseTo(), kept.flagSet());
             treatment = kept.getTreatment();
@@ -474,7 +544,27 @@ public class StaffLoanCollectionService {
                 atCutoff == null ? ZERO : atCutoff.spentNet(), atCutoff == null ? ZERO : atCutoff.refunded(),
                 atCutoff == null ? ZERO : atCutoff.held(), owed.openBalance(), owed.amountToCollect(),
                 owed.couldRiseTo(), owed.finalAmount(), List.copyOf(owed.flags()),
-                voucher == null ? null : voucher.getSyncedAt(), simulated(loan, voucher));
+                voucher == null ? null : voucher.getSyncedAt(), simulated(loan, voucher, issuance));
+    }
+
+    /**
+     * What a loan owes; or, when its voucher's rows at the cut-off come to an amount outside 0 to its whole repayment,
+     * a provisional line flagged ROWS_INCONSISTENT ({@link StaffLoanOwed#inconsistent}): one voucher never takes the
+     * whole statement down, and the line cannot be finalised without {@code acceptNonFinal} and a reason.
+     */
+    private static StaffLoanOwed owed(StaffLoan loan, StaffLoanOwed.VoucherAtCutoff atCutoff,
+                                      Supplier<StaffLoanOwed> owed) {
+        try {
+            return owed.get();
+        } catch (StaffLoanOwed.OutOfRange outOfRange) {
+            if (atCutoff == null) {
+                throw outOfRange;
+            }
+            log.warn("Staff Grocery Loan {}: voucher {} comes to {} spent less refunded at the cut-off ({}); its payday"
+                            + " line is provisional, {}", loan.getReference(), atCutoff.voucherId(),
+                    atCutoff.spentNet().toPlainString(), outOfRange.getMessage(), StaffLoanOwed.Flag.ROWS_INCONSISTENT);
+            return StaffLoanOwed.inconsistent(loan.getTotalRepayable(), atCutoff);
+        }
     }
 
     private static List<Totals> totals(List<Line> lines) {
@@ -604,6 +694,12 @@ public class StaffLoanCollectionService {
             stamped += update.applyAsInt(ids.subList(from, Math.min(ids.size(), from + STAMP_CHUNK)));
         }
         return stamped;
+    }
+
+    /** What a finalisation that found rows it was settling already settled answers (409): it keeps nothing. */
+    public static String settledConcurrently(LocalDate payday) {
+        return "GetMore sales or refunds of payday " + DAY.format(payday) + " were settled by another finalisation"
+                + " while this one ran; nothing was finalised, read it again";
     }
 
     private static String alreadyFinalised(Period period) {

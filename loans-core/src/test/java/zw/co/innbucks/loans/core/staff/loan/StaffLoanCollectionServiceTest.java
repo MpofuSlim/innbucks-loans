@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import zw.co.innbucks.loans.core.audit.AuditLog;
@@ -39,6 +40,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherSyncIssueRepository;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,11 +89,15 @@ class StaffLoanCollectionServiceTest {
                     .thenComparing(StaffLoanCollectionCycle.Key::getStoreMode));
     private final List<StaffLoanCollectionLine> lines = new ArrayList<>();
     private final List<StaffLoanVoucherIssuance> cancelling = new ArrayList<>();
+    private final List<StaffLoanVoucherIssuance> issuances = new ArrayList<>();
     private final List<Long> synced = new ArrayList<>();
+    /** Run once, right after the next read of GetMore rows: a sync committing a row between two reads. */
+    private final AtomicReference<Runnable> afterNextRowRead = new AtomicReference<>();
     private final AtomicReference<Instant> now = new AtomicReference<>(PAYDAY_MORNING);
     private final GetMoreProperties getMore = new GetMoreProperties();
     private final Merchant store = merchant();
     private StaffLoanCollectionLineRepository lineRepository;
+    private StaffLoanCollectionCycleRepository cycleRepository;
     private VoucherRedemptionRepository redemptionRepository;
     private GetMoreVoucherSync sync;
     private StaffLoanVoucherIssuer issuer;
@@ -164,12 +171,12 @@ class StaffLoanCollectionServiceTest {
         redemptionRepository = mock(VoucherRedemptionRepository.class);
         when(redemptionRepository.findByVoucherIdInOrderByIdAsc(any())).thenAnswer(i -> {
             Collection<Long> ids = i.getArgument(0);
-            return spends.stream().filter(spend -> ids.contains(spend.getVoucherId())).toList();
+            return afterRead(spends.stream().filter(spend -> ids.contains(spend.getVoucherId())).toList());
         });
-        when(redemptionRepository.findUnsettledBefore(any(), any())).thenAnswer(i -> spends.stream()
+        when(redemptionRepository.findUnsettledBefore(any(), any())).thenAnswer(i -> afterRead(spends.stream()
                 .filter(spend -> spend.getSource() == VoucherRedemptionSource.GETMORE_SYNC
                         && spend.getStoreMode() == i.getArgument(0) && spend.getSettlementCycle() == null
-                        && spend.getRedeemedAt().isBefore(i.getArgument(1))).toList());
+                        && spend.getRedeemedAt().isBefore(i.getArgument(1))).toList()));
         when(redemptionRepository.findBySettlementCycleAndStoreModeOrderByIdAsc(any(), any())).thenAnswer(i ->
                 spends.stream().filter(spend -> i.getArgument(0).equals(spend.getSettlementCycle())
                         && spend.getStoreMode() == i.getArgument(1)).toList());
@@ -207,7 +214,7 @@ class StaffLoanCollectionServiceTest {
             return stamped;
         });
         VoucherSyncIssueRepository issueRepository = mock(VoucherSyncIssueRepository.class);
-        StaffLoanCollectionCycleRepository cycleRepository = mock(StaffLoanCollectionCycleRepository.class);
+        cycleRepository = mock(StaffLoanCollectionCycleRepository.class);
         when(cycleRepository.find(any(), any())).thenAnswer(i -> Optional.ofNullable(cycles.get(
                 new StaffLoanCollectionCycle.Key(i.getArgument(0), i.getArgument(1)))));
         when(cycleRepository.findFirstByStoreModeAndPaydayAfterOrderByPaydayAsc(any(), any())).thenAnswer(i ->
@@ -231,6 +238,10 @@ class StaffLoanCollectionServiceTest {
                 .toList());
         StaffLoanVoucherIssuanceRepository issuanceRepository = mock(StaffLoanVoucherIssuanceRepository.class);
         when(issuanceRepository.findByStatusAndStoreModeOrderByIdAsc(any(), any())).thenAnswer(i -> cancelling);
+        when(issuanceRepository.findByStaffLoanIdIn(any())).thenAnswer(i -> {
+            Collection<Long> ids = i.getArgument(0);
+            return issuances.stream().filter(issuance -> ids.contains(issuance.getStaffLoanId())).toList();
+        });
         MerchantRepository merchantRepository = mock(MerchantRepository.class);
         when(merchantRepository.findByStaffLoanMerchantTrue()).thenReturn(Optional.of(store));
         sync = mock(GetMoreVoucherSync.class);
@@ -247,6 +258,15 @@ class StaffLoanCollectionServiceTest {
                 refundRepository, issueRepository, cycleRepository, lineRepository, issuanceRepository,
                 merchantRepository, sync, issuer, new StaffLoanProperties(), getMore, authService, auditService,
                 new MarketTimeZone("ZW", new TestClock(ZoneOffset.UTC)));
+    }
+
+    /** {@code read}, after running what was waiting for the next read of GetMore rows, if anything. */
+    private <T> List<T> afterRead(List<T> read) {
+        Runnable then = afterNextRowRead.getAndSet(null);
+        if (then != null) {
+            then.run();
+        }
+        return read;
     }
 
     /** What the payday sync walks, as the repository's query has it. */
@@ -280,10 +300,16 @@ class StaffLoanCollectionServiceTest {
         return voucher;
     }
 
+    /** A sale of GetMore order 12, the order the story's refunds are against. */
     private VoucherRedemption spend(long id, Voucher voucher, String amount, LocalDateTime at) {
+        return spend(id, voucher, 12L, amount, at);
+    }
+
+    private VoucherRedemption spend(long id, Voucher voucher, long order, String amount, LocalDateTime at) {
         VoucherRedemption spend = VoucherRedemption.builder().id(id).voucherId(voucher.getId())
-                .merchantId(store.getId()).merchantReference("GM:O:" + id).amount(new BigDecimal(amount))
-                .source(VoucherRedemptionSource.GETMORE_SYNC).storeMode(voucher.getStoreMode()).redeemedAt(at)
+                .merchantId(store.getId()).merchantReference("GM:O:" + order + ":" + id)
+                .amount(new BigDecimal(amount)).source(VoucherRedemptionSource.GETMORE_SYNC)
+                .storeMode(voucher.getStoreMode()).externalOrderId(order).redeemedAt(at)
                 .recordedAt(at.plusMinutes(2)).build();
         spends.add(spend);
         return spend;
@@ -448,6 +474,11 @@ class StaffLoanCollectionServiceTest {
 
         StaffLoanCollectionReport finalised = service.finalise(PAYDAY, null);
 
+        InOrder first = inOrder(cycleRepository, redemptionRepository);
+        first.verify(cycleRepository).lockStore("staff-loan-collections:LIVE");
+        first.verify(cycleRepository).find(PAYDAY, GetMoreMode.LIVE);
+        first.verify(redemptionRepository).findUnsettledBefore(GetMoreMode.LIVE, CUTOFF);
+        first.verify(redemptionRepository).findByVoucherIdInOrderByIdAsc(List.of(9L));
         assertThat(finalised.finalised()).isTrue();
         assertThat(finalised.finalisedAt()).isEqualTo(utc("2026-11-20T06:02:11Z"));
         assertThat(finalised.finalisedBy()).isEqualTo("finance1");
@@ -528,7 +559,7 @@ class StaffLoanCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("a written-off loan is excluded with what it owes; a simulated one is excluded on a LIVE host")
+    @DisplayName("a written-off loan is excluded with what it owes; a simulated one, whatever its status, on LIVE")
     void exclusionsOnALiveHost() {
         rutendo();
         loan(171, "E1071", StaffLoanStatus.WRITTEN_OFF, UnredeemedVoucherTreatment.DEBT_STANDS, PAYDAY,
@@ -538,6 +569,13 @@ class StaffLoanCollectionServiceTest {
         Voucher test = voucher(22, simulated, GetMoreMode.SIMULATED, utc("2026-10-20T08:00:00Z"),
                 utc("2026-11-20T06:00:00Z"));
         spend(70, test, "40.00", utc("2026-10-21T08:00:00Z"));
+        // A staging test loan written off, and one still awaiting its simulated voucher, after the host left SIMULATED.
+        loan(173, "E1073", StaffLoanStatus.WRITTEN_OFF, UnredeemedVoucherTreatment.DEBT_STANDS, PAYDAY,
+                "GETMORE-SIM-1303");
+        StaffLoan awaiting = loan(174, "E1074", StaffLoanStatus.AWAITING_DISBURSEMENT,
+                UnredeemedVoucherTreatment.DEBT_STANDS, PAYDAY, null);
+        issuances.add(StaffLoanVoucherIssuance.builder().id(78L).staffLoanId(awaiting.getId())
+                .storeMode(GetMoreMode.SIMULATED).status(StaffLoanVoucherIssuanceStatus.PENDING).build());
 
         StaffLoanCollectionReport report = service.report(PAYDAY);
 
@@ -545,7 +583,9 @@ class StaffLoanCollectionServiceTest {
         assertThat(report.excluded()).extracting(StaffLoanCollectionReport.Excluded::loanReference,
                         StaffLoanCollectionReport.Excluded::reason)
                 .containsExactly(tuple("SGL-2026-000171", ExclusionReason.WRITTEN_OFF),
-                        tuple("SGL-2026-000172", ExclusionReason.SIMULATED));
+                        tuple("SGL-2026-000172", ExclusionReason.SIMULATED),
+                        tuple("SGL-2026-000173", ExclusionReason.SIMULATED),
+                        tuple("SGL-2026-000174", ExclusionReason.SIMULATED));
         assertThat(report.excluded().getFirst().outstanding()).isEqualByComparingTo("150.00");
         assertThat(report.totals().getFirst().amountToCollect()).isEqualByComparingTo("150.00");
         assertThat(report.merchantSettlement().lines()).extracting(SettlementLine::voucherId).containsExactly(9L);
@@ -562,11 +602,28 @@ class StaffLoanCollectionServiceTest {
                 utc("2026-11-20T06:00:00Z"));
         spend(70, test, "40.00", utc("2026-10-21T08:00:00Z"));
 
+        StaffLoan awaiting = loan(174, "E1074", StaffLoanStatus.AWAITING_DISBURSEMENT,
+                UnredeemedVoucherTreatment.DEBT_STANDS, PAYDAY, null);
+        issuances.add(StaffLoanVoucherIssuance.builder().id(78L).staffLoanId(awaiting.getId())
+                .storeMode(GetMoreMode.SIMULATED).status(StaffLoanVoucherIssuanceStatus.PENDING).build());
+        StaffLoan liveAwaiting = loan(178, "E1078", StaffLoanStatus.AWAITING_DISBURSEMENT,
+                UnredeemedVoucherTreatment.DEBT_STANDS, PAYDAY, null);
+        issuances.add(StaffLoanVoucherIssuance.builder().id(79L).staffLoanId(liveAwaiting.getId())
+                .storeMode(GetMoreMode.LIVE).status(StaffLoanVoucherIssuanceStatus.PENDING).build());
+
         StaffLoanCollectionReport report = service.report(PAYDAY);
 
         assertThat(report.simulated()).isTrue();
         assertThat(report.storeMode()).isEqualTo(GetMoreMode.SIMULATED);
         assertThat(line(report, "SGL-2026-000172").simulated()).isTrue();
+        assertThat(line(report, "SGL-2026-000174").simulated()).as("being issued a simulated coupon").isTrue();
+        assertThat(report.lines()).extracting(Line::loanReference)
+                .containsExactly("SGL-2026-000172", "SGL-2026-000174");
+        assertThat(report.excluded()).as("the LIVE store's loans are not on the simulated statement")
+                .extracting(StaffLoanCollectionReport.Excluded::loanReference,
+                        StaffLoanCollectionReport.Excluded::reason)
+                .containsExactly(tuple("SGL-2026-000164", ExclusionReason.LIVE),
+                        tuple("SGL-2026-000178", ExclusionReason.LIVE));
         assertThat(report.merchantSettlement().lines()).extracting(SettlementLine::voucherId).containsExactly(22L);
         assertThat(service.csv(PAYDAY).fileName()).isEqualTo("staff-loan-collections-2026-11-20-SIMULATED.csv");
         assertThat(StaffLoanCollectionService.finalisedMessage(service.finalise(PAYDAY, null)))
@@ -700,5 +757,176 @@ class StaffLoanCollectionServiceTest {
         assertThat(report.merchantSettlement().previousCycle().finalisedAt()).isEqualTo(utc("2026-10-20T06:30:00Z"));
         assertThat(report.merchantSettlement().lines()).extracting(SettlementLine::late, SettlementLine::spends)
                 .containsExactly(tuple(false, new BigDecimal("54.50")), tuple(true, new BigDecimal("46.00")));
+    }
+
+    // ---- what cannot take a payday down ---------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a voucher whose rows come to more than the repayment is a flagged provisional line, not a 500")
+    void rowsOutOfRangeDoNotTakeTheStatementDown() {
+        rutendo();
+        StaffLoan loan = loan(179, "E1079", StaffLoanStatus.DISBURSED,
+                UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT, PAYDAY, "GETMORE-1340");
+        Voucher voucher = voucher(34, loan, GetMoreMode.LIVE, utc("2026-10-25T08:00:00Z"),
+                utc("2026-11-20T06:00:00Z"));
+        spend(95, voucher, 15L, "150.00", utc("2026-10-26T09:00:00Z"));
+        spend(96, voucher, 16L, "40.00", utc("2026-11-02T09:00:00Z"));
+
+        StaffLoanCollectionReport report = service.report(PAYDAY);
+
+        assertThat(line(report, "SGL-2026-000179")).satisfies(line -> {
+            assertThat(line.spentNet()).isEqualByComparingTo("190.00");
+            assertThat(line.amountToCollect()).isEqualByComparingTo("150.00");
+            assertThat(line.finalAmount()).isFalse();
+            assertThat(line.couldRiseTo()).isEqualByComparingTo("150.00");
+            assertThat(line.flags()).containsExactly(StaffLoanOwed.Flag.ROWS_INCONSISTENT);
+        });
+        assertThat(line(report, "SGL-2026-000164").amountToCollect()).isEqualByComparingTo("150.00");
+        assertThat(report.totals().getFirst().provisionalLoans()).isEqualTo(1);
+        assertThat(service.csv(PAYDAY).content()).contains(",150.00,false,ROWS_INCONSISTENT,");
+        assertThatThrownBy(() -> service.finalise(PAYDAY, null)).isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("1 line is not final and 0 vouchers are stale");
+
+        service.finalise(PAYDAY, new FinaliseCollectionRequest(true, "E1079's GetMore rows are being checked"));
+
+        assertThat(lines).filteredOn(kept -> kept.getStaffLoanId() == 179L).singleElement().satisfies(kept -> {
+            assertThat(kept.getAmountToCollect()).isEqualByComparingTo("150.00");
+            assertThat(kept.getFlags()).isEqualTo("ROWS_INCONSISTENT");
+        });
+        assertThat(line(service.report(PAYDAY), "SGL-2026-000179").finalAmount()).as("finalised, read again")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("a sale recorded between the settlement's read and the lines' read is in neither: late next payday")
+    void aSaleRecordedWhileFinalisingIsInNeither() {
+        StaffLoan loan = loan(177, "E1077", StaffLoanStatus.DISBURSED,
+                UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT, PAYDAY, "GETMORE-1335");
+        Voucher voucher = voucher(33, loan, GetMoreMode.LIVE, utc("2026-10-25T08:00:00Z"),
+                utc("2026-11-20T06:00:00Z"));
+        ReflectionTestUtils.setField(voucher, "expiresAt", utc("2026-11-10T08:00:00Z"));
+        VoucherRedemption known = spend(91, voucher, 13L, "40.00", utc("2026-10-26T09:00:00Z"));
+        // A sale ordered on 5 November and invoiced only now: dated by its order, before the cut-off.
+        AtomicReference<VoucherRedemption> invoicedNow = new AtomicReference<>();
+        afterNextRowRead.set(() -> invoicedNow.set(spend(92, voucher, 14L, "25.00", utc("2026-11-05T10:00:00Z"))));
+
+        StaffLoanCollectionReport finalised = service.finalise(PAYDAY, null);
+
+        assertThat(invoicedNow.get()).as("recorded while it was finalised").isNotNull();
+        assertThat(lines).singleElement().satisfies(kept -> {
+            assertThat(kept.getAmountToCollect()).as("what the stamped rows add up to").isEqualByComparingTo("40.00");
+            assertThat(kept.isFinalAmount()).isTrue();
+        });
+        assertThat(known.getSettlementCycle()).isEqualTo(PAYDAY);
+        assertThat(invoicedNow.get().getSettlementCycle()).as("not paid to GetMore on a line that never counted it")
+                .isNull();
+        assertThat(finalised.merchantSettlement().totals().getFirst().net()).isEqualByComparingTo("40.00");
+        assertThat(finalised.lateAdjustments()).singleElement().satisfies(late -> {
+            assertThat(late.loanReference()).isEqualTo("SGL-2026-000177");
+            assertThat(late.spends()).isEqualByComparingTo("25.00");
+        });
+        assertThat(service.report(NEXT).merchantSettlement().lines()).singleElement().satisfies(late -> {
+            assertThat(late.voucherId()).isEqualTo(33L);
+            assertThat(late.late()).isTrue();
+            assertThat(late.spends()).isEqualByComparingTo("25.00");
+        });
+    }
+
+    @Test
+    @DisplayName("the cycle's key is the last word on a double finalisation: nothing kept, stamped or audited")
+    void finaliseLosesTheRaceOnTheCycleKey() {
+        rutendo();
+        doThrow(new DataIntegrityViolationException("staff_loan_collection_cycles_pkey")).when(cycleRepository)
+                .saveAndFlush(any());
+
+        assertThatThrownBy(() -> service.finalise(PAYDAY, null)).isInstanceOf(ConflictException.class)
+                .hasMessage("Payday 20 Nov 2026 is already finalised");
+
+        verify(lineRepository, never()).saveAll(any());
+        verify(redemptionRepository, never()).stampSettlementCycle(any(), any());
+        verify(auditService, never()).record(any());
+        assertThat(spends).allSatisfy(spend -> assertThat(spend.getSettlementCycle()).isNull());
+    }
+
+    @Test
+    @DisplayName("rows found settled already while stamping: refused, nothing audited")
+    void finaliseFindsItsRowsSettledAlready() {
+        rutendo();
+        doAnswer(i -> ((Collection<?>) i.getArgument(0)).size() - 1).when(redemptionRepository)
+                .stampSettlementCycle(any(), any());
+
+        assertThatThrownBy(() -> service.finalise(PAYDAY, null)).isInstanceOf(ConflictException.class)
+                .hasMessage(StaffLoanCollectionService.settledConcurrently(PAYDAY))
+                .hasMessageStartingWith("GetMore sales or refunds of payday 20 Nov 2026 were settled by another"
+                        + " finalisation");
+
+        verify(auditService, never()).record(any());
+    }
+
+    private static GetMoreSyncResult result(GetMoreSyncResult.Outcome outcome) {
+        return new GetMoreSyncResult(outcome, 0, 0, null, 0, List.of(), false, null);
+    }
+
+    /** Vouchers 40 to 45 of loans due next month, each issued this cycle and never read. */
+    private void sixVouchers() {
+        for (long id = 40; id <= 45; id++) {
+            StaffLoan loan = loan(200 + id, "E12" + id, StaffLoanStatus.DISBURSED,
+                    UnredeemedVoucherTreatment.DEBT_STANDS, NEXT, "GETMORE-14" + id);
+            voucher(id, loan, GetMoreMode.LIVE, utc("2026-11-02T08:00:00Z"), null);
+        }
+    }
+
+    @Test
+    @DisplayName("the payday sync stops a page after 3 vouchers in a row GetMore could not be read for")
+    void paydaySyncStopsWhenGetMoreFails() {
+        sixVouchers();
+        Map<Long, GetMoreSyncResult.Outcome> outcomes = Map.of(40L, GetMoreSyncResult.Outcome.UNAVAILABLE,
+                41L, GetMoreSyncResult.Outcome.UNCHANGED, 43L, GetMoreSyncResult.Outcome.UNAVAILABLE,
+                44L, GetMoreSyncResult.Outcome.UNAVAILABLE, 45L, GetMoreSyncResult.Outcome.UNCHANGED);
+        when(sync.sync(anyLong(), eq(GetMoreSyncTrigger.PAYDAY))).thenAnswer(i -> {
+            long id = i.getArgument(0);
+            synced.add(id);
+            if (id == 42L) {
+                throw new GetMoreUnavailableException(null, GetMoreUnavailableException.Reason.READ_FAILED,
+                        "read timed out");
+            }
+            return result(outcomes.get(id));
+        });
+
+        StaffLoanCollectionReport.Sync first = service.syncForPayday(PAYDAY, 0L, 50);
+
+        assertThat(synced).as("41 broke the first run; 42 to 44 are three in a row").containsExactly(40L, 41L, 42L,
+                43L, 44L);
+        assertThat(first.stoppedEarly()).isTrue();
+        assertThat(first.nextAfter()).isEqualTo(44L);
+        assertThat(first.unavailable()).isEqualTo(4);
+        assertThat(first.unchanged()).isEqualTo(1);
+
+        StaffLoanCollectionReport.Sync rest = service.syncForPayday(PAYDAY, first.nextAfter(), 50);
+
+        assertThat(synced).endsWith(45L);
+        assertThat(rest.stoppedEarly()).isFalse();
+        assertThat(rest.nextAfter()).isNull();
+    }
+
+    @Test
+    @DisplayName("the payday sync starts no voucher once a page has run 60 seconds; the next page goes on from there")
+    void paydaySyncStopsWhenGetMoreIsSlow() {
+        sixVouchers();
+        Function<Long, GetMoreSyncResult> slow = id -> {
+            synced.add(id);
+            now.set(now.get().plus(StaffLoanCollectionService.SYNC_PAGE_BUDGET).plus(Duration.ofSeconds(1)));
+            return result(GetMoreSyncResult.Outcome.UNCHANGED);
+        };
+        when(sync.sync(anyLong(), eq(GetMoreSyncTrigger.PAYDAY))).thenAnswer(i -> slow.apply(i.getArgument(0)));
+
+        StaffLoanCollectionReport.Sync first = service.syncForPayday(PAYDAY, 0L, 50);
+        StaffLoanCollectionReport.Sync second = service.syncForPayday(PAYDAY, first.nextAfter(), 50);
+
+        assertThat(first.stoppedEarly()).isTrue();
+        assertThat(first.nextAfter()).isEqualTo(40L);
+        assertThat(first.unchanged()).isEqualTo(1);
+        assertThat(second.nextAfter()).isEqualTo(41L);
+        assertThat(synced).containsExactly(40L, 41L);
     }
 }

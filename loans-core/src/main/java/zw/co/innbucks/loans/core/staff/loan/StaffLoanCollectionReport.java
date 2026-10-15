@@ -19,8 +19,8 @@ import java.util.List;
  *
  * <p>Before the payday is finalised this is a preview, recomputed on every read. Once finalised the lines are the
  * amounts sent to payroll, kept as they were, and the GetMore side is the rows that payday paid for; a sale or refund
- * made before the cut-off but recorded after is listed in {@code lateAdjustments} and paid in the next payday, where
- * it shows {@code late}.</p>
+ * made before the cut-off but recorded after it was finalised is listed in {@code lateAdjustments} and paid in the
+ * next payday, where it shows {@code late}.</p>
  *
  * @param cutoff          00:00 market time on the payday, UTC
  * @param storeMode       the GetMore store it describes: SIMULATED on staging's simulated host, LIVE everywhere else
@@ -105,8 +105,16 @@ public record StaffLoanCollectionReport(LocalDate payday, LocalDateTime cutoff, 
     public enum ExclusionReason {
         /** Written off: still owed, recovered outside payroll. */
         WRITTEN_OFF,
-        /** Paid out as a coupon of staging's simulated store, on a host that is not: a test. */
+        /**
+         * Paid out as (or being issued) a coupon of staging's simulated store, on a host that is not: a test, whatever
+         * its status.
+         */
         SIMULATED,
+        /**
+         * Paid out as (or being issued) a coupon of GetMore's real store, on staging's simulated host: the simulated
+         * statement covers the simulated store only.
+         */
+        LIVE,
         /** Not a line of the payday when it was finalised (it was written off or not due then). */
         NOT_IN_FINALISED_CYCLE
     }
@@ -132,10 +140,13 @@ public record StaffLoanCollectionReport(LocalDate payday, LocalDateTime cutoff, 
     /**
      * What one page of a payday sync did.
      *
-     * @param unavailable vouchers GetMore could not be read for (or another sync of was running)
-     * @param cleanedUp   cancelled loans' voucher issuances whose coupons were withdrawn (first page only)
-     * @param nextAfter   the {@code after} of the next page; null when this was the last
+     * @param unavailable  vouchers GetMore could not be read for (or another sync of was running)
+     * @param cleanedUp    cancelled loans' voucher issuances whose coupons were withdrawn (first page only)
+     * @param nextAfter    the {@code after} of the next page; null when this was the last
+     * @param stoppedEarly the page stopped before its last voucher: GetMore could not be read for several vouchers in
+     *                     a row, or it ran out of time. {@code nextAfter} is the voucher it got to
      */
-    public record Sync(int synced, int unchanged, int blocked, int unavailable, int cleanedUp, Long nextAfter) {
+    public record Sync(int synced, int unchanged, int blocked, int unavailable, int cleanedUp, Long nextAfter,
+                       boolean stoppedEarly) {
     }
 }

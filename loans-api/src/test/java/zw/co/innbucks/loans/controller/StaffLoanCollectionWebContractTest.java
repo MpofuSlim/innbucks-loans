@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.getmore.GetMoreMode;
@@ -32,6 +34,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 import zw.co.innbucks.loans.core.voucher.VoucherStopReason;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
+import zw.co.innbucks.loans.web.StaffLoanCollectionApiExamples;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -70,6 +73,7 @@ class StaffLoanCollectionWebContractTest {
 
     private static final String STATEMENT = "/lending/v1/staff-loan-collections/2026-11-20";
     private static final LocalDate PAYDAY = LocalDate.of(2026, 11, 20);
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean StaffLoanCollectionService service;
@@ -185,7 +189,7 @@ class StaffLoanCollectionWebContractTest {
     @DisplayName("the payday sync: a page at a time, its message says whether there is more; OFF is a 503")
     void paydaySync() throws Exception {
         when(service.syncForPayday(eq(PAYDAY), any(), any())).thenReturn(
-                new StaffLoanCollectionReport.Sync(3, 45, 1, 1, 2, 57L));
+                new StaffLoanCollectionReport.Sync(3, 45, 1, 1, 2, 57L, false));
         for (String role : List.of("FINANCE", "CREDIT_MANAGER", "SUPER_ADMIN")) {
             mvc.perform(as(role, post(STATEMENT + "/getmore-syncs")).param("after", "0").param("limit", "50"))
                     .andExpect(status().isOk())
@@ -193,7 +197,8 @@ class StaffLoanCollectionWebContractTest {
                             + " 1 unavailable; 2 cancelled voucher issuances cleaned up; more to sync: repeat with"
                             + " after=57"))
                     .andExpect(jsonPath("$.data.nextAfter").value(57))
-                    .andExpect(jsonPath("$.data.cleanedUp").value(2));
+                    .andExpect(jsonPath("$.data.cleanedUp").value(2))
+                    .andExpect(jsonPath("$.data.stoppedEarly").value(false));
         }
         verify(service, org.mockito.Mockito.times(3)).syncForPayday(PAYDAY, 0L, 50);
         mvc.perform(as("HUMAN_CAPITAL", post(STATEMENT + "/getmore-syncs"))).andExpect(status().isForbidden());
@@ -207,8 +212,27 @@ class StaffLoanCollectionWebContractTest {
                 .andExpect(jsonPath("$.message").value("GetMore unavailable (OFF): GetMore is OFF on this host"
                         + " (GETMORE_MODE): nothing can be read for payday 20 Nov 2026"));
         assertThat(StaffLoanCollectionController.syncMessage(PAYDAY, new StaffLoanCollectionReport.Sync(0, 1, 0, 0,
-                1, null))).isEqualTo("Payday 20 Nov 2026: 0 synced, 1 unchanged, 0 blocked, 0 unavailable; 1"
+                1, null, false))).isEqualTo("Payday 20 Nov 2026: 0 synced, 1 unchanged, 0 blocked, 0 unavailable; 1"
                 + " cancelled voucher issuance cleaned up; done");
+    }
+
+    @Test
+    @DisplayName("a page that stopped early says so, and where to go on from; the Swagger example is that answer")
+    void paydaySyncStoppedEarly() throws Exception {
+        when(service.syncForPayday(eq(PAYDAY), any(), any())).thenReturn(
+                new StaffLoanCollectionReport.Sync(0, 0, 0, 3, 0, 11L, true));
+
+        String body = mvc.perform(as("FINANCE", post(STATEMENT + "/getmore-syncs")).param("after", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stoppedEarly").value(true))
+                .andExpect(jsonPath("$.data.nextAfter").value(11))
+                .andExpect(jsonPath("$.message").value("Payday 20 Nov 2026: 0 synced, 0 unchanged, 0 blocked, 3"
+                        + " unavailable; 0 cancelled voucher issuances cleaned up; stopped early, GetMore is slow or"
+                        + " not answering: repeat with after=11 once it answers"))
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode example = JSON.readTree(StaffLoanCollectionApiExamples.SYNC_STOPPED_EARLY);
+        assertThat(JSON.readTree(body)).isEqualTo(example);
     }
 
     @Test

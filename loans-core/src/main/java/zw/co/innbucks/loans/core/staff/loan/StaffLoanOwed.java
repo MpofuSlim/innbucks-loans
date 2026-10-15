@@ -12,9 +12,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -28,7 +35,8 @@ import java.util.Set;
  * owner's decision, Q10), and whatever the treatment when loans' copy may be behind GetMore's: last read before the
  * cut-off, stopped by a sync issue, or with a sale held at the till. Under the reduced treatment a loan with interest
  * is provisional too: what is spent is not what is owed then. The amount is never below zero or above the loan's
- * whole repayment.</p>
+ * whole repayment: {@link #at} refuses one that would be ({@link OutOfRange}), and the statement shows such a loan as
+ * {@link #inconsistent} instead.</p>
  *
  * @param amountToCollect what to collect from salary on the payday
  * @param finalAmount     whether it is final
@@ -60,11 +68,26 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
         /** A sale was ordered at GetMore and not yet invoiced at its last sync: not counted as spent yet. */
         HELD_SALES,
         /** Reduced to what was spent, but it carries interest or a fee: what was spent is not what is owed. */
-        INTEREST_BEARING;
+        INTEREST_BEARING,
+        /**
+         * Its voucher's GetMore rows at the cut-off come to an amount below zero or above the whole repayment: the
+         * amount shown is held within those, and the rows need checking before payroll.
+         */
+        ROWS_INCONSISTENT;
 
         /** Whether it leaves a line provisional whatever the treatment. */
         boolean provisionalAlways() {
-            return this == STALE || this == SYNC_BLOCKED || this == HELD_SALES || this == INTEREST_BEARING;
+            return this == STALE || this == SYNC_BLOCKED || this == HELD_SALES || this == INTEREST_BEARING
+                    || this == ROWS_INCONSISTENT;
+        }
+    }
+
+    /** What a voucher's rows at the cut-off came to is outside 0 to the loan's whole repayment. */
+    public static final class OutOfRange extends IllegalStateException {
+
+        OutOfRange(BigDecimal amount, BigDecimal totalRepayable) {
+            super("A payday amount of " + amount.toPlainString() + " is outside 0 to "
+                    + totalRepayable.toPlainString());
         }
     }
 
@@ -78,11 +101,17 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
      * A GetMore voucher as it stood at a payday's cut-off: spent and refunded as of then (GetMore's own times), its
      * state then, and what the last sync saw of held sales, blocking issues and when it ran.
      *
+     * <p>Refunds count the way the sync recorded them ({@code GetMoreSpendPlan}): order by order, in time order (a
+     * spend before a refund at the same moment), a refund counting whole once its order's spends cover it. A refund
+     * GetMore dated before its order's next invoiced level waited for that level, and that level is dated by the
+     * order's last update, which can fall after the cut-off; such a refund counts from that level's time, not its
+     * own, as the rows' {@code balance_after} has it. So what was spent less refunded is never below zero.</p>
+     *
      * @param state         CANCELLED when cancelled before the cut-off; REDEEMED when all of it was spent by then;
      *                      EXPIRED when it had lapsed or been stopped by then; otherwise PARTIALLY_REDEEMED or ISSUED
      * @param stoppedReason why it was stopped early, when it had EXPIRED by the cut-off; null otherwise
      * @param spentNet      spent before the cut-off, less what was refunded before it
-     * @param refunded      refunded before the cut-off
+     * @param refunded      refunded before the cut-off, each refund from when its order's spends covered it
      * @param held          ordered at GetMore and not invoiced, at the last sync
      * @param stale         last read from GetMore before the cut-off, or never
      */
@@ -100,21 +129,30 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
         public static VoucherAtCutoff of(Voucher voucher, Collection<VoucherRedemption> spends,
                                          Collection<VoucherRefund> refunds, LocalDateTime cutoff,
                                          LocalDate settledBy) {
-            BigDecimal spent = spends.stream()
+            Map<Long, List<Event>> byOrder = new HashMap<>();
+            spends.stream()
                     .filter(spend -> voucher.getId().equals(spend.getVoucherId())
                             && spend.getSource() == VoucherRedemptionSource.GETMORE_SYNC
-                            && spend.getRedeemedAt().isBefore(cutoff) && known(spend.getSettlementCycle(), settledBy))
-                    .map(VoucherRedemption::getAmount).reduce(ZERO, BigDecimal::add);
-            BigDecimal refunded = refunds.stream()
+                            && known(spend.getSettlementCycle(), settledBy))
+                    .forEach(spend -> byOrder.computeIfAbsent(spend.getExternalOrderId(), order -> new ArrayList<>())
+                            .add(new Event(spend.getRedeemedAt(), false, spend.getId(), spend.getAmount())));
+            refunds.stream()
                     .filter(refund -> voucher.getId().equals(refund.getVoucherId())
-                            && refund.getRefundedAt().isBefore(cutoff)
                             && known(refund.getSettlementCycle(), settledBy))
-                    .map(VoucherRefund::getAmount).reduce(ZERO, BigDecimal::add);
+                    .forEach(refund -> byOrder.computeIfAbsent(refund.getExternalOrderId(), order -> new ArrayList<>())
+                            .add(new Event(refund.getRefundedAt(), true, refund.getId(), refund.getAmount())));
+            BigDecimal spent = ZERO;
+            BigDecimal refunded = ZERO;
+            for (List<Event> events : byOrder.values()) {
+                BigDecimal[] order = orderAt(events, cutoff);
+                spent = spent.add(order[0]);
+                refunded = refunded.add(order[1]);
+            }
             BigDecimal net = spent.subtract(refunded);
             VoucherStatus state;
             if (voucher.getCancelledAt() != null && voucher.getCancelledAt().isBefore(cutoff)) {
                 state = VoucherStatus.CANCELLED;
-            } else if (net.compareTo(voucher.getFaceValue()) == 0) {
+            } else if (net.compareTo(voucher.getFaceValue()) >= 0) {
                 state = VoucherStatus.REDEEMED;
             } else if (!voucher.getExpiresAt().isAfter(cutoff)) {
                 state = VoucherStatus.EXPIRED;
@@ -129,6 +167,47 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
                     voucher.getFaceValue(), net, refunded, voucher.getHeldAmount() == null ? ZERO
                     : voucher.getHeldAmount(), synced, voucher.getSyncBlockedBy(),
                     synced == null || synced.isBefore(cutoff));
+        }
+
+        /** A sale or a refund of one order, as the replay below needs it. */
+        private record Event(LocalDateTime at, boolean refund, Long id, BigDecimal amount) {
+        }
+
+        private static final Comparator<Event> IN_TIME = Comparator.comparing(Event::at)
+                .thenComparing(Event::refund)
+                .thenComparing(Event::id, Comparator.nullsLast(Comparator.naturalOrder()));
+
+        /**
+         * One order's spent and refunded before {@code cutoff}: its rows in time order, a refund counted whole once the
+         * order's spends cover it, and one waiting for a spend counted when that spend comes, if before the cut-off.
+         */
+        private static BigDecimal[] orderAt(List<Event> events, LocalDateTime cutoff) {
+            events.sort(IN_TIME);
+            BigDecimal spent = ZERO;
+            BigDecimal refunded = ZERO;
+            List<Event> waiting = new ArrayList<>();
+            for (Event event : events) {
+                if (!event.at().isBefore(cutoff)) {
+                    break;
+                }
+                if (event.refund()) {
+                    if (spent.compareTo(refunded.add(event.amount())) >= 0) {
+                        refunded = refunded.add(event.amount());
+                    } else {
+                        waiting.add(event);
+                    }
+                    continue;
+                }
+                spent = spent.add(event.amount());
+                for (Iterator<Event> refund = waiting.iterator(); refund.hasNext(); ) {
+                    BigDecimal amount = refund.next().amount();
+                    if (spent.compareTo(refunded.add(amount)) >= 0) {
+                        refunded = refunded.add(amount);
+                        refund.remove();
+                    }
+                }
+            }
+            return new BigDecimal[]{spent, refunded};
         }
 
         private static boolean known(LocalDate settlementCycle, LocalDate settledBy) {
@@ -147,6 +226,7 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
      * @param voucher null when the loan has no GetMore voucher
      * @throws IllegalArgumentException the loan is neither awaiting its voucher nor paid out (a written-off loan is
      *                                  recovered outside payroll; a repaid or cancelled one owes nothing)
+     * @throws OutOfRange               what the voucher's rows come to is below zero or above the whole repayment
      */
     public static StaffLoanOwed at(StaffLoan loan, VoucherAtCutoff voucher) {
         boolean paidOut = switch (loan.getStatus()) {
@@ -212,12 +292,40 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
         };
     }
 
+    /**
+     * The line of a paid-out loan whose voucher's rows at the cut-off come to an amount outside 0 to
+     * {@code totalRepayable}, which {@link #at} refuses: what was spent less refunded, held within that range,
+     * provisional and flagged {@link Flag#ROWS_INCONSISTENT}, so one voucher cannot take a whole statement down. It
+     * could rise to the whole repayment.
+     */
+    static StaffLoanOwed inconsistent(BigDecimal totalRepayable, VoucherAtCutoff voucher) {
+        Objects.requireNonNull(voucher, "voucher");
+        Set<Flag> flags = EnumSet.of(Flag.ROWS_INCONSISTENT);
+        if (voucher.stale()) {
+            flags.add(Flag.STALE);
+        }
+        if (voucher.syncBlockedBy() != null) {
+            flags.add(Flag.SYNC_BLOCKED);
+        }
+        if (voucher.held().signum() > 0) {
+            flags.add(Flag.HELD_SALES);
+        }
+        BigDecimal open = voucher.open() ? within(voucher.faceValue().subtract(voucher.spentNet()),
+                voucher.faceValue()) : ZERO;
+        return checked(within(voucher.spentNet(), totalRepayable), false, open, totalRepayable, flags,
+                totalRepayable);
+    }
+
+    /** {@code amount} held within 0 and {@code most}. */
+    private static BigDecimal within(BigDecimal amount, BigDecimal most) {
+        return amount.signum() < 0 ? ZERO : amount.min(most);
+    }
+
     /** Provisional when any flag says so; never below zero or above the whole repayment. */
     private static StaffLoanOwed checked(BigDecimal amount, boolean finalByTreatment, BigDecimal openBalance,
                                          BigDecimal couldRiseTo, Set<Flag> flags, BigDecimal totalRepayable) {
         if (amount.signum() < 0 || amount.compareTo(totalRepayable) > 0) {
-            throw new IllegalStateException("A payday amount of " + amount.toPlainString() + " is outside 0 to "
-                    + totalRepayable.toPlainString());
+            throw new OutOfRange(amount, totalRepayable);
         }
         boolean finalAmount = finalByTreatment && flags.stream().noneMatch(Flag::provisionalAlways);
         return new StaffLoanOwed(amount.setScale(2, RoundingMode.UNNECESSARY), finalAmount,

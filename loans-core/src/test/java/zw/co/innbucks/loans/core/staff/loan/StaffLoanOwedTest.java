@@ -186,7 +186,8 @@ class StaffLoanOwedTest {
         StaffLoan underRepaid = loan(StaffLoanStatus.DISBURSED, UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT,
                 "100.00");
         assertThatThrownBy(() -> StaffLoanOwed.at(underRepaid, at(VoucherStatus.REDEEMED, null, "150.00")))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("outside 0 to 100.00");
+                .isInstanceOf(StaffLoanOwed.OutOfRange.class).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outside 0 to 100.00");
 
         for (StaffLoanStatus status : new StaffLoanStatus[]{StaffLoanStatus.WRITTEN_OFF, StaffLoanStatus.REPAID,
                 StaffLoanStatus.CANCELLED}) {
@@ -207,14 +208,22 @@ class StaffLoanOwedTest {
     }
 
     private static VoucherRedemption spend(long id, String amount, LocalDateTime at, LocalDate settled) {
+        return spend(id, 12L, amount, at, settled);
+    }
+
+    private static VoucherRedemption spend(long id, long order, String amount, LocalDateTime at, LocalDate settled) {
         return VoucherRedemption.builder().id(id).voucherId(9L).amount(new BigDecimal(amount))
                 .source(VoucherRedemptionSource.GETMORE_SYNC).storeMode(GetMoreMode.SIMULATED).redeemedAt(at)
-                .recordedAt(at.plusMinutes(1)).settlementCycle(settled).build();
+                .externalOrderId(order).recordedAt(at.plusMinutes(1)).settlementCycle(settled).build();
     }
 
     private static VoucherRefund refund(long id, String amount, LocalDateTime at, LocalDate settled) {
+        return refund(id, 12L, amount, at, settled);
+    }
+
+    private static VoucherRefund refund(long id, long order, String amount, LocalDateTime at, LocalDate settled) {
         return VoucherRefund.builder().id(id).voucherId(9L).amount(new BigDecimal(amount))
-                .storeMode(GetMoreMode.SIMULATED).refundedAt(at).recordedAt(at.plusMinutes(1))
+                .storeMode(GetMoreMode.SIMULATED).externalOrderId(order).refundedAt(at).recordedAt(at.plusMinutes(1))
                 .settlementCycle(settled).build();
     }
 
@@ -301,5 +310,110 @@ class StaffLoanOwedTest {
         assertThat(known.refunded()).isEqualByComparingTo("10.00");
         assertThat(now.spentNet()).isEqualByComparingTo("112.00");
         assertThat(now.refunded()).isEqualByComparingTo("13.00");
+    }
+
+    @Test
+    @DisplayName("a refund dated before the level it waited for counts from that level: never below zero")
+    void refundDatedBeforeTheLevelItWaitedFor() {
+        // Order 12 invoiced 50.00 on 1 November; at 23:00 on the 19th in Harare its second level of 50.00 and a credit
+        // memo of 80.00. The sync dates that level by the order's last update, which a later update on the 20th
+        // pushed past the cut-off, and keeps the memo's own time on the refund: rows of 50.00 (1st), 80.00 back
+        // (19th, 21:00 UTC) and 50.00 (20th). The refund waited for the second level, so at the cut-off it had not
+        // happened: 50.00 spent, nothing back, as the rows' balance_after says.
+        Voucher open = voucher().expiresAt(CUTOFF.plusDays(10)).status(VoucherStatus.EXPIRED).build();
+        List<VoucherRedemption> spends = List.of(spend(1, "50.00", LocalDateTime.of(2026, 11, 1, 8, 0), null),
+                spend(2, "50.00", LocalDateTime.of(2026, 11, 20, 7, 30), null));
+        List<VoucherRefund> refunds = List.of(refund(1, "80.00", LocalDateTime.of(2026, 11, 19, 21, 0), null));
+
+        VoucherAtCutoff at = VoucherAtCutoff.of(open, spends, refunds, CUTOFF, null);
+
+        assertThat(at.spentNet()).isEqualByComparingTo("50.00");
+        assertThat(at.refunded()).isEqualByComparingTo("0.00");
+        assertThat(at.state()).isEqualTo(VoucherStatus.PARTIALLY_REDEEMED);
+        for (UnredeemedVoucherTreatment treatment : UnredeemedVoucherTreatment.values()) {
+            assertThat(StaffLoanOwed.at(disbursed(treatment), at).amountToCollect()).as(treatment.name())
+                    .isBetween(BigDecimal.ZERO, FACE);
+        }
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT), at)
+                .amountToCollect()).isEqualByComparingTo("50.00");
+        // Stopped by the bank before the cut-off, the debt standing: what was spent, not a 500.
+        Voucher stopped = voucher().expiresAt(CUTOFF.minusDays(1)).stoppedReason(VoucherStopReason.BANK_STOPPED)
+                .build();
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS),
+                VoucherAtCutoff.of(stopped, spends, refunds, CUTOFF, null)).amountToCollect())
+                .isEqualByComparingTo("50.00");
+        // As known when the payday was finalised: the refund was paid then, the level it waited for was not.
+        LocalDate payday = LocalDate.of(2026, 11, 20);
+        VoucherAtCutoff known = VoucherAtCutoff.of(open, List.of(spend(1, "50.00",
+                        LocalDateTime.of(2026, 11, 1, 8, 0), payday), spend(2, "50.00",
+                        LocalDateTime.of(2026, 11, 20, 7, 30), LocalDate.of(2026, 12, 20))),
+                List.of(refund(1, "80.00", LocalDateTime.of(2026, 11, 19, 21, 0), payday)), CUTOFF, payday);
+        assertThat(known.spentNet()).isEqualByComparingTo("50.00");
+        // Had the second level come before the cut-off, the refund would count at its own time.
+        assertThat(VoucherAtCutoff.of(open, List.of(spends.getFirst(), spend(2, "50.00",
+                        LocalDateTime.of(2026, 11, 19, 21, 30), null)), refunds, CUTOFF, null))
+                .satisfies(before -> {
+                    assertThat(before.spentNet()).isEqualByComparingTo("20.00");
+                    assertThat(before.refunded()).isEqualByComparingTo("80.00");
+                });
+    }
+
+    @Test
+    @DisplayName("a refund counts against its own order's spends only, whole, in time order")
+    void refundsMatchTheirOrder() {
+        Voucher open = voucher().expiresAt(CUTOFF.plusDays(10)).build();
+        List<VoucherRedemption> spends = List.of(spend(1, 12L, "30.00", CUTOFF.minusDays(9), null),
+                spend(2, 13L, "60.00", CUTOFF.minusDays(8), null),
+                spend(3, 12L, "20.00", CUTOFF.minusDays(2), null));
+        List<VoucherRefund> refunds = List.of(refund(1, 12L, "40.00", CUTOFF.minusDays(5), null),
+                refund(2, 13L, "10.00", CUTOFF.minusDays(4), null),
+                refund(3, 12L, "5.00", CUTOFF.minusHours(1), null));
+
+        VoucherAtCutoff at = VoucherAtCutoff.of(open, spends, refunds, CUTOFF, null);
+
+        // Order 12's 40.00 waits for its second spend (order 13's 60.00 does not cover it), then counts whole; the
+        // 5.00 an hour before the cut-off counts at its own time.
+        assertThat(at.refunded()).isEqualByComparingTo("55.00");
+        assertThat(at.spentNet()).isEqualByComparingTo("55.00");
+        assertThat(VoucherAtCutoff.of(open, spends, refunds, CUTOFF.minusDays(3), null)).satisfies(earlier -> {
+            assertThat(earlier.refunded()).as("40.00 still waiting for order 12's second spend")
+                    .isEqualByComparingTo("10.00");
+            assertThat(earlier.spentNet()).isEqualByComparingTo("80.00");
+        });
+    }
+
+    @Test
+    @DisplayName("rows coming to more than the voucher: REDEEMED, the debt stands; reduced, a flagged provisional line")
+    void rowsOutOfRange() {
+        // A sale dated by its order (ordered before the cut-off, invoiced after another order was refunded after it)
+        // can put more than the face value before the cut-off.
+        Voucher open = voucher().expiresAt(CUTOFF.plusDays(10)).build();
+        VoucherAtCutoff over = VoucherAtCutoff.of(open, List.of(spend(1, 12L, "150.00", CUTOFF.minusDays(9), null),
+                spend(2, 13L, "40.00", CUTOFF.minusDays(3), null)), List.of(), CUTOFF, null);
+        assertThat(over.state()).isEqualTo(VoucherStatus.REDEEMED);
+        assertThat(over.spentNet()).isEqualByComparingTo("190.00");
+
+        StaffLoanOwed debt = StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS), over);
+        assertThat(debt.amountToCollect()).isEqualByComparingTo("150.00");
+        assertThat(debt.finalAmount()).isTrue();
+        assertThat(debt.openBalance()).isEqualByComparingTo("0.00");
+        StaffLoan reduced = disbursed(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT);
+        assertThatThrownBy(() -> StaffLoanOwed.at(reduced, over)).isInstanceOf(StaffLoanOwed.OutOfRange.class)
+                .hasMessage("A payday amount of 190.00 is outside 0 to 150.00");
+
+        StaffLoanOwed flagged = StaffLoanOwed.inconsistent(reduced.getTotalRepayable(), over);
+        assertThat(flagged.amountToCollect()).isEqualByComparingTo("150.00");
+        assertThat(flagged.finalAmount()).isFalse();
+        assertThat(flagged.couldRiseTo()).isEqualByComparingTo("150.00");
+        assertThat(flagged.openBalance()).isEqualByComparingTo("0.00");
+        assertThat(flagged.flags()).containsExactly(Flag.ROWS_INCONSISTENT);
+        VoucherAtCutoff below = new VoucherAtCutoff(9L, VoucherStatus.PARTIALLY_REDEEMED, null, "USD", FACE,
+                new BigDecimal("-30.00"), new BigDecimal("80.00"), new BigDecimal("5.00"), CUTOFF.minusDays(1), null,
+                true);
+        assertThat(StaffLoanOwed.inconsistent(reduced.getTotalRepayable(), below)).satisfies(owed -> {
+            assertThat(owed.amountToCollect()).isEqualByComparingTo("0.00");
+            assertThat(owed.openBalance()).isEqualByComparingTo("150.00");
+            assertThat(owed.flags()).containsExactly(Flag.STALE, Flag.HELD_SALES, Flag.ROWS_INCONSISTENT);
+        });
     }
 }
