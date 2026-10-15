@@ -93,7 +93,10 @@ public class GetMoreSimulatorController {
                     @ExampleObject(name = "Reference used", value = GetMoreApiExamples.SIM_SALE_REFERENCE_REUSED),
                     @ExampleObject(name = "Not simulated", value = GetMoreApiExamples.NOT_A_SIMULATED_VOUCHER)})),
             @ApiResponse(responseCode = "413", description = "A body over 8 KiB",
-                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_TOO_LARGE)))
+                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_TOO_LARGE))),
+            @ApiResponse(responseCode = "415", description = "A body that is not JSON (a form or multipart body is"
+                    + " refused unread, as is any other)",
+                    content = @Content(examples = @ExampleObject(GetMoreApiExamples.SIMULATOR_NOT_JSON)))
     })
     @Parameter(in = ParameterIn.HEADER, name = API_KEY_HEADER, required = true, description = KEY_DESCRIPTION)
     @PostMapping("/sales")

@@ -386,6 +386,28 @@ class SimulatedGetMoreStorePostgresIT {
     }
 
     @Test
+    @DisplayName("spending in parts off: a used coupon is single use, refused as not valid even after a refund")
+    void partialSpendingOffIsSingleUse() {
+        GetMoreCoupon coupon = boundCoupon("150.00");
+        properties.getSimulator().setPartialSpending(false);
+        SimSale whole = sell(coupon, "150.00");
+        assertThat(till.refund(whole.orderNumber(), new BigDecimal("10.00"), null).balance())
+                .as("the store gives the amount back").isEqualByComparingTo("10.00");
+
+        assertThatThrownBy(() -> sell(coupon, "10.00")).isInstanceOfSatisfying(SimulatorRefusedException.class, e -> {
+            assertThat(e.getRefusal()).as("Magento's usage-limit answer").isEqualTo(
+                    SimulatorRefusal.SIM_COUPON_NOT_FOUND);
+            assertThat(e.getMessage()).isEqualTo("The coupon code \"" + GetMoreCodes.maskedCode(coupon.code())
+                    + "\" is not valid.");
+        });
+        assertThat(ordersOf(coupon)).hasSize(1);
+
+        properties.getSimulator().setPartialSpending(true);
+        assertThat(sell(coupon, "10.00").balance()).as("in parts, a refund re-opens it (A3)")
+                .isEqualByComparingTo("0");
+    }
+
+    @Test
     @DisplayName("a refund is a state-2 credit memo that gives the amount back; nothing invoiced cannot be refunded")
     void refundRestores() {
         GetMoreCoupon coupon = boundCoupon("150.00");
@@ -650,7 +672,7 @@ class SimulatedGetMoreStorePostgresIT {
         properties.getSimulator().setEnforceCouponExpiry(false);
         assertThat(till.lookup(coupon.code()).assumptions()).as("the rules the till is applying now")
                 .containsExactly("A1 per-coupon allowance", "A2 one purchase of the whole balance",
-                        "A3 refund restores balance", "A4 coupon expiry not enforced");
+                        "A3 a refund does not re-open a single-use coupon", "A4 coupon expiry not enforced");
         properties.getSimulator().setPartialSpending(true);
         properties.getSimulator().setEnforceCouponExpiry(true);
 

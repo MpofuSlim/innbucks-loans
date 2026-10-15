@@ -191,8 +191,8 @@ class GetMoreSimulatorControllerTest {
     }
 
     private static SimSale sale(boolean replayed) {
-        return new SimSale(12L, "SIM000000012", 1207L, Map.of("increment_id", "SIM000000012", "coupon_code",
-                "****8B1C"), new BigDecimal("45.5000"), "USD", new BigDecimal("104.5000"), replayed);
+        return new SimSale(12L, "SIM000000012", 1207L, "****8B1C", Map.of("increment_id", "SIM000000012",
+                "coupon_code", "****8B1C"), new BigDecimal("45.5000"), "USD", new BigDecimal("104.5000"), replayed);
     }
 
     private static MockHttpServletRequestBuilder withKey(MockHttpServletRequestBuilder request) {
@@ -380,6 +380,46 @@ class GetMoreSimulatorControllerTest {
     }
 
     @Test
+    @DisplayName("a form or multipart body over 8 KiB with no declared length: 415 through the real chain, never parsed")
+    void notJsonRefusedUnparsed() throws Exception {
+        byte[] form = ("outletName=" + "x".repeat(16 * 1024)).getBytes(StandardCharsets.UTF_8);
+        for (String type : new String[]{"application/x-www-form-urlencoded", "multipart/form-data; boundary=sim"}) {
+            mvc.perform(servletContext -> {
+                        MockHttpServletRequest request = new MockHttpServletRequest(servletContext, "POST",
+                                BASE + "/sales") {
+                            @Override
+                            public int getContentLength() {
+                                return -1;
+                            }
+
+                            @Override
+                            public long getContentLengthLong() {
+                                return -1;
+                            }
+
+                            @Override
+                            public java.util.Map<String, String[]> getParameterMap() {
+                                throw new AssertionError("the body was parsed as parameters");
+                            }
+
+                            @Override
+                            public java.util.Collection<jakarta.servlet.http.Part> getParts() {
+                                throw new AssertionError("the body was parsed as parts");
+                            }
+                        };
+                        request.setContentType(type);
+                        request.setContent(form);
+                        request.addHeader("X-Api-Key", API_KEY);
+                        return request;
+                    })
+                    .andExpect(status().isUnsupportedMediaType())
+                    .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"))
+                    .andExpect(jsonPath("$.message").value("Send application/json"));
+        }
+        verifyNoInteractions(till, auditService);
+    }
+
+    @Test
     @DisplayName("faults: queued (201) and cleared (200), with what is pending")
     void faults() throws Exception {
         mvc.perform(withKey(post(BASE + "/faults")).contentType(MediaType.APPLICATION_JSON)
@@ -446,7 +486,7 @@ class GetMoreSimulatorControllerTest {
     @Test
     @DisplayName("an invoice and a refund each sync the coupon's voucher; a refund's replay is a 200")
     void invoiceAndRefund() throws Exception {
-        when(till.invoice("SIM000000013")).thenReturn(new SimSale(13L, "SIM000000013", 1207L, Map.of(),
+        when(till.invoice("SIM000000013")).thenReturn(new SimSale(13L, "SIM000000013", 1207L, "****8B1C", Map.of(),
                 new BigDecimal("54.5000"), "USD", new BigDecimal("50.0000"), false));
         mvc.perform(withKey(post(BASE + "/sales/SIM000000013/invoices")))
                 .andExpect(status().isOk())
@@ -454,7 +494,7 @@ class GetMoreSimulatorControllerTest {
 
         when(till.refund(eq("SIM000000012"), any(), eq("AVD-RF-0012"))).thenReturn(
                 new zw.co.innbucks.loans.core.getmore.simulator.SimRefund(3L, "SIMCM00000003", 12L, "SIM000000012",
-                        1207L, Map.of(), new BigDecimal("10.00"), "USD", new BigDecimal("60.0000"), true));
+                        1207L, "****8B1C", Map.of(), new BigDecimal("10.00"), "USD", new BigDecimal("60.0000"), true));
         mvc.perform(withKey(post(BASE + "/refunds")).contentType(MediaType.APPLICATION_JSON)
                         .content(GetMoreApiExamples.REFUND_REQUEST))
                 .andExpect(status().isOk())
@@ -463,5 +503,46 @@ class GetMoreSimulatorControllerTest {
         verify(till).refund(eq("SIM000000012"), eq(new BigDecimal("10.00")), eq("AVD-RF-0012"));
         verify(sync, org.mockito.Mockito.times(2)).sync(9L, GetMoreSyncTrigger.SIMULATOR);
         verify(till, never()).sell(any(), any(), any(), any(), any(), any(), isNull(), anyBoolean());
+
+        ArgumentCaptor<AuditLog.AuditLogBuilder> audit = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, org.mockito.Mockito.times(2)).record(audit.capture());
+        assertThat(audit.getAllValues()).extracting(row -> row.build().getEventType())
+                .containsExactly("GETMORE_SIMULATOR_INVOICE", "GETMORE_SIMULATOR_REFUND");
+        assertThat(audit.getAllValues()).as("named by order number, recorded with the coupon's masked code")
+                .allSatisfy(row -> assertThat(row.build().getDetail()).contains(";code:****8B1C")
+                        .doesNotContain(GetMoreApiExamples.CODE_9));
+    }
+
+    @Test
+    @DisplayName("what a caller sends cannot forge an audit field: X-Forwarded-For keeps the proxies' end, values lose ;")
+    void auditCannotBeForged() throws Exception {
+        when(voucherService.expireNowForSimulation(any())).thenReturn(null);
+        when(till.expire(any(), any())).thenReturn(new zw.co.innbucks.loans.core.getmore.GetMoreCoupon(1207L, 43L,
+                GetMoreApiExamples.CODE_9, 0, 0, 1, null, false, LocalDateTime.of(2026, 10, 14, 8, 20, 7), 1));
+        // A client's own X-Forwarded-For, long enough to push the proxies' hops out of a record that kept its head,
+        // and carrying fields of its own; nginx and the gateway append the hops they saw at the end.
+        String padded = "1".repeat(30) + ", 6.6.6.6;key:00000000;outcome:OK" + ", 196.27.112.45, 10.0.4.1";
+
+        mvc.perform(post(BASE + "/coupon-expiries").header("X-Api-Key", API_KEY).header("X-Forwarded-For", padded)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loanReference\": \"SGL-2026-000164\", \"reason\": \"test;outcome:OK;key:00000000\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(withKey(post(BASE + "/sales/" + "SIM".repeat(40) + "/invoices")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SIM_SALE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("No simulated sale has that order number"));
+        verify(till, never()).invoice(any());
+
+        ArgumentCaptor<AuditLog.AuditLogBuilder> audit = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(auditService, org.mockito.Mockito.times(2)).record(audit.capture());
+        String expiry = audit.getAllValues().getFirst().build().getDetail();
+        assertThat(expiry.split(";")).filteredOn(field -> field.startsWith("key:")).as("one key field, the real one")
+                .containsExactly("key:" + SimulatorApiKey.fingerprint(API_KEY));
+        assertThat(expiry.split(";")).filteredOn(field -> field.startsWith("outcome:")).containsExactly("outcome:OK");
+        assertThat(expiry).as("the last 64 characters, the proxies' hops at the end")
+                .contains(";xff:" + "1".repeat(6) + ", 6.6.6.6__e_:00000000____c__e:__, 196.27.112.45, 10.0.4.1;key:")
+                .contains(";reason:test_outcome_OK_key_00000000");
+        String invoice = audit.getAllValues().getLast().build().getDetail();
+        assertThat(invoice).endsWith(";outcome:SIM_SALE_NOT_FOUND").doesNotContain("SIMSIM");
     }
 }

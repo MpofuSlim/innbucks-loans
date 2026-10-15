@@ -58,6 +58,7 @@ public class GetMoreSimulatorActions {
 
     static final String METRIC = "loans.getmore.simulator.actions";
     static final String CHANNEL = "getmore-simulator";
+    static final int MAX_ORDER_NUMBER = 32;
 
     /** The actions, as the audit and the metric name them. */
     public enum Action { SALE, INVOICE, REFUND, COUPON_EXPIRY, COUPON_LOOKUP, FAULTS, FAULTS_CLEARED }
@@ -145,9 +146,10 @@ public class GetMoreSimulatorActions {
      */
     public SimAction<SimActionResponse> invoice(String orderNumber, SimCaller caller) {
         return run(Action.INVOICE, caller, trail -> {
-            trail.put("order", orderNumber);
-            SimSale sale = till.invoice(orderNumber);
-            trail.put("amount", sale.amount());
+            String order = orderNumber(orderNumber);
+            trail.put("order", order);
+            SimSale sale = till.invoice(order);
+            trail.code(sale.maskedCode()).put("amount", sale.amount());
             Synced synced = syncCoupon(sale.couponId(), trail);
             return new SimAction<>("Sale " + sale.orderNumber() + " invoiced: " + money(sale.currency(),
                     sale.amount()) + " off the voucher", false, new SimActionResponse(saleStore(sale),
@@ -164,9 +166,10 @@ public class GetMoreSimulatorActions {
      */
     public SimAction<SimActionResponse> refund(SimRefundRequest request, SimCaller caller) {
         return run(Action.REFUND, caller, trail -> {
-            trail.put("order", request.orderNumber());
-            SimRefund refund = till.refund(request.orderNumber(), request.amount(), request.reference());
-            trail.put("creditMemo", refund.creditMemoNumber()).put("amount", refund.amount())
+            String order = orderNumber(request.orderNumber());
+            trail.put("order", order);
+            SimRefund refund = till.refund(order, request.amount(), request.reference());
+            trail.code(refund.maskedCode()).put("creditMemo", refund.creditMemoNumber()).put("amount", refund.amount())
                     .put("replayed", refund.replayed());
             Synced synced = syncCoupon(refund.couponId(), trail);
             String message = refund.replayed()
@@ -325,6 +328,19 @@ public class GetMoreSimulatorActions {
                 voucher.statusAt(marketTimeZone.nowUtc()));
     }
 
+    /**
+     * An order number as the simulated store makes them ({@code SIM} and nine digits): letters and digits, at most
+     * {@value #MAX_ORDER_NUMBER}. Anything else names no sale, and is refused as one without being echoed.
+     */
+    private static String orderNumber(String orderNumber) {
+        String stripped = orderNumber == null ? "" : orderNumber.strip();
+        if (!stripped.matches("[A-Za-z0-9]{1," + MAX_ORDER_NUMBER + "}")) {
+            throw new SimulatorRefusedException(SimulatorRefusal.SIM_SALE_NOT_FOUND,
+                    SimulatorRefusal.SIM_SALE_NOT_FOUND.message());
+        }
+        return stripped;
+    }
+
     /** A voucher of this host's simulated store, or none at all (a code no voucher was kept for). */
     private static void requireSimulated(Target target) {
         if (target.voucherId() != null && target.storeMode() != GetMoreMode.SIMULATED) {
@@ -383,8 +399,15 @@ public class GetMoreSimulatorActions {
     private record Synced(VoucherResponse voucher, SimSyncSummary summary) {
     }
 
-    /** What an action did, for its audit row and WARN line: the voucher, the masked code, and key:value pairs. */
+    /**
+     * What an action did, for its audit row and WARN line: the voucher, the masked code, and key:value pairs. A value
+     * is written with every {@code ;}, {@code :} and control character as {@code _}, at most {@value #MAX_VALUE}
+     * characters, so text a caller chose (a reason, an outlet) can never add a field of its own, an outcome or a key
+     * fingerprint, to the detail.
+     */
     private static final class Trail {
+
+        static final int MAX_VALUE = 255;
 
         private Long voucherId;
         private String maskedCode;
@@ -392,16 +415,26 @@ public class GetMoreSimulatorActions {
 
         Trail target(Target target) {
             voucherId = target.voucherId();
-            maskedCode = GetMoreCodes.maskedCode(target.code());
             if (target.loanAccount() != null) {
                 put("loan", target.loanAccount());
             }
-            return put("code", maskedCode);
+            return code(GetMoreCodes.maskedCode(target.code()));
+        }
+
+        /** The coupon's code, already masked, as the till named it. */
+        Trail code(String masked) {
+            if (masked != null) {
+                maskedCode = masked;
+                put("code", masked);
+            }
+            return this;
         }
 
         Trail put(String key, Object value) {
             if (value != null) {
-                detail.append(';').append(key).append(':').append(value);
+                String text = String.valueOf(value);
+                text = text.length() <= MAX_VALUE ? text : text.substring(0, MAX_VALUE);
+                detail.append(';').append(key).append(':').append(text.replaceAll("[;:\\p{Cntrl}]", "_"));
             }
             return this;
         }

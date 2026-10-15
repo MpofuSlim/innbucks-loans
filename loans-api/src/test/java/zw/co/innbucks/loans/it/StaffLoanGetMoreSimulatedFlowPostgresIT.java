@@ -40,11 +40,13 @@ import zw.co.innbucks.loans.core.voucher.GetMoreVoucherSync;
 import zw.co.innbucks.loans.core.voucher.VoucherExpiryJob;
 import zw.co.innbucks.loans.core.voucher.VoucherRepository;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -87,7 +89,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "loans.vouchers.code-hmac-key=it-voucher-hmac-key-0123456789abcdef0123456789",
         "loans.vouchers.code-encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "loans.borrower.test-assertions.enabled=true",
-        "loans.borrower.test-assertions.api-key=" + StaffLoanGetMoreSimulatedFlowPostgresIT.ASSERTION_KEY})
+        "loans.borrower.test-assertions.api-key=" + StaffLoanGetMoreSimulatedFlowPostgresIT.ASSERTION_KEY,
+        // Small, so a form body Tomcat parsed itself would fail visibly (a 500) with a body of a few KiB.
+        "server.tomcat.max-http-form-post-size=4KB"})
 class StaffLoanGetMoreSimulatedFlowPostgresIT {
 
     static final String SIMULATOR_KEY = "it-flow-sim-7c1e9a3f5b2d4e6a8c0f1b3d5e7a9c2e4b6d";
@@ -145,6 +149,7 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
     @Autowired private JwtService jwtService;
     @Autowired private UserRepository userRepository;
     @Autowired private MerchantRepository merchantRepository;
+    @Autowired private GetMoreProperties properties;
 
     private final HttpClient http = HttpClient.newBuilder().proxy(HttpClient.Builder.NO_PROXY).build();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -408,6 +413,60 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
         assertThat(every.path("totalItems").asLong()).isEqualTo(jdbc.queryForObject("SELECT count(*) FROM"
                 + " voucher_sync_issues i JOIN vouchers v ON v.id = i.voucher_id WHERE v.store_mode = 'SIMULATED'",
                 Long.class));
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("a form or multipart body with the key, chunked and over 8 KiB: 415 unread, never parsed, never a 500")
+    void notJsonRefusedUnread() throws Exception {
+        int orders = jdbc.queryForObject("SELECT count(*) FROM getmore_sim_orders", Integer.class);
+        // Over the cap, and over the limit Tomcat applies to a form it parses itself (4 KB here, 2 MB in the cell): a
+        // form that reached that parsing would be a 500, and one that reached the capped stream a 413. Only the
+        // filter's refusal, before either, is a 415.
+        byte[] big = ("outletName=" + "x".repeat(16 * 1024)).getBytes(StandardCharsets.UTF_8);
+        for (String type : List.of("application/x-www-form-urlencoded", "multipart/form-data; boundary=sim")) {
+            HttpResponse<String> response = send(HttpRequest.newBuilder(uri(SIMULATOR + "/sales"))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .header("X-Api-Key", SIMULATOR_KEY).header("Content-Type", type)
+                    .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream(big))));
+
+            assertThat(response.statusCode()).as("%s -> %s", type, response.body()).isEqualTo(415);
+            assertThat(json.readTree(response.body()).path("code").asString()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM getmore_sim_orders", Integer.class))
+                .as("the till was never asked").isEqualTo(orders);
+    }
+
+    @Test
+    @Order(9)
+    @DisplayName("spending in parts off: a used coupon is single use at the till too, so a refund re-opens nothing")
+    void singleUseWithPartialSpendingOff() throws Exception {
+        properties.getSimulator().setPartialSpending(false);
+        try {
+            Accepted accepted = borrow(member("E1075", "263771640075"));
+            JsonNode sold = simulator("POST", "/sales", sale(accepted.reference(), "150.00", "AVD-T3-005001", true),
+                    201);
+            String order = sold.path("data").path("store").path("order").path("increment_id").asString();
+            JsonNode refunded = simulator("POST", "/refunds", """
+                    { "orderNumber": "%s", "amount": 10.00, "reference": "AVD-RF-0051" }""".formatted(order), 201);
+            assertThat(refunded.path("data").path("voucher").path("status").asString()).isEqualTo("EXPIRED");
+            assertThat(refunded.path("data").path("assumptions").toString())
+                    .contains("A3 a refund does not re-open a single-use coupon");
+
+            JsonNode refused = simulator("POST", "/sales", sale(accepted.reference(), "10.00", "AVD-T3-005002",
+                    true), 404);
+
+            assertThat(refused.path("code").asString()).isEqualTo("SIM_COUPON_NOT_FOUND");
+            assertThat(jdbc.queryForMap("SELECT status, stopped_reason, redeemed_amount FROM vouchers WHERE id = ?",
+                    accepted.voucherIdOrZero())).containsEntry("status", "EXPIRED")
+                    .containsEntry("stopped_reason", "SINGLE_USE_EXHAUSTED")
+                    .satisfies(row -> assertThat((BigDecimal) row.get("redeemed_amount"))
+                            .isEqualByComparingTo("140.00"));
+            assertThat(jdbc.queryForList("SELECT kind FROM voucher_sync_issues WHERE voucher_id = ?", String.class,
+                    accepted.voucherIdOrZero())).contains("COUPON_EXHAUSTED").doesNotContain("LATE_SPEND");
+        } finally {
+            properties.getSimulator().setPartialSpending(true);
+        }
     }
 
     // ---- the borrower -----------------------------------------------------------------------------------------------

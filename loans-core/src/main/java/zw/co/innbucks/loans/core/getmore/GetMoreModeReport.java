@@ -224,7 +224,8 @@ public class GetMoreModeReport {
                 + " (codes start {}), and /lending/v1/getmore-simulator/** spends them for whoever holds"
                 + " GETMORE_SIMULATOR_API_KEY. Staging only; never where salaries are collected. Turn off with"
                 + " GETMORE_MODE=OFF. Simulator assumptions, not Magento: A1 each coupon is worth its own allowance;"
-                + " A2 it is spent in parts (partial spending {}); A3 a refund restores the balance; A4 the coupon's"
+                + " A2 it is spent in parts (partial spending {}); A3 a refund restores the balance (with partial"
+                + " spending off, a used coupon stays used, as a single-use one does); A4 the coupon's"
                 + " expiration_date is enforced at the till (enforcement {}).", node.isEmpty() ? "(unnamed)" : node,
                 simulator.getCouponPrefix(), simulator.isPartialSpending() ? "on" : "off",
                 simulator.isEnforceCouponExpiry() ? "on" : "off");

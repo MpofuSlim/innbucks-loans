@@ -30,6 +30,9 @@ final class SecurityErrorResponses {
     /** A body declared larger than the endpoint takes ({@link SimulatorApiKeyFilter}). */
     static final String PAYLOAD_TOO_LARGE_BODY =
             "{\"code\":\"PAYLOAD_TOO_LARGE\",\"message\":\"The request body must be at most %d bytes\"}";
+    /** A body that is not JSON, where only JSON is taken ({@link SimulatorApiKeyFilter}). */
+    static final String UNSUPPORTED_MEDIA_TYPE_BODY =
+            "{\"code\":\"UNSUPPORTED_MEDIA_TYPE\",\"message\":\"Send application/json\"}";
 
     private SecurityErrorResponses() {
     }
@@ -40,6 +43,10 @@ final class SecurityErrorResponses {
 
     static void payloadTooLarge(HttpServletResponse response, long limitBytes) throws IOException {
         write(response, HttpStatus.CONTENT_TOO_LARGE, PAYLOAD_TOO_LARGE_BODY.formatted(limitBytes));
+    }
+
+    static void unsupportedMediaType(HttpServletResponse response) throws IOException {
+        write(response, HttpStatus.UNSUPPORTED_MEDIA_TYPE, UNSUPPORTED_MEDIA_TYPE_BODY);
     }
 
     static void unauthorized(HttpServletRequest request, HttpServletResponse response,

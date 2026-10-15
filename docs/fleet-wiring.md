@@ -521,9 +521,10 @@ marked "TEST code, not valid in store."
 `/lending/**` route, no gateway change), exist only on a SIMULATED host (a plain
 404 everywhere else, whatever is sent) and only for whoever holds
 `GETMORE_SIMULATOR_API_KEY` in `X-Api-Key`. Their own security chain checks the key
-in constant time and refuses a body over 8 KiB before anything reads it (Boot's
-FormContentFilter, which would read a form-encoded PUT, PATCH or DELETE ahead of
-every chain, is switched off); no loans token reaches them:
+in constant time and refuses a body over 8 KiB (413), or one that is not JSON (415:
+Tomcat parses a form or multipart body itself, past any cap), before anything reads
+it (Boot's FormContentFilter, which would read a form-encoded PUT, PATCH or DELETE
+ahead of every chain, is switched off); no loans token reaches them:
 
 | Action | Does |
 |---|---|
@@ -535,7 +536,9 @@ every chain, is switched off); no loans token reaches them:
 | `POST /faults`, `DELETE /faults` | Fail the store's next calls (UNAVAILABLE, REJECTED, LOSE_RESPONSE), or stop. |
 
 Each is synced into loans at once. Every use is logged at WARN, audited as
-`GETMORE_SIMULATOR_<ACTION>` with the caller's address, `X-Forwarded-For` and the
+`GETMORE_SIMULATOR_<ACTION>` with the caller's address, the last 64 characters of
+`X-Forwarded-For` (where nginx and the gateway append the hops they saw; anything
+but an address list's characters becomes `_`), the voucher's masked code and the
 first 8 hex characters of the key's SHA-256 (never the key), and counted on
 `loans.getmore.simulator.actions{action}`. Whoever holds that key can spend and
 refund every simulated voucher: it must never be set where salaries are collected.

@@ -545,6 +545,12 @@ public final class GetMoreApiExamples {
               "message": "The request body must be at most 8192 bytes"
             }""";
 
+    public static final String SIMULATOR_NOT_JSON = """
+            {
+              "code": "UNSUPPORTED_MEDIA_TYPE",
+              "message": "Send application/json"
+            }""";
+
     public static final String SALE_INVALID = """
             {
               "code": "VALIDATION_ERROR",

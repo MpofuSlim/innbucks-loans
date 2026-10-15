@@ -4,6 +4,7 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -190,6 +194,91 @@ class SimulatorApiKeyFilterTest {
                 length.set(((HttpServletRequest) req).getInputStream().readAllBytes().length));
 
         assertThat(length.get()).isEqualTo(SimulatorApiKeyFilter.MAX_BODY_BYTES);
+    }
+
+    @Test
+    @DisplayName("the right key with a body that is not JSON (form, multipart, anything): 415, never read or parsed")
+    void notJson() throws Exception {
+        for (String type : new String[]{"application/x-www-form-urlencoded", "multipart/form-data; boundary=sim",
+                "text/plain", "application/xml", "not a media type"}) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST",
+                    "/lending/v1/getmore-simulator/sales") {
+                @Override
+                public long getContentLengthLong() {
+                    return -1;
+                }
+
+                @Override
+                public ServletInputStream getInputStream() {
+                    throw new AssertionError("the body was read");
+                }
+
+                @Override
+                public Map<String, String[]> getParameterMap() {
+                    throw new AssertionError("the body was parsed as parameters");
+                }
+
+                @Override
+                public Collection<Part> getParts() {
+                    throw new AssertionError("the body was parsed as parts");
+                }
+            };
+            request.setContentType(type);
+            request.addHeader("X-Api-Key", KEY);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockFilterChain chain = new MockFilterChain();
+
+            filter.doFilter(request, response, chain);
+
+            assertThat(response.getStatus()).as(type).isEqualTo(415);
+            assertThat(response.getContentAsString())
+                    .isEqualTo("{\"code\":\"UNSUPPORTED_MEDIA_TYPE\",\"message\":\"Send application/json\"}");
+            assertThat(chain.getRequest()).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("JSON in any spelling, or no type at all, goes on")
+    void jsonGoesOn() {
+        for (String type : new String[]{null, "application/json", "application/json;charset=UTF-8",
+                "APPLICATION/JSON; charset=utf-8"}) {
+            assertThat(SimulatorApiKeyFilter.jsonOrNone(type)).as(String.valueOf(type)).isTrue();
+        }
+        assertThat(SimulatorApiKeyFilter.jsonOrNone("application/x-www-form-urlencoded")).isFalse();
+        assertThat(SimulatorApiKeyFilter.jsonOrNone(";;")).isFalse();
+    }
+
+    @Test
+    @DisplayName("past the filter, parameters are the query string's alone and there are no parts: the body is reached"
+            + " only through the capped stream")
+    void parametersFromTheQueryOnly() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/lending/v1/getmore-simulator/sales") {
+            @Override
+            public Map<String, String[]> getParameterMap() {
+                throw new AssertionError("the container's parameters were asked for");
+            }
+
+            @Override
+            public Collection<Part> getParts() {
+                throw new AssertionError("the container's parts were asked for");
+            }
+        };
+        request.addHeader("X-Api-Key", KEY);
+        request.setContentType("application/json");
+        request.setQueryString("a=1&b=x%20y&a=2&bad=%zz&&flag");
+        AtomicReference<HttpServletRequest> seen = new AtomicReference<>();
+
+        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> seen.set((HttpServletRequest) req));
+
+        HttpServletRequest capped = seen.get();
+        assertThat(capped.getParameterMap()).containsOnlyKeys("a", "b", "flag");
+        assertThat(capped.getParameterValues("a")).containsExactly("1", "2");
+        assertThat(capped.getParameter("b")).isEqualTo("x y");
+        assertThat(capped.getParameter("flag")).isEmpty();
+        assertThat(capped.getParameter("bad")).isNull();
+        assertThat(Collections.list(capped.getParameterNames())).containsExactly("a", "b", "flag");
+        assertThat(capped.getParts()).isEmpty();
+        assertThat(capped.getPart("listing")).isNull();
     }
 
     @Test
