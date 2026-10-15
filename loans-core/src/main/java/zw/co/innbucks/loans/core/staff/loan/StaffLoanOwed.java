@@ -33,7 +33,8 @@ import java.util.Set;
  * still open at the cut-off and the loan is reduced to what is spent (more can be spent after), when the bank or the
  * store stopped the voucher and the debt stands (whether the full amount is owed for a voucher taken away is the
  * owner's decision, Q10), and whatever the treatment when loans' copy may be behind GetMore's: last read before the
- * cut-off, stopped by a sync issue, or with a sale held at the till. Under the reduced treatment a loan with interest
+ * cut-off, stopped by a sync issue, with a sale held at the till, or its coupon deleted by the store at a time loans
+ * cannot date (no sync saw it gone until after the cut-off). Under the reduced treatment a loan with interest
  * is provisional too: what is spent is not what is owed then. The amount is never below zero or above the loan's
  * whole repayment: {@link #at} refuses one that would be ({@link OutOfRange}), and the statement shows such a loan as
  * {@link #inconsistent} instead.</p>
@@ -57,7 +58,11 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
         VOUCHER_UNKNOWN,
         /** Its voucher was cancelled before the cut-off with nothing spent: nothing is collected. */
         VOUCHER_CANCELLED,
-        /** The bank or GetMore stopped its voucher before its own expiry (BANK_STOPPED, STORE_WITHDRAWN). */
+        /**
+         * The bank or GetMore stopped its voucher before its own expiry (BANK_STOPPED, STORE_WITHDRAWN): never final
+         * under DEBT_STANDS. Or GetMore deleted its coupon at a time loans cannot date (no sync saw it gone until after
+         * the cut-off): never final under either treatment.
+         */
         VOUCHER_STOPPED,
         /** Its voucher could still be spent at the cut-off. */
         VOUCHER_OPEN,
@@ -108,8 +113,12 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
      * own, as the rows' {@code balance_after} has it. So what was spent less refunded is never below zero.</p>
      *
      * @param state         CANCELLED when cancelled before the cut-off; REDEEMED when all of it was spent by then;
-     *                      EXPIRED when it had lapsed or been stopped by then; otherwise PARTIALLY_REDEEMED or ISSUED
-     * @param stoppedReason why it was stopped early, when it had EXPIRED by the cut-off; null otherwise
+     *                      EXPIRED when it had lapsed or been stopped by then (a single-use coupon from its one use,
+     *                      when that was before the cut-off, however late a sync noticed it); otherwise
+     *                      PARTIALLY_REDEEMED or ISSUED
+     * @param stoppedReason why it was stopped early, when it had EXPIRED by the cut-off; STORE_WITHDRAWN too on a
+     *                      voucher still open then by its own dates, when GetMore's deletion was noticed only after
+     *                      the cut-off and cannot be dated ({@link #stopUndated}); null otherwise
      * @param spentNet      spent before the cut-off, less what was refunded before it
      * @param refunded      refunded before the cut-off, each refund from when its order's spends covered it
      * @param held          ordered at GetMore and not invoiced, at the last sync
@@ -129,13 +138,14 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
         public static VoucherAtCutoff of(Voucher voucher, Collection<VoucherRedemption> spends,
                                          Collection<VoucherRefund> refunds, LocalDateTime cutoff,
                                          LocalDate settledBy) {
-            Map<Long, List<Event>> byOrder = new HashMap<>();
-            spends.stream()
+            List<VoucherRedemption> sales = spends.stream()
                     .filter(spend -> voucher.getId().equals(spend.getVoucherId())
                             && spend.getSource() == VoucherRedemptionSource.GETMORE_SYNC
                             && known(spend.getSettlementCycle(), settledBy))
-                    .forEach(spend -> byOrder.computeIfAbsent(spend.getExternalOrderId(), order -> new ArrayList<>())
-                            .add(new Event(spend.getRedeemedAt(), false, spend.getId(), spend.getAmount())));
+                    .toList();
+            Map<Long, List<Event>> byOrder = new HashMap<>();
+            sales.forEach(spend -> byOrder.computeIfAbsent(spend.getExternalOrderId(), order -> new ArrayList<>())
+                    .add(new Event(spend.getRedeemedAt(), false, spend.getId(), spend.getAmount())));
             refunds.stream()
                     .filter(refund -> voucher.getId().equals(refund.getVoucherId())
                             && known(refund.getSettlementCycle(), settledBy))
@@ -149,24 +159,40 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
                 refunded = refunded.add(order[1]);
             }
             BigDecimal net = spent.subtract(refunded);
+            VoucherStopReason stopped = voucher.getStoppedReason();
             VoucherStatus state;
             if (voucher.getCancelledAt() != null && voucher.getCancelledAt().isBefore(cutoff)) {
                 state = VoucherStatus.CANCELLED;
             } else if (net.compareTo(voucher.getFaceValue()) >= 0) {
                 state = VoucherStatus.REDEEMED;
-            } else if (!voucher.getExpiresAt().isAfter(cutoff)) {
+            } else if (!voucher.getExpiresAt().isAfter(cutoff) || usedUpBefore(voucher, sales, cutoff)) {
                 state = VoucherStatus.EXPIRED;
             } else if (net.signum() > 0) {
                 state = VoucherStatus.PARTIALLY_REDEEMED;
             } else {
                 state = VoucherStatus.ISSUED;
             }
+            // GetMore's deletion of a coupon is dated by the sync that noticed it: noticed after the cut-off, it may
+            // have come before it, so the stop is kept on a voucher still open by its own dates (stopUndated()).
+            boolean undated = state.isOpen() && stopped == VoucherStopReason.STORE_WITHDRAWN;
             LocalDateTime synced = voucher.getSyncedAt();
             return new VoucherAtCutoff(voucher.getId(), state,
-                    state == VoucherStatus.EXPIRED ? voucher.getStoppedReason() : null, voucher.getCurrency(),
+                    state == VoucherStatus.EXPIRED || undated ? stopped : null, voucher.getCurrency(),
                     voucher.getFaceValue(), net, refunded, voucher.getHeldAmount() == null ? ZERO
                     : voucher.getHeldAmount(), synced, voucher.getSyncBlockedBy(),
                     synced == null || synced.isBefore(cutoff));
+        }
+
+        /**
+         * Whether a single-use coupon stopped as used up ({@code SINGLE_USE_EXHAUSTED}) was used before the cut-off. Its
+         * stop is dated by the sync that noticed the use, which can be days after it (nothing syncs on a timer): the
+         * coupon was used up at its one use, the first of its GetMore sales. A use only held at the till (no sale yet)
+         * dates nothing: the voucher reads as open, and the held sale keeps the line provisional.
+         */
+        private static boolean usedUpBefore(Voucher voucher, List<VoucherRedemption> sales, LocalDateTime cutoff) {
+            return voucher.getStoppedReason() == VoucherStopReason.SINGLE_USE_EXHAUSTED && sales.stream()
+                    .map(VoucherRedemption::getRedeemedAt).filter(Objects::nonNull)
+                    .anyMatch(used -> used.isBefore(cutoff));
         }
 
         /** A sale or a refund of one order, as the replay below needs it. */
@@ -214,9 +240,17 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
             return settledBy == null || (settlementCycle != null && !settlementCycle.isAfter(settledBy));
         }
 
-        /** Whether it could still be spent at the cut-off. */
+        /**
+         * Whether GetMore deleted its coupon at a time loans cannot date: noticed by a sync after the cut-off, so it
+         * may have been gone before it. Neither open nor closed at the cut-off, as far as loans knows.
+         */
+        public boolean stopUndated() {
+            return state.isOpen() && stoppedReason != null;
+        }
+
+        /** Whether it could still be spent at the cut-off, as far as loans knows. */
         public boolean open() {
-            return state.isOpen();
+            return state.isOpen() && !stopUndated();
         }
     }
 
@@ -274,6 +308,14 @@ public record StaffLoanOwed(BigDecimal amountToCollect, boolean finalAmount, Big
                 yield checked(ZERO, true, ZERO, null, flags, totalRepayable);
             }
             case ISSUED, PARTIALLY_REDEEMED -> {
+                if (voucher.stopUndated()) {
+                    // GetMore deleted the coupon, and no sync saw it until after the cut-off: it may have been taken
+                    // away before payday, so what was spent is never collected as final (Q10), nor the whole
+                    // repayment.
+                    flags.add(Flag.VOUCHER_STOPPED);
+                    yield checked(net, false, ZERO, reduced ? voucher.faceValue() : totalRepayable, flags,
+                            totalRepayable);
+                }
                 flags.add(Flag.VOUCHER_OPEN);
                 BigDecimal open = voucher.faceValue().subtract(net);
                 yield reduced ? checked(net, false, open, voucher.faceValue(), flags, totalRepayable)

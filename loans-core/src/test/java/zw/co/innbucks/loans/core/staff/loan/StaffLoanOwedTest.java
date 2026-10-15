@@ -276,6 +276,128 @@ class StaffLoanOwedTest {
     }
 
     @Test
+    @DisplayName("a single-use coupon used before the cut-off is used up then, however late the sync that noticed it")
+    void singleUseUsedUpBeforeTheCutoff() {
+        // Bought 60.00 of 150.00 on 2 November and not opened again: the first sync is payday's, at 08:00 on the
+        // 20th, which stops the voucher then. At the cut-off the coupon had been used up for 18 days.
+        LocalDateTime payday = LocalDateTime.of(2026, 11, 20, 6, 0);
+        Voucher usedUp = voucher().expiresAt(payday).status(VoucherStatus.EXPIRED).redeemedAmount(
+                new BigDecimal("60.00")).stoppedReason(VoucherStopReason.SINGLE_USE_EXHAUSTED).syncedAt(payday).build();
+        List<VoucherRedemption> sale = List.of(spend(1, "60.00", LocalDateTime.of(2026, 11, 2, 8, 0), null));
+
+        VoucherAtCutoff at = VoucherAtCutoff.of(usedUp, sale, List.of(), CUTOFF, null);
+
+        assertThat(at.state()).isEqualTo(VoucherStatus.EXPIRED);
+        assertThat(at.stoppedReason()).isEqualTo(VoucherStopReason.SINGLE_USE_EXHAUSTED);
+        assertThat(at.open()).isFalse();
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT), at))
+                .satisfies(owed -> {
+                    assertThat(owed.amountToCollect()).isEqualByComparingTo("60.00");
+                    assertThat(owed.finalAmount()).isTrue();
+                    assertThat(owed.couldRiseTo()).isNull();
+                    assertThat(owed.openBalance()).isEqualByComparingTo("0.00");
+                    assertThat(owed.flags()).isEmpty();
+                });
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS), at)).satisfies(owed -> {
+            assertThat(owed.amountToCollect()).isEqualByComparingTo("150.00");
+            assertThat(owed.finalAmount()).isTrue();
+        });
+
+        // Used after the cut-off (or at it: that sale counts from it), the coupon was open then.
+        for (LocalDateTime used : List.of(CUTOFF, CUTOFF.plusHours(3))) {
+            assertThat(VoucherAtCutoff.of(usedUp, List.of(spend(1, "60.00", used, null)), List.of(), CUTOFF, null))
+                    .satisfies(open -> {
+                        assertThat(open.state()).isEqualTo(VoucherStatus.ISSUED);
+                        assertThat(open.stoppedReason()).isNull();
+                        assertThat(open.open()).isTrue();
+                    });
+        }
+        // Its one use only held at the till at the last sync (no sale yet): nothing dates it, the held sale keeps the
+        // line provisional.
+        Voucher held = voucher().expiresAt(payday).status(VoucherStatus.EXPIRED).redeemedAmount(new BigDecimal("0.00"))
+                .heldAmount(new BigDecimal("60.00")).stoppedReason(VoucherStopReason.SINGLE_USE_EXHAUSTED)
+                .syncedAt(payday).build();
+        VoucherAtCutoff onlyHeld = VoucherAtCutoff.of(held, List.of(), List.of(), CUTOFF, null);
+        assertThat(onlyHeld.state()).isEqualTo(VoucherStatus.ISSUED);
+        assertThat(onlyHeld.stoppedReason()).isNull();
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS), onlyHeld)).satisfies(owed -> {
+            assertThat(owed.finalAmount()).isFalse();
+            assertThat(owed.flags()).containsExactly(Flag.VOUCHER_OPEN, Flag.HELD_SALES);
+        });
+        // A sale of another voucher, or one at the till, dates nothing.
+        VoucherRedemption other = VoucherRedemption.builder().id(5L).voucherId(10L).amount(new BigDecimal("60.00"))
+                .source(VoucherRedemptionSource.GETMORE_SYNC).redeemedAt(CUTOFF.minusDays(9)).build();
+        VoucherRedemption till = VoucherRedemption.builder().id(6L).voucherId(9L).amount(new BigDecimal("60.00"))
+                .source(VoucherRedemptionSource.TILL).redeemedAt(CUTOFF.minusDays(9)).build();
+        assertThat(VoucherAtCutoff.of(usedUp, List.of(other, till), List.of(), CUTOFF, null).state())
+                .isEqualTo(VoucherStatus.ISSUED);
+    }
+
+    @Test
+    @DisplayName("a coupon GetMore deleted, seen gone only after the cut-off: stopped, never final, the debt or not")
+    void storeWithdrawalNoticedAfterTheCutoff() {
+        // Issued 25 October to expire 24 November; GetMore deleted the coupon on 10 November and nothing read it
+        // until payday's sync at 08:00 on the 20th, which stopped the voucher then. When it went cannot be known.
+        LocalDateTime payday = LocalDateTime.of(2026, 11, 20, 6, 0);
+        Voucher withdrawn = voucher().issuedAt(LocalDateTime.of(2026, 10, 25, 8, 0)).expiresAt(payday)
+                .status(VoucherStatus.EXPIRED).redeemedAmount(new BigDecimal("40.00"))
+                .stoppedReason(VoucherStopReason.STORE_WITHDRAWN).couponWithdrawnAt(payday).syncedAt(payday).build();
+        List<VoucherRedemption> sale = List.of(spend(1, "40.00", LocalDateTime.of(2026, 11, 2, 8, 0), null));
+
+        VoucherAtCutoff at = VoucherAtCutoff.of(withdrawn, sale, List.of(), CUTOFF, null);
+
+        assertThat(at.state()).as("open by its own dates").isEqualTo(VoucherStatus.PARTIALLY_REDEEMED);
+        assertThat(at.stoppedReason()).isEqualTo(VoucherStopReason.STORE_WITHDRAWN);
+        assertThat(at.stopUndated()).isTrue();
+        assertThat(at.open()).as("not reported open").isFalse();
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS), at)).satisfies(owed -> {
+            assertThat(owed.amountToCollect()).isEqualByComparingTo("40.00");
+            assertThat(owed.finalAmount()).isFalse();
+            assertThat(owed.couldRiseTo()).isEqualByComparingTo("150.00");
+            assertThat(owed.openBalance()).isEqualByComparingTo("0.00");
+            assertThat(owed.flags()).containsExactly(Flag.VOUCHER_STOPPED);
+        });
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT), at))
+                .satisfies(owed -> {
+                    assertThat(owed.amountToCollect()).isEqualByComparingTo("40.00");
+                    assertThat(owed.finalAmount()).isFalse();
+                    assertThat(owed.couldRiseTo()).isEqualByComparingTo("150.00");
+                    assertThat(owed.openBalance()).isEqualByComparingTo("0.00");
+                    assertThat(owed.flags()).containsExactly(Flag.VOUCHER_STOPPED);
+                });
+        // With interest, the debt standing: could rise to the whole repayment, not the voucher.
+        assertThat(StaffLoanOwed.at(loan(StaffLoanStatus.DISBURSED, UnredeemedVoucherTreatment.DEBT_STANDS,
+                "160.00"), at).couldRiseTo()).isEqualByComparingTo("160.00");
+        assertThat(StaffLoanOwed.inconsistent(new BigDecimal("150.00"), at).openBalance())
+                .isEqualByComparingTo("0.00");
+        // Nothing spent: the same.
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS),
+                VoucherAtCutoff.of(withdrawn, List.of(), List.of(), CUTOFF, null))).satisfies(owed -> {
+            assertThat(owed.amountToCollect()).isEqualByComparingTo("0.00");
+            assertThat(owed.finalAmount()).isFalse();
+            assertThat(owed.flags()).containsExactly(Flag.VOUCHER_STOPPED);
+        });
+        // A bank stop is loans' own action, dated: after the cut-off the voucher was open then, and the debt stands.
+        Voucher bank = voucher().expiresAt(payday).status(VoucherStatus.EXPIRED)
+                .stoppedReason(VoucherStopReason.BANK_STOPPED).build();
+        VoucherAtCutoff bankAt = VoucherAtCutoff.of(bank, sale, List.of(), CUTOFF, null);
+        assertThat(bankAt.stoppedReason()).isNull();
+        assertThat(bankAt.stopUndated()).isFalse();
+        assertThat(StaffLoanOwed.at(disbursed(UnredeemedVoucherTreatment.DEBT_STANDS), bankAt)).satisfies(owed -> {
+            assertThat(owed.amountToCollect()).isEqualByComparingTo("150.00");
+            assertThat(owed.finalAmount()).isTrue();
+            assertThat(owed.flags()).containsExactly(Flag.VOUCHER_OPEN);
+        });
+        // Cancelled before the cut-off, it is cancelled whatever stopped it since.
+        assertThat(VoucherAtCutoff.of(voucher().expiresAt(payday).cancelledAt(CUTOFF.minusDays(1))
+                .stoppedReason(VoucherStopReason.STORE_WITHDRAWN).build(), List.of(), List.of(), CUTOFF, null))
+                .satisfies(cancelled -> {
+                    assertThat(cancelled.state()).isEqualTo(VoucherStatus.CANCELLED);
+                    assertThat(cancelled.stoppedReason()).isNull();
+                });
+    }
+
+    @Test
     @DisplayName("stale when last read before the cut-off or never; held is as last synced")
     void staleAndHeld() {
         assertThat(VoucherAtCutoff.of(voucher().syncedAt(CUTOFF.minusNanos(1000)).build(), List.of(), List.of(),

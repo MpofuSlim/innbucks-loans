@@ -502,24 +502,30 @@ its voucher stood at the cut-off, 00:00 market time on the payday: the whole
 repayment under `DEBT_STANDS`, what was spent under `REDUCED_TO_AMOUNT_SPENT`, and
 whether that is final (a voucher still open under `REDUCED_TO_AMOUNT_SPENT` or
 stopped by the bank or GetMore under `DEBT_STANDS` is not, nor, under either, one
-not read since the cut-off, blocked by a sync issue or with a sale held at the
-till). It also states what to pay GetMore for the cycle: every sale less every
-refund of the store's vouchers made before the cut-off and not paid by an earlier
-payday. Written-off loans are listed apart, recovered outside payroll. Read GetMore
-first with `POST .../{payday}/getmore-syncs?after=0&limit=50`, repeating with
-`nextAfter` until it is null (it also withdraws what cancelled loans' issuances
-left at GetMore); a page stops early, `stoppedEarly: true`, once GetMore could not
-be read for 3 vouchers in a row or after 60 seconds, so a GetMore outage never holds
-a request for long. `POST .../{payday}/finalisation` (FINANCE, SUPER_ADMIN), from
-the cut-off on, keeps the lines as sent to payroll and marks the GetMore rows paid,
-in one step, one finalisation of a store at a time; with anything not final it
-needs `acceptNonFinal` and a reason. A sale or refund made before the cut-off but
+not read since the cut-off, blocked by a sync issue, with a sale held at the till,
+or whose coupon GetMore deleted at a time loans cannot date because no sync saw it
+gone until after the cut-off). A single-use coupon counts as used up from its one
+sale, however late a sync noticed it. It also states what to pay GetMore for the
+cycle: every sale less every refund of the store's vouchers made before the
+cut-off and not paid by an earlier payday. Written-off loans are listed apart,
+recovered outside payroll. Read GetMore first with
+`POST .../{payday}/getmore-syncs?after=0&limit=50`, repeating with `nextAfter`
+until it is null (the first page also withdraws what cancelled loans' issuances
+left at GetMore, within the same 60 seconds, then syncs at least one voucher;
+issuances it does not reach wait for the next first page); a page stops early,
+`stoppedEarly: true`, once GetMore could not be read for 3 vouchers in a row or
+after 60 seconds, so a GetMore outage never holds a request for long.
+`POST .../{payday}/finalisation` (FINANCE, SUPER_ADMIN), from the cut-off on,
+keeps the lines as sent to payroll and marks the GetMore rows paid, in one step,
+one finalisation of a store at a time; with anything not final it needs
+`acceptNonFinal` and a reason. A sale or refund made before the cut-off but
 recorded after the payday was finalised is paid in the next payday, shown `late`,
-and listed against its loan. Nothing here moves money, no job runs it, and a loan's
-outstanding amount (arrears, write-off) is unchanged. A SIMULATED host's statement
-covers the simulated store only and says "SIMULATED: not for payroll"; every other
-host's covers the LIVE store. A loan whose voucher is in the other store is left
-out either way, whatever its status (`SIMULATED` or `LIVE` in `excluded`).
+and listed against its loan. Nothing here moves money, no job runs it, and a
+loan's outstanding amount (arrears, write-off) is unchanged. A SIMULATED host's
+statement covers the simulated store only and says "SIMULATED: not for payroll"
+(the statement, the payday sync and the finalisation); every other host's covers
+the LIVE store. A loan whose voucher is in the other store is left out either way,
+whatever its status (`SIMULATED` or `LIVE` in `excluded`).
 
 **The simulator: staging only, bound to its node.** With `GETMORE_MODE=SIMULATED`
 loans refuses to start unless all of these hold:

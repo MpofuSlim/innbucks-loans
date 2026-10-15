@@ -286,12 +286,14 @@ public class StaffLoanCollectionService {
     /**
      * Reads GetMore for one page of the vouchers whose sales or refunds can fall into the payday's cycle (keyset on
      * voucher id: issued before the cut-off, expiring no earlier than the previous payday's cut-off less the sync's
-     * after-expiry window), whatever loan they belong to; the first page also cleans up every cancelled loan's voucher
-     * issuance in this store. Called with no transaction open; a voucher that cannot be read is counted and the rest
-     * go on, but the page stops early once GetMore could not be read for {@value #SYNC_STOP_AFTER_UNAVAILABLE}
-     * vouchers in a row, or when it has run {@link #SYNC_PAGE_BUDGET}: each voucher's calls are bounded only by their
-     * timeouts, and a slow GetMore must not hold a request for many minutes. A page that stopped early says so and
-     * gives the voucher it got to as {@code nextAfter}.
+     * after-expiry window), whatever loan they belong to; the first page also cleans up the cancelled loans' voucher
+     * issuances in this store first. Called with no transaction open; a voucher that cannot be read is counted and the
+     * rest go on, but the page stops early once GetMore could not be read for {@value #SYNC_STOP_AFTER_UNAVAILABLE}
+     * vouchers in a row, or when it has run {@link #SYNC_PAGE_BUDGET}: each voucher's calls (and each cleanup's) are
+     * bounded only by their timeouts, and a slow GetMore must not hold a request for many minutes. The cleanups share
+     * that time: none is started once it has run out, and those not reached wait for the next first page (or a
+     * borrower's read, Credit's retry). Whatever the cleanups took, the page syncs at least one voucher, so the walk
+     * always moves on. A page that stopped early says so and gives the voucher it got to as {@code nextAfter}.
      *
      * @param after the last voucher id of the previous page; null or 0 for the first
      * @param limit 1 to 200; null for 50
@@ -314,18 +316,27 @@ public class StaffLoanCollectionService {
                     + " this host (GETMORE_MODE): nothing can be read for payday " + DAY.format(payday));
         }
         GetMoreMode mode = period.storeMode();
+        Instant deadline = marketTimeZone.clock().instant().plus(SYNC_PAGE_BUDGET);
         int cleanedUp = 0;
         if (from == 0) {
-            for (StaffLoanVoucherIssuance cancelling : issuanceRepository.findByStatusAndStoreModeOrderByIdAsc(
-                    StaffLoanVoucherIssuanceStatus.CANCELLING, mode)) {
-                if (issuer.cleanup(cancelling.getId()).withdrawn()) {
+            List<StaffLoanVoucherIssuance> cancelling = issuanceRepository.findByStatusAndStoreModeOrderByIdAsc(
+                    StaffLoanVoucherIssuanceStatus.CANCELLING, mode);
+            for (int tried = 0; tried < cancelling.size(); tried++) {
+                // Not stopped after failures in a row: a cleanup can fail for good on one issuance (codes GetMore
+                // will not withdraw), and stopping there would leave every later one to its other triggers.
+                if (!marketTimeZone.clock().instant().isBefore(deadline)) {
+                    log.warn("Payday {} sync of the {} store: out of time after {} of {} cancelled voucher"
+                                    + " issuance cleanup(s); the rest wait for the next first page", payday, mode,
+                            tried, cancelling.size());
+                    break;
+                }
+                if (issuer.cleanup(cancelling.get(tried).getId()).withdrawn()) {
                     cleanedUp++;
                 }
             }
         }
         List<Long> ids = voucherRepository.findGetMoreIdsForCycle(mode, period.cutoff(), period.expiresFrom(), from,
                 size);
-        Instant deadline = marketTimeZone.clock().instant().plus(SYNC_PAGE_BUDGET);
         int synced = 0;
         int unchanged = 0;
         int blocked = 0;
@@ -371,7 +382,7 @@ public class StaffLoanCollectionService {
                         + " unavailable, {} cancelled issuance(s) cleaned up; next after {}", payday, mode, from, synced,
                 unchanged, blocked, unavailable, cleanedUp, nextAfter);
         return new StaffLoanCollectionReport.Sync(synced, unchanged, blocked, unavailable, cleanedUp, nextAfter,
-                stoppedEarly);
+                stoppedEarly, period.simulated());
     }
 
     // ---- the statement ---------------------------------------------------------------------------------------------

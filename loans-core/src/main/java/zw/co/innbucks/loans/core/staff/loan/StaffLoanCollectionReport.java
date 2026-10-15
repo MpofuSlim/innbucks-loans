@@ -49,7 +49,9 @@ public record StaffLoanCollectionReport(LocalDate payday, LocalDateTime cutoff, 
      * @param status               the loan's status now
      * @param voucherId            its GetMore voucher; null when none
      * @param voucherStateAtCutoff the voucher's state at the cut-off; null when none
-     * @param stoppedReason        why the voucher was stopped early, when it had expired by the cut-off
+     * @param stoppedReason        why the voucher was stopped early, when it had expired by the cut-off; also
+     *                             STORE_WITHDRAWN on a voucher still open then by its own dates, when no sync saw
+     *                             GetMore's deletion until after the cut-off (flagged VOUCHER_STOPPED, never final)
      * @param spentNet             spent before the cut-off less refunded before it
      * @param refunded             refunded before the cut-off
      * @param held                 ordered at GetMore and not invoiced, at the voucher's last sync
@@ -141,12 +143,14 @@ public record StaffLoanCollectionReport(LocalDate payday, LocalDateTime cutoff, 
      * What one page of a payday sync did.
      *
      * @param unavailable  vouchers GetMore could not be read for (or another sync of was running)
-     * @param cleanedUp    cancelled loans' voucher issuances whose coupons were withdrawn (first page only)
+     * @param cleanedUp    cancelled loans' voucher issuances whose coupons were withdrawn (first page only, within
+     *                     the page's time: what it does not reach waits for the next first page)
      * @param nextAfter    the {@code after} of the next page; null when this was the last
      * @param stoppedEarly the page stopped before its last voucher: GetMore could not be read for several vouchers in
      *                     a row, or it ran out of time. {@code nextAfter} is the voucher it got to
+     * @param simulated    whether it read staging's simulated store: a test, not for payroll
      */
     public record Sync(int synced, int unchanged, int blocked, int unavailable, int cleanedUp, Long nextAfter,
-                       boolean stoppedEarly) {
+                       boolean stoppedEarly, boolean simulated) {
     }
 }

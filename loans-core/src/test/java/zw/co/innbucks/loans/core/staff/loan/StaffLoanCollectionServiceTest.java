@@ -682,6 +682,7 @@ class StaffLoanCollectionServiceTest {
         assertThat(first.unavailable()).as("a voucher that cannot be synced is counted, the rest go on").isEqualTo(1);
         assertThat(first.cleanedUp()).isEqualTo(1);
         assertThat(first.nextAfter()).isNull();
+        assertThat(first.simulated()).isFalse();
         assertThat(again.cleanedUp()).as("only the first page cleans up").isZero();
         verify(issuer, times(1)).cleanup(77L);
         assertThatThrownBy(() -> service.syncForPayday(PAYDAY, 0L, 201)).isInstanceOf(ValidationException.class)
@@ -741,6 +742,61 @@ class StaffLoanCollectionServiceTest {
         assertThat(line.finalAmount()).isFalse();
         assertThat(line.couldRiseTo()).isEqualByComparingTo("150.00");
         assertThat(line.flags()).containsExactly(StaffLoanOwed.Flag.VOUCHER_STOPPED);
+    }
+
+    @Test
+    @DisplayName("a coupon GetMore deleted that only payday's sync saw gone: what was spent, provisional, the debt or not")
+    void storeWithdrawnNoticedAfterTheCutoff() {
+        // Issued 25 October to expire 24 November; GetMore deleted the coupon on 10 November, and nothing read it
+        // until payday's sync at 08:00, which stopped the voucher then: after the cut-off, but not when it went.
+        StaffLoan loan = loan(181, "E1081", StaffLoanStatus.DISBURSED, UnredeemedVoucherTreatment.DEBT_STANDS,
+                PAYDAY, "GETMORE-1360");
+        Voucher voucher = voucher(35, loan, GetMoreMode.LIVE, utc("2026-10-25T06:00:00Z"),
+                utc("2026-11-20T06:00:00Z"));
+        spend(97, voucher, "40.00", utc("2026-11-02T08:00:00Z"));
+        ReflectionTestUtils.setField(voucher, "expiresAt", utc("2026-11-20T06:00:00Z"));
+        ReflectionTestUtils.setField(voucher, "status", VoucherStatus.EXPIRED);
+        ReflectionTestUtils.setField(voucher, "stoppedReason", VoucherStopReason.STORE_WITHDRAWN);
+        ReflectionTestUtils.setField(voucher, "couponWithdrawnAt", utc("2026-11-20T06:00:00Z"));
+
+        StaffLoanCollectionReport report = service.report(PAYDAY);
+        Line line = line(report, "SGL-2026-000181");
+
+        assertThat(line.voucherStateAtCutoff()).isEqualTo(VoucherStatus.PARTIALLY_REDEEMED);
+        assertThat(line.stoppedReason()).isEqualTo(VoucherStopReason.STORE_WITHDRAWN);
+        assertThat(line.amountToCollect()).isEqualByComparingTo("40.00");
+        assertThat(line.finalAmount()).isFalse();
+        assertThat(line.couldRiseTo()).isEqualByComparingTo("150.00");
+        assertThat(line.openBalance()).isEqualByComparingTo("0.00");
+        assertThat(line.flags()).containsExactly(StaffLoanOwed.Flag.VOUCHER_STOPPED);
+        assertThat(report.totals().getFirst().provisionalLoans()).isEqualTo(1);
+        now.set(Instant.parse("2026-11-20T06:30:00Z"));
+        assertThatThrownBy(() -> service.finalise(PAYDAY, null)).isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("1 line is not final");
+    }
+
+    @Test
+    @DisplayName("reduced to what was spent, a single-use coupon used before the cut-off is final at payday's sync")
+    void singleUseUsedUpBeforeTheCutoff() {
+        // 60.00 of 150.00 bought on 2 November; the first sync after it is payday's, at 08:00, which stops the
+        // single-use voucher then. It was used up on the 2nd: 60.00, final.
+        StaffLoan loan = loan(182, "E1082", StaffLoanStatus.DISBURSED,
+                UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT, PAYDAY, "GETMORE-1370");
+        Voucher voucher = voucher(36, loan, GetMoreMode.LIVE, utc("2026-10-25T06:00:00Z"),
+                utc("2026-11-20T06:00:00Z"));
+        spend(98, voucher, "60.00", utc("2026-11-02T08:00:00Z"));
+        ReflectionTestUtils.setField(voucher, "expiresAt", utc("2026-11-20T06:00:00Z"));
+        ReflectionTestUtils.setField(voucher, "status", VoucherStatus.EXPIRED);
+        ReflectionTestUtils.setField(voucher, "stoppedReason", VoucherStopReason.SINGLE_USE_EXHAUSTED);
+
+        Line line = line(service.report(PAYDAY), "SGL-2026-000182");
+
+        assertThat(line.voucherStateAtCutoff()).isEqualTo(VoucherStatus.EXPIRED);
+        assertThat(line.stoppedReason()).isEqualTo(VoucherStopReason.SINGLE_USE_EXHAUSTED);
+        assertThat(line.amountToCollect()).isEqualByComparingTo("60.00");
+        assertThat(line.finalAmount()).isTrue();
+        assertThat(line.openBalance()).isEqualByComparingTo("0.00");
+        assertThat(line.flags()).isEmpty();
     }
 
     @Test
@@ -928,5 +984,73 @@ class StaffLoanCollectionServiceTest {
         assertThat(first.unchanged()).isEqualTo(1);
         assertThat(second.nextAfter()).isEqualTo(41L);
         assertThat(synced).containsExactly(40L, 41L);
+    }
+
+    @Test
+    @DisplayName("the first page's cleanups share its 60 seconds: none starts after them, and one voucher is still synced")
+    void paydaySyncCleanupsShareTheBudget() {
+        sixVouchers();
+        for (long id = 77; id <= 79; id++) {
+            cancelling.add(StaffLoanVoucherIssuance.builder().id(id).build());
+        }
+        List<Long> cleaned = new ArrayList<>();
+        when(issuer.cleanup(anyLong())).thenAnswer(i -> {
+            cleaned.add(i.getArgument(0));
+            now.set(now.get().plus(StaffLoanCollectionService.SYNC_PAGE_BUDGET).plus(Duration.ofSeconds(1)));
+            return StaffLoanVoucherIssuer.Cleanup.FAILED;
+        });
+
+        StaffLoanCollectionReport.Sync first = service.syncForPayday(PAYDAY, 0L, 50);
+
+        assertThat(cleaned).as("78 and 79 wait for the next first page").containsExactly(77L);
+        assertThat(synced).as("the walk still moves on").containsExactly(40L);
+        assertThat(first.cleanedUp()).isZero();
+        assertThat(first.stoppedEarly()).isTrue();
+        assertThat(first.nextAfter()).isEqualTo(40L);
+
+        StaffLoanCollectionReport.Sync second = service.syncForPayday(PAYDAY, first.nextAfter(), 50);
+
+        assertThat(cleaned).as("only the first page cleans up").containsExactly(77L);
+        assertThat(synced).containsExactly(40L, 41L, 42L, 43L, 44L, 45L);
+        assertThat(second.stoppedEarly()).isFalse();
+        assertThat(second.nextAfter()).isNull();
+
+        // The next first page tries every cancelled issuance again, from the first.
+        service.syncForPayday(PAYDAY, 0L, 50);
+
+        assertThat(cleaned).containsExactly(77L, 77L);
+    }
+
+    @Test
+    @DisplayName("cleanups that fail quickly do not stop the rest: one failing for good must not starve the others")
+    void paydaySyncCleanupFailuresDoNotStopTheOthers() {
+        sixVouchers();
+        for (long id = 77; id <= 81; id++) {
+            cancelling.add(StaffLoanVoucherIssuance.builder().id(id).build());
+        }
+        when(issuer.cleanup(anyLong())).thenAnswer(i -> (long) i.getArgument(0) < 81L
+                ? StaffLoanVoucherIssuer.Cleanup.FAILED : StaffLoanVoucherIssuer.Cleanup.WITHDRAWN);
+
+        StaffLoanCollectionReport.Sync first = service.syncForPayday(PAYDAY, 0L, 50);
+
+        verify(issuer).cleanup(81L);
+        assertThat(first.cleanedUp()).isEqualTo(1);
+        assertThat(synced).containsExactly(40L, 41L, 42L, 43L, 44L, 45L);
+        assertThat(first.stoppedEarly()).isFalse();
+        assertThat(first.nextAfter()).isNull();
+    }
+
+    @Test
+    @DisplayName("on the simulated host the payday sync says it read the simulated store")
+    void paydaySyncOnTheSimulatedHost() {
+        getMore.setMode(GetMoreMode.SIMULATED);
+        StaffLoan loan = loan(172, "E1072", StaffLoanStatus.DISBURSED, UnredeemedVoucherTreatment.DEBT_STANDS,
+                PAYDAY, "GETMORE-SIM-1302");
+        voucher(22, loan, GetMoreMode.SIMULATED, utc("2026-10-20T08:00:00Z"), utc("2026-11-20T06:00:00Z"));
+
+        StaffLoanCollectionReport.Sync sync = service.syncForPayday(PAYDAY, 0L, 50);
+
+        assertThat(sync.simulated()).isTrue();
+        assertThat(synced).containsExactly(22L);
     }
 }

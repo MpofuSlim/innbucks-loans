@@ -522,8 +522,11 @@ class StaffLoanGetMoreSimulatedFlowPostgresIT {
         long after = 0;
         int pages = 0;
         do {
-            JsonNode page = portal("POST", statement + "/getmore-syncs?after=" + after + "&limit=2",
-                    UserGroup.FINANCE, null, 200).path("data");
+            JsonNode answer = portal("POST", statement + "/getmore-syncs?after=" + after + "&limit=2",
+                    UserGroup.FINANCE, null, 200);
+            assertThat(answer.path("message").asString()).startsWith("SIMULATED: not for payroll. Payday ");
+            JsonNode page = answer.path("data");
+            assertThat(page.path("simulated").asBoolean()).isTrue();
             unavailable += page.path("unavailable").asInt();
             after = page.path("nextAfter").isNull() ? -1 : page.path("nextAfter").asLong();
             pages++;

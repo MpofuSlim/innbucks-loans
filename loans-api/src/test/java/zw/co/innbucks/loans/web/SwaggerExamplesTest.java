@@ -614,6 +614,13 @@ class SwaggerExamplesTest {
                     .isEqualByComparingTo(line.path("spentNet").decimalValue());
             assertThat(settlement.path("lines").get(0).path("voucherId").asLong()).isEqualTo(9);
         }
+        // The payday sync on staging reads the simulated store, and says so.
+        for (String sync : List.of(StaffLoanCollectionApiExamples.SYNCED,
+                StaffLoanCollectionApiExamples.SYNC_STOPPED_EARLY)) {
+            JsonNode body = JSON.readTree(sync);
+            assertThat(body.path("message").asString()).startsWith(StaffLoanCollectionService.NOT_FOR_PAYROLL + ". ");
+            assertThat(body.path("data").path("simulated").asBoolean()).isTrue();
+        }
         // Before the payday sync the voucher was last read when the simulator expired it: stale, and not final.
         JsonNode stale = before.path("data").path("lines").get(0);
         assertThat(stale.path("lastSyncedAt").asString()).isEqualTo(expired.path("syncedAt").asString());

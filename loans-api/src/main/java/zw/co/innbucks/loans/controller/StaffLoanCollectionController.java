@@ -66,7 +66,9 @@ public class StaffLoanCollectionController {
                     + " can change it: the voucher not read from GetMore since the cut-off (STALE), a blocking sync"
                     + " issue (SYNC_BLOCKED), a sale held at the till (HELD_SALES), the voucher still open under"
                     + " REDUCED_TO_AMOUNT_SPENT, or stopped by the bank or GetMore under DEBT_STANDS (couldRiseTo"
-                    + " says how far it could go); or, under either, its GetMore rows coming to below zero or above"
+                    + " says how far it could go); or, under either, a coupon GetMore deleted at a time loans cannot"
+                    + " date (VOUCHER_STOPPED, stoppedReason STORE_WITHDRAWN on a voucher open by its dates: no sync"
+                    + " saw it gone until after the cut-off), or its GetMore rows coming to below zero or above"
                     + " the repayment (ROWS_INCONSISTENT: the amount is held within those; check the rows)."
                     + " merchantSettlement is what to pay GetMore: every sale less every refund of the store's"
                     + " vouchers made before the cut-off and not paid for by an earlier payday; a row recorded after"
@@ -118,10 +120,12 @@ public class StaffLoanCollectionController {
                     + " whose sales or refunds can fall into the payday's cycle (issued before its cut-off and"
                     + " expiring no earlier than the previous payday's cut-off less the sync window), whatever loan"
                     + " they belong to, by voucher id: start with after=0 and repeat with nextAfter until it is null."
-                    + " The first page also withdraws what cancelled loans' voucher issuances left at GetMore. A"
-                    + " voucher GetMore could not be read for is counted unavailable and the rest go on, but a page"
-                    + " stops early (stoppedEarly true, nextAfter the voucher it got to) once GetMore could not be"
-                    + " read for 3 vouchers in a row, or after 60 seconds; sync again before finalising.")
+                    + " The first page first withdraws what cancelled loans' voucher issuances left at GetMore, within"
+                    + " the same 60 seconds (what it does not reach waits for the next first page), then syncs at"
+                    + " least one voucher. A voucher GetMore could not be read for is counted unavailable and the rest"
+                    + " go on, but a page stops early (stoppedEarly true, nextAfter the voucher it got to) once GetMore"
+                    + " could not be read for 3 vouchers in a row, or after 60 seconds; sync again before finalising."
+                    + " On staging's simulated store (simulated true) the answer says it is not for payroll.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "One page synced, or stopped early",
                     content = @Content(examples = {
@@ -200,9 +204,13 @@ public class StaffLoanCollectionController {
         return ApiResult.ok(StaffLoanCollectionService.finalisedMessage(report), report);
     }
 
-    /** What one page of the payday sync did, in words, and whether there is another. */
+    /**
+     * What one page of the payday sync did, in words, and whether there is another; on staging's simulated store,
+     * first that it is not for payroll.
+     */
     static String syncMessage(LocalDate payday, StaffLoanCollectionReport.Sync sync) {
-        return "Payday " + DAY.format(payday) + ": " + sync.synced() + " synced, " + sync.unchanged() + " unchanged, "
+        return (sync.simulated() ? StaffLoanCollectionService.NOT_FOR_PAYROLL + ". " : "") + "Payday "
+                + DAY.format(payday) + ": " + sync.synced() + " synced, " + sync.unchanged() + " unchanged, "
                 + sync.blocked() + " blocked, " + sync.unavailable() + " unavailable; " + sync.cleanedUp()
                 + " cancelled voucher " + (sync.cleanedUp() == 1 ? "issuance" : "issuances") + " cleaned up; "
                 + (sync.stoppedEarly() ? "stopped early, GetMore is slow or not answering: repeat with after="

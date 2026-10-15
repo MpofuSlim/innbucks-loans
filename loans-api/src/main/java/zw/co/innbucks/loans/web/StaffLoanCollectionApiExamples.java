@@ -159,7 +159,7 @@ public final class StaffLoanCollectionApiExamples {
     public static final String SYNCED = """
             {
               "code": "OK",
-              "message": "Payday 20 Nov 2026: 0 synced, 1 unchanged, 0 blocked, 0 unavailable; 0 cancelled voucher issuances cleaned up; done",
+              "message": "SIMULATED: not for payroll. Payday 20 Nov 2026: 0 synced, 1 unchanged, 0 blocked, 0 unavailable; 0 cancelled voucher issuances cleaned up; done",
               "data": {
                 "synced": 0,
                 "unchanged": 1,
@@ -167,7 +167,8 @@ public final class StaffLoanCollectionApiExamples {
                 "unavailable": 0,
                 "cleanedUp": 0,
                 "nextAfter": null,
-                "stoppedEarly": false
+                "stoppedEarly": false,
+                "simulated": true
               }
             }""";
 
@@ -178,7 +179,7 @@ public final class StaffLoanCollectionApiExamples {
     public static final String SYNC_STOPPED_EARLY = """
             {
               "code": "OK",
-              "message": "Payday 20 Nov 2026: 0 synced, 0 unchanged, 0 blocked, 3 unavailable; 0 cancelled voucher issuances cleaned up; stopped early, GetMore is slow or not answering: repeat with after=11 once it answers",
+              "message": "SIMULATED: not for payroll. Payday 20 Nov 2026: 0 synced, 0 unchanged, 0 blocked, 3 unavailable; 0 cancelled voucher issuances cleaned up; stopped early, GetMore is slow or not answering: repeat with after=11 once it answers",
               "data": {
                 "synced": 0,
                 "unchanged": 0,
@@ -186,7 +187,8 @@ public final class StaffLoanCollectionApiExamples {
                 "unavailable": 3,
                 "cleanedUp": 0,
                 "nextAfter": 11,
-                "stoppedEarly": true
+                "stoppedEarly": true,
+                "simulated": true
               }
             }""";
 
