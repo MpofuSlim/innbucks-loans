@@ -4,9 +4,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
@@ -50,6 +53,7 @@ class StaffLoanArrearsServiceTest {
     private final List<User> credit = new ArrayList<>();
     private final List<User> humanCapital = new ArrayList<>();
     private final StaffLoanProperties properties = new StaffLoanProperties();
+    private final GetMoreProperties getMore = new GetMoreProperties();
     private StaffLoanRepository loanRepository;
     private NotificationService notifications;
     private AuditService auditService;
@@ -73,7 +77,7 @@ class StaffLoanArrearsServiceTest {
         properties.setArrearsEscalationDays(30);
         service = new StaffLoanArrearsService(loanRepository, memberRepository, userRepository, notifications,
                 auditService, new StaffLoanPolicy(properties, new VoucherProperties()), properties,
-                new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-12-02T05:00:01Z"), ZoneOffset.UTC)));
+                new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-12-02T05:00:01Z"), ZoneOffset.UTC)), getMore);
     }
 
     private StaffLoan loan(long id, String employeeNumber, String name, StaffLoanStatus status, String amount,
@@ -197,9 +201,10 @@ class StaffLoanArrearsServiceTest {
         assertThat(csv.fileName()).isEqualTo("staff-loan-arrears-2026-12-02.csv");
         String[] rows = csv.content().split("\r\n");
         assertThat(rows).hasSize(3);
-        assertThat(rows[0]).startsWith("reference,employeeNumber,fullName,department,employmentStatus,grade,msisdn,");
+        assertThat(rows[0]).startsWith("reference,employeeNumber,fullName,department,employmentStatus,grade,msisdn,")
+                .endsWith(",employmentFlag,employmentFlagAction,simulated");
         assertThat(rows[1]).startsWith("SGL-2026-000131,E1031,\"'=HYPERLINK(\"\"x\"\")\",Retail Banking,ACTIVE,C4,")
-                .contains(",WRITTEN_OFF,USD,90.00,90.00,", ",73,DAYS_61_TO_90,true,false,,");
+                .contains(",WRITTEN_OFF,USD,90.00,90.00,", ",73,DAYS_61_TO_90,true,false,,").endsWith(",,,false");
         assertThat(rows[2]).startsWith("SGL-2026-000127,E1023,\"Mutasa, Blessing\",")
                 .contains(",2026-09-18T10:12:40+02:00,2026-10-20,43,DAYS_31_TO_60,true,true,,");
     }
@@ -291,6 +296,34 @@ class StaffLoanArrearsServiceTest {
             settings.setArrearsReportCron(bad);
             assertThat(settings.isArrearsReportCronValid()).as(String.valueOf(bad)).isFalse();
         }
+    }
+
+    @Test
+    @DisplayName("a loan paid out by the simulated GetMore store is a test: listed and marked only on a SIMULATED host")
+    void simulatedLoansKeptApart() {
+        story();
+        StaffLoan simulated = loan(164, "E1064", "Rutendo Chari", StaffLoanStatus.DISBURSED, "150.00",
+                LocalDate.of(2026, 11, 20), null);
+        ReflectionTestUtils.setField(simulated, "disbursementReference",
+                "GETMORE-SIM-1207");
+
+        getMore.setMode(GetMoreMode.LIVE);
+        assertThat(service.report().lines()).extracting(StaffLoanArrearsReport.Line::reference)
+                .doesNotContain("SGL-2026-000164").hasSize(5);
+        assertThat(service.csv().content()).doesNotContain("SGL-2026-000164");
+        getMore.setMode(GetMoreMode.OFF);
+        assertThat(service.report().lines()).hasSize(5);
+
+        getMore.setMode(GetMoreMode.SIMULATED);
+        StaffLoanArrearsReport report = service.report();
+        assertThat(report.lines()).filteredOn(StaffLoanArrearsReport.Line::simulated)
+                .extracting(StaffLoanArrearsReport.Line::reference).containsExactly("SGL-2026-000164");
+        assertThat(report.lines()).hasSize(6);
+        assertThat(StaffLoanArrearsService.line(report.lines().stream()
+                .filter(StaffLoanArrearsReport.Line::simulated).findFirst().orElseThrow()))
+                .startsWith("[SIMULATED] SGL-2026-000164, employee E1064");
+        assertThat(service.csv().content().lines().filter(row -> row.startsWith("SGL-2026-000164")).findFirst()
+                .orElseThrow()).endsWith(",true");
     }
 
     @Test

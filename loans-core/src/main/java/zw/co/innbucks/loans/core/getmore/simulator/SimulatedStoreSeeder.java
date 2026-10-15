@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.getmore.GetMoreModeReport;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
+import zw.co.innbucks.loans.core.voucher.GetMoreDataGuard;
 
 import java.util.Objects;
 
@@ -19,9 +20,10 @@ import java.util.Objects;
  * {@code cart_fixed} worth 0 (each coupon carries its own allowance, assumption A1), AUTO coupons, unlimited uses per
  * coupon (spending in parts needs them), no dates.
  *
- * <p>It takes {@link GetMoreModeReport} as a constructor dependency, so SIMULATED's boot checks (node, live keys, key
- * strength) always run before this writes anything: a pod refused by them never inserts a row into the database it was
- * pointed at. That order is structural, not an accident of which bean the context happens to create first.
+ * <p>It takes {@link GetMoreModeReport} and {@link GetMoreDataGuard} as constructor dependencies, so SIMULATED's boot
+ * checks (node, live keys, key strength, then a database holding real GetMore vouchers) always run before this writes
+ * anything: a pod refused by them never inserts a row into the database it was pointed at. That order is structural,
+ * not an accident of which bean the context happens to create first.
  */
 @Slf4j
 @Component
@@ -37,8 +39,9 @@ public class SimulatedStoreSeeder {
 
     public SimulatedStoreSeeder(SimRuleRepository rules, PlatformTransactionManager transactionManager,
                                 GetMoreProperties properties, MarketTimeZone marketTimeZone,
-                                GetMoreModeReport modeReport) {
+                                GetMoreModeReport modeReport, GetMoreDataGuard dataGuard) {
         Objects.requireNonNull(modeReport, "modeReport");
+        Objects.requireNonNull(dataGuard, "dataGuard");
         this.rules = rules;
         this.transaction = new TransactionTemplate(transactionManager);
         this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);

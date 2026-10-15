@@ -9,6 +9,8 @@ import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
@@ -44,6 +46,10 @@ import static zw.co.innbucks.loans.core.voucher.VoucherSettlementService.cell;
  *
  * <p>It reads loans' own records. Until the core banking collection reports recoveries, a loan still DISBURSED after
  * its due date is taken as not recovered, and what is owed is what loans knows.</p>
+ *
+ * <p>A loan paid out as a coupon of staging's simulated GetMore store is a test: it is listed, marked
+ * {@code simulated}, only on a SIMULATED host, and left out of the report and the email anywhere else (counted in the
+ * log).</p>
  */
 @Slf4j
 @Service
@@ -58,7 +64,7 @@ public class StaffLoanArrearsService {
     private static final String[] CSV_HEADER = {"reference", "employeeNumber", "fullName", "department",
             "employmentStatus", "grade", "msisdn", "merchantCode", "status", "currency", "amount", "outstanding",
             "disbursedAt", "dueDate", "daysPastDue", "bucket", "inArrears", "escalated", "employmentFlag",
-            "employmentFlagAction"};
+            "employmentFlagAction", "simulated"};
 
     private final StaffLoanRepository loanRepository;
     private final StaffMemberRepository memberRepository;
@@ -68,6 +74,7 @@ public class StaffLoanArrearsService {
     private final StaffLoanPolicy policy;
     private final StaffLoanProperties properties;
     private final MarketTimeZone marketTimeZone;
+    private final GetMoreProperties getMore;
 
     /** The report as loans' records stand now. */
     @Transactional(readOnly = true)
@@ -75,8 +82,14 @@ public class StaffLoanArrearsService {
         LocalDate today = marketTimeZone.today();
         int grace = policy.arrearsGraceDays();
         int escalation = properties.getArrearsEscalationDays();
-        List<StaffLoan> loans = loanRepository.findNotRecovered(today, StaffLoanStatus.DISBURSED,
+        List<StaffLoan> found = loanRepository.findNotRecovered(today, StaffLoanStatus.DISBURSED,
                 StaffLoanStatus.WRITTEN_OFF);
+        List<StaffLoan> loans = getMore.getMode() == GetMoreMode.SIMULATED ? found
+                : found.stream().filter(loan -> !loan.isSimulatedGetMore()).toList();
+        if (loans.size() < found.size()) {
+            log.info("Staff Grocery Loan arrears report for {}: {} simulated GetMore loan(s) left out (GetMore is {}"
+                    + " here)", today, found.size() - loans.size(), getMore.getMode());
+        }
         Map<Long, StaffMember> members = loans.isEmpty() ? Map.of() : memberRepository.findAllById(
                         loans.stream().map(StaffLoan::getStaffMemberId).distinct().toList()).stream()
                 .collect(Collectors.toMap(StaffMember::getId, Function.identity()));
@@ -112,7 +125,7 @@ public class StaffLoanArrearsService {
                             line.dueDate().toString(), String.valueOf(line.daysPastDue()), line.bucket().name(),
                             String.valueOf(line.inArrears()), String.valueOf(line.escalated()),
                             flag == null ? "" : flag.employmentStatus().name(),
-                            flag == null ? "" : flag.action().name()))
+                            flag == null ? "" : flag.action().name(), String.valueOf(line.simulated())))
                     .append("\r\n");
         }
         return new Csv(report.asOf(), out.toString());
@@ -177,7 +190,7 @@ public class StaffLoanArrearsService {
                 MsisdnUtils.mask(loan.getMsisdn()), loan.getMerchant().getMerchantCode(), loan.getStatus(),
                 loan.getCurrency(), loan.getAmount(), loan.outstanding(), loan.getDisbursedAt(), loan.getDueDate(),
                 daysPastDue, StaffLoanArrearsBucket.of(daysPastDue), loan.inArrearsOn(today, grace), escalated,
-                StaffLoanEmploymentFlag.of(loan));
+                StaffLoanEmploymentFlag.of(loan), loan.isSimulatedGetMore());
     }
 
     private static List<StaffLoanArrearsReport.Totals> totals(List<StaffLoanArrearsReport.Line> lines) {
@@ -266,7 +279,8 @@ public class StaffLoanArrearsService {
         } else {
             when = "due " + DAY.format(line.dueDate());
         }
-        String text = line.reference() + ", employee " + line.employeeNumber() + ", " + when + ", "
+        String text = (line.simulated() ? "[SIMULATED] " : "") + line.reference() + ", employee "
+                + line.employeeNumber() + ", " + when + ", "
                 + line.currency() + " " + line.outstanding().toPlainString() + " outstanding";
         StaffLoanEmploymentFlag flag = line.employmentFlag();
         if (flag != null) {

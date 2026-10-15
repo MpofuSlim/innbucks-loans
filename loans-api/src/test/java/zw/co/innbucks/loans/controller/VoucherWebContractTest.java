@@ -16,7 +16,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncTrigger;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherSync;
 import zw.co.innbucks.loans.core.voucher.VoucherCodeResponse;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherDeliveryStatus;
 import zw.co.innbucks.loans.core.voucher.VoucherProduct;
 import zw.co.innbucks.loans.core.voucher.VoucherRedemptionResult;
@@ -29,6 +34,7 @@ import zw.co.innbucks.loans.core.voucher.VoucherSettlementReport;
 import zw.co.innbucks.loans.core.voucher.VoucherSettlementService;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 import zw.co.innbucks.loans.core.voucher.VouchersUnavailableException;
+import zw.co.innbucks.loans.web.GetMoreApiExamples;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 import zw.co.innbucks.loans.web.VoucherApiExamples;
 
@@ -54,8 +60,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The voucher endpoints (FR-SGL-033 to FR-SGL-040): who may read, reveal, cancel, resend and report; a merchant till's
- * validate and redeem with every refusal by its own code; and the settlement report, for all merchants or one.
+ * The voucher endpoints (FR-SGL-033 to FR-SGL-040): who may read, reveal, cancel, resend, sync with GetMore and report;
+ * a merchant till's validate and redeem with every refusal by its own code; and the settlement report, for all
+ * merchants or one.
  */
 class VoucherWebContractTest {
 
@@ -63,7 +70,8 @@ class VoucherWebContractTest {
             "getmore-groceries", "GetMore Groceries", "SGL-2026-000151", "BRNET-20261003-0002", "E1001", "Nyasha Dube", "****4471", "**** **** **** 2151",
             new BigDecimal("250.00"), new BigDecimal("0.00"), new BigDecimal("250.00"), "USD",
             LocalDateTime.of(2026, 10, 3, 6, 5, 41), LocalDateTime.of(2026, 11, 2, 21, 59, 59), VoucherStatus.ISSUED,
-            null, null, null, null, null, VoucherDeliveryStatus.PENDING, null, LocalDateTime.of(2026, 10, 4, 7, 2, 17));
+            null, null, null, null, null, VoucherDeliveryStatus.PENDING, null, LocalDateTime.of(2026, 10, 4, 7, 2, 17),
+            VoucherCodeSource.LOANS, null, null, null, null, null, null, null, null);
     private static final VoucherRedemptionResult REDEEMED = new VoucherRedemptionResult("GM-POS-88412",
             "**** **** **** 8406", new BigDecimal("180.00"), new BigDecimal("120.00"), "USD",
             VoucherStatus.PARTIALLY_REDEEMED, "GM-AVD-01", LocalDateTime.of(2026, 10, 3, 15, 42, 10), false);
@@ -71,6 +79,7 @@ class VoucherWebContractTest {
     private VoucherService vouchers;
     private VoucherSettlementService settlement;
     private VoucherRedemptionService redemptions;
+    private GetMoreVoucherSync getMoreSync;
     private MockMvc mvc;
 
     @BeforeEach
@@ -78,7 +87,8 @@ class VoucherWebContractTest {
         vouchers = mock(VoucherService.class);
         settlement = mock(VoucherSettlementService.class);
         redemptions = mock(VoucherRedemptionService.class);
-        mvc = MockMvcBuilders.standaloneSetup(secured(new VoucherController(vouchers, settlement)),
+        getMoreSync = mock(GetMoreVoucherSync.class);
+        mvc = MockMvcBuilders.standaloneSetup(secured(new VoucherController(vouchers, settlement, getMoreSync)),
                         secured(new VoucherRedemptionController(redemptions)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -178,6 +188,90 @@ class VoucherWebContractTest {
     }
 
     @Test
+    @DisplayName("a GetMore voucher is cancelled only with its loan (409), and its code is revealed as GetMore made it")
+    void getMoreCancelAndReveal() throws Exception {
+        when(vouchers.cancel(eq(9L), any())).thenThrow(new ConflictException("Voucher 9 is the GetMore coupon of loan"
+                + " SGL-2026-000164: cancel the loan instead (POST /lending/v1/staff-loans/164/cancel)"));
+        when(vouchers.reveal(eq(9L), any())).thenReturn(new VoucherCodeResponse(9L, GetMoreApiExamples.CODE_9,
+                GetMoreApiExamples.CODE_9));
+
+        mvc.perform(post("/lending/v1/vouchers/9/cancellation").with(as("CREDIT_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.CANCEL_REQUEST))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value(containsString("cancel the loan instead")));
+        mvc.perform(post("/lending/v1/vouchers/9/code-reveals").with(as("VOUCHER_SUPPORT"))
+                        .contentType(MediaType.APPLICATION_JSON).content(VoucherApiExamples.REASON_REQUEST))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").value("SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C"))
+                .andExpect(jsonPath("$.data.scanValue").value("SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C"));
+    }
+
+    @Test
+    @DisplayName("a GetMore sync: Credit, Finance, SUPER_ADMIN and support may; each outcome its status and code")
+    void getMoreSync() throws Exception {
+        when(getMoreSync.sync(9L, GetMoreSyncTrigger.OPERATOR))
+                .thenReturn(syncResult(GetMoreSyncResult.Outcome.SYNCED));
+        for (String role : List.of("CREDIT_MANAGER", "FINANCE", "SUPER_ADMIN", "VOUCHER_SUPPORT")) {
+            mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as(role)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Voucher 9 synced with GetMore"))
+                    .andExpect(jsonPath("$.data.outcome").value("SYNCED"))
+                    .andExpect(jsonPath("$.data.refundsRecorded").value(1))
+                    .andExpect(jsonPath("$.data.voucher.codeSource").value("GETMORE"));
+        }
+        for (String role : List.of("AGENTS", "HUMAN_CAPITAL", "MERCHANT_TILL")) {
+            mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as(role))).andExpect(status().isForbidden());
+        }
+
+        when(getMoreSync.sync(9L, GetMoreSyncTrigger.OPERATOR)).thenReturn(syncResult(GetMoreSyncResult.Outcome
+                .UNCHANGED));
+        mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as("FINANCE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Voucher 9 is up to date with GetMore"));
+        for (GetMoreSyncResult.Outcome outcome : List.of(GetMoreSyncResult.Outcome.SKIPPED,
+                GetMoreSyncResult.Outcome.MODE_MISMATCH)) {
+            when(getMoreSync.sync(9L, GetMoreSyncTrigger.OPERATOR)).thenReturn(syncResult(outcome));
+            mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as("FINANCE")))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("CONFLICT"))
+                    .andExpect(jsonPath("$.message").value("Voucher 9 is not a GetMore voucher of this host's store"
+                            + " mode"));
+        }
+        when(getMoreSync.sync(9L, GetMoreSyncTrigger.OPERATOR)).thenReturn(syncResult(GetMoreSyncResult.Outcome
+                .UNAVAILABLE));
+        mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as("FINANCE")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("GETMORE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("GetMore unavailable (READ_FAILED): Cannot read voucher 9 at"
+                        + " GetMore right now; try again."));
+        for (GetMoreSyncResult.Outcome outcome : List.of(GetMoreSyncResult.Outcome.BUSY,
+                GetMoreSyncResult.Outcome.STALE_SNAPSHOT, GetMoreSyncResult.Outcome.CONFLICT_RETRY)) {
+            when(getMoreSync.sync(9L, GetMoreSyncTrigger.OPERATOR)).thenReturn(syncResult(outcome));
+            mvc.perform(post("/lending/v1/vouchers/9/getmore-syncs").with(as("FINANCE")))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.message").value(containsString("(BUSY)")));
+        }
+        when(getMoreSync.sync(10L, GetMoreSyncTrigger.OPERATOR)).thenThrow(new NotFoundException(
+                "Voucher 10 not found"));
+        mvc.perform(post("/lending/v1/vouchers/10/getmore-syncs").with(as("FINANCE")))
+                .andExpect(status().isNotFound());
+    }
+
+    private static GetMoreSyncResult syncResult(GetMoreSyncResult.Outcome outcome) {
+        VoucherResponse voucher = new VoucherResponse(9L, VoucherProduct.STAFF_GROCERY_LOAN, "getmore-groceries",
+                "GetMore Groceries", "SGL-2026-000164", "GETMORE-SIM-1207", "E1064", "Rutendo Chari", "****0064",
+                "****8B1C", new BigDecimal("150.00"), new BigDecimal("90.00"), new BigDecimal("60.00"), "USD",
+                LocalDateTime.of(2026, 10, 14, 8, 20, 7), LocalDateTime.of(2026, 11, 13, 21, 59, 59),
+                VoucherStatus.PARTIALLY_REDEEMED, LocalDateTime.of(2026, 10, 14, 8, 35, 40), "GetMore Avondale", null,
+                null, null, VoucherDeliveryStatus.SENT, null, LocalDateTime.of(2026, 10, 14, 8, 20, 8),
+                VoucherCodeSource.GETMORE, GetMoreMode.SIMULATED, 1207L, new BigDecimal("10.00"),
+                new BigDecimal("0.00"), null, LocalDateTime.of(2026, 10, 14, 8, 39, 58), null, null);
+        return new GetMoreSyncResult(outcome, 0, outcome == GetMoreSyncResult.Outcome.SYNCED ? 1 : 0,
+                new BigDecimal("0.00"), 2, List.of(), false, voucher);
+    }
+
+    @Test
     @DisplayName("the till redeems (201), a retry is answered as before (200), and only MERCHANT_TILL may")
     void redeem() throws Exception {
         when(redemptions.redeem(any())).thenReturn(REDEEMED);
@@ -259,7 +353,7 @@ class VoucherWebContractTest {
     void settlementForOneMerchant() throws Exception {
         when(settlement.report(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn(
                 new VoucherSettlementReport(LocalDate.of(2026, 10, 3), "getmore-groceries",
-                        LocalDateTime.of(2026, 10, 4, 4, 30), List.of(), List.of(), List.of(), List.of()));
+                        LocalDateTime.of(2026, 10, 4, 4, 30), List.of(), List.of(), List.of(), List.of(), null));
         when(settlement.csv(LocalDate.of(2026, 10, 3), "getmore-groceries")).thenReturn("event,at\r\n");
         when(settlement.report(LocalDate.of(2026, 10, 3), "nobody"))
                 .thenThrow(new NotFoundException("Merchant nobody not found"));

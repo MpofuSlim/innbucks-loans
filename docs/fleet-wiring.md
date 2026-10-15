@@ -259,6 +259,13 @@ restart. Turning it on starts the Monday run (`STAFF_OFFERS_RUN_CRON`), which
 messages every eligible staff member. `StaffLoanJobsWiringTest` fails if a job
 that pays, books or lodges is ever put behind this switch.
 
+**GetMore needs no job, and this switch stays off for it.** A GetMore voucher is
+issued at acceptance and moved on by requests only: a borrower's read of the tile
+(in the background), Credit's retry, a cancellation, staff's sync and, on staging,
+the simulator's test actions (section 10). Nothing GetMore does is `@Scheduled`,
+so `STAFF_LOANS_JOBS_ENABLED` is not needed for it and is not to be turned on for
+it.
+
 The jobs are only safe run serially in ONE process (`application.yml`,
 `spring.task.scheduling`; there is no ShedLock). That is why the Deployment
 runs one replica with `strategy: Recreate`, so no two pods ever overlap, not
@@ -424,8 +431,168 @@ under the new name and ended their sessions: they sign in again. Staff who may
 see a code in full are in group `VOUCHER_SUPPORT`; on its own that group reaches
 the voucher screens and nothing more.
 
-Vouchers are issued by the disbursement (FR-SGL-032, BR.NET), never from a
-screen, so until that lands none exist in the cell.
+Vouchers are issued by the payout, never from a screen. For a merchant whose
+voucher store is GetMore (below) the payout is GetMore's: the voucher is issued by
+GetMore at acceptance. For any other merchant it is the disbursement (FR-SGL-032,
+BR.NET), which is not wired yet.
+
+### GetMore Groceries coupons as the vouchers
+
+**Which loans.** A merchant's vouchers are loans' own digit codes or GetMore's
+coupons, by the merchant record's `voucher_store` (`LOANS` / `GETMORE`), never a
+setting. V37 made `getmore-groceries` a `GETMORE` store; only a reviewed migration
+changes it. While GetMore is on and the Staff Grocery Loan's merchant is NOT a
+GetMore store, every accepted loan waits for a voucher nobody issues: the boot log
+WARNs and `GET /lending/v1/getmore` lists it under `warnings`.
+
+**The mode**, `GETMORE_MODE`, one per host:
+
+| Mode | What happens |
+|---|---|
+| `OFF` (default) | Nothing calls GetMore. An accepted loan waits `AWAITING_DISBURSEMENT` with no voucher, as before. A boot WARN says so. |
+| `LIVE` | GetMore's Magento 2.4 store over OAuth 1.0a (HMAC-SHA256). Reads GetMore, but issues nothing until `GETMORE_LIVE_AMOUNT_MODEL` is set (GetMore has not yet said how a per-loan amount is held). |
+| `SIMULATED` | **Staging only.** An in-process stand-in store, with its own `getmore_sim_*` tables, and the test actions below. ERROR on every boot. |
+
+LIVE and SIMULATED both need the two voucher code keys above; without them loans
+refuses to start. The keys, all in loans' own Secret (`loans.example.env` in
+ticketing lists them, commented out):
+
+- General: `GETMORE_RULE_ID` (43), `GETMORE_COUPON_PREFIX` (`INN-`; different for
+  each environment that shares a GetMore store), `GETMORE_CODE_LENGTH` (16),
+  `GETMORE_PAGE_SIZE` (50), `GETMORE_CLOCK_SKEW` (`PT2M`),
+  `GETMORE_ISSUANCE_RETRY_AFTER` (`PT30S`), `GETMORE_ISSUANCE_STALE_CLAIM`
+  (`PT5M`), `GETMORE_ISSUANCE_INLINE_BUDGET` (`PT10S`),
+  `GETMORE_SYNC_MIN_INTERVAL` (`PT1M`), `GETMORE_SYNC_AFTER_EXPIRY` (`P30D`),
+  `GETMORE_SYNC_LOCK_WAIT` (`PT30S`). Defaults that need no entry.
+- LIVE: `GETMORE_BASE_URL` (`https://...`), `GETMORE_SIGNATURE_BASE_URL` (only
+  when GetMore terminates TLS without passing the scheme to Magento),
+  `GETMORE_CONSUMER_KEY`, `GETMORE_CONSUMER_SECRET`, `GETMORE_ACCESS_TOKEN`,
+  `GETMORE_ACCESS_TOKEN_SECRET` (all four required; the token and its secret are
+  exactly 32 characters, as Magento issues them), `GETMORE_LIVE_AMOUNT_MODEL`
+  (`NONE` | `RULE_AMOUNT_SINGLE_USE`), `GETMORE_LIVE_CURRENCY`,
+  `GETMORE_CONNECT_TIMEOUT_MS`, `GETMORE_READ_TIMEOUT_MS`. LIVE refuses to boot
+  with any of the four missing, a placeholder, or either simulator key set.
+- SIMULATED (staging only): `GETMORE_SIMULATOR_API_KEY`,
+  `GETMORE_SIMULATOR_ALLOWED_NODE`, `GETMORE_SIMULATOR_COUPON_PREFIX` (`SIM-`),
+  `GETMORE_SIMULATOR_CURRENCY` (USD), `GETMORE_SIMULATOR_PARTIAL_SPENDING`
+  (true), `GETMORE_SIMULATOR_ENFORCE_COUPON_EXPIRY` (true).
+
+**What happens to a loan.** Accepting a loan for a GetMore store writes its
+voucher's issuance with the loan; GetMore is then called with no transaction open,
+within `GETMORE_ISSUANCE_INLINE_BUDGET`, and in the normal case the 201 already
+carries the voucher, the loan `DISBURSED` (`GETMORE-<coupon>`, `GETMORE-SIM-` when
+simulated). The code is a random per-loan prefix plus GetMore's own characters
+(`SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C`), shown, sent and put in the QR code exactly as
+made. When GetMore is slow the loan waits with `voucherIssuance: PENDING` and the
+borrower's next read tries again; one GetMore refused, or that found something on
+its prefix loans could not take as its own, is PARKED for Credit
+(`GET /lending/v1/staff-loan-voucher-issuances`, then
+`POST /lending/v1/staff-loans/{id}/voucher-issuance`). The voucher is spent at
+GetMore, in parts; its sales and refunds are read back from GetMore's orders and
+credit memos by a sync: on the borrower's reads (in the background), after each
+simulator action, on cancelling, and on `POST /lending/v1/vouchers/{id}/getmore-syncs`
+(Credit, Finance, SUPER_ADMIN, VOUCHER_SUPPORT). Loans' tills refuse a GetMore code.
+A loan paid out as an unused GetMore voucher can be cancelled; its coupon is
+withdrawn at GetMore. A full code never goes in a URL, a log line or an audit row.
+
+**The simulator: staging only, bound to its node.** With `GETMORE_MODE=SIMULATED`
+loans refuses to start unless all of these hold:
+
+- `GETMORE_SIMULATOR_API_KEY` is at least 32 characters (`openssl rand -base64 48`),
+  not a placeholder, and differs from every other key loans holds;
+- no live GetMore URL or OAuth value is set: a host provisioned for the real store
+  never simulates;
+- the pod's node is `GETMORE_SIMULATOR_ALLOWED_NODE`. The node comes from
+  `NODE_NAME`, the Deployment's `spec.nodeName` fieldRef (ticketing's
+  `deploy/k8s/loans/loans-service.yaml`), read from the environment directly and
+  never through a property, so a staging env file copied to another host carries
+  staging's node name, which that host's node does not have;
+- the database holds no LIVE GetMore voucher.
+
+It then logs `GETMORE IS SIMULATED on node <n>` at ERROR on every boot and sets the
+gauge `loans.getmore.mode{mode="SIMULATED"}` to 1. Simulated codes start `SIM-`;
+every issuance, voucher, spend and refund row carries its store mode, and a host
+that is not SIMULATED skips those vouchers in syncs, leaves them out of the daily
+settlement and arrears reports, and does not email employment flags for them. The
+simulator's codes go by WhatsApp or SMS to real phones on the staging register,
+marked "TEST code, not valid in store."
+
+**The test actions**, under `/lending/v1/getmore-simulator/` (the existing
+`/lending/**` route, no gateway change), exist only on a SIMULATED host (a plain
+404 everywhere else, whatever is sent) and only for whoever holds
+`GETMORE_SIMULATOR_API_KEY` in `X-Api-Key`. Their own security chain checks the key
+in constant time and refuses a body over 8 KiB (413), or one that is not JSON (415:
+Tomcat parses a form or multipart body itself, past any cap), before anything reads
+it (Boot's FormContentFilter, which would read a form-encoded PUT, PATCH or DELETE
+ahead of every chain, is switched off); no loans token reaches them:
+
+| Action | Does |
+|---|---|
+| `POST /sales` | Spends part of a voucher (by `loanReference` or `code`) at an outlet; `invoiced:false` holds it at the till. Idempotent on `reference`. |
+| `POST /sales/{orderNumber}/invoices` | Invoices a held sale. |
+| `POST /refunds` | A credit memo against a sale: the amount is back on the voucher. |
+| `POST /coupon-expiries` | Expires a voucher now: stopped `SIMULATOR_EXPIRED`, its code withdrawn at the store. |
+| `POST /coupon-lookups` | The store's own view of a coupon, Magento's shapes, codes masked. |
+| `POST /faults`, `DELETE /faults` | Fail the store's next calls (UNAVAILABLE, REJECTED, LOSE_RESPONSE), or stop. |
+
+Each is synced into loans at once. Every use is logged at WARN, audited as
+`GETMORE_SIMULATOR_<ACTION>` with the caller's address, the last 64 characters of
+`X-Forwarded-For` (where nginx and the gateway append the hops they saw; anything
+but an address list's characters becomes `_`), the voucher's masked code and the
+first 8 hex characters of the key's SHA-256 (never the key), and counted on
+`loans.getmore.simulator.actions{action}`. Whoever holds that key can spend and
+refund every simulated voucher: it must never be set where salaries are collected.
+
+**Why production cannot simulate by accident:** OFF is the default; SIMULATED needs
+a 32-character key that exists only in staging's Secret; it refuses to boot off its
+node, with any live GetMore credential present, or on a database holding real
+GetMore vouchers or voucher issuances; it announces itself at ERROR on every boot; its beans, its
+security chain and its controller exist only in SIMULATED; LIVE refuses to boot with
+either simulator key set; and the loans Deployment is applied only on staging
+(section 4). `loans.example.env` keeps the simulator keys commented out, marked
+STAGING ONLY.
+
+**Revoking and rotating GetMore's credentials.** LIVE's four OAuth values are one
+Magento integration on GetMore's side. Its `Magento_SalesRule::quote` access can
+rewrite any cart rule or coupon in their store, so a leaked pair is an incident, not
+a chore:
+
+1. Ask GetMore to re-authorise (or delete and recreate) the integration. That kills
+   the old token pair at once; until loans has the new one, every GetMore call is a
+   401 (`GETMORE_UNAVAILABLE: AUTH`), issuances wait PENDING and syncs report
+   UNAVAILABLE. Nothing is lost.
+2. Put the new consumer key and secret and the new access token and secret in the
+   host's `loans.<iso>.local.env`, re-create the Secret (section 5) and restart the
+   Deployment, so a new pod reads them (a pod reads its Secret only when it starts):
+   ```sh
+   kubectl -n ticketing create secret generic loans-service-secrets --from-env-file=loans.zw.local.env --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n ticketing rollout restart deployment/loans-service
+   kubectl -n ticketing rollout status deployment/loans-service
+   ```
+   A restart, not a `set image` to the tag already running: setting the same image
+   leaves the pod template unchanged, so no pod restarts, `rollout status` succeeds at
+   once, and the running pod keeps the old values. The image is pinned, so the
+   restart runs the same build with the new Secret.
+3. Check `GET /lending/v1/getmore?checkRule=true` reads the rule (no `ruleError`).
+
+QA and production are separate Magento integrations with separate keys; production's
+never go on the staging host. The simulator's key rotates the same way (a new
+`GETMORE_SIMULATOR_API_KEY`, the Secret re-created, the Deployment restarted with
+`rollout restart`), and the audit's key fingerprint shows which key each action was
+taken with. Loans checks that key itself, read once when the pod starts, so a leaked
+key keeps working until the restart. Then check that it no longer does: a call with
+the OLD key must be a 401,
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H 'X-Api-Key: <old key>' \
+  https://<staging edge>/foundry/lending/v1/getmore-simulator/faults
+```
+and `GET /lending/v1/getmore?checkRule=true` still answers with no `ruleError`.
+
+**Rolling back past this.** The build before GetMore vouchers would render a GetMore
+code through loans' digit grouping, so a resend or a reveal would give GetMore's till
+a code it does not take, and it ignores refunds, held sales and issuances. Set
+`GETMORE_MODE=OFF` in the Secret first, and do not resend or reveal GetMore vouchers
+while rolled back.
 
 ## 11. SuperApp borrowers: the middleware's assertion, and staging's stand-in
 
@@ -512,10 +679,16 @@ With a borrower signed in (§11), the SuperApp takes the loan through
 3. the disclosure and agreement for an amount (`POST /quote`);
 4. acceptance with a fresh PIN or biometric assertion (`POST /loans`).
 
-An accepted loan is `AWAITING_DISBURSEMENT` until the bank's system (BR.NET)
-pays the merchant and issues the voucher. That integration is not wired yet, so no
-loan goes further. Credit, Finance and Human Capital see accepted loans at
-`/lending/v1/staff-loans`; Credit can cancel one before payout.
+When GetMore is on (`GETMORE_MODE` LIVE or SIMULATED, section 10) and the loan's
+merchant is a GetMore store, an accepted loan is `DISBURSED` with its voucher there
+and then: the voucher is the credit, issued by GetMore at acceptance, and the 201
+carries it with its code (or `voucherIssuance: PENDING` for a moment when GetMore is
+slow). Otherwise an accepted loan is `AWAITING_DISBURSEMENT` until the bank's
+system (BR.NET) pays the merchant and issues the voucher, an integration not wired
+yet. The borrower sees every spend and refund of their voucher at
+`GET /loans/{reference}/voucher-spends`. Credit, Finance and Human Capital see accepted loans at
+`/lending/v1/staff-loans`; Credit can cancel one before payout, or one paid out
+as a GetMore voucher nobody has used (its coupon is withdrawn at GetMore).
 
 **Nothing can be accepted until the agreement is published.** A SUPER_ADMIN
 publishes it as an instrument, Legal's wording, using the placeholders listed by

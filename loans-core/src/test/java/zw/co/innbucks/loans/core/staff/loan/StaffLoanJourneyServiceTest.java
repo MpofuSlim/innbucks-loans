@@ -21,6 +21,8 @@ import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.borrower.TestAssertionSigner;
 import zw.co.innbucks.loans.core.borrower.VerifiedAssertion;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
@@ -43,6 +45,7 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
 import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 import zw.co.innbucks.loans.core.voucher.VoucherService;
 import zw.co.innbucks.loans.core.voucher.VoucherStatus;
@@ -100,6 +103,8 @@ class StaffLoanJourneyServiceTest {
     private final InstrumentTemplateService templates = mock(InstrumentTemplateService.class);
     private final AssertionUses assertionUses = mock(AssertionUses.class);
     private final VoucherService vouchers = mock(VoucherService.class);
+    private final StaffLoanVoucherIssuer issuer = mock(StaffLoanVoucherIssuer.class);
+    private final StaffLoanVoucherIssuanceRepository issuances = mock(StaffLoanVoucherIssuanceRepository.class);
     private final AuditService audit = mock(AuditService.class);
     private final BorrowerProperties borrowerProperties = testAssertions();
     private final TestAssertionSigner signer = new TestAssertionSigner(borrowerProperties, ZW);
@@ -114,7 +119,7 @@ class StaffLoanJourneyServiceTest {
     private final StaffLoanJourneyService journey = new StaffLoanJourneyService(members, offers, offerService, loans,
             agreements, policy, merchants, arrearsOverrides, templates,
             new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
-            assertionUses, vouchers, audit, ZW);
+            assertionUses, vouchers, issuer, issuances, audit, ZW);
 
     {
         when(merchants.current()).thenAnswer(i -> Optional.ofNullable(merchant));
@@ -197,7 +202,8 @@ class StaffLoanJourneyServiceTest {
 
         BorrowerVoucherResponse voucher = new BorrowerVoucherResponse(VoucherStatus.ISSUED,
                 new BigDecimal("300.00"), new BigDecimal("300.00"), "USD", NOW_UTC.plusDays(30),
-                "**** **** **** 8406", "4829 1506 7331 8406", "4829150673318406");
+                "**** **** **** 8406", "4829 1506 7331 8406", "4829150673318406", VoucherCodeSource.LOANS, true,
+                new BigDecimal("0.00"), null, null);
         when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(voucher));
         when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
                 .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
@@ -243,7 +249,8 @@ class StaffLoanJourneyServiceTest {
         when(loans.findByStaffMemberId(eq(2L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(cancelled, repaid)));
         BorrowerVoucherResponse lapsed = new BorrowerVoucherResponse(VoucherStatus.EXPIRED, new BigDecimal("300.00"),
-                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null);
+                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null,
+                VoucherCodeSource.LOANS, true, new BigDecimal("180.00"), null, null);
         when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(lapsed));
 
         List<StaffLoanView> views = journey.loans(2L, PageRequest.of(1, 5)).getContent();
@@ -424,6 +431,53 @@ class StaffLoanJourneyServiceTest {
             assertThat(a.getEvidenceSha256()).isEqualTo(StaffLoanJourneyService.evidenceSha256(a));
         });
         assertThat(events()).containsExactly(StaffLoanJourneyService.ACCEPTED);
+        verify(issuer).queue(saved.getFirst());
+        assertThat(view.voucherIssuance()).as("no GetMore voucher queued").isNull();
+        assertThat(view.statusMessage()).isEqualTo("Your loan is approved. Your voucher will be sent to you once the"
+                + " loan is paid out to GetMore Groceries.");
+    }
+
+    @Test
+    @DisplayName("accepting for a GetMore store queues its voucher in the same transaction; the loan says it is coming")
+    void acceptQueuesTheGetMoreVoucher() {
+        StaffLoanVoucherIssuance queued = StaffLoanVoucherIssuance.builder().id(101L).staffLoanId(143L)
+                .merchantId(3L).storeMode(GetMoreMode.SIMULATED).couponPrefix("SIM-K7Q2M3XW-").ruleId(43L)
+                .faceValue(new BigDecimal("300.00")).currency("USD").status(StaffLoanVoucherIssuanceStatus.PENDING)
+                .nextAttemptAt(NOW_UTC).createdAt(NOW_UTC).updatedAt(NOW_UTC).build();
+        when(issuer.queue(any())).thenReturn(Optional.of(queued));
+        when(issuances.findByStaffLoanId(143L)).thenReturn(Optional.of(queued));
+        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+
+        StaffLoanView view = journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin"))
+                .assertion()), signing("a1f3c9e2-7b4d"));
+
+        assertThat(view.status()).as("paid out only once GetMore has made it").isEqualTo(
+                StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(view.voucherIssuance()).isEqualTo(StaffLoanView.VoucherIssuance.PENDING);
+        assertThat(view.statusMessage()).isEqualTo("Your loan is approved. Your voucher is being prepared and will"
+                + " appear here shortly.");
+        ArgumentCaptor<AuditLog.AuditLogBuilder> captor = ArgumentCaptor.forClass(AuditLog.AuditLogBuilder.class);
+        verify(audit).record(captor.capture());
+        assertThat(captor.getValue().build().getDetail()).endsWith(";voucher:pending");
+        verify(vouchers, never()).forBorrower(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("the loan after its voucher was tried, for the acceptance's answer: only the member's own")
+    void loanView() {
+        when(loans.findByStaffMemberIdAndReference(2L, "SGL-2026-000143"))
+                .thenReturn(Optional.of(loan(StaffLoanStatus.AWAITING_DISBURSEMENT)));
+        StaffLoanVoucherIssuance parked = StaffLoanVoucherIssuance.builder().id(101L).staffLoanId(143L)
+                .status(StaffLoanVoucherIssuanceStatus.PARKED).build();
+        when(issuances.findByStaffLoanId(143L)).thenReturn(Optional.of(parked));
+
+        StaffLoanView view = journey.loanView(2L, "SGL-2026-000143");
+
+        assertThat(view.voucherIssuance()).isEqualTo(StaffLoanView.VoucherIssuance.DELAYED);
+        assertThat(view.statusMessage()).isEqualTo("Your loan is approved. There is a delay preparing your voucher;"
+                + " the Credit department has been told.");
+        assertThatThrownBy(() -> journey.loanView(3L, "SGL-2026-000143")).isInstanceOf(NotFoundException.class)
+                .hasMessage("Loan SGL-2026-000143 not found");
     }
 
     @Test
@@ -535,7 +589,7 @@ class StaffLoanJourneyServiceTest {
         StaffLoanJourneyService unconfigured = new StaffLoanJourneyService(members, offers, offerService, loans,
                 agreements, policy, merchants, arrearsOverrides, templates,
                 new MiddlewareAssertionVerifier(off, ZW, new TestAssertionSigner(off, ZW)),
-                assertionUses, vouchers, audit, ZW);
+                assertionUses, vouchers, issuer, issuances, audit, ZW);
         StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
 
         assertThatThrownBy(() -> unconfigured.accept(2L, request(quote, "x"), signing("device-1")))

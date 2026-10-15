@@ -1,25 +1,33 @@
 package zw.co.innbucks.loans.core.staff.loan;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatusChanged;
+import zw.co.innbucks.loans.core.voucher.GetMoreDispatcher;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -50,9 +58,12 @@ class StaffLoanServiceTest {
     private final AuthService authService = mock(AuthService.class);
     private final AuditService audit = mock(AuditService.class);
     private final StaffLoanEmploymentFlagNotifier notifier = mock(StaffLoanEmploymentFlagNotifier.class);
+    private final StaffLoanVoucherIssuanceRepository issuances = mock(StaffLoanVoucherIssuanceRepository.class);
+    private final GetMoreDispatcher dispatcher = mock(GetMoreDispatcher.class);
     private final StaffLoanService service = new StaffLoanService(loans, agreements,
             new StaffLoanPolicy(new StaffLoanProperties(), new VoucherProperties()), authService, audit,
-            new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-10-01T09:02:17Z"), ZoneOffset.UTC)), notifier);
+            new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-10-01T09:02:17Z"), ZoneOffset.UTC)), notifier,
+            issuances, dispatcher, new GetMoreProperties());
     private final StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(2L)
             .offerId(31L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
             .amount(new BigDecimal("300.00")).currency("USD").interestRate(BigDecimal.ZERO)
@@ -104,6 +115,109 @@ class StaffLoanServiceTest {
         verify(loans).save(loan);
         assertThat(audited().getEventType()).isEqualTo(StaffLoanService.CANCELLED);
         assertThat(audited().getChannelUsed()).isEqualTo("admin-portal");
+    }
+
+    @AfterEach
+    void endTransaction() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /** The loan's GetMore voucher issuance, as {@code status}; CALLING claimed {@code claimedAgo} before now. */
+    private StaffLoanVoucherIssuance issuance(StaffLoanVoucherIssuanceStatus status, Duration claimedAgo) {
+        StaffLoanVoucherIssuance issuance = StaffLoanVoucherIssuance.builder().id(101L).staffLoanId(143L)
+                .merchantId(3L).storeMode(GetMoreMode.SIMULATED).couponPrefix("SIM-K7Q2M3XW-").ruleId(43L)
+                .faceValue(new BigDecimal("300.00")).currency("USD").status(StaffLoanVoucherIssuanceStatus.PENDING)
+                .nextAttemptAt(NOW).createdAt(NOW).updatedAt(NOW).build();
+        if (status == StaffLoanVoucherIssuanceStatus.CALLING) {
+            issuance.claim(NOW.minus(claimedAgo));
+        } else if (status == StaffLoanVoucherIssuanceStatus.PARKED) {
+            issuance.park("UNAVAILABLE_NOT_REACHED", null, NOW);
+        }
+        when(issuances.lockByStaffLoanId(143L)).thenReturn(Optional.of(issuance));
+        return issuance;
+    }
+
+    @Test
+    @DisplayName("Credit's cancel of a loan whose GetMore voucher is queued: CANCELLING, withdrawn once it commits")
+    void cancelWithdrawsTheQueuedVoucher() {
+        StaffLoanVoucherIssuance issuance = issuance(StaffLoanVoucherIssuanceStatus.PENDING, null);
+        TransactionSynchronizationManager.initSynchronization();
+
+        service.cancel(143L, "Accepted in error");
+
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(issuance.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        verify(issuances).save(issuance);
+        verify(dispatcher, never()).cleanup(anyLong());
+        TransactionSynchronizationUtils.invokeAfterCommit(TransactionSynchronizationManager.getSynchronizations());
+        verify(dispatcher).cleanup(101L);
+    }
+
+    @Test
+    @DisplayName("Credit's cancel while the voucher is being issued right now: refused, nothing cancelled")
+    void cancelRefusedWhileCalling() {
+        StaffLoanVoucherIssuance issuance = issuance(StaffLoanVoucherIssuanceStatus.CALLING,
+                Duration.ofSeconds(20));
+
+        assertThatThrownBy(() -> service.cancel(143L, "Accepted in error"))
+                .isInstanceOf(IssuanceInProgressException.class)
+                .hasMessage("A voucher for SGL-2026-000143 is being issued right now; try again in a minute.");
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(issuance.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CALLING);
+        verify(dispatcher, never()).cleanup(anyLong());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StaffLoanVoucherIssuanceStatus.class, names = {"PENDING", "PARKED", "CALLING"})
+    @DisplayName("an employment change cancels the loan; a queued, parked or stale issuance goes CANCELLING and is"
+            + " withdrawn once the register change commits")
+    void employmentChangeSendsTheIssuanceToCancelling(StaffLoanVoucherIssuanceStatus status) {
+        StaffLoanVoucherIssuance issuance = issuance(status, Duration.ofMinutes(6));
+        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(anyLong(), any())).thenReturn(Optional.of(loan));
+        TransactionSynchronizationManager.initSynchronization();
+
+        service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012",
+                StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, 17L, "hc2"));
+
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(issuance.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CANCELLING);
+        assertThat(issuance.getClaimedAt()).isNull();
+        verify(dispatcher, never()).cleanup(anyLong());
+        TransactionSynchronizationUtils.invokeAfterCommit(TransactionSynchronizationManager.getSynchronizations());
+        verify(dispatcher).cleanup(101L);
+    }
+
+    @Test
+    @DisplayName("an employment change leaves a fresh claim to its attempt, which finds the loan cancelled when it"
+            + " settles")
+    void employmentChangeLeavesAFreshClaimAlone() {
+        StaffLoanVoucherIssuance issuance = issuance(StaffLoanVoucherIssuanceStatus.CALLING,
+                Duration.ofSeconds(20));
+        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(anyLong(), any())).thenReturn(Optional.of(loan));
+        TransactionSynchronizationManager.initSynchronization();
+
+        service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012",
+                StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, 17L, "hc2"));
+
+        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(issuance.getStatus()).isEqualTo(StaffLoanVoucherIssuanceStatus.CALLING);
+        verify(issuances, never()).save(any());
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a simulated GetMore loan's flag change says so, for the notifier to keep it apart")
+    void simulatedLoanFlagged() {
+        ReflectionTestUtils.setField(paidOut, "disbursementReference", "GETMORE-SIM-1207");
+        paidOutLoanFound();
+
+        changeTo(StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, 21L);
+
+        verify(notifier).notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000151", "E1001",
+                new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), null, StaffEmploymentStatus.RESIGNED,
+                true));
     }
 
     @Test
@@ -170,7 +284,7 @@ class StaffLoanServiceTest {
         assertThat(audited.getDetail()).isEqualTo("reference:SGL-2026-000151;from:ACTIVE;to:" + to + ";action:"
                 + flag.action() + ";batch:21");
         verify(notifier).notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000151", "E1001",
-                new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), null, to));
+                new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), null, to, false));
     }
 
     @Test
@@ -201,7 +315,7 @@ class StaffLoanServiceTest {
                 + "action:RECOVER_FROM_TERMINAL_BENEFITS;batch:22");
         verify(notifier).notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000151", "E1001",
                 new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), StaffEmploymentStatus.SUSPENDED,
-                StaffEmploymentStatus.TERMINATED));
+                StaffEmploymentStatus.TERMINATED, false));
     }
 
     @Test
@@ -220,7 +334,8 @@ class StaffLoanServiceTest {
         assertThat(audited().getDetail()).isEqualTo("reference:SGL-2026-000151;from:RESIGNED;to:ACTIVE;action:none;"
                 + "batch:23");
         verify(notifier).notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change("SGL-2026-000151", "E1001",
-                new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), StaffEmploymentStatus.RESIGNED, null));
+                new BigDecimal("250.00"), "USD", LocalDate.of(2026, 11, 20), StaffEmploymentStatus.RESIGNED, null,
+                false));
     }
 
     @Test

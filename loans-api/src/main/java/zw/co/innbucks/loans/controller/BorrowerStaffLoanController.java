@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,12 +25,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.innbucks.loans.core.auth.JwtService;
 import zw.co.innbucks.loans.core.staff.loan.AcceptStaffLoanRequest;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanAcceptance;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanAppliedOffer;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanHome;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanQuote;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanQuoteRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherSpendsResponse;
+import zw.co.innbucks.loans.core.voucher.GetMoreDispatcher;
+import zw.co.innbucks.loans.core.voucher.VoucherService;
 import zw.co.innbucks.loans.web.ApiExamples;
 import zw.co.innbucks.loans.web.ApiPaths;
 import zw.co.innbucks.loans.web.ApiResult;
@@ -44,10 +49,13 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 @Tag(name = "Borrower: Staff Grocery Loan (SuperApp)", description = "The Staff Grocery Loan journey in the SuperApp"
         + " (FR-SGL-025 to FR-SGL-031), for the borrower session's own staff member: the tile (GET), \"Apply\" when"
         + " there is no offer, the disclosure and agreement for the amount chosen (quote), and accepting it with a"
-        + " fresh PIN or biometric, and every loan they have taken (GET /loans). A loan accepted waits for"
-        + " disbursement through the bank's system, which pays the merchant it was accepted for (merchantName) and"
-        + " sends the voucher. When a borrower cannot borrow, the reason comes in plain words (unavailable.message,"
-        + " or a 422's message): show it as it is.")
+        + " fresh PIN or biometric, and every loan they have taken (GET /loans). A loan accepted for a GetMore store"
+        + " is paid out as a GetMore voucher there and then (DISBURSED, with its code), or shortly after"
+        + " (voucherIssuance PENDING: it appears on a later read); otherwise it waits for disbursement through the"
+        + " bank's system, which pays the merchant it was accepted for (merchantName) and sends the voucher. A GetMore"
+        + " code is shown and put in the QR code exactly as given, dashes included; its balance is what GetMore will"
+        + " still accept, as last read from GetMore (balanceAsOf). When a borrower cannot borrow, the reason comes in"
+        + " plain words (unavailable.message, or a 422's message): show it as it is.")
 @RestController
 @RequestMapping(ApiPaths.BASE + "/borrower/staff-grocery-loan")
 @RequiredArgsConstructor
@@ -56,18 +64,27 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 public class BorrowerStaffLoanController {
 
     private final StaffLoanJourneyService journeyService;
+    private final StaffLoanAcceptance acceptance;
+    private final GetMoreDispatcher getMoreDispatcher;
+    private final VoucherService voucherService;
 
     @Operation(summary = "The Staff Grocery Loan tile",
             description = "BORROWER. At most one of loan, offer and unavailable is set. loan: the loan they hold, with"
                     + " its voucher once paid out (the code and QR value are there while it can be spent). offer: an"
                     + " offer to take up (\"Accept offer\"), with the amounts it can be drawn in. unavailable: why they"
-                    + " cannot borrow now. None of them, with canApply true: show \"Apply\".")
+                    + " cannot borrow now. None of them, with canApply true: show \"Apply\". A GetMore voucher is"
+                    + " brought up to date with GetMore in the background on each read; this answer is what was last"
+                    + " read (balanceAsOf), and the next read shows any change.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "An offer to take up", value = StaffLoanApiExamples.HOME_OFFER),
                     @ExampleObject(name = "No offer: may apply", value = StaffLoanApiExamples.HOME_APPLY),
                     @ExampleObject(name = "A loan awaiting payout", value = StaffLoanApiExamples.HOME_LOAN),
                     @ExampleObject(name = "Paid out: the voucher", value = StaffLoanApiExamples.HOME_VOUCHER),
+                    @ExampleObject(name = "A GetMore voucher being prepared",
+                            value = StaffLoanApiExamples.HOME_VOUCHER_PENDING),
+                    @ExampleObject(name = "A GetMore voucher spent in part",
+                            value = StaffLoanApiExamples.HOME_GETMORE_VOUCHER),
                     @ExampleObject(name = "Cannot borrow now", value = StaffLoanApiExamples.HOME_UNAVAILABLE)})),
             @ApiResponse(responseCode = "401", description = "No valid borrower session",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
@@ -76,7 +93,9 @@ public class BorrowerStaffLoanController {
     })
     @GetMapping
     public ApiResult<StaffLoanHome> home(@Parameter(hidden = true) JwtAuthenticationToken authentication) {
-        return ApiResult.ok(journeyService.home(staffMemberId(authentication)));
+        long staffMemberId = staffMemberId(authentication);
+        getMoreDispatcher.refresh(staffMemberId);
+        return ApiResult.ok(journeyService.home(staffMemberId));
     }
 
     @Operation(summary = "Their Staff Grocery Loans",
@@ -103,8 +122,9 @@ public class BorrowerStaffLoanController {
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100", example = "20")
             @RequestParam(required = false) Integer size) {
-        return ApiResult.ok(PageResponse.from(journeyService.loans(staffMemberId(authentication),
-                Paging.of(page, size))));
+        long staffMemberId = staffMemberId(authentication);
+        getMoreDispatcher.refresh(staffMemberId);
+        return ApiResult.ok(PageResponse.from(journeyService.loans(staffMemberId, Paging.of(page, size))));
     }
 
     @Operation(summary = "Apply",
@@ -167,11 +187,18 @@ public class BorrowerStaffLoanController {
                     + " borrower has just entered their PIN or used biometrics (FR-SGL-028): ask for it when they tap"
                     + " Accept, never reuse the sign-in one. Send the quote's offerId, amount, agreement version and"
                     + " contentSha256, and the device in X-Device-Id. Everything is checked again; the loan is then"
-                    + " made, AWAITING_DISBURSEMENT. STEP_UP_REQUIRED: ask for the PIN again and retry."
-                    + " TERMS_CHANGED: quote again and show the new agreement.")
+                    + " made. For a GetMore store its voucher is issued there and then: DISBURSED, with the voucher"
+                    + " and its code; when GetMore is slow, AWAITING_DISBURSEMENT with voucherIssuance PENDING (it"
+                    + " appears on a later read of the tile). Otherwise AWAITING_DISBURSEMENT, paid out later."
+                    + " STEP_UP_REQUIRED: ask for the PIN again and retry. TERMS_CHANGED: quote again and show the new"
+                    + " agreement.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "The loan",
-                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.ACCEPTED))),
+            @ApiResponse(responseCode = "201", description = "The loan", content = @Content(examples = {
+                    @ExampleObject(name = "GetMore: the voucher issued", value =
+                            StaffLoanApiExamples.ACCEPTED_WITH_VOUCHER),
+                    @ExampleObject(name = "GetMore: the voucher being prepared", value =
+                            StaffLoanApiExamples.ACCEPTED_VOUCHER_PENDING),
+                    @ExampleObject(name = "Awaiting payout", value = StaffLoanApiExamples.ACCEPTED)})),
             @ApiResponse(responseCode = "400", description = "A field missing or wrong, or no device",
                     content = @Content(examples = {
                             @ExampleObject(name = "No device", value = StaffLoanApiExamples.DEVICE_MISSING),
@@ -201,9 +228,35 @@ public class BorrowerStaffLoanController {
             @io.swagger.v3.oas.annotations.parameters.RequestBody(content =
             @Content(examples = @ExampleObject(StaffLoanApiExamples.ACCEPT_REQUEST)))
             @Valid @RequestBody AcceptStaffLoanRequest request) {
-        StaffLoanView loan = journeyService.accept(staffMemberId(authentication), request,
+        StaffLoanView loan = acceptance.accept(staffMemberId(authentication), request,
                 SigningContexts.of(httpRequest, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.created(loan));
+    }
+
+    @Operation(summary = "Every spend and refund of a loan's voucher",
+            description = "BORROWER, for a loan of their own (any other is a 404, as one with no voucher yet). Oldest"
+                    + " first, each with what was left after it: spends (SPEND) and, for a GetMore voucher, refunds"
+                    + " (REFUND, which put value back). spent is net of refunds, held is ordered at GetMore's till and"
+                    + " not yet invoiced, balance is what can still be spent. A GetMore voucher's figures are as last"
+                    + " read from GetMore (balanceAsOf); each read brings it up to date in the background. No code.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Success",
+                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.VOUCHER_SPENDS))),
+            @ApiResponse(responseCode = "401", description = "No valid borrower session",
+                    content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
+            @ApiResponse(responseCode = "403", description = "Not a borrower session",
+                    content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
+            @ApiResponse(responseCode = "404", description = "Not their loan, or no voucher yet",
+                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.VOUCHER_SPENDS_NONE)))
+    })
+    @GetMapping("/loans/{reference}/voucher-spends")
+    public ApiResult<BorrowerVoucherSpendsResponse> voucherSpends(
+            @Parameter(hidden = true) JwtAuthenticationToken authentication,
+            @Parameter(description = "The loan's reference", example = "SGL-2026-000164")
+            @PathVariable String reference) {
+        long staffMemberId = staffMemberId(authentication);
+        getMoreDispatcher.refresh(staffMemberId);
+        return ApiResult.ok(voucherService.spendsFor(staffMemberId, reference));
     }
 
     private static long staffMemberId(JwtAuthenticationToken authentication) {

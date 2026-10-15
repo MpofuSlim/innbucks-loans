@@ -33,6 +33,12 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
                                      @Param("disbursed") StaffLoanStatus disbursed,
                                      @Param("writtenOff") StaffLoanStatus writtenOff);
 
+    /** A loan by its reference ({@code SGL-2026-000164}). */
+    Optional<StaffLoan> findByReference(String reference);
+
+    /** A loan by its reference, only if it is the member's. */
+    Optional<StaffLoan> findByStaffMemberIdAndReference(Long staffMemberId, String reference);
+
     /** One member's loans, whatever became of them. */
     Page<StaffLoan> findByStaffMemberId(Long staffMemberId, Pageable pageable);
 

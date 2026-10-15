@@ -56,6 +56,22 @@ class SimShapesTest {
     }
 
     @Test
+    @DisplayName("a coupon as the port answered it renders like the store's own row: same keys, the code masked")
+    void portCouponShapeMatchesTheStoreRow() {
+        SimCoupon row = SimCoupon.builder().couponId(1207L).ruleId(43).code(CODE).usageLimit(0).usagePerCustomer(0)
+                .timesUsed(2).expirationDate(LocalDateTime.of(2026, 11, 13, 21, 59, 59)).createdAt(AT).type(1)
+                .build();
+
+        Map<String, Object> fromPort = SimShapes.coupon(SimShapes.toCoupon(row));
+
+        assertThat(fromPort).isEqualTo(SimShapes.coupon(row))
+                .containsEntry("code", "****8B1C")
+                .containsEntry("expiration_date", "2026-11-13 21:59:59")
+                .containsEntry("times_used", 2);
+        assertThat(fromPort.toString()).doesNotContain("7KQ2M9XWD4RT8B1C");
+    }
+
+    @Test
     @DisplayName("the port's order: every amount present (zero where Magento leaves it out), the rule ids split")
     void portOrderHasEveryAmount() {
         GetMoreOrder order = SimShapes.toOrder(held());

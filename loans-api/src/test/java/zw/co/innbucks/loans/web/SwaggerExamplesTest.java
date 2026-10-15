@@ -27,6 +27,8 @@ import zw.co.innbucks.loans.controller.DeductionBatchController;
 import zw.co.innbucks.loans.controller.DeductionCancellationController;
 import zw.co.innbucks.loans.controller.EmploymentEventController;
 import zw.co.innbucks.loans.controller.EmploymentEventTreatmentController;
+import zw.co.innbucks.loans.controller.GetMoreController;
+import zw.co.innbucks.loans.controller.GetMoreSimulatorController;
 import zw.co.innbucks.loans.controller.HeldBookingController;
 import zw.co.innbucks.loans.controller.InstrumentTemplateController;
 import zw.co.innbucks.loans.controller.LoanApplicationDraftController;
@@ -44,6 +46,7 @@ import zw.co.innbucks.loans.controller.StaffLoanArrearsReportController;
 import zw.co.innbucks.loans.controller.StaffLoanWriteOffController;
 import zw.co.innbucks.loans.controller.StaffLoanController;
 import zw.co.innbucks.loans.controller.StaffLoanMerchantController;
+import zw.co.innbucks.loans.controller.StaffLoanVoucherIssuanceController;
 import zw.co.innbucks.loans.controller.StaffNotificationController;
 import zw.co.innbucks.loans.controller.StaffOfferController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
@@ -58,6 +61,7 @@ import zw.co.innbucks.loans.controller.WorkQueueController;
 import zw.co.innbucks.loans.controller.WorkflowStageController;
 import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.audit.AuditService;
+import zw.co.innbucks.loans.core.getmore.GetMoreCodes;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.loan.CreditWorkbenchService;
 import zw.co.innbucks.loans.core.loan.Loan;
@@ -109,7 +113,8 @@ class SwaggerExamplesTest {
             BorrowerController.class, BorrowerStaffLoanController.class, StaffLoanController.class,
             BorrowerNotificationController.class, StaffLoanMerchantController.class,
             StaffArrearsOverrideController.class, StaffLoanWriteOffController.class,
-            StaffLoanArrearsReportController.class);
+            StaffLoanArrearsReportController.class, GetMoreController.class, GetMoreSimulatorController.class,
+            StaffLoanVoucherIssuanceController.class);
 
     record Example(String where, String json) {
         @Override
@@ -400,6 +405,158 @@ class SwaggerExamplesTest {
             assertThat(voucher.path("customerMsisdn").asString()).as(voucher.path("customerReference").asString())
                     .isEqualTo(registerPhones.get(voucher.path("customerReference").asString()));
         }
+    }
+
+    @Test
+    void theGetMoreExamplesTellOneStory() {
+        // Rutendo Chari (E1064) accepts SGL-2026-000164 for USD 150.00 and GetMore's (simulated) store issues it as
+        // coupon 1207, voucher 9; she spends USD 45.50 and USD 54.50 at Avondale and USD 10.00 is refunded, leaving
+        // USD 60.00. Every screen a reader starts from must show that phone, that loan, that code and those balances.
+        JsonNode member = null;
+        for (JsonNode item : JSON.readTree(ApiExamples.STAFF_MEMBERS).path("data").path("items")) {
+            if (item.path("employeeNumber").asString().equals("E1064")) {
+                member = item;
+            }
+        }
+        assertThat(member).isNotNull();
+        String phone = MsisdnUtils.mask(member.path("mobileNumber").asString());
+        assertThat(phone).isEqualTo("****0064");
+
+        JsonNode accepted = JSON.readTree(StaffLoanApiExamples.ACCEPTED_WITH_VOUCHER).path("data");
+        JsonNode afterSale = JSON.readTree(GetMoreApiExamples.SALE).path("data").path("voucher");
+        JsonNode retried = JSON.readTree(GetMoreApiExamples.RETRIED).path("data");
+        String reference = accepted.path("reference").asString();
+        assertThat(reference).isEqualTo("SGL-2026-000164")
+                .isEqualTo(afterSale.path("loanAccount").asString())
+                .isEqualTo(retried.path("loan").path("reference").asString())
+                .isEqualTo(retried.path("issuance").path("loanReference").asString())
+                .isEqualTo(JSON.readTree(GetMoreApiExamples.SALE_REQUEST).path("loanReference").asString())
+                .isEqualTo(JSON.readTree(GetMoreApiExamples.LOOKUP_REQUEST).path("loanReference").asString())
+                .isEqualTo(JSON.readTree(StaffLoanApiExamples.VOUCHER_SPENDS).path("data").path("loanReference")
+                        .asString());
+        assertThat(List.of(afterSale.path("customerMsisdn").asString(), retried.path("loan").path("msisdn")
+                .asString())).containsOnly(phone);
+        assertThat(retried.path("loan").path("staffMemberId").asLong()).isEqualTo(member.path("id").asLong());
+        assertThat(retried.path("loan").path("employeeNumber").asString())
+                .isEqualTo(afterSale.path("customerReference").asString()).isEqualTo("E1064");
+
+        // The code: in full where she sees it, masked as its last four everywhere else, on the issuance's prefix,
+        // which is on the host's configured one.
+        String code = GetMoreApiExamples.CODE_9;
+        assertThat(accepted.path("voucher").path("code").asString()).isEqualTo(code);
+        assertThat(JSON.readTree(GetMoreApiExamples.VOUCHER_9_CODE).path("data").path("scanValue").asString())
+                .isEqualTo(code);
+        assertThat(GetMoreCodes.normalize(code)).contains(code);
+        assertThat(List.of(afterSale.path("maskedCode").asString(), accepted.path("voucher").path("maskedCode")
+                        .asString(), JSON.readTree(GetMoreApiExamples.SALE).path("data").path("store").path("order")
+                        .path("coupon_code").asString()))
+                .containsOnly(GetMoreCodes.maskedCode(code));
+        String prefix = retried.path("issuance").path("couponPrefix").asString();
+        assertThat(code).startsWith(prefix);
+        assertThat(prefix).startsWith(JSON.readTree(GetMoreApiExamples.STATUS_SIMULATED).path("data")
+                .path("couponPrefix").asString());
+        assertThat(afterSale.path("disbursementReference").asString())
+                .isEqualTo("GETMORE-SIM-" + afterSale.path("externalCouponId").asLong())
+                .isEqualTo(retried.path("loan").path("disbursementReference").asString());
+        assertThat(afterSale.path("id").asLong()).isEqualTo(9)
+                .isEqualTo(retried.path("issuance").path("voucherId").asLong())
+                .isEqualTo(JSON.readTree(GetMoreApiExamples.ISSUANCES).path("data").path("items").get(0)
+                        .path("voucherId").asLong());
+
+        // The balances: each step's voucher, the store's own balance and the borrower's tile add up.
+        BigDecimal face = accepted.path("voucher").path("faceValue").decimalValue();
+        assertThat(face).isEqualByComparingTo(accepted.path("amount").decimalValue())
+                .isEqualByComparingTo(afterSale.path("faceValue").decimalValue())
+                .isEqualByComparingTo(JSON.readTree(GetMoreApiExamples.LOOKUP).path("data").path("allowance")
+                        .decimalValue());
+        BigDecimal first = JSON.readTree(GetMoreApiExamples.SALE_REQUEST).path("amount").decimalValue();
+        BigDecimal second = JSON.readTree(GetMoreApiExamples.SALE_HELD_REQUEST).path("amount").decimalValue();
+        BigDecimal refund = JSON.readTree(GetMoreApiExamples.REFUND_REQUEST).path("amount").decimalValue();
+        assertThat(afterSale.path("balance").decimalValue()).isEqualByComparingTo(face.subtract(first));
+        assertThat(JSON.readTree(GetMoreApiExamples.INVOICED).path("data").path("voucher").path("balance")
+                .decimalValue()).isEqualByComparingTo(face.subtract(first).subtract(second));
+        BigDecimal left = face.subtract(first).subtract(second).add(refund);
+        JsonNode refunded = JSON.readTree(GetMoreApiExamples.REFUNDED).path("data");
+        assertThat(refunded.path("voucher").path("balance").decimalValue()).isEqualByComparingTo(left);
+        assertThat(refunded.path("store").path("balance").decimalValue()).isEqualByComparingTo(left);
+        assertThat(refunded.path("voucher").path("refundedAmount").decimalValue()).isEqualByComparingTo(refund);
+        assertThat(JSON.readTree(GetMoreApiExamples.LOOKUP).path("data").path("balance").decimalValue())
+                .isEqualByComparingTo(left);
+        JsonNode tile = JSON.readTree(StaffLoanApiExamples.HOME_GETMORE_VOUCHER).path("data").path("loan")
+                .path("voucher");
+        assertThat(tile.path("balance").decimalValue()).isEqualByComparingTo(left);
+        assertThat(tile.path("spent").decimalValue()).isEqualByComparingTo(face.subtract(left));
+        assertThat(JSON.readTree(GetMoreApiExamples.EXPIRED).path("data").path("voucher").path("balance")
+                .decimalValue()).isEqualByComparingTo(left);
+        assertThat(JSON.readTree(GetMoreApiExamples.EXPIRED).path("message").asString())
+                .isEqualTo("Voucher 9 expired now (simulation) with USD " + left.setScale(2, RoundingMode.UNNECESSARY)
+                        + " unspent");
+
+        JsonNode spends = JSON.readTree(StaffLoanApiExamples.VOUCHER_SPENDS).path("data");
+        BigDecimal running = face;
+        for (JsonNode movement : spends.path("movements")) {
+            BigDecimal amount = movement.path("amount").decimalValue();
+            running = "REFUND".equals(movement.path("kind").asString()) ? running.add(amount)
+                    : running.subtract(amount);
+            assertThat(movement.path("balanceAfter").decimalValue()).as(movement.path("orderNumber").asString())
+                    .isEqualByComparingTo(running);
+        }
+        assertThat(running).isEqualByComparingTo(left)
+                .isEqualByComparingTo(spends.path("balance").decimalValue());
+        assertThat(spends.path("spent").decimalValue()).isEqualByComparingTo(face.subtract(left));
+        assertThat(spends.path("balanceAsOf").asString()).isEqualTo(tile.path("balanceAsOf").asString());
+
+        // Staff's view of the same voucher: its sales and refund walk the balance down to what is left, each named by
+        // the order the borrower's list names, and the day's settlement report adds up to the same money.
+        JsonNode detail = JSON.readTree(GetMoreApiExamples.VOUCHER_9_DETAIL).path("data");
+        assertThat(detail.path("voucher").path("balance").decimalValue()).isEqualByComparingTo(left);
+        BigDecimal walked = face;
+        List<String> orders = new ArrayList<>();
+        for (JsonNode sale : detail.path("redemptions")) {
+            walked = walked.subtract(sale.path("amount").decimalValue());
+            assertThat(sale.path("balanceAfter").decimalValue()).isEqualByComparingTo(walked);
+            assertThat(sale.path("source").asString()).isEqualTo("GETMORE_SYNC");
+            orders.add(sale.path("externalOrderNumber").asString());
+        }
+        for (JsonNode given : detail.path("refunds")) {
+            walked = walked.add(given.path("amount").decimalValue());
+            assertThat(given.path("balanceAfter").decimalValue()).isEqualByComparingTo(walked);
+        }
+        assertThat(walked).isEqualByComparingTo(left);
+        List<String> spentOn = new ArrayList<>();
+        spends.path("movements").forEach(movement -> {
+            if ("SPEND".equals(movement.path("kind").asString())) {
+                spentOn.add(movement.path("orderNumber").asString());
+            }
+        });
+        assertThat(orders).isEqualTo(spentOn);
+        assertThat(detail.path("refunds").get(0).path("amount").decimalValue()).isEqualByComparingTo(refund);
+
+        JsonNode report = JSON.readTree(GetMoreApiExamples.SETTLEMENT_REPORT_GETMORE).path("data");
+        JsonNode totals = report.path("totals").get(0);
+        assertThat(totals.path("issuedValue").decimalValue()).isEqualByComparingTo(face);
+        assertThat(totals.path("redeemedValue").decimalValue()).isEqualByComparingTo(first.add(second));
+        assertThat(totals.path("refundedValue").decimalValue()).isEqualByComparingTo(refund);
+        assertThat(totals.path("netRedeemedValue").decimalValue()).isEqualByComparingTo(face.subtract(left));
+        assertThat(report.path("byMerchant").get(0).path("netRedeemedValue"))
+                .isEqualTo(totals.path("netRedeemedValue"));
+        assertThat(report.path("redemptionsByOutlet").get(0).path("netRedeemedValue"))
+                .isEqualTo(totals.path("netRedeemedValue"));
+        assertThat(report.path("simulated").asBoolean()).isTrue();
+        List<String> references = new ArrayList<>();
+        for (JsonNode line : report.path("lines")) {
+            if (line.hasNonNull("merchantReference")) {
+                references.add(line.path("merchantReference").asString());
+            }
+            assertThat(line.path("voucherId").asLong()).isEqualTo(9);
+            assertThat(line.path("loanAccount").asString()).isEqualTo(reference);
+            assertThat(line.path("maskedCode").asString()).isEqualTo(GetMoreCodes.maskedCode(code));
+            assertThat(line.has("occurredAt")).as(line.path("event").asString())
+                    .isEqualTo(!"ISSUED".equals(line.path("event").asString()));
+        }
+        assertThat(references).contains(detail.path("redemptions").get(0).path("merchantReference").asString(),
+                        detail.path("redemptions").get(1).path("merchantReference").asString(),
+                        detail.path("refunds").get(0).path("merchantReference").asString());
     }
 
     static Stream<Class<?>> controllers() {

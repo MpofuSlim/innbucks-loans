@@ -24,6 +24,7 @@ import zw.co.innbucks.loans.core.getmore.simulator.SimulatedAmountBinding;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedGetMoreStore;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedStoreBackend;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedStoreSeeder;
+import zw.co.innbucks.loans.core.voucher.GetMoreDataGuard;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatorFaults;
 
 import java.time.Clock;
@@ -362,6 +363,7 @@ class GetMoreStoreConfigTest {
                 .withBean(SimRuleRepository.class, () -> rules)
                 .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
                 .withBean(MarketTimeZone.class, () -> new MarketTimeZone("ZW", Clock.systemUTC()))
+                .withBean(GetMoreDataGuard.class, () -> mock(GetMoreDataGuard.class))
                 .withBean(SimulatedStoreSeeder.class)
                 .withPropertyValues(simulated())
                 .run(context -> refused(context, "GETMORE_SIMULATOR_ALLOWED_NODE does not name this node"));
@@ -377,6 +379,7 @@ class GetMoreStoreConfigTest {
                 .withBean(SimRuleRepository.class, () -> rules)
                 .withBean(PlatformTransactionManager.class, () -> mock(PlatformTransactionManager.class))
                 .withBean(MarketTimeZone.class, () -> new MarketTimeZone("ZW", Clock.systemUTC()))
+                .withBean(GetMoreDataGuard.class, () -> mock(GetMoreDataGuard.class))
                 .withBean(SimulatedStoreSeeder.class)
                 .withPropertyValues(simulated())
                 .run(context -> assertThat(context).hasNotFailed());

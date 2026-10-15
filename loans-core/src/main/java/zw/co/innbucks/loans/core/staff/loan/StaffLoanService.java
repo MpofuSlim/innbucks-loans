@@ -11,25 +11,40 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
+import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatusChanged;
+import zw.co.innbucks.loans.core.voucher.GetMoreDispatcher;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Staff Grocery Loans as the bank's staff see them: Credit, Finance and Human Capital read them, with the agreement
  * each was accepted under, and Credit can stop one before it is paid out. A borrower who stops being ACTIVE before
  * their loan is paid out has it cancelled at once: the register is the product's credit control (FR-SGL-007). Once it
  * is paid out it is flagged instead, and the people who must act are told (BRD 3.8).
+ *
+ * <p>A loan awaiting its GetMore voucher may already have had a coupon made for it at GetMore: cancelling it sends its
+ * issuance to CANCELLING, and once the cancellation commits whatever it left live at GetMore is withdrawn
+ * ({@link StaffLoanVoucherIssuer#cleanup}). An attempt calling GetMore right now is never cut off: Credit's cancel
+ * waits for it (a 409 to repeat), and an employment change leaves it to find the loan cancelled when it settles,
+ * which withdraws the coupon it made. Cancelling a loan paid out as its GetMore voucher is
+ * {@link StaffLoanCancellation}'s.</p>
  */
 @Slf4j
 @Service
@@ -51,6 +66,9 @@ public class StaffLoanService {
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
     private final StaffLoanEmploymentFlagNotifier flagNotifier;
+    private final StaffLoanVoucherIssuanceRepository issuanceRepository;
+    private final GetMoreDispatcher getMoreDispatcher;
+    private final GetMoreProperties getMoreProperties;
 
     /**
      * Loans, newest first, optionally of one status, one employee number, and only those flagged (true) or not (false)
@@ -95,10 +113,12 @@ public class StaffLoanService {
 
     /**
      * Stops a loan before it is paid out: an acceptance in error, or one that should not be paid. Its offer stays taken
-     * up; the borrower may apply again.
+     * up; the borrower may apply again. A GetMore coupon its voucher issuance may have made is withdrawn once this
+     * commits, in the background.
      *
-     * @throws NotFoundException no such loan
-     * @throws ConflictException it has been paid out, or is already closed
+     * @throws NotFoundException           no such loan
+     * @throws ConflictException           it has been paid out, or is already closed
+     * @throws IssuanceInProgressException its GetMore voucher is being issued right now
      */
     @Transactional
     public StaffLoanResponse cancel(Long id, String reason) {
@@ -108,15 +128,78 @@ public class StaffLoanService {
                     + "; only a loan awaiting disbursement can be cancelled");
         }
         String by = authService.getLoggedInUsername();
-        cancel(loan, by, reason.strip(), "admin-portal");
+        cancelAwaiting(loan, by, reason.strip(), "admin-portal", true)
+                .ifPresent(this::cleanUpAfterCommit);
         return StaffLoanResponse.of(loan, marketTimeZone.today(), policy.arrearsGraceDays());
     }
 
     /**
+     * Cancels a loan awaiting its voucher, locked by the caller, in the caller's transaction, audited; its GetMore
+     * voucher issuance, if it has one still open, goes to CANCELLING. An attempt claimed less than the stale-claim time
+     * ago may be calling GetMore right now: with {@code refuseWhileCalling} nothing is cancelled
+     * ({@link IssuanceInProgressException}); without, the loan is cancelled and the issuance left to that attempt,
+     * which finds the loan cancelled when it settles and withdraws what it made.
+     *
+     * @return the issuance now CANCELLING, whose coupons the caller has withdrawn once this commits
+     * @throws IssuanceInProgressException {@code refuseWhileCalling}, and an attempt is calling GetMore right now
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Long> cancelAwaiting(StaffLoan loan, String by, String reason, String channel,
+                                         boolean refuseWhileCalling) {
+        LocalDateTime now = marketTimeZone.nowUtc().truncatedTo(ChronoUnit.MICROS);
+        StaffLoanVoucherIssuance issuance = issuanceRepository.lockByStaffLoanId(loan.getId())
+                .filter(open -> StaffLoanVoucherIssuanceStatus.OPEN.contains(open.getStatus()))
+                .orElse(null);
+        boolean calling = issuance != null
+                && issuance.isClaimFresh(now, getMoreProperties.getIssuance().getStaleClaim());
+        if (calling && refuseWhileCalling) {
+            throw new IssuanceInProgressException(loan.getReference());
+        }
+        cancelLocked(loan, by, reason, channel);
+        if (issuance == null || calling) {
+            if (calling) {
+                log.info("Staff loan {} cancelled while its GetMore voucher is being issued; that attempt withdraws"
+                        + " what it made", loan.getReference());
+            }
+            return Optional.empty();
+        }
+        if (issuance.getStatus() != StaffLoanVoucherIssuanceStatus.CANCELLING) {
+            issuance.cancelling(now);
+            issuanceRepository.save(issuance);
+        }
+        return Optional.of(issuance.getId());
+    }
+
+    /**
+     * Cancels a loan locked by the caller, in the caller's transaction, and audits it. The caller checks it may be:
+     * awaiting disbursement, or paid out as a GetMore voucher nothing was ever spent from, now withdrawn.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void cancelLocked(StaffLoan loan, String by, String reason, String channel) {
+        cancel(loan, by, reason, channel);
+    }
+
+    /** Withdraws what the issuance left at GetMore once the current transaction commits, in the background. */
+    private void cleanUpAfterCommit(Long issuanceId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            getMoreDispatcher.cleanup(issuanceId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                getMoreDispatcher.cleanup(issuanceId);
+            }
+        });
+    }
+
+    /**
      * A borrower who is no longer ACTIVE is not paid out (FR-SGL-005, FR-SGL-007): their loan awaiting disbursement is
-     * cancelled in the register approval's own transaction. A loan already paid out is flagged with the status they
-     * moved to, and the flag cleared when they are ACTIVE again (BRD 3.8); each change is audited and, once the
-     * approval commits, emailed to whoever it concerns.
+     * cancelled in the register approval's own transaction, whatever its GetMore voucher issuance is doing; once the
+     * approval commits, what that issuance left at GetMore is withdrawn in the background (one calling GetMore right
+     * now withdraws its own coupon when it settles). A loan already paid out is flagged with the status they moved to,
+     * and the flag cleared when they are ACTIVE again (BRD 3.8); each change is audited and, once the approval
+     * commits, emailed to whoever it concerns. Its GetMore coupon stays live (Q5).
      */
     @EventListener
     public void onEmploymentStatusChanged(StaffEmploymentStatusChanged change) {
@@ -125,9 +208,10 @@ public class StaffLoanService {
                             List.of(StaffLoanStatus.AWAITING_DISBURSEMENT))
                     .flatMap(loan -> loanRepository.lockById(loan.getId()))
                     .filter(loan -> loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT)
-                    .ifPresent(loan -> cancel(loan, change.approvedBy(), "Employment status changed to "
+                    .flatMap(loan -> cancelAwaiting(loan, change.approvedBy(), "Employment status changed to "
                             + change.to() + " before the loan was paid out (register batch " + change.batchId() + ")",
-                            "system"));
+                            "system", false))
+                    .ifPresent(this::cleanUpAfterCommit);
         }
         for (StaffLoan found : loanRepository.findByStaffMemberIdInAndStatusIn(List.of(change.staffMemberId()),
                 PAID_OUT)) {
@@ -155,7 +239,8 @@ public class StaffLoanService {
         log.info("Staff loan {} of {}: borrower {} (was {}), register batch {}", loan.getReference(),
                 loan.getEmployeeNumber(), change.to(), from == null ? "ACTIVE" : from, change.batchId());
         flagNotifier.notifyAfterCommit(new StaffLoanEmploymentFlagNotifier.Change(loan.getReference(),
-                loan.getEmployeeNumber(), loan.outstanding(), loan.getCurrency(), loan.getDueDate(), from, to));
+                loan.getEmployeeNumber(), loan.outstanding(), loan.getCurrency(), loan.getDueDate(), from, to,
+                loan.isSimulatedGetMore()));
     }
 
     private void cancel(StaffLoan loan, String by, String reason, String channel) {

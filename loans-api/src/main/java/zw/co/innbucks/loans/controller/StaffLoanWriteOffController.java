@@ -85,6 +85,10 @@ public class StaffLoanWriteOffController {
                     content = @Content(examples = {
                             @ExampleObject(name = "Voucher can still be spent",
                                     value = StaffLoanWriteOffApiExamples.VOUCHER_OPEN),
+                            @ExampleObject(name = "GetMore voucher never used: cancel the loan",
+                                    value = StaffLoanWriteOffApiExamples.GETMORE_VOUCHER_UNTOUCHED),
+                            @ExampleObject(name = "GetMore voucher lapsed, its coupon still live",
+                                    value = StaffLoanWriteOffApiExamples.GETMORE_COUPON_LIVE),
                             @ExampleObject(name = "Not paid out", value = StaffLoanWriteOffApiExamples.NOT_PAID_OUT),
                             @ExampleObject(name = "Nothing to reverse",
                                     value = StaffLoanWriteOffApiExamples.NOTHING_TO_REVERSE),

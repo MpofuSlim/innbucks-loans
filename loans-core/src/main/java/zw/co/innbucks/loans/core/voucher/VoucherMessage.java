@@ -17,17 +17,25 @@ import java.util.Locale;
  *
  * <p>It names the merchant the voucher can be spent at. A name too long to fit one SMS is left out rather than split
  * the message in two: the borrower already saw it on the quote and in their loan.</p>
+ *
+ * <p>A GetMore coupon has its own template ({@link #TEMPLATE_GETMORE}): the code goes in exactly as GetMore made it,
+ * never regrouped, since its dashes are part of it. Its longest code (39 characters, {@code GetMoreProperties}) still
+ * fits one SMS with a balance of up to 9 999.99. On staging's simulated store the merchant sentence is replaced by one
+ * that says the code is a test.</p>
  */
 public final class VoucherMessage {
 
     public static final String TEMPLATE = "VOUCHER_ISSUED";
     public static final int VERSION = 2;
+    public static final String TEMPLATE_GETMORE = "VOUCHER_ISSUED_GETMORE";
+    public static final int VERSION_GETMORE = 1;
     static final int MAX_LENGTH = 160;
 
     private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH);
     private static final String TEXT = "InnBucks Staff Grocery Loan. Your voucher is %s, worth %s %s, valid until %s.";
     private static final String AT_MERCHANT = " Spend it at %s.";
     private static final String AT_TILL = " Show it at the till.";
+    private static final String SIMULATED = " TEST code, not valid in store.";
 
     private VoucherMessage() {
     }
@@ -40,6 +48,23 @@ public final class VoucherMessage {
                               String merchantName) {
         String text = String.format(Locale.ROOT, TEXT, VoucherCodes.forMessage(code), currency,
                 balance.setScale(2, RoundingMode.HALF_UP).toPlainString(), UNTIL.format(validUntil));
+        String named = text + String.format(Locale.ROOT, AT_MERCHANT, merchantName.strip());
+        return named.length() <= MAX_LENGTH ? named : text + AT_TILL;
+    }
+
+    /**
+     * A GetMore coupon's message ({@link #TEMPLATE_GETMORE}): its code exactly as GetMore made it.
+     *
+     * @param balance   what can still be spent at GetMore
+     * @param simulated staging's simulated store: the code is said to be a test, and no merchant is named
+     */
+    public static String textGetMore(String code, String currency, BigDecimal balance, OffsetDateTime validUntil,
+                                     String merchantName, boolean simulated) {
+        String text = String.format(Locale.ROOT, TEXT, code, currency,
+                balance.setScale(2, RoundingMode.HALF_UP).toPlainString(), UNTIL.format(validUntil));
+        if (simulated) {
+            return text + SIMULATED;
+        }
         String named = text + String.format(Locale.ROOT, AT_MERCHANT, merchantName.strip());
         return named.length() <= MAX_LENGTH ? named : text + AT_TILL;
     }

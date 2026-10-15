@@ -13,6 +13,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -20,6 +21,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.filter.FormContentFilter;
 import zw.co.innbucks.loans.core.config.AsyncExecutorConfig;
 import zw.co.innbucks.loans.core.config.RejectedTasks;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
@@ -36,9 +38,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The packaged {@code application.yml} with Boot's real auto-configuration: every cache bounded, expiring and
- * measured; the {@code @Async} executor bounded and dropping-and-counting when full; and no Swagger UI, while the spec
- * the fleet gateway aggregates ({@code /v3/api-docs}) is still served without a token. The database, JPA and Flyway
- * are off, as in {@code PrometheusEndpointTest}.
+ * measured; the {@code @Async} executor bounded and dropping-and-counting when full; no Swagger UI, while the spec
+ * the fleet gateway aggregates ({@code /v3/api-docs}) is still served without a token; and no filter that reads a
+ * request body ahead of the security chains. The database, JPA and Flyway are off, as in
+ * {@code PrometheusEndpointTest}.
  */
 @SpringBootTest(classes = RuntimeBoundsTest.App.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -88,6 +91,9 @@ class RuntimeBoundsTest {
 
     @Autowired
     ThreadPoolTaskExecutor applicationTaskExecutor;
+
+    @Autowired
+    ApplicationContext context;
 
     private final HttpClient http = HttpClient.newBuilder().proxy(HttpClient.Builder.NO_PROXY).build();
 
@@ -159,6 +165,15 @@ class RuntimeBoundsTest {
                 "/v3/api-docs/swagger-config")) {
             assertThat(get(path).statusCode()).as(path).isEqualTo(404);
         }
+    }
+
+    // ---- request bodies -------------------------------------------------------
+
+    @Test
+    @DisplayName("no FormContentFilter: no form-encoded PUT, PATCH or DELETE body is read ahead of the security chains")
+    void noFormContentFilter() {
+        assertThat(context.getBeansOfType(FormContentFilter.class)).as("Boot's OrderedFormContentFilter is off")
+                .isEmpty();
     }
 
     private HttpResponse<String> get(String path) throws Exception {

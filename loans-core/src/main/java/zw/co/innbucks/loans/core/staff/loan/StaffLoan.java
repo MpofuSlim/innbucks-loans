@@ -39,6 +39,9 @@ import java.time.LocalDateTime;
 @ToString(of = {"id", "reference", "staffMemberId", "status"})
 public class StaffLoan {
 
+    /** The payout reference of a loan paid out as a coupon of the simulated GetMore store. */
+    static final String SIMULATED_GETMORE_PREFIX = "GETMORE-SIM-";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -157,7 +160,30 @@ public class StaffLoan {
         };
     }
 
-    /** Stops it before anything is paid. The caller checks it is AWAITING_DISBURSEMENT. */
+    /**
+     * Whether it was paid out as a coupon of staging's simulated GetMore store ({@code GETMORE-SIM-}): such a loan is
+     * a test, kept out of every report and email outside a SIMULATED host.
+     */
+    public boolean isSimulatedGetMore() {
+        return disbursementReference != null && disbursementReference.startsWith(SIMULATED_GETMORE_PREFIX);
+    }
+
+    /**
+     * Paid out as its GetMore voucher, at the moment the voucher is kept (D5): the credit is the voucher, and the bank
+     * pays GetMore for what was spent on payday. {@code reference} names the coupon ({@code GETMORE-<couponId>}). The
+     * caller checks it is AWAITING_DISBURSEMENT.
+     */
+    void voucherIssued(LocalDateTime at, String reference) {
+        this.status = StaffLoanStatus.DISBURSED;
+        this.disbursedAt = at;
+        this.disbursementReference = reference;
+    }
+
+    /**
+     * Stops it. The caller checks it is AWAITING_DISBURSEMENT, or DISBURSED with a GetMore voucher nothing was ever
+     * spent from and whose coupon is withdrawn ({@link StaffLoanCancellation}); when it was paid out it keeps when and
+     * as what, which V37 allows only for a {@code GETMORE-} payout.
+     */
     void cancel(LocalDateTime at, String by, String reason) {
         this.status = StaffLoanStatus.CANCELLED;
         this.cancelledAt = at;

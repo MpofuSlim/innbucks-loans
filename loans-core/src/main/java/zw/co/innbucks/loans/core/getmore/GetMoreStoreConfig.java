@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.getmore;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,16 +18,19 @@ import zw.co.innbucks.loans.core.getmore.simulator.SimulatedAmountBinding;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedGetMoreStore;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatedStoreBackend;
 import zw.co.innbucks.loans.core.getmore.simulator.SimulatorFaults;
+import zw.co.innbucks.loans.core.voucher.GetMoreDataGuard;
 
 import java.time.Clock;
 
 /**
  * GetMore's wiring. {@code GETMORE_MODE} picks the one {@link GetMoreStore} and the one {@link GetMoreAmountBinding}
  * by an explicit switch, never {@code @ConditionalOnMissingBean}: every implementation is a plain class built here,
- * so exactly one of each exists. The store depends on {@link GetMoreModeReport}, so the boot checks run while the
- * context refreshes, before the web connector opens. The client is built in every mode, like the WhatsApp one; the
- * contract tests build it through this same method.
+ * so exactly one of each exists. The store depends on {@link GetMoreModeReport} and on {@link GetMoreDataGuard} (the
+ * checks against what the database holds), so both run while the context refreshes, before any store exists and before
+ * the web connector opens. The client is built in every mode, like the WhatsApp one; the contract tests build it
+ * through this same method.
  */
+@Slf4j
 @Configuration
 @EnableConfigurationProperties(GetMoreProperties.class)
 public class GetMoreStoreConfig {
@@ -60,15 +64,18 @@ public class GetMoreStoreConfig {
     /**
      * OFF: a store that refuses every call. LIVE: GetMore's Magento over OAuth 1.0a. SIMULATED: the in-process
      * stand-in, whose beans exist only in that mode (absent, the boot fails here rather than run a half-built
-     * simulator).
+     * simulator). The data guard is created first, wherever the application has one (a context without the
+     * repositories, such as this configuration's own test, has none).
      */
     @Bean
     public GetMoreStore getMoreStore(GetMoreProperties properties,
                                      @Qualifier("getMoreRestClient") RestClient restClient,
                                      GetMoreModeReport modeReport,
+                                     ObjectProvider<GetMoreDataGuard> dataGuard,
                                      ObjectProvider<SimulatedStoreBackend> simulatedBackend,
                                      ObjectProvider<SimulatorFaults> simulatorFaults,
                                      ObjectProvider<MeterRegistry> meterRegistry) {
+        dataGuard.ifAvailable(guard -> log.debug("GetMore data checks passed for {}", guard.mode()));
         return switch (modeReport.mode()) {
             case OFF -> new DisabledGetMoreStore();
             case LIVE -> new MagentoGetMoreStore(restClient, properties.getLive(),

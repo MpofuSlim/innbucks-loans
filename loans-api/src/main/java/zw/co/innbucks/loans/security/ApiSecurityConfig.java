@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -17,6 +18,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import zw.co.innbucks.loans.core.auth.RolesJwtAuthenticationConverter;
+import zw.co.innbucks.loans.core.getmore.simulator.SimulatorApiKey;
 import zw.co.innbucks.loans.web.ApiPaths;
 
 /**
@@ -33,9 +35,17 @@ import zw.co.innbucks.loans.web.ApiPaths;
 public class ApiSecurityConfig {
 
     private static final String AUTH_PATHS = ApiPaths.BASE + "/auth/**";
+    /**
+     * STAGING ONLY: the GetMore simulator's test actions. Where the simulator is on, its own chain
+     * ({@link #simulatorSecurityFilterChain}) answers them first; everywhere else they fall through to the unsecured
+     * chain with CSRF off, so any request to them, a POST without a token included, is the plain 404 of a path that
+     * does not exist rather than a 401 or 403 that would say otherwise.
+     */
+    static final String SIMULATOR_PATHS = ApiPaths.BASE + "/getmore-simulator/**";
 
     private static final String[] UNSECURED_PATHS = {
             AUTH_PATHS,
+            SIMULATOR_PATHS,
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -78,13 +88,38 @@ public class ApiSecurityConfig {
                 .build();
     }
 
+    /**
+     * STAGING ONLY, and only where {@code GETMORE_MODE=SIMULATED}: the GetMore simulator's test actions, for whoever
+     * holds {@code GETMORE_SIMULATOR_API_KEY} and nobody else ({@link SimulatorApiKeyFilter}: the key checked in
+     * constant time and the body capped before anything reads it). Ahead of every other chain, so no loans token
+     * reaches them and none of the API chain's session filters apply. Elsewhere this chain does not exist and the
+     * paths are a plain 404.
+     */
+    @Bean
+    @Order(-1)
+    @ConditionalOnProperty(prefix = "loans.getmore", name = "mode", havingValue = "SIMULATED")
+    SecurityFilterChain simulatorSecurityFilterChain(HttpSecurity http, SimulatorApiKey simulatorApiKey)
+            throws Exception {
+        return http
+                .securityMatcher(SIMULATOR_PATHS)
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasRole(SimulatorApiKeyFilter.SIMULATOR_ROLE))
+                // Before the anonymous filter, which sets an anonymous caller: the key is checked first of all.
+                .addFilterBefore(new SimulatorApiKeyFilter(simulatorApiKey), AnonymousAuthenticationFilter.class)
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint(SecurityErrorResponses::unauthorized)
+                        .accessDeniedHandler(SecurityErrorResponses::forbidden))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .build();
+    }
+
     @Bean
     @Order(1)
     SecurityFilterChain unsecuredSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
                 .securityMatcher(UNSECURED_PATHS)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-                .csrf(csrf -> csrf.ignoringRequestMatchers(AUTH_PATHS))
+                .csrf(csrf -> csrf.ignoringRequestMatchers(AUTH_PATHS, SIMULATOR_PATHS))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .build();
     }

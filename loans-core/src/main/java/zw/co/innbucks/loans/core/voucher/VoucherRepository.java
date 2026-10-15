@@ -1,6 +1,7 @@
 package zw.co.innbucks.loans.core.voucher;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -8,7 +9,9 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -19,6 +22,44 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long>, JpaSpec
     Optional<Voucher> findByDisbursementReference(String disbursementReference);
 
     Optional<Voucher> findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(Long staffMemberId, String loanAccount);
+
+    /** A Staff Grocery Loan's GetMore voucher: one per loan. */
+    Optional<Voucher> findByStaffLoanId(Long staffLoanId);
+
+    List<Voucher> findByStaffLoanIdIn(Collection<Long> staffLoanIds);
+
+    boolean existsByStoreMode(GetMoreMode storeMode);
+
+    long countByStoreMode(GetMoreMode storeMode);
+
+    /** The voucher a GetMore coupon was kept as, in its store: one per coupon ({@code uq_vouchers_external_coupon}). */
+    Optional<Voucher> findByStoreModeAndExternalCouponId(GetMoreMode storeMode, Long externalCouponId);
+
+    /** GetMore vouchers of one store whose last sync stopped at a blocking issue. */
+    long countByStoreModeAndSyncBlockedByIsNotNull(GetMoreMode storeMode);
+
+    /** GetMore vouchers of one store with a sale ordered there and not yet invoiced, as last synced. */
+    long countByStoreModeAndHeldAmountGreaterThan(GetMoreMode storeMode, BigDecimal amount);
+
+    /**
+     * A staff member's GetMore vouchers in {@code mode} that a borrower's read may refresh: not cancelled, expiring
+     * after {@code expiredAfter} (now less the sync's after-expiry window: a sale can still be invoiced or refunded
+     * that long after), and not synced since {@code syncedBefore}. Newest first, at most {@code limit}.
+     */
+    default List<Long> findGetMoreIdsToRefresh(Long staffMemberId, GetMoreMode mode, LocalDateTime expiredAfter,
+                                               LocalDateTime syncedBefore, int limit) {
+        return getMoreIdsToRefresh(staffMemberId, mode, expiredAfter, syncedBefore, VoucherCodeSource.GETMORE,
+                VoucherStatus.CANCELLED, PageRequest.of(0, limit));
+    }
+
+    @Query("select v.id from Voucher v where v.staffMemberId = :member and v.codeSource = :getMore"
+            + " and v.storeMode = :mode and v.status <> :cancelled and v.expiresAt > :expiredAfter"
+            + " and (v.syncedAt is null or v.syncedAt < :syncedBefore) order by v.id desc")
+    List<Long> getMoreIdsToRefresh(@Param("member") Long staffMemberId, @Param("mode") GetMoreMode mode,
+                                   @Param("expiredAfter") LocalDateTime expiredAfter,
+                                   @Param("syncedBefore") LocalDateTime syncedBefore,
+                                   @Param("getMore") VoucherCodeSource getMore,
+                                   @Param("cancelled") VoucherStatus cancelled, Pageable pageable);
 
     Optional<Voucher> findByCodeHmac(String codeHmac);
 

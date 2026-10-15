@@ -7,6 +7,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.notifications.SmsNotificationClient;
 import zw.co.innbucks.loans.core.notifications.WhatsAppNotificationClient;
 
@@ -23,7 +24,11 @@ import java.util.UUID;
  * <p>Not subject to a customer's opt-out: the voucher is what the loan was paid out as, a service message (FR-GEN-005).
  * The delivery is claimed first (PENDING to SENDING, in its own short transaction), so it is never sent twice; the code
  * is unsealed only then, and only in memory; the gateways are called outside any transaction; and the outcome is
- * recorded in a second one.
+ * recorded in a second one, under the voucher's row lock: a GetMore sync or issuance writing the same voucher at the
+ * same moment is waited for rather than raced, so the outcome is never lost to a version conflict.
+ *
+ * <p>A GetMore coupon goes out under its own template, its code exactly as GetMore made it, with what can still be
+ * spent at GetMore ({@link VoucherMessage#textGetMore}).</p>
  */
 @Slf4j
 @Component
@@ -55,7 +60,7 @@ public class VoucherDeliverySender {
     }
 
     /** What a claimed delivery is sent with. The message holds the code, so it is kept out of toString. */
-    private record Claim(Long voucherId, String recipient, String message) {
+    private record Claim(Long voucherId, String recipient, String message, String template, int templateVersion) {
         @Override
         public String toString() {
             return "Claim[voucherId=" + voucherId + "]";
@@ -121,9 +126,16 @@ public class VoucherDeliverySender {
         }
         Voucher voucher = voucherRepository.findById(voucherId).orElseThrow();
         String code = vault.decrypt(voucher.getCodeCiphertext());
+        if (voucher.isGetMore()) {
+            return new Claim(voucherId, voucher.getCustomerMsisdn(), VoucherMessage.textGetMore(code,
+                    voucher.getCurrency(), voucher.spendableAtStore(),
+                    marketTimeZone.atMarketFromUtc(voucher.getExpiresAt()), voucher.getMerchant().getCompanyName(),
+                    voucher.getStoreMode() == GetMoreMode.SIMULATED), VoucherMessage.TEMPLATE_GETMORE,
+                    VoucherMessage.VERSION_GETMORE);
+        }
         return new Claim(voucherId, voucher.getCustomerMsisdn(), VoucherMessage.text(code, voucher.getCurrency(),
                 voucher.balance(), marketTimeZone.atMarketFromUtc(voucher.getExpiresAt()),
-                voucher.getMerchant().getCompanyName()));
+                voucher.getMerchant().getCompanyName()), VoucherMessage.TEMPLATE, VoucherMessage.VERSION);
     }
 
     private VoucherDelivery attempt(Claim claim, VoucherChannel channel, String reference, String requestedBy,
@@ -132,8 +144,8 @@ public class VoucherDeliverySender {
                 .voucherId(claim.voucherId())
                 .channel(channel)
                 .recipient(claim.recipient())
-                .template(VoucherMessage.TEMPLATE)
-                .templateVersion(VoucherMessage.VERSION)
+                .template(claim.template())
+                .templateVersion(claim.templateVersion())
                 .status(failure == null ? VoucherDelivery.Status.SENT : VoucherDelivery.Status.FAILED)
                 .gatewayReference(reference)
                 .failureReason(failure == null ? null : StringUtils.abbreviate(StringUtils.defaultIfBlank(
@@ -145,7 +157,7 @@ public class VoucherDeliverySender {
 
     private void record(Long voucherId, List<VoucherDelivery> attempts, VoucherChannel delivered) {
         deliveryRepository.saveAll(attempts);
-        Voucher voucher = voucherRepository.findById(voucherId).orElseThrow();
+        Voucher voucher = voucherRepository.lockById(voucherId).orElseThrow();
         voucher.finishDelivery(delivered, marketTimeZone.nowUtc());
         voucherRepository.save(voucher);
     }

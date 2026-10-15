@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
  *   <li>A write-off is for a paid-out (DISBURSED) loan whose voucher can no longer be spent: writing off a debt whose
  *   value can still be drawn would let the borrower keep spending it. A loan awaiting disbursement is cancelled, not
  *   written off. A written-off loan is still owed and still recovered; it also stops the borrower taking another
- *   Staff Grocery Loan unless Credit overrides (FR-SGL-014).</li>
+ *   Staff Grocery Loan unless Credit overrides (FR-SGL-014). A GetMore voucher must also be gone at GetMore: one that
+ *   lapsed is withdrawn there by its next sync, and until then its code could still be taken at GetMore's till.</li>
  *   <li>A reversal puts a loan written off in error back to DISBURSED. It is refused while the borrower holds another
  *   open loan, such as one taken under Credit's arrears override: nobody holds two (FR-SGL-013).</li>
  * </ul>
@@ -225,9 +226,17 @@ public class StaffLoanWriteOffService {
             }
             voucherRepository.findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(loan.getStaffMemberId(),
                             loan.getReference())
-                    .filter(voucher -> voucher.statusAt(now).isOpen())
                     .ifPresent(voucher -> {
-                        throw voucherOpen(loan, voucher, now);
+                        if (voucher.statusAt(now).isOpen()) {
+                            throw voucherOpen(loan, voucher, now);
+                        }
+                        if (voucher.isGetMore() && voucher.statusAt(now) == VoucherStatus.EXPIRED
+                                && voucher.getCouponWithdrawnAt() == null) {
+                            throw new ConflictException(String.format("Staff loan %s's voucher %d has lapsed but its"
+                                    + " GetMore coupon is still live; sync it first (POST /lending/v1/vouchers/%d/"
+                                    + "getmore-syncs), which withdraws it", loan.getReference(), voucher.getId(),
+                                    voucher.getId()));
+                        }
                     });
             return;
         }
@@ -244,9 +253,23 @@ public class StaffLoanWriteOffService {
                 });
     }
 
+    /**
+     * A voucher that can still be spent stops a write-off, with what to do instead. Loans' own voucher can be cancelled
+     * while nothing is spent; a GetMore coupon is cancelled only with its loan, and only if nothing was ever spent from
+     * it, refunded or held at GetMore's till: the cancellation's own rule, so a coupon whose spend was refunded back to
+     * nothing (ISSUED again) is not sent to a cancel that refuses it.
+     */
     private ConflictException voucherOpen(StaffLoan loan, Voucher voucher, LocalDateTime now) {
-        String how = voucher.statusAt(now) == VoucherStatus.ISSUED ? "cancel the voucher or wait until it expires"
-                : "wait until it expires";
+        boolean untouched = voucher.statusAt(now) == VoucherStatus.ISSUED;
+        String how;
+        if (voucher.isGetMore()) {
+            boolean neverUsed = untouched && voucher.getHeldAmount().signum() == 0
+                    && voucher.getRedeemedAmount().signum() == 0 && voucher.getRefundedAmount().signum() == 0;
+            how = neverUsed ? "cancel the loan instead (POST /lending/v1/staff-loans/" + loan.getId() + "/cancel)"
+                    : "wait until it expires";
+        } else {
+            how = untouched ? "cancel the voucher or wait until it expires" : "wait until it expires";
+        }
         return new ConflictException(String.format("Staff loan %s's voucher %d can still be spent, until %s; a loan"
                         + " whose value can still be drawn cannot be written off: %s", loan.getReference(),
                 voucher.getId(), marketTimeZone.render(voucher.getExpiresAt()), how));

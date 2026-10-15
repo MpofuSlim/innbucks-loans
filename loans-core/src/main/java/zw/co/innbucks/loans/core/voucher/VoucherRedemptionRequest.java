@@ -42,8 +42,20 @@ public class VoucherRedemptionRequest {
     @Size(max = 120, message = "outletName must be at most 120 characters")
     private String outletName;
 
-    /** The merchant's own reference for this sale: unique among its sales, and what makes a retried redemption safe. */
+    /**
+     * The merchant's own reference for this sale: unique among its sales, and what makes a retried redemption safe.
+     * {@code GM:} and {@code GMS:} are reserved for GetMore's own sales, read back by a sync.
+     */
     @NotBlank(message = "reference is required")
     @Size(max = 64, message = "reference must be at most 64 characters")
+    @Pattern(regexp = "(?s)^(?!GMS?:).*$", message = RESERVED_REFERENCE)
     private String reference;
+
+    static final String RESERVED_REFERENCE = "reference must not start with GM: or GMS: (reserved for GetMore's own"
+            + " sales)";
+
+    /** Whether a reference, as stored (stripped), is one of GetMore's sync keys. */
+    static boolean reserved(String reference) {
+        return reference != null && (reference.startsWith("GM:") || reference.startsWith("GMS:"));
+    }
 }

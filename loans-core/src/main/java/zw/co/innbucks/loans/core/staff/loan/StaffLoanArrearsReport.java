@@ -50,11 +50,14 @@ public record StaffLoanArrearsReport(LocalDate asOf, LocalDateTime generatedAt, 
      * @param inArrears        past its due date and the grace, or written off
      * @param escalated        unpaid for the escalation days or more after its due date, and not written off
      * @param employmentFlag   set when the borrower is no longer ACTIVE
+     * @param simulated        paid out as a coupon of staging's simulated GetMore store: a test, listed only on a
+     *                         SIMULATED host
      */
     public record Line(Long staffLoanId, String reference, String employeeNumber, String fullName, String department,
                        StaffEmploymentStatus employmentStatus, String grade, String msisdn, String merchantCode,
                        StaffLoanStatus status, String currency, BigDecimal amount, BigDecimal outstanding,
                        LocalDateTime disbursedAt, LocalDate dueDate, long daysPastDue, StaffLoanArrearsBucket bucket,
-                       boolean inArrears, boolean escalated, StaffLoanEmploymentFlag employmentFlag) {
+                       boolean inArrears, boolean escalated, StaffLoanEmploymentFlag employmentFlag,
+                       boolean simulated) {
     }
 }

@@ -2875,6 +2875,27 @@ public final class ApiExamples {
 
                 }""";
 
+    // Rutendo Chari: the GetMore examples' borrower (SGL-2026-000164, paid out as GetMore coupon voucher 9).
+    static final String STAFF_E1064 = """
+                {
+                  "id": 9,
+                  "employeeNumber": "E1064",
+                  "fullName": "Rutendo Chari",
+                  "nationalId": "632164064K63",
+                  "mobileNumber": "263771640064",
+                  "grade": "C4",
+                  "department": "Finance",
+                  "employmentStatus": "ACTIVE",
+                  "engagementDate": "2020-01-06",
+                  "walletAccountNumber": "263771640064",
+                  "statusChangedAt": "2026-09-30T15:40:03+02:00",
+                  "createdAt": "2026-09-30T15:40:03+02:00",
+                  "updatedAt": "2026-09-30T15:40:03+02:00",
+                  "eligible": true,
+                  "limit": """ + GRADE_LIMIT_C4_1 + """
+
+                }""";
+
     public static final String STAFF_MEMBERS = """
             {
               "code": "OK",
@@ -2886,11 +2907,13 @@ public final class ApiExamples {
             """ + STAFF_E1012 + """
             ,
             """ + STAFF_E1043 + """
+            ,
+            """ + STAFF_E1064 + """
 
                 ],
                 "page": 0,
                 "size": 20,
-                "totalItems": 3,
+                "totalItems": 4,
                 "totalPages": 1
               }
             }""";

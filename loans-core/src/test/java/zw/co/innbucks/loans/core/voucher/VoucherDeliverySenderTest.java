@@ -30,7 +30,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Sending a voucher (FR-SGL-034, FR-SGL-037): on each channel in turn until one accepts it, the code dashed and in full,
- * every attempt logged without it, a voucher no channel accepted left FAILED for follow-up, and never sent twice.
+ * every attempt logged without it, a voucher no channel accepted left FAILED for follow-up, and never sent twice. A
+ * GetMore coupon goes out verbatim under its own template, and the outcome is recorded under the voucher's row lock.
  */
 class VoucherDeliverySenderTest {
 
@@ -40,6 +41,7 @@ class VoucherDeliverySenderTest {
 
     private final List<VoucherDelivery> logged = new ArrayList<>();
     private Voucher voucher;
+    private VoucherRepository vouchers;
     private boolean claimable = true;
     private VoucherProperties properties;
     private SmsNotificationClient sms;
@@ -51,10 +53,11 @@ class VoucherDeliverySenderTest {
         VoucherCodeVault vault = VoucherCodeVaultTest.vault();
         voucher = TestVouchers.issued(vault).deliveryStatus(VoucherDeliveryStatus.SENDING).deliveredChannel(null)
                 .build();
-        VoucherRepository vouchers = mock(VoucherRepository.class);
+        vouchers = mock(VoucherRepository.class);
         when(vouchers.claimDelivery(7L, VoucherDeliveryStatus.PENDING, VoucherDeliveryStatus.SENDING, NOW))
                 .thenAnswer(i -> claimable ? 1 : 0);
         when(vouchers.findById(7L)).thenAnswer(i -> Optional.of(voucher));
+        when(vouchers.lockById(7L)).thenAnswer(i -> Optional.of(voucher));
         when(vouchers.save(any())).thenAnswer(i -> voucher = i.getArgument(0));
         VoucherDeliveryRepository deliveries = mock(VoucherDeliveryRepository.class);
         when(deliveries.saveAll(any())).thenAnswer(i -> {
@@ -88,6 +91,7 @@ class VoucherDeliverySenderTest {
             assertThat(attempt.getRequestedBy()).isEqualTo("system");
             assertThat(attempt.toString()).doesNotContain(TestVouchers.CODE).doesNotContain("4829-1506");
         });
+        verify(vouchers).lockById(7L);
     }
 
     @Test
@@ -159,5 +163,40 @@ class VoucherDeliverySenderTest {
 
         verifyNoInteractions(sms, whatsApp);
         assertThat(logged).isEmpty();
+    }
+    @Test
+    @DisplayName("a GetMore coupon: verbatim under VOUCHER_ISSUED_GETMORE v1; simulated, the code is said to be a test")
+    void getMoreVerbatim() {
+        voucher = TestVouchers.getMoreIssued(VoucherCodeVaultTest.vault()).id(7L)
+                .deliveryStatus(VoucherDeliveryStatus.SENDING).deliveredChannel(null).build();
+
+        sender.send(7L, "system");
+
+        verify(whatsApp).sendCustomNotification("+263771640064", "InnBucks Staff Grocery Loan. Your voucher is"
+                + " SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C, worth USD 150.00, valid until 13 Nov 2026. TEST code, not valid in"
+                + " store.", true);
+        assertThat(logged).singleElement().satisfies(attempt -> {
+            assertThat(attempt.getTemplate()).isEqualTo("VOUCHER_ISSUED_GETMORE");
+            assertThat(attempt.getTemplateVersion()).isEqualTo(1);
+            assertThat(attempt.toString()).doesNotContain(TestVouchers.GETMORE_CODE);
+        });
+        assertThat(voucher.getDeliveryStatus()).isEqualTo(VoucherDeliveryStatus.SENT);
+        verify(vouchers).lockById(7L);
+    }
+
+    @Test
+    @DisplayName("a live GetMore coupon names the merchant and states what can still be spent there, held sales aside")
+    void getMoreLiveStatesWhatCanBeSpent() {
+        voucher = TestVouchers.getMoreIssued(VoucherCodeVaultTest.vault()).id(7L)
+                .storeMode(zw.co.innbucks.loans.core.getmore.GetMoreMode.LIVE)
+                .status(VoucherStatus.PARTIALLY_REDEEMED).redeemedAmount(new java.math.BigDecimal("45.50"))
+                .heldAmount(new java.math.BigDecimal("20.00")).deliveryStatus(VoucherDeliveryStatus.SENDING)
+                .deliveredChannel(null).build();
+
+        sender.send(7L, "support1");
+
+        verify(whatsApp).sendCustomNotification("+263771640064", "InnBucks Staff Grocery Loan. Your voucher is"
+                + " SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C, worth USD 84.50, valid until 13 Nov 2026. Spend it at GetMore"
+                + " Groceries.", true);
     }
 }

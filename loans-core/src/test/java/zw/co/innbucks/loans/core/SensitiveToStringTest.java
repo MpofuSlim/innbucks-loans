@@ -33,6 +33,7 @@ import zw.co.innbucks.loans.core.getmore.GetMoreCouponQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreCouponUpdate;
 import zw.co.innbucks.loans.core.getmore.GetMoreException;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrder;
+import zw.co.innbucks.loans.core.getmore.GetMoreMode;
 import zw.co.innbucks.loans.core.getmore.GetMoreOrderQuery;
 import zw.co.innbucks.loans.core.getmore.GetMoreOutcomeUnknownException;
 import zw.co.innbucks.loans.core.getmore.GetMoreProperties;
@@ -41,8 +42,12 @@ import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDeletionDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoCouponDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoOrderDto;
 import zw.co.innbucks.loans.core.getmore.live.dto.MagentoSearchResultDto;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCaller;
+import zw.co.innbucks.loans.core.getmore.simulator.SimCodeRequest;
 import zw.co.innbucks.loans.core.getmore.simulator.SimCoupon;
 import zw.co.innbucks.loans.core.getmore.simulator.SimOrder;
+import zw.co.innbucks.loans.core.getmore.simulator.SimSaleRequest;
+import zw.co.innbucks.loans.core.getmore.simulator.SimulatorApiKey;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SignedInstrument;
@@ -63,8 +68,19 @@ import zw.co.innbucks.loans.core.notice.LoanNotification;
 import zw.co.innbucks.loans.core.notice.OutgoingNotice;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuance;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceResponse;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanVoucherIssuanceStatus;
 import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
+import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
+import zw.co.innbucks.loans.core.voucher.GetMoreSpendPlan;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncResult;
+import zw.co.innbucks.loans.core.voucher.GetMoreSyncTrigger;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherCommand;
+import zw.co.innbucks.loans.core.voucher.GetMoreVoucherLedger;
+import zw.co.innbucks.loans.core.voucher.VoucherCodeSource;
+import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -397,6 +413,69 @@ class SensitiveToStringTest {
             assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
                     .contains("****8B1C");
         }
+    }
+
+    @Test
+    @DisplayName("a GetMore voucher's command, sync snapshots and result print neither the code nor the whole number")
+    void getMoreVoucherTypesMaskTheCode() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String random = "7KQ2M9XWD4RT8B1C";
+        LocalDateTime at = LocalDateTime.of(2026, 10, 14, 8, 30);
+        GetMoreVoucherCommand command = new GetMoreVoucherCommand(164L, "SGL-2026-000164", 3L, 9L, "E1064",
+                "Rutendo Chari", "+263771640064", new BigDecimal("150.00"), "USD", GetMoreMode.SIMULATED, 1207L, 43L,
+                code, "SIM-K7Q2M3XW-", null);
+        GetMoreSyncResult result = new GetMoreSyncResult(GetMoreSyncResult.Outcome.SYNCED, 1, 0,
+                new BigDecimal("0.00"), 1, List.of(), false, null);
+        List<Object> holders = List.of(command, result,
+                new GetMoreSpendPlan.Snapshot(9L, 3L, GetMoreMode.SIMULATED, code, 43L, new BigDecimal("150.00"), "USD",
+                        at, false, BigDecimal.ZERO, null),
+                new GetMoreVoucherLedger.Snapshot(9L, code, at, new CouponActivity(List.of(), List.of(), List.of(),
+                        true), List.of(), false, false, false, null, true, GetMoreSyncTrigger.OPERATOR),
+                new BorrowerVoucherResponse(VoucherStatus.ISSUED, new BigDecimal("150.00"), new BigDecimal("150.00"),
+                        "USD", at, "****8B1C", code, code, VoucherCodeSource.GETMORE, true, BigDecimal.ZERO, true, at));
+        for (Object holder : holders) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(random)
+                    .doesNotContain("771640064");
+        }
+        assertThat(command.toString()).contains("****8B1C", "****0064", "couponId=1207");
+        assertThat(result.toString()).contains("outcome=SYNCED");
+    }
+
+    @Test
+    @DisplayName("the simulator's test actions print neither a code they were given nor the api key they were opened"
+            + " with")
+    void simulatorRequestsHideTheCodeAndTheKey() {
+        String code = "SIM-K7Q2M3XW-7KQ2M9XWD4RT8B1C";
+        String key = "staging-getmore-simulator-key-0123456789abcdef";
+        SimSaleRequest sale = new SimSaleRequest(null, code, new BigDecimal("45.50"), "USD", new BigDecimal("60.00"),
+                "GM-AVD", "GetMore Avondale", "AVD-T3-000981", true);
+        SimCodeRequest expiry = new SimCodeRequest(null, code, "test lapse");
+        SimulatorApiKey apiKey = new SimulatorApiKey(key);
+        SimCaller caller = new SimCaller("10.42.0.17", "196.27.112.45", SimulatorApiKey.fingerprint(key));
+
+        for (Object holder : List.of(sale, expiry, apiKey, caller)) {
+            assertThat(holder.toString()).as(holder.getClass().getSimpleName()).doesNotContain(code)
+                    .doesNotContain("7KQ2M9XWD4RT8B1C").doesNotContain(key);
+        }
+        assertThat(sale.toString()).contains("code=(given)", "amount=45.50");
+        assertThat(new SimSaleRequest("SGL-2026-000164", null, BigDecimal.ONE, null, null, "GM-AVD", null, null, null)
+                .toString()).contains("loanReference=SGL-2026-000164", "code=null");
+    }
+
+    @Test
+    @DisplayName("a Staff Grocery Loan's voucher issuance prints neither the codes it keeps nor their seals")
+    void voucherIssuanceHidesKeptCodes() {
+        String sealed = "v1:c2VhbGVkLWNvZGUtdGhhdC1tdXN0LW5ldmVyLWJlLXByaW50ZWQ=";
+        StaffLoanVoucherIssuance issuance = StaffLoanVoucherIssuance.builder().id(101L).staffLoanId(164L)
+                .storeMode(GetMoreMode.SIMULATED).couponPrefix("SIM-K7Q2M3XW-")
+                .status(StaffLoanVoucherIssuanceStatus.PARKED).lastOutcome("ORPHAN_LIVE")
+                .mintedCodesCiphertext(sealed + "\n" + sealed).build();
+
+        assertThat(issuance.toString()).doesNotContain(sealed).contains("ORPHAN_LIVE");
+        StaffLoanVoucherIssuanceResponse response = new StaffLoanVoucherIssuanceResponse(101L, 164L,
+                "SGL-2026-000164", StaffLoanVoucherIssuanceStatus.PARKED, GetMoreMode.SIMULATED, "SIM-K7Q2M3XW-", 2, 1,
+                1, issuance.mintedCodeCount(), "ORPHAN_LIVE", null, null, null, null, null);
+        assertThat(response.toString()).doesNotContain(sealed).contains("mintedCodes=2");
     }
 
     @Test

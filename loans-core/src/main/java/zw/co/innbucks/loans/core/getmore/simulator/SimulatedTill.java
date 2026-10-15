@@ -39,8 +39,9 @@ import java.util.UUID;
  * <p>Assumptions, not Magento ({@link SimulatedGetMoreStore#assumptions}): a coupon's balance is its allowance less
  * what its orders took plus what refunds gave back ({@link SimulatedBalance}); a held (not yet invoiced) sale counts
  * against it, as at a real till; with spending in parts on, any amount from 0.01 to the balance (in cents), any number
- * of times, and with it off exactly the balance; the coupon's {@code expiration_date} is enforced when enforcement is
- * on. A coupon is spent only in the currency its allowance was bound in.
+ * of times, and with it off exactly the balance, once (a used coupon is refused, as a single-use one is, even after a
+ * refund); the coupon's {@code expiration_date} is enforced when enforcement is on. A coupon is spent only in the
+ * currency its allowance was bound in.
  */
 @Slf4j
 @Component
@@ -130,7 +131,11 @@ public class SimulatedTill {
             throw new SimulatorRefusedException(SimulatorRefusal.SIM_CURRENCY_MISMATCH,
                     "The simulated store sells in " + storeCurrency + ", not " + saleCurrency);
         }
-        if (coupon.getAllowance() == null || usedUp(coupon)) {
+        if (coupon.getAllowance() == null || usedUp(coupon)
+                || (!simulator().isPartialSpending() && coupon.getTimesUsed() >= 1)) {
+            // With spending in parts off the coupon is single use, as LIVE's RULE_AMOUNT_SINGLE_USE makes it: Magento
+            // refuses a second use outright ("is not valid"), whatever a refund gave back, and loans' sync stops such
+            // a voucher (SINGLE_USE_EXHAUSTED) once it is used for less than its value.
             throw notValid(coupon.getCode());
         }
         if (!saleCurrency.equals(coupon.getAllowanceCurrency())) {
@@ -169,8 +174,8 @@ public class SimulatedTill {
         log.info("GetMore simulator: sale {} of {} on coupon {} ({}) at {}{}; {} left", order.getIncrementId(),
                 shown(saleCurrency, spend), coupon.getCouponId(), GetMoreCodes.maskedCode(coupon.getCode()), outlet,
                 invoiced ? "" : " (held, not invoiced)", shown(saleCurrency, left));
-        return new SimSale(order.getEntityId(), order.getIncrementId(), coupon.getCouponId(), SimShapes.order(order),
-                spend, saleCurrency, left, false);
+        return new SimSale(order.getEntityId(), order.getIncrementId(), coupon.getCouponId(),
+                GetMoreCodes.maskedCode(coupon.getCode()), SimShapes.order(order), spend, saleCurrency, left, false);
     }
 
     /** Invoices a held sale in full: what it took becomes spent. */
@@ -192,8 +197,9 @@ public class SimulatedTill {
         log.info("GetMore simulator: sale {} invoiced, {} off coupon {} ({})", order.getIncrementId(),
                 shown(order.getOrderCurrencyCode(), toInvoice), coupon.getCouponId(),
                 GetMoreCodes.maskedCode(coupon.getCode()));
-        return new SimSale(order.getEntityId(), order.getIncrementId(), coupon.getCouponId(), SimShapes.order(order),
-                toInvoice, order.getOrderCurrencyCode(), balanceOf(coupon), false);
+        return new SimSale(order.getEntityId(), order.getIncrementId(), coupon.getCouponId(),
+                GetMoreCodes.maskedCode(coupon.getCode()), SimShapes.order(order), toInvoice,
+                order.getOrderCurrencyCode(), balanceOf(coupon), false);
     }
 
     /**
@@ -248,7 +254,8 @@ public class SimulatedTill {
                 coupon.getCouponId(), GetMoreCodes.maskedCode(coupon.getCode()),
                 shown(order.getOrderCurrencyCode(), balance));
         return new SimRefund(memo.getEntityId(), memo.getIncrementId(), order.getEntityId(), order.getIncrementId(),
-                SimShapes.creditMemo(memo), refund, order.getOrderCurrencyCode(), balance, false);
+                coupon.getCouponId(), GetMoreCodes.maskedCode(coupon.getCode()), SimShapes.creditMemo(memo), refund,
+                order.getOrderCurrencyCode(), balance, false);
     }
 
     /**
@@ -300,7 +307,8 @@ public class SimulatedTill {
         }
         log.info("GetMore simulator: sale {} replayed for its reference", earlier.getIncrementId());
         return new SimSale(earlier.getEntityId(), earlier.getIncrementId(), coupon.getCouponId(),
-                SimShapes.order(earlier), spend, earlier.getOrderCurrencyCode(), balanceOf(coupon), true);
+                GetMoreCodes.maskedCode(coupon.getCode()), SimShapes.order(earlier), spend,
+                earlier.getOrderCurrencyCode(), balanceOf(coupon), true);
     }
 
     private SimRefund replayedRefund(SimCreditMemo earlier, SimOrder order, BigDecimal asked) {
@@ -314,8 +322,9 @@ public class SimulatedTill {
         SimCoupon coupon = coupons.findAnyByCode(order.getCouponCode()).orElseThrow();
         log.info("GetMore simulator: credit memo {} replayed for its reference", earlier.getIncrementId());
         return new SimRefund(earlier.getEntityId(), earlier.getIncrementId(), order.getEntityId(),
-                order.getIncrementId(), SimShapes.creditMemo(earlier), earlier.getDiscountAmount().abs(),
-                order.getOrderCurrencyCode(), balanceOf(coupon), true);
+                order.getIncrementId(), coupon.getCouponId(), GetMoreCodes.maskedCode(coupon.getCode()),
+                SimShapes.creditMemo(earlier), earlier.getDiscountAmount().abs(), order.getOrderCurrencyCode(),
+                balanceOf(coupon), true);
     }
 
     private BigDecimal balanceOf(SimCoupon coupon) {

@@ -10,6 +10,7 @@ import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
+import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 
 import java.math.BigDecimal;
@@ -25,6 +26,11 @@ import java.time.LocalDateTime;
  * the same reference for the same voucher and amount returns the first answer and spends nothing more; the same
  * reference for anything else is refused. References are the merchant's, so another merchant may use the same one. A
  * code is never logged; the masked form is.
+ *
+ * <p>A GetMore coupon is never spent here: it is spent at GetMore and read back from GetMore's orders by a sync, the
+ * one way its spends reach loans, so nothing is counted twice. Its code has letters, so it is refused as malformed
+ * before any lookup; a GetMore voucher found all the same is refused as unknown; and a reference starting {@code GM:}
+ * or {@code GMS:}, a sync's own key, is refused before anything is read.</p>
  */
 @Slf4j
 @Service
@@ -53,6 +59,7 @@ public class VoucherRedemptionService {
         String code = codeOf(request.getCode(), username, request.getOutletId());
         Voucher voucher = voucherRepository.findByCodeHmac(vault.fingerprint(code))
                 .orElseThrow(() -> unknown(code, username, request.getOutletId()));
+        requireLoansCode(voucher, username, request.getOutletId());
         requireOwnMerchant(voucher, till, username, request.getOutletId());
         VoucherValidationResponse answer = VoucherValidationResponse.of(voucher, marketTimeZone.nowUtc(),
                 properties.isPartialRedemptionAllowed());
@@ -74,9 +81,13 @@ public class VoucherRedemptionService {
         Merchant till = tillMerchant();
         String outletId = request.getOutletId().strip();
         String reference = request.getReference().strip();
+        if (VoucherRedemptionRequest.reserved(reference)) {
+            throw new ValidationException(VoucherRedemptionRequest.RESERVED_REFERENCE);
+        }
         String code = codeOf(request.getCode(), username, outletId);
         Voucher voucher = voucherRepository.lockByCodeHmac(vault.fingerprint(code))
                 .orElseThrow(() -> unknown(code, username, outletId));
+        requireLoansCode(voucher, username, outletId);
         requireOwnMerchant(voucher, till, username, outletId);
         BigDecimal amount = request.getAmount();
         VoucherRedemption earlier = redemptionRepository.findByMerchantIdAndMerchantReference(till.getId(), reference)
@@ -158,6 +169,18 @@ public class VoucherRedemptionService {
         if (!voucher.getMerchant().getId().equals(till.getId())) {
             log.warn("Voucher {} ({}) is not for merchant {}: refused to {} at outlet {}", voucher.getId(),
                     voucher.maskedCode(), till.getMerchantCode(), username, outletId);
+            throw new VoucherRefusedException(VoucherRefusal.VOUCHER_NOT_FOUND);
+        }
+    }
+
+    /**
+     * Refuses a GetMore coupon exactly as a code no voucher has. Its letters already keep it from a lookup; this is the
+     * guard behind that, should a digit code ever fingerprint as one.
+     */
+    private static void requireLoansCode(Voucher voucher, String username, String outletId) {
+        if (voucher.getCodeSource() != VoucherCodeSource.LOANS) {
+            log.warn("Voucher {} ({}) is a GetMore coupon, spent only at GetMore: refused to {} at outlet {}",
+                    voucher.getId(), voucher.maskedCode(), username, outletId);
             throw new VoucherRefusedException(VoucherRefusal.VOUCHER_NOT_FOUND);
         }
     }
