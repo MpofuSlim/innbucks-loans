@@ -1,5 +1,18 @@
 FROM eclipse-temurin:25-jre-alpine
 
+# Blanket upgrade inside the base's Alpine branch, so security point releases
+# flow without listing packages (fleet convention, as in market-place and
+# InnRewards), PLUS a version floor per CVE a Trivy scan has caught. The blanket
+# RUN string never changes, so a cached layer would replay an old upgrade; a
+# floor changes the instruction (busting the cache) and makes apk fail the
+# build if the fixed version is not reachable. Raise the floor per CVE.
+# brotli-libs >= 1.2.1-r0
+#   CVE-2026-111497 (HIGH): out-of-bounds write in the Brotli decoder. The
+#   alpine 3.24.3 base ships 1.2.0-r1; it failed the Release gate in
+#   ticketing-system and InnRewards, whose images share this base.
+RUN apk update && apk --no-cache upgrade \
+ && apk add --no-cache --upgrade 'brotli-libs>=1.2.1-r0'
+
 WORKDIR /app
 
 COPY target/loans-api.jar app.jar
