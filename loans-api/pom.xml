@@ -15,6 +15,26 @@
     <description>loans-api</description>
     <properties>
         <java.version>21</java.version>
+        <!-- CVE overrides of Spring Boot 4.1.1's BOM. This module builds the image's jar, so its
+             values are what ships; loans-core/pom.xml carries the same three so its tests run on
+             the same versions. Change them together.
+
+             Tomcat: the BOM manages 11.0.24, which carries three CRITICAL auth/access-control
+             bypasses, CVE-2026-65182 (security constraint bypass), CVE-2026-65905 (DIGEST replay)
+             and CVE-2026-68525 (FORM authentication bypass). 11.0.25 is the fix line.
+
+             Jackson: the BOM manages 3.1.5 (tools.jackson, the app's JSON) and 2.21.5
+             (com.fasterxml), which carry five HIGH denial-of-service CVEs: CVE-2026-89407 and
+             CVE-2026-89425 in jackson-core, CVE-2026-68497, CVE-2026-91776 and CVE-2026-91777 in
+             jackson-databind. 3.1.7 and 2.21.7 are the fix lines. Overriding the BOM properties
+             moves each family as one aligned set; never pin core or databind alone.
+
+             Each value MUST stay >= the BOM's own. On every Spring Boot bump, read the BOM and raise
+             these or delete them once it is at or past the fix lines:
+               V=4.1.1; curl -s "https://repo1.maven.org/maven2/org/springframework/boot/spring-boot-dependencies/$V/spring-boot-dependencies-$V.pom" | grep -E "tomcat.version|jackson" -->
+        <tomcat.version>11.0.25</tomcat.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
     </properties>
     <dependencies>
         <dependency>
