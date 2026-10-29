@@ -69,7 +69,10 @@ public final class HttpLogRedactor {
             // personal data: idNumber, nationalId, nationalIdNumber, national_id,
             // nextOfKinIdNumber, and the base64 ID / payslip / signature documents
             "idnumber", "nationalid", "passport", "picture", "image", "photo", "base64",
-            "signature", "payslip", "document", "attachment");
+            "signature", "payslip", "document", "attachment",
+            // account numbers: settlementAccount (a merchant's, or a staff borrower's own bank account),
+            // accountNumber, loanAccountNumber, bank_account_number
+            "settlementaccount", "accountnumber");
 
     private static final Pattern JWT = Pattern.compile(
             "eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]*");

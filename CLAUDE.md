@@ -42,19 +42,24 @@ shape is used in ticketing, InnRewards and market-place; keep them alike.
   concurrent 401s cost one login.
 - A failed login caches nothing and the next caller retries. Never log the
   token, the credentials or a refused login's body.
-- `InnbucksAuthService` and `NdasendaAuthService` are Spring `@Cacheable`
-  (Caffeine, bounded, 5-minute TTL) and hold no lock, so they do not have this
-  problem. Their `refreshToken()` evicts BEFORE logging in and `@CachePut`s the
-  new token under `getAccessToken()`'s key, so a 401 costs one login and a
-  failed login leaves nothing cached (`AccessTokenCacheTest`). Never make it
-  call `getAccessToken()` on itself again: that skips the cache proxy. Two
-  concurrent cache misses still log in twice, harmless while their callers are
-  the serial `scheduled-tasks` jobs (OFF in the cell) and the manual payout;
-  move them onto `SingleFlightTokenCache` before either gains concurrent
-  callers.
+- `InnbucksAuthService` is on `SingleFlightTokenCache` too: the Staff Grocery
+  Loan cash payout, its status check and the operators' calls reach it
+  concurrently. Its callers take the token they sent and, after a 401, call
+  `refreshAfterRejection(thatToken)`. A token's life is its JWT `exp`, else
+  `innbucks.token-ttl` (5 minutes); a 2xx login without an `accessToken` is an
+  `InnbucksLoginException`, never "Bearer null".
+- `NdasendaAuthService` is Spring `@Cacheable` (Caffeine, bounded, 5-minute
+  TTL) and holds no lock, so it does not have this problem. Its
+  `refreshToken()` evicts BEFORE logging in and `@CachePut`s the new token
+  under `getAccessToken()`'s key, so a 401 costs one login and a failed login
+  leaves nothing cached (`AccessTokenCacheTest`). Never make it call
+  `getAccessToken()` on itself again: that skips the cache proxy. Two
+  concurrent cache misses still log in twice, harmless while its callers are
+  the serial `scheduled-tasks` jobs (OFF in the cell); move it onto
+  `SingleFlightTokenCache` before it gains concurrent callers.
 
-Pinned by `SingleFlightTokenCacheTest` and
-`NotificationApiAuthenticatorConcurrencyTest`.
+Pinned by `SingleFlightTokenCacheTest`,
+`NotificationApiAuthenticatorConcurrencyTest` and `InnbucksAuthServiceTest`.
 
 ## Tracing
 
@@ -240,6 +245,76 @@ before), logs it, counts `loans.disbursement_status.save_failed` (registered at 
 used to abort the whole run, so one loan in conflict left every loan after it unchecked. Nothing of that loan's check
 is kept, its applicant is not told (the FAILED notice goes only after the save), and the next run asks InnBucks again.
 The job only reads InnBucks' status: nothing it does is retried, and no paying call is involved.
+
+## Staff Grocery Loan cash payout
+
+**How a Staff Grocery Loan is paid is a setting, `loans.staff-loans.payout.method` (`STAFF_LOANS_PAYOUT_METHOD`):
+`VOUCHER`, the default and exactly the behaviour before (nothing is sent to the bank), or `CASH`, where the bank books
+it as a pre-approved loan (`POST /bank/api/loan/apply/pre-approved`) and pays it into the borrower's own account on
+that one call.** The method, the destination and the account are frozen on the loan at acceptance (V36); changing the
+setting never moves a loan already accepted. Settings, endpoints, go-live and rollback: `docs/fleet-wiring.md` §13.
+
+- **A payout is sent once, never twice.** `StaffLoanPayoutService` is the only code that sends one: claim (READY to
+  SENDING, committed under the register lock and the loan's row lock), call (no transaction open), settle (its own
+  transaction, only while the loan still holds that claim). It runs on `StaffLoanPayoutDispatcher`'s one
+  `DispatcherExecutor` thread. Never inside `accept()` (which only hands the loan over after its commit), never on a
+  request thread, never `@Scheduled`, never `@Async`.
+- **The answer decides.** A 2xx whose envelope says `responseCode` 000, or carries none, is BOOKED; a 2xx with any
+  other code is IN_DOUBT (the bank answers refusals inside a 2xx elsewhere), and not seen by the bank. The bank's own
+  4xx is REFUSED. 401, 403, 407, 425, 429, a failed login, a connection never opened or a request that could not be
+  built is READY again (not processed); "Pay all ready" goes on past a 403 or an unbuildable one, the reason may be
+  that loan's own. 3xx, 408, 409, 5xx, a timeout or anything else is IN_DOUBT.
+- **A 2xx is never lost.** One that lands after the stale-claim hold took the loan IN_DOUBT makes it BOOKED, under the
+  lock; one whose settle cannot be saved is stamped seen by the bank by a conditional UPDATE in a short transaction of
+  its own (`markPayoutSeenByBank`) and audited `STAFF_LOAN_PAYOUT_BOOKED_NOT_RECORDED`, which "never booked" is
+  refused on. `stale-claim-minutes` below two logins and two posts at the `http.client` timeouts refuses to boot.
+- **No bank answer cancels a loan.** REFUSED keeps the loan and its open-loan slot: Finance sends it again under the
+  same reference (a refusal proves nothing was booked), or Credit cancels it. Cancel is refused for SENDING, BOOKED
+  and IN_DOUBT, and a V36 CHECK refuses it from any code path or image.
+- **IN_DOUBT is settled by the bank's inquiry, never by sending again.** `StaffLoanPayoutStatusService` asks
+  `GET /bank/api/loan/inquiry/{participantReference}` with no transaction open, through `InnbucksLoanInquiry`, which
+  cannot book. PAID needs `000`, a status in `paid-statuses`, and echoes that name our reference, amount and account
+  when the answer carries them (one left out is not checked; one that differs holds it BOOKED). Where it paid is read
+  by destination: a wallet by the echoed `msisdn`, an account by the echoed `settlementAccount` (and its `msisdn` must
+  be the borrower's); one is never read in place of the other. Then the loan is DISBURSED and the borrower told once.
+  `004` is recorded and never fails a payout by itself; a status in `failed-statuses` (REJECTED, CANCELLED, FAILED) is
+  dated (`payout_declined_at`). A claim never settled is held IN_DOUBT after `stale-claim-minutes`.
+- **"Never booked" is a SUPER_ADMIN's record, and narrow.** Either an IN_DOUBT payout the bank never said it holds
+  (`payout_bank_seen_at` is sticky; no 2xx to its booking was audited either) and has reported missing (`004`), or a
+  BOOKED or IN_DOUBT one the bank holds in a declined status. Either way for `not-booked-min-age`, and still lately:
+  the inquiry's last answer (`payout_checked_at`) no older than twice `status-check-interval`, so a first `004` the bank
+  has not repeated is not enough. It is still asked about for `failed-watch`; the bank holding it after all, in any
+  but a declined status, holds that borrower's further payouts. Nobody sends, records or resolves a payout of a loan
+  they are a party to (`SegregationOfDuties.isPartyTo(StaffLoan, ...)`).
+- **The status job only reads, on its own switch.** `StaffLoanPayoutStatusJob` runs wherever the method is CASH, not
+  behind `STAFF_LOANS_JOBS_ENABLED` (which also starts the Monday offer run) and never `scheduled-tasks`. It stops a
+  run when the bank cannot be reached (no answer, a failed login, a 5xx) or the inquiry breaks; an answer about one
+  loan that says nothing, or that cannot be saved, is counted and the run goes on, so one loan never holds the queue.
+  `StaffLoanPayoutWiringTest` fails if it, or the status service, can reach anything that books.
+- **No sweep at boot, no timer that sends.** A payout left READY by a restart or a full queue waits for Finance's
+  "Pay all ready" (`POST /lending/v1/staff-loans/payouts`).
+- **Where it pays:** `VEENGU_WALLET` is the member's registered phone (the number their PIN proves); `BR_ACCOUNT` is
+  the register's `wallet_account_number`, only when it is account-shaped (never a mobile number). A member with
+  neither is declined DETAILS_NOT_CONFIRMED before anything is spent, and the claim re-checks the register still
+  holds the frozen account.
+- **The agreement must fit the method.** A cash agreement names `{{payoutAccount}}` and no voucher placeholder; a
+  voucher agreement names no account. Otherwise quote and accept answer 503 STAFF_LOAN_TERMS_UNAVAILABLE.
+- **A voucher loan reads exactly as before.** Every payout field of `StaffLoanResponse`, `StaffLoanView` and
+  `StaffLoanQuote` is `@JsonInclude(NON_NULL)`, and `payoutMethod` is set only for CASH, so a VOUCHER cell's loans,
+  quotes and loan lists are byte for byte what they were. What a VOUCHER cell does see is in the agreement placeholder
+  list, on purpose: `payoutAccount`, which the cash wording needs and is written before the switch, and the
+  descriptions of `mobileNumber` and `amount`, which no longer speak of a voucher. `SwaggerExamplesTest` pins every
+  example to that shape.
+- **What the bank said is kept, masked.** `payout_apply_answer` (the booking's) and `payout_last_answer` (the last
+  of either) go through `BankAnswers.kept`: the log redactor, then every phone, and the value of any other field named
+  an account, masked to `****1234`. Every reader of staff loans, Human Capital included, sees them. `bankLoanAccount`
+  is shown by its last four characters.
+- **The InnBucks login is single-flight** (above). Never log the account in full: `****1234`. The datasource sets
+  pgjdbc's `logServerErrorDetail: false`, so a refused write (a V36 CHECK) names its constraint and never prints the
+  failing row, which holds the borrower's phone and account.
+
+Pinned by the `StaffLoanPayout*Test` classes, `StaffLoanPayoutMigrationIT` (every V36 CHECK, each alone over NULLs)
+and `StaffLoanPayoutPostgresIT` (real HTTP, tokens and a WireMock bank, end to end).
 
 ## Ids: IDENTITY by default, pooled sequences where inserts come in bulk (V33)
 

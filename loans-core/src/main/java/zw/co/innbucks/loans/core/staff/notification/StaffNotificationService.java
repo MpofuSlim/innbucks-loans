@@ -31,6 +31,7 @@ import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
 import zw.co.innbucks.loans.core.staff.offer.StaffOffer;
 
 import java.time.LocalDate;
@@ -101,6 +102,31 @@ public class StaffNotificationService {
                 .toList();
         storeInApp(notifications, members);
         log.info("{} offer notifications queued", notifications.size());
+    }
+
+    /**
+     * Tells the borrower what became of their loan's payout (LOAN_PAID_OUT, LOAN_NOT_PAID_OUT): in-app at once, and to
+     * their phone once the caller's transaction commits, so they are never told of a payout that was then rolled back.
+     * A service message about their own money: sent whatever their offer message preference and the frequency cap.
+     * At most one of each kind per loan; a second is not stored, and the caller's change still commits.
+     *
+     * @throws IllegalArgumentException a template not about a loan
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifyLoan(StaffLoan loan, StaffNotificationTemplate template, String message) {
+        if (!template.aboutALoan()) {
+            throw new IllegalArgumentException(template + " is not a notice about a loan");
+        }
+        if (notificationRepository.existsByStaffLoanIdAndTemplate(loan.getId(), template)) {
+            log.warn("Staff loan {} already has its {} notice; not sent again", loan.getReference(), template);
+            return;
+        }
+        StaffNotification notification = pending(loan.getStaffMemberId(), template, marketTimeZone.nowUtc())
+                .staffLoanId(loan.getId())
+                .message(message)
+                .build();
+        storeInApp(List.of(notification), members(List.of(loan.getStaffMemberId())));
+        log.info("Staff loan {}: {} notice queued", loan.getReference(), template);
     }
 
     /** What the launch broadcast would send now, and to how many. */

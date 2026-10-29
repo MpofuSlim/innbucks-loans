@@ -1,10 +1,18 @@
 package zw.co.innbucks.loans.core.staff.loan;
 
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.auth.AuthService;
@@ -16,7 +24,11 @@ import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatusChanged;
+import zw.co.innbucks.loans.core.staff.notification.StaffNotificationService;
+import zw.co.innbucks.loans.core.staff.notification.StaffNotificationTemplate;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -31,9 +43,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,9 +64,11 @@ class StaffLoanServiceTest {
     private final AuthService authService = mock(AuthService.class);
     private final AuditService audit = mock(AuditService.class);
     private final StaffLoanEmploymentFlagNotifier notifier = mock(StaffLoanEmploymentFlagNotifier.class);
+    private final StaffNotificationService notifications = mock(StaffNotificationService.class);
     private final StaffLoanService service = new StaffLoanService(loans, agreements,
             new StaffLoanPolicy(new StaffLoanProperties(), new VoucherProperties()), authService, audit,
-            new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-10-01T09:02:17Z"), ZoneOffset.UTC)), notifier);
+            new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-10-01T09:02:17Z"), ZoneOffset.UTC)), notifier,
+            notifications);
     private final StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(2L)
             .offerId(31L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
             .amount(new BigDecimal("300.00")).currency("USD").interestRate(BigDecimal.ZERO)
@@ -104,6 +120,114 @@ class StaffLoanServiceTest {
         verify(loans).save(loan);
         assertThat(audited().getEventType()).isEqualTo(StaffLoanService.CANCELLED);
         assertThat(audited().getChannelUsed()).isEqualTo("admin-portal");
+        assertThat(loan.getPayoutStatus()).as("a voucher loan has no payout").isNull();
+        verifyNoInteractions(notifications);
+    }
+
+    /** Chipo's loan, accepted to be paid in cash into her wallet, its payout {@code payout}. */
+    private StaffLoan cashLoan(StaffLoanPayoutStatus payout) {
+        StaffLoan cash = StaffLoan.builder().id(144L).reference("SGL-2026-000144").staffMemberId(2L)
+                .offerId(32L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
+                .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
+                .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
+                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
+                .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41))
+                .merchant(getMore()).payoutMethod(StaffLoanPayoutMethod.CASH)
+                .payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET).payoutAccount("263773456789")
+                .payoutStatus(payout).payoutClaimedAt(payout == StaffLoanPayoutStatus.SENDING ? NOW : null).build();
+        when(loans.lockById(144L)).thenReturn(Optional.of(cash));
+        return cash;
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StaffLoanPayoutStatus.class, names = {"READY", "REFUSED"})
+    @DisplayName("Credit cancels a cash loan nothing was booked for: WITHDRAWN, and the borrower told it was not paid")
+    void cancelCash(StaffLoanPayoutStatus payout) {
+        StaffLoan cash = cashLoan(payout);
+
+        service.cancel(144L, "Accepted in error");
+
+        assertThat(cash.getStatus()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(cash.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.WITHDRAWN);
+        verify(notifications).notifyLoan(cash, StaffNotificationTemplate.LOAN_NOT_PAID_OUT,
+                "InnBucks did not pay out your Staff Grocery Loan SGL-2026-000144, so it is cancelled and nothing is"
+                        + " owed. Log in to the InnBucks app for details.");
+        assertThat(audited().getEventType()).isEqualTo(StaffLoanService.CANCELLED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StaffLoanPayoutStatus.class, names = {"SENDING", "BOOKED", "IN_DOUBT"})
+    @DisplayName("a cash loan the bank may already have paid cannot be cancelled: 409, nothing changed")
+    void cancelRefusedInFlight(StaffLoanPayoutStatus payout) {
+        StaffLoan cash = cashLoan(payout);
+
+        assertThatThrownBy(() -> service.cancel(144L, "Accepted in error")).isInstanceOf(ConflictException.class)
+                .hasMessageStartingWith("Staff loan SGL-2026-000144 is being paid out (payout " + payout + ")")
+                .hasMessageContaining("/lending/v1/staff-loans/144/payout/not-booked");
+
+        assertThat(cash.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(cash.getPayoutStatus()).isEqualTo(payout);
+        verify(loans, never()).save(any());
+        verifyNoInteractions(notifications, audit);
+    }
+
+    @Test
+    @DisplayName("a paid cash loan cannot be cancelled either: it is DISBURSED")
+    void cancelRefusedPaid() {
+        StaffLoan cash = cashLoan(StaffLoanPayoutStatus.READY);
+        cash.claimPayout(NOW);
+        cash.payoutBooked(NOW, null);
+        cash.paidOut(NOW, null);
+
+        assertThatThrownBy(() -> service.cancel(144L, "why")).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("is DISBURSED");
+        verifyNoInteractions(notifications);
+    }
+
+    @Test
+    @DisplayName("a leaver's cash loan nothing was booked for is cancelled and they are told; one in flight is neither"
+            + " cancelled nor flagged, only logged and audited")
+    void leaverWithACashLoan() {
+        StaffLoan ready = cashLoan(StaffLoanPayoutStatus.READY);
+        when(loans.findIdsByStaffMemberIdAndStatusIn(2L, List.of(StaffLoanStatus.AWAITING_DISBURSEMENT)))
+                .thenReturn(List.of(144L));
+
+        service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012", StaffEmploymentStatus.ACTIVE,
+                StaffEmploymentStatus.RESIGNED, 17L, "hc2"));
+
+        assertThat(ready.getStatus()).isEqualTo(StaffLoanStatus.CANCELLED);
+        assertThat(ready.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.WITHDRAWN);
+        verify(notifications).notifyLoan(eq(ready), eq(StaffNotificationTemplate.LOAN_NOT_PAID_OUT), any());
+
+        org.mockito.Mockito.clearInvocations(loans, audit, notifications);
+        StaffLoan booked = cashLoan(StaffLoanPayoutStatus.BOOKED);
+        service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012", StaffEmploymentStatus.ACTIVE,
+                StaffEmploymentStatus.TERMINATED, 18L, "hc2"));
+
+        assertThat(booked.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
+        assertThat(booked.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.BOOKED);
+        assertThat(booked.getEmploymentFlag()).isNull();
+        verify(loans, never()).save(any());
+        verifyNoInteractions(notifications);
+        AuditLog audited = audited();
+        assertThat(audited.getEventType()).isEqualTo(StaffLoanService.PAYOUT_LEAVER_IN_FLIGHT);
+        assertThat(audited.getDetail()).isEqualTo("reference:SGL-2026-000144;payout:BOOKED;to:TERMINATED;batch:18");
+    }
+
+    @Test
+    @DisplayName("a cash loan paid out to a borrower who left meanwhile is flagged, with the batch that moved them")
+    void flaggedAtPayout() {
+        service.flagEmploymentAtPayout(paidOut, StaffEmploymentStatus.RESIGNED, "staff-loan-payout-status", 17L);
+
+        assertThat(paidOut.getEmploymentFlag()).isEqualTo(StaffEmploymentStatus.RESIGNED);
+        assertThat(paidOut.getEmploymentFlagBatchId()).isEqualTo(17L);
+        assertThat(audited().getActorId()).isEqualTo("staff-loan-payout-status");
+        assertThat(audited().getDetail()).isEqualTo("reference:SGL-2026-000151;from:ACTIVE;to:RESIGNED;"
+                + "action:RECOVER_FROM_TERMINAL_BENEFITS;batch:17");
+        verify(notifier).notifyAfterCommit(any());
+
+        assertThatThrownBy(() -> service.flagEmploymentAtPayout(loan, StaffEmploymentStatus.RESIGNED, "x", 17L))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -122,7 +246,8 @@ class StaffLoanServiceTest {
     @EnumSource(value = StaffEmploymentStatus.class, mode = EnumSource.Mode.EXCLUDE, names = "ACTIVE")
     @DisplayName("a borrower who stops being ACTIVE has their loan awaiting payout cancelled at once, by the approver")
     void cancelledWhenNoLongerActive(StaffEmploymentStatus to) {
-        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(anyLong(), any())).thenReturn(Optional.of(loan));
+        when(loans.findIdsByStaffMemberIdAndStatusIn(2L, List.of(StaffLoanStatus.AWAITING_DISBURSEMENT)))
+                .thenReturn(List.of(143L));
 
         service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012",
                 StaffEmploymentStatus.ACTIVE, to, 17L, "hc2"));
@@ -139,7 +264,7 @@ class StaffLoanServiceTest {
     void listenerLeavesTheRestAlone() {
         service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012",
                 StaffEmploymentStatus.SUSPENDED, StaffEmploymentStatus.ACTIVE, 17L, "hc2"));
-        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(anyLong(), any())).thenReturn(Optional.empty());
+        when(loans.findIdsByStaffMemberIdAndStatusIn(anyLong(), any())).thenReturn(List.of());
         service.onEmploymentStatusChanged(new StaffEmploymentStatusChanged(2L, "E1012",
                 StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, 17L, "hc2"));
 
@@ -177,13 +302,13 @@ class StaffLoanServiceTest {
     @DisplayName("a written-off loan is still owed, so it is flagged too")
     void writtenOffLoanFlagged() {
         StaffLoan writtenOff = paidOutLoan(StaffLoanStatus.WRITTEN_OFF);
-        when(loans.findByStaffMemberIdInAndStatusIn(any(), any())).thenReturn(List.of(writtenOff));
+        paidOutLoanFound();
         when(loans.lockById(151L)).thenReturn(Optional.of(writtenOff));
 
         changeTo(StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.TERMINATED, 21L);
 
         assertThat(writtenOff.getEmploymentFlag()).isEqualTo(StaffEmploymentStatus.TERMINATED);
-        verify(loans).findByStaffMemberIdInAndStatusIn(List.of(1L),
+        verify(loans).findIdsByStaffMemberIdAndStatusIn(1L,
                 List.of(StaffLoanStatus.DISBURSED, StaffLoanStatus.WRITTEN_OFF));
     }
 
@@ -227,7 +352,7 @@ class StaffLoanServiceTest {
     @DisplayName("a loan settled by the time it is locked, or back to ACTIVE with no flag, is left alone")
     void unflaggedLoansLeftAlone() {
         StaffLoan repaid = paidOutLoan(StaffLoanStatus.REPAID);
-        when(loans.findByStaffMemberIdInAndStatusIn(any(), any())).thenReturn(List.of(paidOut));
+        paidOutLoanFound();
         when(loans.lockById(151L)).thenReturn(Optional.of(repaid));
         changeTo(StaffEmploymentStatus.ACTIVE, StaffEmploymentStatus.RESIGNED, 21L);
 
@@ -250,14 +375,86 @@ class StaffLoanServiceTest {
                 any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(paidOut)));
 
-        StaffLoanResponse listed = service.loans(null, null, true,
+        StaffLoanResponse listed = service.loans(null, null, true, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 20)).getContent().getFirst();
 
         assertThat(listed.employmentFlag().action()).isEqualTo(EmploymentFlagAction.RECOVER_FROM_TERMINAL_BENEFITS);
     }
 
+    @Test
+    @DisplayName("the list filters on the payout's status and on how loans are paid out, each only when asked")
+    @SuppressWarnings("unchecked")
+    void listByPayout() {
+        ArgumentCaptor<Specification<StaffLoan>> filter = ArgumentCaptor.forClass(Specification.class);
+        when(loans.findAll(filter.capture(), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+        Root<StaffLoan> root = mock(Root.class);
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Path<Object> payoutStatus = mock(Path.class);
+        Path<Object> payoutMethod = mock(Path.class);
+        when(root.get("payoutStatus")).thenReturn(payoutStatus);
+        when(root.get("payoutMethod")).thenReturn(payoutMethod);
+
+        service.loans(null, null, null, StaffLoanPayoutStatus.IN_DOUBT, StaffLoanPayoutMethod.CASH,
+                PageRequest.of(0, 20));
+        filter.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        verify(cb).equal(payoutStatus, StaffLoanPayoutStatus.IN_DOUBT);
+        verify(cb).equal(payoutMethod, StaffLoanPayoutMethod.CASH);
+
+        Root<StaffLoan> unfiltered = mock(Root.class);
+        service.loans(null, null, null, null, null, PageRequest.of(0, 20));
+        filter.getValue().toPredicate(unfiltered, mock(CriteriaQuery.class), mock(CriteriaBuilder.class));
+        verify(unfiltered, never()).get("payoutStatus");
+        verify(unfiltered, never()).get("payoutMethod");
+    }
+
+    @Test
+    @DisplayName("a cash loan as the portal sees it: where it is paid, by the last four digits, and where its payout"
+            + " stands")
+    void cashLoanAsListed() {
+        StaffLoan cash = cashLoan(StaffLoanPayoutStatus.READY);
+        cash.claimPayout(NOW);
+        cash.payoutInDoubt("The bank answered HTTP 504", "{\"responseCode\":\"999\"}");
+        when(loans.findById(144L)).thenReturn(Optional.of(cash));
+
+        StaffLoanResponse listed = service.summary(144L);
+
+        assertThat(listed.reference()).isEqualTo("SGL-2026-000144");
+        assertThat(listed.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
+        assertThat(listed.payoutDestination()).isEqualTo(StaffLoanPayoutDestination.VEENGU_WALLET);
+        assertThat(listed.payoutAccount()).isEqualTo("****6789");
+        assertThat(listed.payoutStatus()).isEqualTo(StaffLoanPayoutStatus.IN_DOUBT);
+        assertThat(listed.payoutMessage()).isEqualTo("The bank answered HTTP 504");
+        assertThat(listed.payoutLastAnswer()).isEqualTo("{\"responseCode\":\"999\"}");
+        assertThat(listed.payoutClaimedAt()).isNull();
+        assertThat(listed.payoutBankSeenAt()).isNull();
+        assertThat(listed.merchantCode()).as("recorded, not used").isEqualTo("getmore-groceries");
+        assertThat(listed.toString()).doesNotContain("263773456789".substring(0, 8));
+    }
+
+    @Test
+    @DisplayName("a voucher loan carries no payout field at all, not even its method: it reads as it did before cash"
+            + " payouts; an unknown loan is not found")
+    void voucherLoanAsListed() {
+        StaffLoanResponse listed = service.summary(143L);
+
+        assertThat(listed).extracting(StaffLoanResponse::payoutMethod, StaffLoanResponse::payoutDestination,
+                StaffLoanResponse::payoutAccount, StaffLoanResponse::payoutStatus, StaffLoanResponse::payoutMessage,
+                StaffLoanResponse::payoutApplyAnswer, StaffLoanResponse::payoutLastAnswer,
+                StaffLoanResponse::payoutCheckedAt, StaffLoanResponse::payoutDeclinedAt,
+                StaffLoanResponse::bankLoanAccount).containsOnlyNulls();
+        JsonMapper json = JsonMapper.builder().build();
+        assertThat(json.readTree(json.writeValueAsString(listed)).propertyNames())
+                .as("no payout key on the wire").noneMatch(name -> name.startsWith("payout")
+                        || name.equals("bankLoanAccount"))
+                .contains("arrearsOverrideId", "employmentFlag", "cancellationReason");
+        assertThatThrownBy(() -> service.summary(999L)).isInstanceOf(NotFoundException.class)
+                .hasMessage("Staff loan 999 not found");
+    }
+
     private void paidOutLoanFound() {
-        when(loans.findByStaffMemberIdInAndStatusIn(any(), any())).thenReturn(List.of(paidOut));
+        when(loans.findIdsByStaffMemberIdAndStatusIn(eq(1L),
+                eq(List.of(StaffLoanStatus.DISBURSED, StaffLoanStatus.WRITTEN_OFF)))).thenReturn(List.of(151L));
     }
 
     private void changeTo(StaffEmploymentStatus from, StaffEmploymentStatus to, Long batchId) {

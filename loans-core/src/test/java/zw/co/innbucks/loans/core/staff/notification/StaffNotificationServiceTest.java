@@ -14,6 +14,7 @@ import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
 import zw.co.innbucks.loans.core.staff.offer.StaffOffer;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 
@@ -53,13 +54,14 @@ class StaffNotificationServiceTest {
     private final List<StaffNotificationDispatch> dispatches = new ArrayList<>();
     private StaffNotificationBroadcast launched;
     private StaffMemberRepository memberRepository;
+    private StaffNotificationRepository notificationRepository;
     private StaffNotificationDispatcher dispatcher;
     private AuditService auditService;
     private StaffNotificationService service;
 
     @BeforeEach
     void setUp() {
-        StaffNotificationRepository notificationRepository = mock(StaffNotificationRepository.class);
+        notificationRepository = mock(StaffNotificationRepository.class);
         when(notificationRepository.saveAll(any())).thenAnswer(i -> {
             List<StaffNotification> saved = new ArrayList<>();
             for (StaffNotification notification : (Iterable<StaffNotification>) i.getArgument(0)) {
@@ -67,6 +69,7 @@ class StaffNotificationServiceTest {
                         .staffMemberId(notification.getStaffMemberId()).template(notification.getTemplate())
                         .templateVersion(notification.getTemplateVersion()).offerId(notification.getOfferId())
                         .runId(notification.getRunId()).broadcastId(notification.getBroadcastId())
+                        .staffLoanId(notification.getStaffLoanId())
                         .title(notification.getTitle()).message(notification.getMessage())
                         .createdAt(notification.getCreatedAt()).outboundStatus(notification.getOutboundStatus())
                         .build();
@@ -160,6 +163,43 @@ class StaffNotificationServiceTest {
                         org.assertj.core.groups.Tuple.tuple(2L, StaffNotificationChannel.IN_APP,
                                 StaffNotificationDispatchStatus.STORED, "+263773456789"));
         verify(dispatcher).afterCommit();
+    }
+
+    @Test
+    @DisplayName("a loan notice names its loan, not an offer; its in-app copy is logged at once and sending waits for"
+            + " the commit; a second of the same kind for the same loan is not stored")
+    void notifyLoan() {
+        StaffMember chipo = member("E1012", "263773456789", StaffEmploymentStatus.ACTIVE);
+        when(memberRepository.findAllById(List.of(chipo.getId()))).thenReturn(List.of(chipo));
+        StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(chipo.getId()).build();
+        String text = StaffNotificationTemplate.LOAN_NOT_PAID_OUT.notPaidOutText("SGL-2026-000143");
+
+        service.notifyLoan(loan, StaffNotificationTemplate.LOAN_NOT_PAID_OUT, text);
+
+        assertThat(notifications).singleElement().satisfies(notification -> {
+            assertThat(notification.getTemplate()).isEqualTo(StaffNotificationTemplate.LOAN_NOT_PAID_OUT);
+            assertThat(notification.getStaffLoanId()).isEqualTo(143L);
+            assertThat(notification.getOfferId()).isNull();
+            assertThat(notification.getRunId()).isNull();
+            assertThat(notification.getBroadcastId()).isNull();
+            assertThat(notification.getStaffMemberId()).isEqualTo(chipo.getId());
+            assertThat(notification.getTitle()).isEqualTo("Your Staff Grocery Loan was not paid");
+            assertThat(notification.getMessage()).isEqualTo(text);
+            assertThat(notification.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.PENDING);
+        });
+        assertThat(dispatches).singleElement().satisfies(dispatch -> {
+            assertThat(dispatch.getChannel()).isEqualTo(StaffNotificationChannel.IN_APP);
+            assertThat(dispatch.getRecipient()).isEqualTo("+263773456789");
+        });
+        verify(dispatcher).afterCommit();
+
+        when(notificationRepository.existsByStaffLoanIdAndTemplate(143L, StaffNotificationTemplate.LOAN_NOT_PAID_OUT))
+                .thenReturn(true);
+        service.notifyLoan(loan, StaffNotificationTemplate.LOAN_NOT_PAID_OUT, text);
+        assertThat(notifications).hasSize(1);
+
+        assertThatThrownBy(() -> service.notifyLoan(loan, StaffNotificationTemplate.LAUNCH, "x"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

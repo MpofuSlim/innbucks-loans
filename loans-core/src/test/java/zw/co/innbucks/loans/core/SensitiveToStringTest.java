@@ -11,7 +11,9 @@ import zw.co.innbucks.loans.core.channel.Channel;
 import zw.co.innbucks.loans.core.disbursements.InnbucksAuthRequest;
 import zw.co.innbucks.loans.core.disbursements.InnbucksAuthResponse;
 import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
+import zw.co.innbucks.loans.core.disbursements.InquiryAnswer;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationRequest;
+import zw.co.innbucks.loans.core.disbursements.PreApprovedLoanBooking;
 import zw.co.innbucks.loans.core.document.AmendDocumentRequest;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.DocumentType;
@@ -45,10 +47,17 @@ import zw.co.innbucks.loans.core.notice.LoanNotification;
 import zw.co.innbucks.loans.core.notice.OutgoingNotice;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPolicy;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus;
 import zw.co.innbucks.loans.core.user.NewUser;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.List;
 
@@ -304,6 +313,37 @@ class SensitiveToStringTest {
         }
         assertThat(batch.toString()).contains("batch-42");
         assertThat(approval.toString()).contains("000000042", "ecnumber=*****67A").doesNotContain("1234567A");
+    }
+
+    @Test
+    @DisplayName("a staff loan paid in cash, its booking and the bank's answers print no account, ID number or answer")
+    void staffCashPayoutsHideAccountsAndAnswers() {
+        String wallet = "263772123123";
+        String answer = "{\"loanDetails\":{\"status\":\"SETTLED\",\"idNumber\":\"" + NATIONAL_ID + "\"}}";
+        StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(12L)
+                .fullName("Chipo Banda").msisdn(wallet).status(StaffLoanStatus.AWAITING_DISBURSEMENT)
+                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
+                .payoutAccount(ACCOUNT_NUMBER).payoutStatus(StaffLoanPayoutStatus.BOOKED).payoutLastAnswer(answer)
+                .bankLoanAccount("LA-55443322").build();
+        PreApprovedLoanBooking booking = new PreApprovedLoanBooking("SGL-2026-000143", "Chipo", "Banda", NATIONAL_ID,
+                new BigDecimal("150.00"), "USD", "STAFFGROC", "PERSONAL", 1, wallet, ACCOUNT_NUMBER, "InnBucks",
+                "E1012", LocalDate.of(2015, 2, 2));
+        LoanAccountCreationRequest application = LoanAccountCreationRequest.builder()
+                .participantReference("SGL-2026-000143").idNumber(NATIONAL_ID).settlementAccount(ACCOUNT_NUMBER)
+                .build();
+        InquiryAnswer inquiry = new InquiryAnswer(InquiryAnswer.Kind.FOUND, "000", "SETTLED", "LA-55443322",
+                "SGL-2026-000143", new BigDecimal("15000"), BigDecimal.ZERO, wallet, ACCOUNT_NUMBER, answer, 200);
+        StaffLoanPolicy.PayoutTarget target = new StaffLoanPolicy.PayoutTarget(StaffLoanPayoutDestination.BR_ACCOUNT,
+                ACCOUNT_NUMBER);
+
+        for (Object value : List.of(loan, booking, application, inquiry, target)) {
+            assertNoPii(value);
+            assertThat(value.toString()).doesNotContain(wallet, "LA-55443322", "Chipo Banda");
+        }
+        assertThat(loan.toString()).contains("SGL-2026-000143", "CASH", "BOOKED");
+        assertThat(booking.toString()).contains("SGL-2026-000143", "****3123", "****4556", "150.00");
+        assertThat(inquiry.toString()).contains("FOUND", "SETTLED");
+        assertThat(target.toString()).contains("BR_ACCOUNT", "****4556");
     }
 
     @Test

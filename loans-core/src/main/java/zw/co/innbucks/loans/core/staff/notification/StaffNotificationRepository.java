@@ -34,6 +34,9 @@ public interface StaffNotificationRepository extends JpaRepository<StaffNotifica
 
     long countByOutboundStatus(StaffNotificationOutboundStatus status);
 
+    /** Whether the member was already sent this notice about this loan: one of each kind per loan. */
+    boolean existsByStaffLoanIdAndTemplate(Long staffLoanId, StaffNotificationTemplate template);
+
     /** A member's inbox, newest first. */
     Page<StaffNotification> findByStaffMemberIdOrderByIdDesc(Long staffMemberId, Pageable pageable);
 

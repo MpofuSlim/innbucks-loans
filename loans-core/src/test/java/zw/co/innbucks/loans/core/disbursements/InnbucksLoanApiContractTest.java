@@ -12,6 +12,7 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
 import zw.co.innbucks.loans.core.loan.Address;
@@ -55,8 +56,11 @@ import static org.mockito.Mockito.mock;
  * — not an observed response. Replace those stubs with recorded responses once
  * InnBucks supplies them.
  *
- * <p>Pure JUnit + WireMock, no Spring context — so {@link InnbucksAuthService}'s
- * {@code @Cacheable} is inert here and every call logs in afresh.
+ * <p>Pure JUnit + WireMock, no Spring context. Each test builds its own service, so its
+ * {@link InnbucksAuthService} logs in once and keeps the token for the test.
+ *
+ * <p>The Staff Grocery Loan's booking and inquiry on the same endpoints are pinned in
+ * {@link InnbucksPreApprovedBookingContractTest} and {@link InnbucksLoanInquiryContractTest}.
  */
 class InnbucksLoanApiContractTest {
 
@@ -103,7 +107,7 @@ class InnbucksLoanApiContractTest {
         // The production transport (config/OutboundHttp): pooled httpclient5, no automatic retries.
         RestTemplate restTemplate = new RestTemplate(TestOutboundHttp.POOL.requestFactory(500, 2000));
 
-        InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params);
+        InnbucksAuthService auth = new InnbucksAuthService(restTemplate, params, new HttpClientConfig());
         return new InnbucksDisbursementService(mock(LoanRepository.class), mock(LoanNotificationService.class),
                 mock(LoanDisbursementRepository.class), mock(DeductionCancellationService.class),
                 restTemplate, params, auth, mock(DisbursementLedger.class), CheckpointGates.none(),
@@ -169,7 +173,9 @@ class InnbucksLoanApiContractTest {
                 .withRequestBody(matchingJsonPath("$.username", equalTo("test-user")))
                 .withRequestBody(matchingJsonPath("$.password", equalTo("test-pass"))));
         wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
-                .withHeader("Authorization", equalTo("Bearer " + TOKEN)));
+                .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                // A partner never gets our trace context.
+                .withoutHeader("traceparent"));
     }
 
     @Test
@@ -344,6 +350,25 @@ class InnbucksLoanApiContractTest {
 
         assertThat(response.isSuccess()).isTrue();
         wireMock.verify(2, postRequestedFor(urlEqualTo(APPLY)));
+        // The first login, and one more for the refused token: never a third for the replay.
+        wireMock.verify(2, postRequestedFor(urlEqualTo(LOGIN)));
+    }
+
+    @Test
+    @DisplayName("apply: the replay after a 401 carries the token the new login returned")
+    void applyReplayUsesTheFreshToken() {
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).inScenario("login").whenScenarioStateIs(STARTED)
+                .willReturn(okJson("{\"accessToken\":\"tok-old\"}")).willSetStateTo("second"));
+        wireMock.stubFor(post(urlEqualTo(LOGIN)).inScenario("login").whenScenarioStateIs("second")
+                .willReturn(okJson("{\"accessToken\":\"tok-new\"}")));
+        wireMock.stubFor(post(urlEqualTo(APPLY)).withHeader("Authorization", equalTo("Bearer tok-old"))
+                .willReturn(aResponse().withStatus(401)));
+        wireMock.stubFor(post(urlEqualTo(APPLY)).withHeader("Authorization", equalTo("Bearer tok-new"))
+                .willReturn(okJson("{}")));
+
+        assertThat(service.createLoanAccount(collectionLoan(DisbursementType.CUSTOMER_MOBILE_WALLET)).isSuccess())
+                .isTrue();
+        wireMock.verify(1, postRequestedFor(urlEqualTo(APPLY)).withHeader("Authorization", equalTo("Bearer tok-new")));
     }
 
     @Test
@@ -440,7 +465,8 @@ class InnbucksLoanApiContractTest {
         assertThat(status.getStatus()).isEqualTo(LoanDisbursementStatus.SUCCESS);
         wireMock.verify(getRequestedFor(urlEqualTo(INQUIRY + "000000042"))
                 .withHeader("Authorization", equalTo("Bearer " + TOKEN))
-                .withHeader("X-Api-Key", equalTo(API_KEY)));
+                .withHeader("X-Api-Key", equalTo(API_KEY))
+                .withoutHeader("traceparent"));
     }
 
     @Test

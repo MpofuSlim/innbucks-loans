@@ -60,6 +60,7 @@ class StaffNotificationSenderTest {
     private StaffNotificationProperties properties;
     private SmsNotificationClient sms;
     private WhatsAppNotificationClient whatsApp;
+    private StaffOfferRepository offerRepository;
     private StaffNotificationSender sender;
 
     @BeforeEach
@@ -84,7 +85,7 @@ class StaffNotificationSenderTest {
         when(memberRepository.findById(7L)).thenReturn(Optional.of(StaffMember.builder().id(7L)
                 .employeeNumber("E1001").fullName("Nyasha Dube").msisdn("263782606983").grade("C4")
                 .employmentStatus(StaffEmploymentStatus.ACTIVE).build()));
-        StaffOfferRepository offerRepository = mock(StaffOfferRepository.class);
+        offerRepository = mock(StaffOfferRepository.class);
         when(offerRepository.findById(anyLong())).thenAnswer(i -> offers.stream()
                 .filter(offer -> offer.getId().equals(i.getArgument(0))).findFirst());
         when(offerRepository.findByStaffMemberIdAndIdLessThanOrderByIdDesc(anyLong(), anyLong(), any()))
@@ -326,5 +327,29 @@ class StaffNotificationSenderTest {
         properties.setIgnoredOffersBeforeCap(4);
         assertThat(sender.send(100L)).as("three ignored, the cap now four").isTrue();
         verify(sms, never()).sendSms(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("a notice about the member's own loan is a service message: sent to one who opted out of offer"
+            + " messages, and to one the frequency cap holds back, and it looks up no offer")
+    void loanNoticesAlwaysGo() {
+        String paid = StaffNotificationTemplate.LOAN_PAID_OUT.paidOutText("USD", new BigDecimal("150.00"),
+                "InnBucks wallet", "6983", LocalDate.of(2026, 11, 20), "SGL-2026-000143");
+        notification = StaffNotification.builder().id(102L).staffMemberId(7L)
+                .template(StaffNotificationTemplate.LOAN_PAID_OUT).templateVersion(1).staffLoanId(143L)
+                .title(StaffNotificationTemplate.LOAN_PAID_OUT.title()).message(paid).createdAt(NOW)
+                .outboundStatus(StaffNotificationOutboundStatus.SENDING).claimedAt(NOW).version(1L).build();
+        preference = StaffNotificationPreference.builder().staffMemberId(7L).offerMessagesOptedOut(true)
+                .reason("Asked by phone").updatedBy("hc1").updatedAt(NOW).build();
+        earlierOffers(StaffOfferStatus.EXPIRED, StaffOfferStatus.EXPIRED, StaffOfferStatus.EXPIRED);
+        lastMessaged(NOW.minusDays(1));
+
+        assertThat(sender.send(102L)).isTrue();
+
+        verify(whatsApp).sendCustomNotification("+263782606983", paid);
+        assertThat(saved.getOutboundStatus()).isEqualTo(StaffNotificationOutboundStatus.SENT);
+        assertThat(saved.getSkipReason()).isNull();
+        verify(offerRepository, never()).findById(anyLong());
+        verify(offerRepository, never()).findByStaffMemberIdAndIdLessThanOrderByIdDesc(anyLong(), anyLong(), any());
     }
 }

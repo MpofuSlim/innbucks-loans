@@ -19,7 +19,8 @@ import java.time.LocalDateTime;
 
 /**
  * One message to one staff member (FR-SGL-019, FR-SGL-020): its in-app copy, kept here as the member's inbox, and where
- * the message to their phone stands. Created at most once per offer and once per member per broadcast (FR-SGL-024).
+ * the message to their phone stands. Created at most once per offer, once per member per broadcast (FR-SGL-024), and
+ * once of each kind per staff loan.
  */
 @Entity
 @Table(name = "staff_notifications")
@@ -55,6 +56,10 @@ public class StaffNotification {
     /** The broadcast it belongs to, for a broadcast notification. */
     @Column(name = "broadcast_id")
     private Long broadcastId;
+
+    /** The staff loan it is about, for a notice about the member's own loan (paid out, or not). */
+    @Column(name = "staff_loan_id")
+    private Long staffLoanId;
 
     @Column(name = "title", length = 120, nullable = false)
     private String title;

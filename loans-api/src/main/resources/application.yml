@@ -33,6 +33,10 @@ spring:
       connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:5000}
       data-source-properties:
         stringtype: unspecified
+        # Keep Postgres' "Failing row contains (...)" detail out of exception messages: it prints every column of the
+        # row (a borrower's phone, the account a staff loan is paid into), and those messages are logged. The
+        # primary text, with the constraint's name, stays.
+        logServerErrorDetail: false
 
   # The schema is Flyway's (loans-core db/migration); Hibernate only checks it
   # matches. JpaSchemaConfig enforces validate and the naming in code, because
@@ -101,11 +105,11 @@ spring:
   # cache.size, ...; recordStats feeds them), and a name not listed fails rather than creating an unbounded cache:
   # CacheNamesTest checks every name the code uses is here. Every cache is bounded and lives at most five minutes:
   # a parameter saved through the API is evicted at once on the instance that saved it, and reaches every other
-  # instance (or a change made in the database) within the TTL; an access token is reused for at most five minutes
-  # (inside the InnBucks login's life, which the notification API, on the same login, takes as eight) and is still
-  # replaced on a 401.
+  # instance (or a change made in the database) within the TTL; the Ndasenda access token is reused for at most five
+  # minutes and is still replaced on a 401. (The InnBucks token is not here: InnbucksAuthService keeps it single-flight,
+  # for innbucks.token-ttl.)
   cache:
-    cache-names: parameterCache,innbucks-access-token-cache,ndasenda-access-token-cache
+    cache-names: parameterCache,ndasenda-access-token-cache
     caffeine:
       spec: maximumSize=500,expireAfterWrite=5m,recordStats
   # Email over SMTP (Amazon SES), as the ticketing fleet sends Foundry's: loans writes its own From header, so the
@@ -277,6 +281,41 @@ loans:
     # lodge. These move no money.
     # true: the weekly run fires on loans.staff-offers.run-cron and messages every eligible staff member.
     jobs-enabled: "${STAFF_LOANS_JOBS_ENABLED:false}"
+    # How a Staff Grocery Loan accepted from now on is paid out; each loan keeps the way, and the account, it was
+    # accepted under. VOUCHER: as before (it waits for the voucher disbursement; nothing is sent to the bank). CASH: as
+    # soon as the acceptance commits, the bank books it as a pre-approved loan (InnBucks POST
+    # /bank/api/loan/apply/pre-approved, with the innbucks credentials below) and pays it into the borrower's own
+    # account, never twice; its inquiry says when the money has landed. destination: VEENGU_WALLET (the borrower's
+    # registered phone) or BR_ACCOUNT (the register's account number), no default: the business decides. CASH refuses
+    # to start without destination, product and the innbucks credentials.
+    payout:
+      method: "${STAFF_LOANS_PAYOUT_METHOD:VOUCHER}"
+      destination: "${STAFF_LOANS_PAYOUT_DESTINATION:}"
+      # The bank's product code for the Staff Grocery Loan (NANOUS is the SSB loan's).
+      product: "${STAFF_LOANS_PAYOUT_PRODUCT:}"
+      # The booking's type, PERSONAL or CONSUMER_FINANCE. Blank: PERSONAL for VEENGU_WALLET; BR_ACCOUNT needs it set.
+      loan-type: "${STAFF_LOANS_PAYOUT_LOAN_TYPE:}"
+      # Sent as the borrower's employer; blank leaves it out.
+      employer-name: "${STAFF_LOANS_PAYOUT_EMPLOYER_NAME:InnBucks MicroBank}"
+      # A payout claimed this long ago and never settled (the process died mid-call) is held IN_DOUBT for the bank's
+      # inquiry; it is never sent again. At least as long as a booking can take (two logins and two posts at the
+      # http.client timeouts, about 5 minutes with the defaults), or the service refuses to start.
+      stale-claim-minutes: "${STAFF_LOANS_PAYOUT_STALE_CLAIM_MINUTES:30}"
+      # How often the bank is asked about payouts it took, or may have taken.
+      status-check-interval: "${STAFF_LOANS_PAYOUT_STATUS_CHECK_INTERVAL:PT3M}"
+      # A payout is not sent once its due date is fewer than this many days away.
+      min-days-before-due: "${STAFF_LOANS_PAYOUT_MIN_DAYS_BEFORE_DUE:7}"
+      # How long after the bank first says it holds no such loan, or holds it in a failed status, a SUPER_ADMIN may
+      # confirm it was never paid (the bank must still be saying so: its last answer no older than twice
+      # status-check-interval).
+      not-booked-min-age: "${STAFF_LOANS_PAYOUT_NOT_BOOKED_MIN_AGE:PT24H}"
+      # How long a payout confirmed never booked is still asked about, in case the bank booked it after all.
+      failed-watch: "${STAFF_LOANS_PAYOUT_FAILED_WATCH:P14D}"
+      # The bank's loan statuses (any case) meaning the money is in the account, meaning it is not yet, and meaning it
+      # never will be (the bank holds it, but declined it).
+      paid-statuses: "${STAFF_LOANS_PAYOUT_PAID_STATUSES:SETTLED}"
+      pending-statuses: "${STAFF_LOANS_PAYOUT_PENDING_STATUSES:PROCESSING,PENDING,APPROVED,BOOKED}"
+      failed-statuses: "${STAFF_LOANS_PAYOUT_FAILED_STATUSES:REJECTED,CANCELLED,FAILED}"
   # Staff Grocery Loan borrowers sign in from the SuperApp (FR-SGL-025): the InnBucks middleware checks their PIN and
   # signs a short-lived RS256/ES256 assertion naming their phone (iss/aud below, sub = phone, jti, iat, exp at most
   # max-ttl-seconds after iat, amr = how they authenticated). Loans holds the middleware's PUBLIC key only. Approving a
@@ -378,6 +417,8 @@ innbucks:
   # held for the inquiry job as an unknown outcome, never booked again.
   booking:
     stale-claim-minutes: "${INNBUCKS_BOOKING_STALE_CLAIM_MINUTES:30}"
+  # How long an InnBucks login is used when its token carries no readable exp (the old token cache's five minutes).
+  token-ttl: "${INNBUCKS_TOKEN_TTL:PT5M}"
 
 # --- Notifications ---------------------------------------------------------
 # SMS and email are delivered through the InnBucks public notification API

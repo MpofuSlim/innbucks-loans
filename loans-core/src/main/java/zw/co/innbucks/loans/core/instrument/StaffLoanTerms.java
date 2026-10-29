@@ -18,6 +18,11 @@ import java.util.regex.Pattern;
  * (FR-SGL-026, FR-SGL-027). Its own set, apart from {@link InstrumentTerms}: a staff loan has no tenor, instalment or
  * SSB deduction, and an SSB loan has no repayment date or voucher. As there, an unknown name is refused when the
  * wording is published, never left unfilled in an accepted agreement, and amounts are written with two decimals.
+ *
+ * <p>A loan is paid by voucher or in cash, and the wording must fit the way it is paid: a cash agreement names where
+ * the money goes ({@link #CASH_ONLY}) and nothing about a voucher ({@link #VOUCHER_ONLY}), and a voucher agreement
+ * names no account. The journey refuses an agreement that does not fit, so no borrower signs for one and is paid the
+ * other way.
  */
 public final class StaffLoanTerms {
 
@@ -28,12 +33,22 @@ public final class StaffLoanTerms {
      *
      * @param unredeemedVoucherTerms the sentence that says what happens to the loan when the voucher is not spent
      *                               in full before it expires (OQ-09)
+     * @param payoutAccount          where a cash loan is paid, never in full: {@code InnBucks wallet ****3123}; null
+     *                               for a voucher loan
      */
     public record Signing(String borrowerName, String employeeNumber, String nationalIdNumber, String mobileNumber,
                           String department, BigDecimal amount, String currency, BigDecimal interestRate,
                           BigDecimal totalRepayable, LocalDate repaymentDate, String merchantName,
-                          int voucherValidityDays, String unredeemedVoucherTerms, LocalDate acceptedDate) {
+                          int voucherValidityDays, String unredeemedVoucherTerms, String payoutAccount,
+                          LocalDate acceptedDate) {
     }
+
+    /** What only a cash agreement names: where the money is paid. A cash agreement must name it. */
+    public static final Set<String> CASH_ONLY = Set.of("payoutAccount");
+
+    /** What only a voucher agreement names: the voucher, and where it is spent. A cash agreement names none of it. */
+    public static final Set<String> VOUCHER_ONLY = Set.of("merchantName", "voucherValidityDays",
+            "unredeemedVoucherTerms");
 
     private record Term(String description, Function<Signing, String> value) {
     }
@@ -44,9 +59,9 @@ public final class StaffLoanTerms {
         TERMS.put("borrowerName", new Term("Full name on the staff register", s -> text(s.borrowerName())));
         TERMS.put("employeeNumber", new Term("Employee number", s -> text(s.employeeNumber())));
         TERMS.put("nationalIdNumber", new Term("National ID number", s -> text(s.nationalIdNumber())));
-        TERMS.put("mobileNumber", new Term("Mobile number the voucher is sent to", s -> text(s.mobileNumber())));
+        TERMS.put("mobileNumber", new Term("Mobile number on the staff register", s -> text(s.mobileNumber())));
         TERMS.put("department", new Term("Department", s -> text(s.department())));
-        TERMS.put("amount", new Term("Amount borrowed, the voucher's value", s -> money(s.amount())));
+        TERMS.put("amount", new Term("Amount borrowed", s -> money(s.amount())));
         TERMS.put("currency", new Term("Currency, e.g. USD", s -> text(s.currency())));
         TERMS.put("interestRate", new Term("Interest rate, percent (0)", s -> rate(s.interestRate())));
         TERMS.put("totalRepayable", new Term("Total to repay", s -> money(s.totalRepayable())));
@@ -57,6 +72,8 @@ public final class StaffLoanTerms {
                 s -> String.valueOf(s.voucherValidityDays())));
         TERMS.put("unredeemedVoucherTerms", new Term("What happens if the voucher is not spent in full before it"
                 + " expires", s -> text(s.unredeemedVoucherTerms())));
+        TERMS.put("payoutAccount", new Term("Where a cash loan is paid, by its last four digits, e.g. InnBucks"
+                + " wallet ****3123 (blank for a voucher loan)", s -> text(s.payoutAccount())));
         TERMS.put("acceptedDate", new Term("Date accepted, yyyy-MM-dd", s -> date(s.acceptedDate())));
     }
 
@@ -68,6 +85,18 @@ public final class StaffLoanTerms {
         Map<String, String> placeholders = new LinkedHashMap<>();
         TERMS.forEach((name, term) -> placeholders.put(name, term.description()));
         return Collections.unmodifiableMap(placeholders);
+    }
+
+    /** The terms the wording names, in order of first appearance; a name that is not a term is left out. */
+    public static Set<String> placeholdersIn(String body) {
+        Set<String> used = new LinkedHashSet<>();
+        Matcher matcher = PLACEHOLDER.matcher(body == null ? "" : body);
+        while (matcher.find()) {
+            if (TERMS.containsKey(matcher.group(1))) {
+                used.add(matcher.group(1));
+            }
+        }
+        return Collections.unmodifiableSet(used);
     }
 
     /** The placeholders in the wording that are not terms, in order of first appearance. */
