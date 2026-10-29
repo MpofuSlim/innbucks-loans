@@ -3,6 +3,17 @@
 How loans joins the fleet (gateway routes, k8s, env, scheduled jobs OFF in the
 cell) is in `docs/fleet-wiring.md`; read it first.
 
+> [!IMPORTANT]
+> **Branch naming: `feature/<short-kebab-description>`, cut from `main`.**
+> Sessions often start on an auto-assigned `claude/<random-words>` branch; that
+> is a harness artifact, not our convention. Create the `feature/*` branch from
+> the latest `main` before committing, push with `git push -u origin <branch>`,
+> and open the PR **ready for review, never as a draft**
+> (owner decision, 2026-10-29). A draft cannot be merged, and taking a PR out
+> of draft is a GraphQL-only GitHub operation, which this account is often
+> refused (`graphql_rate_limit`); that left ticketing PR #570 green but
+> unmergeable. One feature per branch.
+
 ## Upstream tokens: never hold a lock across a login
 
 **A cached upstream bearer token goes through `SingleFlightTokenCache`
