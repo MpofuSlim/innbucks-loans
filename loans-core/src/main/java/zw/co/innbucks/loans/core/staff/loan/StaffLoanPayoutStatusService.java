@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -203,7 +204,7 @@ public class StaffLoanPayoutStatusService {
      */
     public boolean holdIfAbandoned(Long staffLoanId, LocalDateTime now) {
         LocalDateTime cutoff = staleCutoff(now);
-        Abandoned held = transactionTemplate.execute(status -> loanRepository.lockById(staffLoanId)
+        Optional<Abandoned> abandoned = transactionTemplate.execute(status -> loanRepository.lockById(staffLoanId)
                 .filter(loan -> loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH
                         && loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
                         && loan.getPayoutStatus() == StaffLoanPayoutStatus.SENDING
@@ -224,11 +225,11 @@ public class StaffLoanPayoutStatusService {
                     }
                     loanRepository.save(loan);
                     return new Abandoned(loan, claimedAt);
-                })
-                .orElse(null));
-        if (held == null) {
+                }));
+        if (abandoned.isEmpty()) {
             return false;
         }
+        Abandoned held = abandoned.get();
         metrics.count(StaffLoanPayoutMetrics.Event.ABANDONED);
         log.error("STAFF LOAN PAYOUT CLAIM ABANDONED: {} was claimed for its payout at {} and never settled. The bank"
                 + " may have booked and paid it, so it is held {} for its inquiry and never sent again (audited)",
