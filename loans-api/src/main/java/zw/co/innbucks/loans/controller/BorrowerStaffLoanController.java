@@ -44,10 +44,13 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 @Tag(name = "Borrower: Staff Grocery Loan (SuperApp)", description = "The Staff Grocery Loan journey in the SuperApp"
         + " (FR-SGL-025 to FR-SGL-031), for the borrower session's own staff member: the tile (GET), \"Apply\" when"
         + " there is no offer, the disclosure and agreement for the amount chosen (quote), and accepting it with a"
-        + " fresh PIN or biometric, and every loan they have taken (GET /loans). A loan accepted waits for"
-        + " disbursement through the bank's system, which pays the merchant it was accepted for (merchantName) and"
-        + " sends the voucher. When a borrower cannot borrow, the reason comes in plain words (unavailable.message,"
-        + " or a 422's message): show it as it is.")
+        + " fresh PIN or biometric, and every loan they have taken (GET /loans). How a loan is paid out is decided"
+        + " when it is accepted. A voucher loan (no payoutMethod) waits for disbursement through the bank's system,"
+        + " which pays the merchant it was accepted for (merchantName) and sends the voucher. A cash loan"
+        + " (payoutMethod CASH) is paid by the bank into the borrower's own account as soon as they accept: the"
+        + " account is shown by its last four digits (payoutAccount), and merchantName and voucher are null. When a"
+        + " borrower cannot borrow, the reason"
+        + " comes in plain words (unavailable.message, or a 422's message): show it as it is.")
 @RestController
 @RequestMapping(ApiPaths.BASE + "/borrower/staff-grocery-loan")
 @RequiredArgsConstructor
@@ -59,15 +62,19 @@ public class BorrowerStaffLoanController {
 
     @Operation(summary = "The Staff Grocery Loan tile",
             description = "BORROWER. At most one of loan, offer and unavailable is set. loan: the loan they hold, with"
-                    + " its voucher once paid out (the code and QR value are there while it can be spent). offer: an"
-                    + " offer to take up (\"Accept offer\"), with the amounts it can be drawn in. unavailable: why they"
-                    + " cannot borrow now. None of them, with canApply true: show \"Apply\".")
+                    + " its voucher once paid out (the code and QR value are there while it can be spent), or for a"
+                    + " loan paid in cash, the account it is paid into (payoutAccount; statusMessage says whether it"
+                    + " is being paid or was). offer: an offer to take up (\"Accept offer\"), with the amounts it can"
+                    + " be drawn in. unavailable: why they cannot borrow now. None of them, with canApply true: show"
+                    + " \"Apply\".")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "An offer to take up", value = StaffLoanApiExamples.HOME_OFFER),
                     @ExampleObject(name = "No offer: may apply", value = StaffLoanApiExamples.HOME_APPLY),
                     @ExampleObject(name = "A loan awaiting payout", value = StaffLoanApiExamples.HOME_LOAN),
                     @ExampleObject(name = "Paid out: the voucher", value = StaffLoanApiExamples.HOME_VOUCHER),
+                    @ExampleObject(name = "Cash: being paid", value = StaffLoanApiExamples.HOME_CASH_AWAITING),
+                    @ExampleObject(name = "Cash: paid into the wallet", value = StaffLoanApiExamples.HOME_CASH_PAID),
                     @ExampleObject(name = "Cannot borrow now", value = StaffLoanApiExamples.HOME_UNAVAILABLE)})),
             @ApiResponse(responseCode = "401", description = "No valid borrower session",
                     content = @Content(examples = @ExampleObject(ApiExamples.UNAUTHORIZED))),
@@ -85,8 +92,9 @@ public class BorrowerStaffLoanController {
                     + " cancelled before payout or written off. Each has the tile's loan shape: statusMessage says where"
                     + " it stands in words to show as they are (once paid out they follow the voucher: what is left to"
                     + " spend, spent, expired or cancelled, then when it is collected or that it is overdue), and"
-                    + " voucher is set once it was paid out, with its code only while it can still be spent. No items:"
-                    + " they have never borrowed.")
+                    + " voucher is set once it was paid out, with its code only while it can still be spent. A loan"
+                    + " paid in cash has no voucher: its words say the account it is being paid, or was paid, into"
+                    + " (payoutAccount), then when it is collected. No items: they have never borrowed.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "A loan awaiting payout, and one repaid", value =
@@ -135,13 +143,15 @@ public class BorrowerStaffLoanController {
 
     @Operation(summary = "The disclosure and agreement for an amount",
             description = "BORROWER. Everything to show before acceptance (FR-SGL-026) for the amount chosen from the"
-                    + " offer: amount, 0% interest, total repayable, the repayment date, how it is collected, where the"
-                    + " voucher can be spent, and what happens to an unspent voucher; and the agreement filled with"
-                    + " them (FR-SGL-027). Show the agreement's content and let them accept it; send back its version"
-                    + " and contentSha256. Changes nothing.")
+                    + " offer: amount, 0% interest, total repayable, the repayment date, how it is collected, how they"
+                    + " get the money (redemption: where the voucher can be spent, or for a loan paid in cash, the"
+                    + " account it is paid into, payoutAccount), and what happens to an unspent voucher (null for"
+                    + " cash); and the agreement filled with them (FR-SGL-027). Show the agreement's content and let"
+                    + " them accept it; send back its version and contentSha256. Changes nothing.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Success",
-                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.QUOTE))),
+            @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
+                    @ExampleObject(name = "A voucher loan", value = StaffLoanApiExamples.QUOTE),
+                    @ExampleObject(name = "A loan paid in cash", value = StaffLoanApiExamples.QUOTE_CASH)})),
             @ApiResponse(responseCode = "400", description = "Not an amount the offer can be drawn in",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.AMOUNT_NOT_ALLOWED))),
             @ApiResponse(responseCode = "401", description = "No valid borrower session",
@@ -167,11 +177,13 @@ public class BorrowerStaffLoanController {
                     + " borrower has just entered their PIN or used biometrics (FR-SGL-028): ask for it when they tap"
                     + " Accept, never reuse the sign-in one. Send the quote's offerId, amount, agreement version and"
                     + " contentSha256, and the device in X-Device-Id. Everything is checked again; the loan is then"
-                    + " made, AWAITING_DISBURSEMENT. STEP_UP_REQUIRED: ask for the PIN again and retry."
+                    + " made, AWAITING_DISBURSEMENT. A loan paid in cash is paid into the borrower's account once it"
+                    + " is made; its statusMessage says so. STEP_UP_REQUIRED: ask for the PIN again and retry."
                     + " TERMS_CHANGED: quote again and show the new agreement.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "The loan",
-                    content = @Content(examples = @ExampleObject(StaffLoanApiExamples.ACCEPTED))),
+            @ApiResponse(responseCode = "201", description = "The loan", content = @Content(examples = {
+                    @ExampleObject(name = "A voucher loan", value = StaffLoanApiExamples.ACCEPTED),
+                    @ExampleObject(name = "A loan paid in cash", value = StaffLoanApiExamples.ACCEPTED_CASH)})),
             @ApiResponse(responseCode = "400", description = "A field missing or wrong, or no device",
                     content = @Content(examples = {
                             @ExampleObject(name = "No device", value = StaffLoanApiExamples.DEVICE_MISSING),

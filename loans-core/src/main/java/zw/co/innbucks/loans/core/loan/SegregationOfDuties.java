@@ -1,6 +1,9 @@
 package zw.co.innbucks.loans.core.loan;
 
 import org.apache.commons.lang3.StringUtils;
+import zw.co.innbucks.loans.core.staff.StaffMember;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.util.Locale;
@@ -46,6 +49,29 @@ public final class SegregationOfDuties {
                 && (mobile.equals(nationalMobileNumber(loan.getMobileNumber()))
                 || mobile.equals(nationalMobileNumber(loan.payoutWalletNumber()))
                 || (nextOfKin != null && mobile.equals(nationalMobileNumber(nextOfKin.getMobileNumber()))));
+        return sameId || sameMobile;
+    }
+
+    /**
+     * The borrower of a Staff Grocery Loan, or the holder of the wallet it pays: matched on the user's ID number
+     * against the borrower's national ID on the register, and on their mobile number against the loan's phone, the
+     * wallet it pays, and the borrower's phone on the register now, however either was typed. A staff loan carries no
+     * ID number of its own, so {@code borrower} is the register's record of whoever took it (null: matched on the
+     * loan's numbers alone).
+     */
+    public static boolean isPartyTo(StaffLoan loan, StaffMember borrower, User user) {
+        if (user == null || loan == null) {
+            return false;
+        }
+        String idNumber = identityNumber(user.getIdNumber());
+        String mobile = nationalMobileNumber(user.getMobileNumber());
+        boolean sameId = idNumber != null && borrower != null
+                && idNumber.equals(identityNumber(borrower.getNationalId()));
+        boolean sameMobile = mobile != null
+                && (mobile.equals(nationalMobileNumber(loan.getMsisdn()))
+                || (loan.getPayoutDestination() == StaffLoanPayoutDestination.VEENGU_WALLET
+                && mobile.equals(nationalMobileNumber(loan.getPayoutAccount())))
+                || (borrower != null && mobile.equals(nationalMobileNumber(borrower.getMsisdn()))));
         return sameId || sameMobile;
     }
 

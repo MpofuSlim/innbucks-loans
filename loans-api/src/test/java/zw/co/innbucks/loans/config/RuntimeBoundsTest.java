@@ -52,8 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         })
 class RuntimeBoundsTest {
 
-    static final List<String> CACHES = List.of("parameterCache", "innbucks-access-token-cache",
-            "ndasenda-access-token-cache");
+    static final List<String> CACHES = List.of("parameterCache", "ndasenda-access-token-cache");
 
     @SpringBootConfiguration
     @EnableAutoConfiguration
@@ -94,7 +93,7 @@ class RuntimeBoundsTest {
     // ---- caches --------------------------------------------------------------
 
     @Test
-    @DisplayName("exactly the three caches, each Caffeine with a size bound, a five-minute TTL and statistics on")
+    @DisplayName("exactly the two caches, each Caffeine with a size bound, a five-minute TTL and statistics on")
     void everyCacheIsBoundedAndExpires() {
         assertThat(cacheManager).isInstanceOf(CaffeineCacheManager.class);
         assertThat(cacheManager.getCacheNames()).containsExactlyInAnyOrderElementsOf(CACHES);

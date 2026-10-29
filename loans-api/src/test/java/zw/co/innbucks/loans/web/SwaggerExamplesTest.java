@@ -1,5 +1,6 @@
 package zw.co.innbucks.loans.web;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -64,18 +65,26 @@ import zw.co.innbucks.loans.core.loan.Loan;
 import zw.co.innbucks.loans.core.notice.LoanNotice;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanAgreement;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanQuote;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanResponse;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
 import zw.co.innbucks.loans.core.voucher.VoucherCodes;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -424,5 +433,213 @@ class SwaggerExamplesTest {
         assertThat(voucher.path("code").isNull()).as("a lapsed voucher's code is not shown").isTrue();
         assertThat(OffsetDateTime.parse(items.get(0).path("acceptedAt").asString()))
                 .as("newest first").isAfter(OffsetDateTime.parse(repaid.path("acceptedAt").asString()));
+    }
+
+    @Test
+    void everyStaffLoanExampleHasTheShapeTheApiAnswersWith() {
+        // A client codes against these fields: each portal loan, cash or voucher, is a StaffLoanResponse, and each
+        // screen of the SuperApp, cash or voucher, a StaffLoanView or StaffLoanQuote. A field left out while empty is
+        // left out of the example, never shown as null; every other field is there, in the record's order.
+        List<JsonNode> voucherLoans = List.of(items(StaffLoanApiExamples.STAFF_LOANS).get(0),
+                items(StaffLoanApiExamples.STAFF_LOANS_FLAGGED).get(0),
+                JSON.readTree(StaffLoanApiExamples.STAFF_LOAN_DETAIL).path("data").path("loan"),
+                data(StaffLoanApiExamples.CANCELLED));
+        for (JsonNode loan : voucherLoans) {
+            assertShape(loan, StaffLoanResponse.class);
+        }
+        for (JsonNode loan : cashLoans().values()) {
+            assertShape(loan, StaffLoanResponse.class);
+        }
+        List<JsonNode> voucherViews = new ArrayList<>(List.of(
+                data(StaffLoanApiExamples.HOME_LOAN).path("loan"), data(StaffLoanApiExamples.HOME_VOUCHER).path("loan"),
+                data(StaffLoanApiExamples.ACCEPTED)));
+        items(StaffLoanApiExamples.LOAN_HISTORY).forEach(voucherViews::add);
+        for (JsonNode view : voucherViews) {
+            assertShape(view, StaffLoanView.class);
+        }
+        for (JsonNode view : List.of(data(StaffLoanApiExamples.HOME_CASH_AWAITING).path("loan"),
+                data(StaffLoanApiExamples.HOME_CASH_PAID).path("loan"), data(StaffLoanApiExamples.ACCEPTED_CASH))) {
+            assertShape(view, StaffLoanView.class);
+            assertThat(view.path("payoutMethod").asString()).isEqualTo("CASH");
+        }
+        assertShape(data(StaffLoanApiExamples.QUOTE), StaffLoanQuote.class);
+        assertShape(data(StaffLoanApiExamples.QUOTE_CASH), StaffLoanQuote.class);
+
+        // A voucher loan reads exactly as it did before cash payouts: no payout field at all, not even payoutMethod.
+        List<JsonNode> voucher = new ArrayList<>(voucherLoans);
+        voucher.addAll(voucherViews);
+        voucher.add(data(StaffLoanApiExamples.QUOTE));
+        for (JsonNode loan : voucher) {
+            assertThat(names(loan)).as(loan.path("reference").asString())
+                    .noneMatch(name -> name.startsWith("payout") || name.equals("bankLoanAccount"));
+        }
+    }
+
+    /**
+     * {@code example} is a {@code type} as Jackson writes it: every field that is always written is there, a field
+     * written only when it has a value is there only with one, and they come in the record's order.
+     */
+    private static void assertShape(JsonNode example, Class<? extends Record> type) {
+        List<String> present = names(example);
+        List<String> expected = new ArrayList<>();
+        for (RecordComponent component : type.getRecordComponents()) {
+            // On the accessor: JsonInclude cannot target a record component, so Java puts it on the field, the
+            // accessor and the constructor's parameter.
+            JsonInclude include = component.getAccessor().getAnnotation(JsonInclude.class);
+            boolean optional = include != null && include.value() == JsonInclude.Include.NON_NULL;
+            if (!optional) {
+                expected.add(component.getName());
+            } else if (present.contains(component.getName())) {
+                assertThat(example.path(component.getName()).isNull()).as(type.getSimpleName() + "."
+                        + component.getName() + " is never written as null").isFalse();
+                expected.add(component.getName());
+            }
+        }
+        assertThat(present).as(type.getSimpleName() + " " + example.path("reference").asString())
+                .containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void theCashLoanExamplesTellOneStory() {
+        // SGL-2027-000245 is paid into Chipo Banda's wallet: whichever screen a reader starts from, it is the same
+        // loan, the same wallet (her phone on the register), the same acceptance, and its steps happen in order.
+        String wallet = null;
+        for (JsonNode member : JSON.readTree(ApiExamples.STAFF_MEMBERS).path("data").path("items")) {
+            if (member.path("employeeNumber").asString().equals("E1012")) {
+                wallet = member.path("mobileNumber").asString();
+            }
+        }
+        assertThat(wallet).isNotNull();
+        String masked = MsisdnUtils.mask(wallet);
+        String last4 = MsisdnUtils.lastFourDigits(wallet);
+        Map<String, JsonNode> portal = cashLoans();
+        JsonNode first = portal.get("refused");
+        OffsetDateTime acceptedAt = OffsetDateTime.parse(first.path("acceptedAt").asString());
+        for (Map.Entry<String, JsonNode> step : portal.entrySet()) {
+            JsonNode loan = step.getValue();
+            String as = step.getKey();
+            assertThat(loan.path("id").asLong()).as(as).isEqualTo(245);
+            assertThat(loan.path("reference").asString()).as(as).isEqualTo("SGL-2027-000245");
+            assertThat(loan.path("employeeNumber").asString()).as(as).isEqualTo("E1012");
+            assertThat(loan.path("msisdn").asString()).as(as).isEqualTo(masked);
+            assertThat(loan.path("payoutAccount").asString()).as(as).isEqualTo(masked);
+            assertThat(loan.path("payoutMethod").asString()).as(as).isEqualTo("CASH");
+            assertThat(loan.path("payoutDestination").asString()).as(as).isEqualTo("VEENGU_WALLET");
+            for (String field : List.of("acceptedAt", "amount", "dueDate", "offerId", "totalRepayable")) {
+                assertThat(loan.path(field)).as(as + " " + field).isEqualTo(first.path(field));
+            }
+            assertThat(loan.path("payoutClaimedAt").isMissingNode()).as(as + ": nothing here is being sent").isTrue();
+            String payout = loan.path("payoutStatus").asString();
+            String status = loan.path("status").asString();
+            assertThat(payout.equals("PAID")).as(as).isEqualTo(status.equals("DISBURSED"));
+            assertThat(payout.equals("FAILED")).as(as).isEqualTo(status.equals("CANCELLED"));
+            for (String later : List.of("payoutBankSeenAt", "payoutNotFoundAt", "payoutCheckedAt", "disbursedAt",
+                    "payoutFailedAt")) {
+                if (!loan.path(later).isNull() && !loan.path(later).isMissingNode()) {
+                    assertThat(OffsetDateTime.parse(loan.path(later).asString())).as(as + " " + later)
+                            .isAfter(acceptedAt);
+                }
+            }
+            if (status.equals("DISBURSED")) {
+                assertThat(loan.path("disbursementReference").asString()).as(as).isEqualTo("SGL-2027-000245");
+                assertThat(OffsetDateTime.parse(loan.path("disbursedAt").asString())).as(as)
+                        .isAfter(OffsetDateTime.parse(loan.path("payoutBankSeenAt").asString()));
+            }
+        }
+        assertThat(portal.get("sent again").path("payoutLastAnswer"))
+                .as("Pay out sends the refused payout again, its refusal kept")
+                .isEqualTo(first.path("payoutLastAnswer"));
+        JsonNode inDoubt = portal.get("in doubt");
+        JsonNode notBooked = portal.get("never booked");
+        OffsetDateTime notFoundAt = OffsetDateTime.parse(inDoubt.path("payoutNotFoundAt").asString());
+        String from = notFoundAt.plusHours(24).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        assertThat(inDoubt.path("payoutMessage").asString()).contains("from " + from + " a SUPER_ADMIN");
+        assertThat(notBooked.path("payoutNotFoundAt")).isEqualTo(inDoubt.path("payoutNotFoundAt"));
+        assertThat(notBooked.path("cancelledAt")).isEqualTo(notBooked.path("payoutFailedAt"));
+        assertThat(OffsetDateTime.parse(notBooked.path("payoutFailedAt").asString()))
+                .as("never booked only once reported missing for 24 hours").isAfter(notFoundAt.plusHours(24));
+        assertThat(OffsetDateTime.parse(notBooked.path("payoutCheckedAt").asString()))
+                .as("and while the inquiry still says so: its last answer within twice the check interval (PT3M)")
+                .isAfterOrEqualTo(OffsetDateTime.parse(notBooked.path("payoutFailedAt").asString()).minusMinutes(6));
+        assertThat(JSON.readTree(StaffLoanApiExamples.PAYOUT_NOT_BOOKED_STALE).path("message").asString())
+                .contains("check its status now, then record it within 6 minutes");
+        assertThat(portal.get("checked").path("bankLoanAccount").asString()).as("never shown in full")
+                .startsWith("****");
+        for (JsonNode loan : portal.values()) {
+            assertThat(loan.toString()).as("no phone number in full, in any answer kept").doesNotContain(wallet);
+        }
+        assertThat(JSON.readTree(StaffLoanApiExamples.PAYOUT_NOT_BOOKED_TOO_SOON).path("message").asString())
+                .contains("only since " + notFoundAt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                .endsWith("it can be from " + from);
+        assertThat(JSON.readTree(StaffLoanApiExamples.PAYOUT_NOT_BOOKED_SEEN).path("message").asString())
+                .endsWith("(since " + portal.get("checked").path("payoutBankSeenAt").asString() + ")");
+
+        // The SuperApp's screens of the same loan.
+        LocalDate due = LocalDate.parse(first.path("dueDate").asString());
+        JsonNode awaiting = data(StaffLoanApiExamples.HOME_CASH_AWAITING).path("loan");
+        JsonNode paid = data(StaffLoanApiExamples.HOME_CASH_PAID).path("loan");
+        for (JsonNode loan : List.of(awaiting, paid, data(StaffLoanApiExamples.ACCEPTED_CASH))) {
+            assertThat(loan.path("reference").asString()).isEqualTo("SGL-2027-000245");
+            assertThat(loan.path("payoutAccount").asString()).isEqualTo(masked);
+            assertThat(loan.path("payoutMethod").asString()).isEqualTo("CASH");
+            assertThat(loan.path("acceptedAt")).isEqualTo(first.path("acceptedAt"));
+            assertThat(loan.path("repaymentDate")).isEqualTo(first.path("dueDate"));
+            assertThat(loan.path("amount")).isEqualTo(first.path("amount"));
+            assertThat(loan.path("merchantName").isNull() && loan.path("voucher").isNull()).isTrue();
+            assertThat(loan.path("statusMessage").asString()).contains("InnBucks wallet ending " + last4);
+        }
+        assertThat(paid.path("statusMessage").asString()).endsWith("collected from your salary on "
+                + DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH).format(due) + ".");
+        JsonNode quote = data(StaffLoanApiExamples.QUOTE_CASH);
+        assertThat(quote.path("payoutAccount").asString()).isEqualTo(masked);
+        assertThat(quote.path("amount")).isEqualTo(first.path("amount"));
+        assertThat(quote.path("repaymentDate")).isEqualTo(first.path("dueDate"));
+        assertThat(quote.path("offerId")).isEqualTo(first.path("offerId"));
+        assertThat(quote.path("redemption").asString()).endsWith("InnBucks wallet ending " + last4 + ".");
+        JsonNode agreement = quote.path("agreement");
+        assertThat(AuditService.sha256Hex(agreement.path("content").asString()))
+                .isEqualTo(agreement.path("contentSha256").asString())
+                .isEqualTo(StaffLoanApiExamples.CASH_AGREEMENT_SHA256);
+        assertThat(agreement.path("content").asString()).contains("InnBucks wallet " + masked)
+                .doesNotContainIgnoringCase("voucher");
+
+        // Every refusal of it names it.
+        for (String refusal : List.of(StaffLoanApiExamples.PAYOUT_SEND_CONFLICT, StaffLoanApiExamples.PAYOUT_SEND_PARTY,
+                StaffLoanApiExamples.PAYOUT_QUEUE_FULL, StaffLoanApiExamples.PAYOUT_CHECK_SENDING,
+                StaffLoanApiExamples.PAYOUT_CHECK_NOT_CHECKABLE, StaffLoanApiExamples.PAYOUT_CHECK_UNANSWERED,
+                StaffLoanApiExamples.PAYOUT_CHECK_NOT_RECORDED, StaffLoanApiExamples.PAYOUT_NOT_BOOKED_STALE,
+                StaffLoanApiExamples.PAYOUT_PAID_PARTY, StaffLoanApiExamples.PAYOUT_PAID_CONFLICT,
+                StaffLoanApiExamples.PAYOUT_NOT_BOOKED_PARTY, StaffLoanApiExamples.CANCEL_CONFLICT_PAYOUT)) {
+            assertThat(JSON.readTree(refusal).path("message").asString()).contains("SGL-2027-000245");
+        }
+        assertThat(JSON.readTree(StaffLoanApiExamples.NOT_FOUND_245).path("message").asString()).contains("245");
+        assertThat(JSON.readTree(StaffLoanApiExamples.CANCEL_CONFLICT_PAYOUT).path("message").asString())
+                .endsWith("/lending/v1/staff-loans/245/payout/not-booked");
+    }
+
+    /** The portal's view of SGL-2027-000245 at each step, in the order of its story. */
+    private static Map<String, JsonNode> cashLoans() {
+        Map<String, JsonNode> steps = new LinkedHashMap<>();
+        steps.put("refused", items(StaffLoanApiExamples.STAFF_LOANS_REFUSED).get(0));
+        steps.put("sent again", data(StaffLoanApiExamples.PAYOUT_REQUESTED));
+        steps.put("in doubt", items(StaffLoanApiExamples.STAFF_LOANS_IN_DOUBT).get(0));
+        steps.put("checked", data(StaffLoanApiExamples.PAYOUT_CHECKED));
+        steps.put("confirmed paid", data(StaffLoanApiExamples.PAYOUT_CONFIRMED_PAID));
+        steps.put("never booked", data(StaffLoanApiExamples.PAYOUT_NOT_BOOKED));
+        return steps;
+    }
+
+    private static JsonNode data(String example) {
+        return JSON.readTree(example).path("data");
+    }
+
+    private static JsonNode items(String example) {
+        return data(example).path("items");
+    }
+
+    private static List<String> names(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        node.propertyNames().forEach(names::add);
+        return names;
     }
 }

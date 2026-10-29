@@ -2,6 +2,7 @@ package zw.co.innbucks.loans.core.staff.loan;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.instrument.StaffLoanTerms;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.voucher.VoucherProperties;
@@ -13,7 +14,8 @@ import java.util.Optional;
 
 /**
  * The Staff Grocery Loan's terms, from the settings: which amounts may be taken from an offer (FR-SGL-012), when it is
- * due, and what is owed (FR-SGL-026). Interest-free and without fees, so what is owed is what is borrowed.
+ * due, what is owed (FR-SGL-026), and how a loan accepted now is paid out. Interest-free and without fees, so what is
+ * owed is what is borrowed.
  */
 @Component
 @RequiredArgsConstructor
@@ -80,16 +82,79 @@ public class StaffLoanPolicy {
         return properties.getArrearsGraceDays();
     }
 
+    /** How a loan accepted now is paid out; each loan keeps the way it was accepted under. */
+    public StaffLoanPayoutMethod payoutMethod() {
+        return properties.getPayout().getMethod();
+    }
+
+    /** Where a loan accepted now is paid when it is paid in cash; null when none is set. */
+    public StaffLoanPayoutDestination payoutDestination() {
+        return properties.getPayout().getDestination();
+    }
+
+    /**
+     * Where a cash loan {@code member} accepts now is paid, as the register holds it now: their registered phone for
+     * VEENGU_WALLET, the register's account number for BR_ACCOUNT ({@link StaffLoanPayoutDestination#accountOf}).
+     * Empty when loans are paid by voucher, or when the register holds no such account for them: a member whose
+     * register entry holds a wallet has no account to be paid into.
+     */
+    public Optional<PayoutTarget> payoutTarget(StaffMember member) {
+        StaffLoanProperties.Payout payout = properties.getPayout();
+        if (!payout.cash() || payout.getDestination() == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(payout.getDestination().accountOf(member))
+                .map(account -> new PayoutTarget(payout.getDestination(), account));
+    }
+
     /**
      * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, for a voucher spent at
      * {@code merchantName}, as the agreement names them.
      */
     public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay,
                                           String merchantName) {
+        return signing(member, amount, acceptedDay, merchantName, null);
+    }
+
+    /**
+     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, as the agreement names
+     * them: with {@code payout} null, for a voucher spent at {@code merchantName}; with it, paid in cash into that
+     * account, and nothing about a voucher (the caller passes no merchant).
+     */
+    public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay,
+                                          String merchantName, PayoutTarget payout) {
+        boolean cash = payout != null;
         return new StaffLoanTerms.Signing(member.getFullName(), member.getEmployeeNumber(), member.getNationalId(),
                 member.getMsisdn(), member.getDepartment(), money(amount), currency(), INTEREST_RATE,
-                totalRepayable(amount), dueDate(acceptedDay), merchantName, voucherValidityDays(),
-                unredeemedVoucherTreatment().terms(), acceptedDay);
+                totalRepayable(amount), dueDate(acceptedDay), merchantName, cash ? 0 : voucherValidityDays(),
+                cash ? null : unredeemedVoucherTreatment().terms(), cash ? payout.named() : null, acceptedDay);
+    }
+
+    /**
+     * The account a cash loan is paid into, and its kind. Shown and written only by its last four digits; the
+     * account itself is kept on the loan alone.
+     */
+    public record PayoutTarget(StaffLoanPayoutDestination destination, String account) {
+
+        /** {@code ****3123}. */
+        public String masked() {
+            return MsisdnUtils.mask(account);
+        }
+
+        /** {@code 3123}. */
+        public String last4() {
+            return MsisdnUtils.lastFourDigits(account);
+        }
+
+        /** How the agreement names it: {@code InnBucks wallet ****3123}. */
+        public String named() {
+            return destination.label() + " " + masked();
+        }
+
+        @Override
+        public String toString() {
+            return "PayoutTarget[" + destination + " " + masked() + "]";
+        }
     }
 
     private static BigDecimal money(BigDecimal value) {

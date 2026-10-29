@@ -33,7 +33,8 @@ import java.util.UUID;
  * <p>The notification is claimed first (PENDING to SENDING, in its own short transaction), so it is never sent twice,
  * and whether to send at all is decided then, against the state of things at that moment: an offer that has closed
  * since is not announced, a member who opted out is not messaged (FR-SGL-022), and nor is one the frequency cap holds
- * back (FR-SGL-021). The gateways are called outside any transaction, so a slow one holds no database connection, and
+ * back (FR-SGL-021). A notice about the member's own loan (paid out, or not) is a service message: it always goes. The
+ * gateways are called outside any transaction, so a slow one holds no database connection, and
  * the outcome is recorded in a second transaction.
  */
 @Slf4j
@@ -158,6 +159,11 @@ public class StaffNotificationSender {
     }
 
     private StaffNotificationSkipReason skipReason(StaffNotification notification, LocalDateTime now) {
+        if (notification.getTemplate().aboutALoan()) {
+            // A service message about the member's own money: never held back by the offer message preference or the
+            // frequency cap, and about no offer.
+            return null;
+        }
         if (notification.getTemplate().aboutAnOffer()) {
             StaffOffer offer = offerRepository.findById(notification.getOfferId()).orElseThrow();
             if (offer.getStatus() != StaffOfferStatus.ACTIVE || !offer.getExpiresAt().isAfter(now)) {

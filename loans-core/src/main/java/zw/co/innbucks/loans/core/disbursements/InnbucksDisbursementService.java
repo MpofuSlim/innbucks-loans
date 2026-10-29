@@ -130,48 +130,7 @@ public class InnbucksDisbursementService extends DisbursementService {
         }
 
         LoanAccountCreationRequest requestBody = builder.build();
-        try {
-            return executeCreateLoanAccount(loan, requestBody);
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                // A 401 means the booking was not processed, so the one replay below cannot book twice.
-                log.warn("Token expired during loan account creation. Refreshing token and retrying...");
-                notSentIfFails(loan, innbucksAuthService::refreshToken);
-                return executeCreateLoanAccount(loan, requestBody);
-            }
-            throw e;
-        }
-    }
-
-    /**
-     * Throws {@link BookingNotSentException} only when the booking provably never reached InnBucks:
-     * the login failed (so no request was made), or the connection to the booking endpoint was never
-     * opened. Everything after the connection opened — a read timeout, a reset, a 5xx, a 4xx — is
-     * left to the caller, because InnBucks books and pays on this call.
-     */
-    private LoanAccountCreationResponse executeCreateLoanAccount(Loan loan, LoanAccountCreationRequest requestBody) {
-        HttpHeaders headers = notSentIfFails(loan, () -> getHttpHeaders(loan.getReference()));
-        HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(requestBody, headers);
-
-        ResponseEntity<String> responseEntity;
-        try {
-            responseEntity = restTemplate.exchange(
-                    parameters.getCreateLoanAccountEndpoint(),
-                    HttpMethod.POST,
-                    requestEntity,
-                    String.class);
-        } catch (ResourceAccessException ex) {
-            if (ConnectPhase.neverConnected(ex)) {
-                throw new BookingNotSentException("Booking of loan " + loan.getReference()
-                        + " not sent: could not connect to InnBucks (" + describe(ex) + ")", ex);
-            }
-            throw ex;
-        }
-
-        // Status only: the body is the upstream's answer about the applicant, so it stays at DEBUG
-        // (redacted, in LoggingInterceptor).
-        log.info("Account creation for loan {} answered HTTP {}", loan.getReference(),
-                responseEntity.getStatusCode().value());
+        ResponseEntity<String> responseEntity = sendBooking(loan.getReference(), requestBody);
 
         // Any 2xx is a created application. This used to compare against 200
         // only, so a 201 Created — a normal answer to a POST that creates —
@@ -182,6 +141,118 @@ public class InnbucksDisbursementService extends DisbursementService {
                 .success(created)
                 .message(created ? null : "InnBucks answered HTTP " + responseEntity.getStatusCode().value())
                 .build();
+    }
+
+    /**
+     * Books a pre-approved loan that is not an SSB application (a Staff Grocery Loan paid in cash) on the same endpoint,
+     * under the same rules: sent once; replayed once only after a 401, which InnBucks never processed; never re-sent
+     * after anything else, because InnBucks books AND pays on this call. Never throws: what happened is returned for the
+     * caller to classify (see {@link PreApprovedBookingResult}). Only what the booking carries is sent; nothing an SSB
+     * application sends (an address, a date of birth, next of kin) is made up for it.
+     */
+    public PreApprovedBookingResult bookPreApproved(PreApprovedLoanBooking booking) {
+        String reference = booking.participantReference();
+        LoanAccountCreationRequest requestBody;
+        try {
+            requestBody = preApprovedRequest(booking);
+        } catch (RuntimeException ex) {
+            // Nothing was written to InnBucks: the request could not be built.
+            log.error("Pre-approved booking of {} not sent: it could not be built", reference, ex);
+            return PreApprovedBookingResult.failed(new BookingNotBuiltException("Booking of loan " + reference
+                    + " not sent: the request could not be built (" + describe(ex) + ")", ex));
+        }
+        try {
+            ResponseEntity<String> answer = sendBooking(reference, requestBody);
+            return PreApprovedBookingResult.answered(answer.getStatusCode().value(),
+                    BankAnswers.responseCode(answer.getBody()), BankAnswers.kept(answer.getBody(), answer.getHeaders()));
+        } catch (RestClientResponseException e) {
+            log.warn("Pre-approved booking of {} answered HTTP {}", reference, e.getStatusCode().value());
+            return PreApprovedBookingResult.answered(e.getStatusCode().value(),
+                    BankAnswers.responseCode(e.getResponseBodyAsString()),
+                    BankAnswers.kept(e.getResponseBodyAsString(), e.getResponseHeaders()));
+        } catch (BookingNotSentException e) {
+            log.warn("{}", e.getMessage());
+            return PreApprovedBookingResult.failed(e);
+        } catch (RuntimeException e) {
+            // Possibly sent: a read timeout, a reset, an unexpected exception after the connection opened.
+            log.error("Pre-approved booking of {} has no answer, and may have been booked: {}", reference,
+                    e.getClass().getSimpleName());
+            return PreApprovedBookingResult.failed(e);
+        }
+    }
+
+    private LoanAccountCreationRequest preApprovedRequest(PreApprovedLoanBooking booking) {
+        if (booking.participantReference() == null || booking.participantReference().isBlank()) {
+            throw new IllegalArgumentException("a booking needs its participant reference");
+        }
+        return LoanAccountCreationRequest.builder()
+                .participantReference(booking.participantReference())
+                .firstName(trimToNull(booking.firstName()))
+                .lastName(trimToNull(booking.lastName()))
+                .idNumber(trimToNull(booking.idNumber()))
+                .amount(toCents(booking.amount()))
+                .currency(booking.currency())
+                .product(trimToNull(booking.product()))
+                .tenureInMonths(booking.tenureInMonths())
+                .repaymentFrequency(MONTHLY)
+                .type(booking.loanType())
+                // The InnBucks customer whose wallet the booked loan pays.
+                .msisdn(formatMsisdnInternational(booking.msisdn()))
+                .settlementAccount(trimToNull(booking.settlementAccount()))
+                .employer(trimToNull(booking.employer()))
+                .employerNumber(trimToNull(booking.employerNumber()))
+                .employmentStartDate(booking.employmentStartDate() == null
+                        ? null : booking.employmentStartDate().format(DAY_MONTH_YEAR))
+                .build();
+    }
+
+    /**
+     * Sends a booking, replaying it once after a 401 (InnBucks did not process it). Throws
+     * {@link BookingNotSentException} only when the booking provably never reached InnBucks: the
+     * login failed (so no request was made), or the connection to the booking endpoint was never
+     * opened. Everything after the connection opened — a read timeout, a reset, a 5xx, a 4xx — is
+     * left to the caller, because InnBucks books and pays on this call.
+     */
+    private ResponseEntity<String> sendBooking(String reference, LoanAccountCreationRequest requestBody) {
+        String token = notSentIfFails(reference, innbucksAuthService::getAccessToken);
+        try {
+            return postBooking(reference, requestBody, token);
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) {
+                throw e;
+            }
+            // A 401 means the booking was not processed, so the one replay below cannot book twice.
+            log.warn("Token refused during the booking of loan {}. Refreshing token and replaying it once...",
+                    reference);
+            String fresh = notSentIfFails(reference, () -> innbucksAuthService.refreshAfterRejection(token));
+            return postBooking(reference, requestBody, fresh);
+        }
+    }
+
+    private ResponseEntity<String> postBooking(String reference, LoanAccountCreationRequest requestBody,
+                                               String token) {
+        HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(requestBody,
+                headers(reference, token));
+
+        ResponseEntity<String> responseEntity;
+        try {
+            responseEntity = restTemplate.exchange(
+                    parameters.getCreateLoanAccountEndpoint(),
+                    HttpMethod.POST,
+                    requestEntity,
+                    String.class);
+        } catch (ResourceAccessException ex) {
+            if (ConnectPhase.neverConnected(ex)) {
+                throw new BookingNotSentException("Booking of loan " + reference
+                        + " not sent: could not connect to InnBucks (" + describe(ex) + ")", ex);
+            }
+            throw ex;
+        }
+
+        // Status only: the body is the upstream's answer about the applicant, so it stays at DEBUG
+        // (redacted, in LoggingInterceptor).
+        log.info("Account creation for loan {} answered HTTP {}", reference, responseEntity.getStatusCode().value());
+        return responseEntity;
     }
 
 
@@ -201,10 +272,10 @@ public class InnbucksDisbursementService extends DisbursementService {
     public DisbursementResponse disburseFunds(DisbursementRequest request) {
         final String reference = request.getTransactionReference();
         final InnbucksDepositRequest depositRequest;
-        final HttpHeaders headers;
+        final String token;
         try {
             depositRequest = buildDepositRequest(request, reference);
-            headers = getHttpHeaders(reference);
+            token = innbucksAuthService.getAccessToken();
         } catch (RuntimeException ex) {
             // Nothing has been written to InnBucks yet, so nothing can have been paid.
             log.error("Deposit {} not sent", reference, ex);
@@ -215,14 +286,14 @@ public class InnbucksDisbursementService extends DisbursementService {
             log.info("Processing loan disbursement {}: {} of {} for loan {}", reference,
                     request.getDisbursementType(), request.getAmount(), request.getReference());
             try {
-                return executeDisburseFunds(depositRequest, headers, reference);
+                return executeDisburseFunds(depositRequest, headers(reference, token), reference);
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) {
                     throw e;
                 }
                 log.warn("Token expired during funds disbursement. Refreshing token and replaying {} once...", reference);
-                innbucksAuthService.refreshToken();
-                return executeDisburseFunds(depositRequest, getHttpHeaders(reference), reference);
+                String fresh = innbucksAuthService.refreshAfterRejection(token);
+                return executeDisburseFunds(depositRequest, headers(reference, fresh), reference);
             }
         } catch (HttpClientErrorException e) {
             return classifyClientError(e, reference);
@@ -341,19 +412,19 @@ public class InnbucksDisbursementService extends DisbursementService {
     }
 
     /** A login failure means no booking request was made at all. */
-    private static <T> T notSentIfFails(Loan loan, Supplier<T> login) {
+    private static <T> T notSentIfFails(String reference, Supplier<T> login) {
         try {
             return login.get();
         } catch (RuntimeException ex) {
-            throw new BookingNotSentException("Booking of loan " + loan.getReference()
+            throw new BookingNotSentException("Booking of loan " + reference
                     + " not sent: InnBucks login failed (" + describe(ex) + ")", ex);
         }
     }
 
-    private HttpHeaders getHttpHeaders(String traceId) {
+    private HttpHeaders headers(String traceId, String token) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(innbucksAuthService.getAccessToken());
+        headers.setBearerAuth(token);
         headers.add(InnbucksHeaders.X_API_KEY, parameters.getApiKey());
         headers.add(InnbucksHeaders.X_TRACE_ID, traceId);
         return headers;
@@ -386,14 +457,15 @@ public class InnbucksDisbursementService extends DisbursementService {
     public LoanDisbursementStatusResponse checkLoanDisbursementStatus(Loan loan) {
         log.info("Checking loan disbursement status for loan: {} with reference: {}", loan.getId(), loan.getReference());
 
+        String token = null;
         try {
-            return executeCheckLoanDisbursementStatus(loan);
+            token = innbucksAuthService.getAccessToken();
+            return executeCheckLoanDisbursementStatus(loan, token);
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
                 log.warn("Token expired during loan status check for loan: {}. Refreshing token and retrying...", loan.getId());
-                // Refresh token and retry
-                innbucksAuthService.refreshToken();
-                return executeCheckLoanDisbursementStatus(loan);
+                // Log in again (unless another caller already replaced the refused token) and retry once
+                return executeCheckLoanDisbursementStatus(loan, innbucksAuthService.refreshAfterRejection(token));
             } else if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
                 log.warn("Loan not found in Innbucks system for loan: {}", loan.getId());
                 LoanDisbursementStatusResponse notFound =
@@ -411,11 +483,11 @@ public class InnbucksDisbursementService extends DisbursementService {
         }
     }
 
-    private LoanDisbursementStatusResponse executeCheckLoanDisbursementStatus(Loan loan) {
+    private LoanDisbursementStatusResponse executeCheckLoanDisbursementStatus(Loan loan, String token) {
         String url = parameters.getLoanInquiryEndpoint().replace("{participantReference}", loan.getReference());
         log.debug("Checking loan disbursement status at URL: {} for loan: {}", url, loan.getId());
 
-        HttpEntity<Void> requestEntity = new HttpEntity<>(getHttpHeaders(loan.getReference()));
+        HttpEntity<Void> requestEntity = new HttpEntity<>(headers(loan.getReference(), token));
 
         ResponseEntity<LoanDisbursementStatusResponse> responseEntity = restTemplate.exchange(
                 url,

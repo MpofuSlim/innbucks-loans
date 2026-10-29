@@ -187,9 +187,12 @@ What this asks of loans, all in this repo:
     and `BOOTSTRAP_ADMIN_PASSWORD` (the first boot on an empty `loans_service`
     creates `admin`; clear it afterwards). Optional: the `INNBUCKS_*`,
     `NDASENDA_*`, `INNBUCKS_NOTIFY_*` and `WHATSAPP_API_KEY` credentials, the
-    two voucher code keys (section 10), and `LOANS_PORTAL_SIGN_IN_URL` (where
-    portal users sign in: the link in the message that gives them a temporary
-    password; not a secret, but loans' own, so it lives here too).
+    two voucher code keys (section 10), the Staff Grocery Loan settings
+    (`STAFF_LOANS_*`, sections 12 and 13), among them the cash payout's
+    `STAFF_LOANS_PAYOUT_*` keys and `INNBUCKS_TOKEN_TTL`, and
+    `LOANS_PORTAL_SIGN_IN_URL` (where portal users sign in: the link in the
+    message that gives them a temporary password; not a secret, but loans' own,
+    so it lives here too).
   - **Explicit `env:` entries**, named key by key: `JAVA_TOOL_OPTIONS` (heap
     percentage, and `user.home` plus the PDFBox font cache on `/tmp`, because
     the root filesystem is read-only), `SPRING_PROFILES_ACTIVE=api`,
@@ -258,6 +261,17 @@ Secret: no manifest change and no `kubectl apply`, just the Secret and a
 restart. Turning it on starts the Monday run (`STAFF_OFFERS_RUN_CRON`), which
 messages every eligible staff member. `StaffLoanJobsWiringTest` fails if a job
 that pays, books or lodges is ever put behind this switch.
+
+**The Staff Grocery Loan cash payout is not a scheduled job.** Where
+`STAFF_LOANS_PAYOUT_METHOD=CASH` (section 13), each accepted loan is paid on a
+thread of its own (`StaffLoanPayoutDispatcher`) once its acceptance commits,
+and again only when Finance asks. There is no timer and no sweep at boot. It
+books with InnBucks on the `INNBUCKS_*` credentials, so in a CASH cell those
+credentials pay staff loans while the paying jobs above stay off. Its follow-up,
+`StaffLoanPayoutStatusJob`, only reads the bank's status. It runs wherever the
+method is CASH, on that setting alone: not behind `STAFF_LOANS_JOBS_ENABLED`
+(which also starts the Monday offer run) and never `scheduled-tasks`.
+`StaffLoanPayoutWiringTest` fails if it can reach anything that books.
 
 The jobs are only safe run serially in ONE process (`application.yml`,
 `spring.task.scheduling`; there is no ShedLock). That is why the Deployment
@@ -425,7 +439,9 @@ see a code in full are in group `VOUCHER_SUPPORT`; on its own that group reaches
 the voucher screens and nothing more.
 
 Vouchers are issued by the disbursement (FR-SGL-032, BR.NET), never from a
-screen, so until that lands none exist in the cell.
+screen, so until that lands none exist in the cell. They are the VOUCHER payout
+method (section 13): a loan paid in cash has no voucher, though it still records
+the merchant set at its acceptance.
 
 ## 11. SuperApp borrowers: the middleware's assertion, and staging's stand-in
 
@@ -512,10 +528,14 @@ With a borrower signed in (§11), the SuperApp takes the loan through
 3. the disclosure and agreement for an amount (`POST /quote`);
 4. acceptance with a fresh PIN or biometric assertion (`POST /loans`).
 
-An accepted loan is `AWAITING_DISBURSEMENT` until the bank's system (BR.NET)
-pays the merchant and issues the voucher. That integration is not wired yet, so no
-loan goes further. Credit, Finance and Human Capital see accepted loans at
-`/lending/v1/staff-loans`; Credit can cancel one before payout.
+An accepted loan is `AWAITING_DISBURSEMENT` until it is paid out. How depends on
+`STAFF_LOANS_PAYOUT_METHOD` (section 13), and each loan keeps the way it was
+accepted under. VOUCHER, the default: the bank's system (BR.NET) pays the
+merchant and issues the voucher; that integration is not wired yet, so such a
+loan goes no further. CASH: the bank books it and pays it into the borrower's
+own account as soon as it is accepted. Credit, Finance and Human Capital see
+accepted loans at `/lending/v1/staff-loans`; Credit can cancel one before payout,
+but never a cash payout the bank may have taken.
 
 **Nothing can be accepted until the agreement is published.** A SUPER_ADMIN
 publishes it as an instrument, Legal's wording, using the placeholders listed by
@@ -530,6 +550,14 @@ Until then a quote or an acceptance answers `503 STAFF_LOAN_TERMS_UNAVAILABLE`
 and logs an ERROR. Publishing a new version makes any quote shown under the old
 one answer `409 TERMS_CHANGED` at acceptance, so the borrower reads the new
 wording first.
+
+**The agreement must fit the payout method**, both ways, or a quote and an
+acceptance answer the same 503 (the ERROR log says which way it misfits). A
+voucher agreement names no account (no `{{payoutAccount}}`). A cash agreement
+names where the money is paid, `{{payoutAccount}}` (rendered `InnBucks wallet
+****3123`, or `InnBucks account ****7890`), and none of `{{merchantName}}`,
+`{{voucherValidityDays}}` or `{{unredeemedVoucherTerms}}`. So a borrower never
+signs for a voucher and is paid in cash, or the reverse.
 
 Three open business questions are settings, each defaulting to its working
 answer. They are plain env keys in loans' Secret, needed only to change the
@@ -562,3 +590,181 @@ Capital and Credit user needs one.
 Arrears and active loans come from loans' own records for now. Other InnBucks
 facilities, and the balance once disbursed, are the core banking system's to
 report when that integration lands.
+
+## 13. The Staff Grocery Loan cash payout
+
+**`STAFF_LOANS_PAYOUT_METHOD` decides how a loan accepted from then on is paid,
+and each loan keeps it.** `VOUCHER` (the default) is exactly the behaviour before
+the cash payout existed: nothing is sent to the bank. `CASH` books the loan with
+InnBucks as a pre-approved loan (`POST /bank/api/loan/apply/pre-approved`, the
+SSB booking's endpoint and login) and the bank pays it into the borrower's own
+account on that one call. Where it pays, and the account, are frozen on the
+loan at acceptance and named in the agreement the borrower signs.
+
+The bank books AND pays on one call, so a payout is sent once, never twice. It
+is claimed (READY to SENDING) before the call, sent with no transaction open,
+and settled after, only while the loan still holds that claim. What the bank
+answers decides:
+
+| Answer | Payout | What happens next |
+|---|---|---|
+| 2xx whose envelope says `responseCode` 000, or that carries no envelope | `BOOKED` | The status job (or "check now") asks the bank's inquiry until it says the money is in the account. |
+| 2xx with any other `responseCode` | `IN_DOUBT` | The bank has answered a refusal inside a 2xx before, so it is not taken as booked (nor as seen by the bank); its inquiry decides. |
+| The bank's own 4xx (400, 404, 422, ...) | `REFUSED` | Nothing was booked. The loan keeps its slot; Finance sends it again under the same reference once what the bank said is put right, or Credit cancels it. |
+| 401, 403, 407, 425, 429; a failed login; a connection never opened; a request that could not be built | `READY` | Not processed, so not booked. Sent again with Pay out or Pay all ready. A 403 or a request that could not be built does not stop Pay all ready: the reason may be that loan's own. |
+| 3xx, 408, 409, 5xx, a timeout, a reset | `IN_DOUBT` | It may or may not have been booked. Never sent again: the bank's inquiry, or a person, settles it. |
+| Inquiry: `000` and a paid status, naming our reference, amount and account where the answer carries them (one it leaves out is not checked; one that differs holds it `BOOKED`) | `PAID` | The loan is `DISBURSED` (`disbursementReference` = its own reference) and the borrower is told once. |
+| Inquiry: `000` and a declined status (`REJECTED`, `CANCELLED`, `FAILED`) | `BOOKED` | `payoutDeclinedAt` is stamped. After `NOT_BOOKED_MIN_AGE`, a SUPER_ADMIN may record it never paid. |
+| Inquiry: `004` | unchanged | `payoutNotFoundAt` is stamped. It never fails a payout by itself. |
+
+No bank answer cancels a loan. A claim left unsettled (the process died
+mid-call) is held IN_DOUBT once it is `STAFF_LOANS_PAYOUT_STALE_CLAIM_MINUTES`
+old. A 2xx is never lost: one that arrives after that hold makes the payout
+BOOKED, and one whose settle cannot be saved is still stamped seen by the bank
+(and audited `STAFF_LOAN_PAYOUT_BOOKED_NOT_RECORDED`), so nobody can record it
+never booked. Cancel is refused (409) for SENDING, BOOKED and IN_DOUBT, and a
+V36 CHECK refuses it from any code path.
+
+The bank's answer to the booking is kept as `payoutApplyAnswer` and its last
+answer to anything as `payoutLastAnswer`, both redacted: ID, account and phone
+numbers masked (`****6789`). The bank's own loan account is shown as
+`bankLoanAccount` by its last four characters.
+
+**Where it pays** (`STAFF_LOANS_PAYOUT_DESTINATION`, no default):
+
+- `VEENGU_WALLET`: the member's registered phone, the number they prove with
+  their PIN at acceptance.
+- `BR_ACCOUNT`: the register's `wallet_account_number`, only when it is
+  account-shaped (6 to 20 digits, not a mobile number). The register keeps a
+  wallet in the same field, and a wallet there is never taken for an account.
+  Before switching to it, count the members it would decline:
+  `SELECT count(*) FROM staff_members WHERE employment_status = 'ACTIVE' AND
+  wallet_account_number ~ '^2637[13789][0-9]{7}$';`
+
+A member the register holds no such account for is declined
+`DETAILS_NOT_CONFIRMED` (Human Capital corrects the register) before anything is
+spent. When the payout is claimed, the register must still hold the account the
+loan was accepted for; if it does not, the payout is held READY, saying why,
+and Credit cancels it.
+
+### Settings
+
+Plain env keys in loans' Secret (section 5). CASH refuses to start without a
+destination, a product, the `INNBUCKS_*` credentials, an inquiry endpoint
+that names the reference, and a `STALE_CLAIM_MINUTES` shorter than a booking
+can take (two logins and two posts at the `http.client` timeouts, about 5
+minutes with the defaults). With test assertions on (section 11, staging only)
+it starts and logs an ERROR at every boot.
+
+| Key | Default | Decides |
+|---|---|---|
+| `STAFF_LOANS_PAYOUT_METHOD` | `VOUCHER` | `VOUCHER` or `CASH`, for loans accepted from then on. |
+| `STAFF_LOANS_PAYOUT_DESTINATION` | blank | `VEENGU_WALLET` or `BR_ACCOUNT`. CASH needs it. |
+| `STAFF_LOANS_PAYOUT_PRODUCT` | blank | The bank's product code for the Staff Grocery Loan (`NANOUS` is the SSB loan's). CASH needs it. |
+| `STAFF_LOANS_PAYOUT_LOAN_TYPE` | blank | `PERSONAL` or `CONSUMER_FINANCE`. Blank: `PERSONAL` for a wallet; `BR_ACCOUNT` refuses to start without it. |
+| `STAFF_LOANS_PAYOUT_EMPLOYER_NAME` | `InnBucks MicroBank` | Sent as the borrower's employer. |
+| `STAFF_LOANS_PAYOUT_STALE_CLAIM_MINUTES` | `30` | A claim never settled is held IN_DOUBT after this. At least as long as a booking can take, or the service refuses to start. |
+| `STAFF_LOANS_PAYOUT_STATUS_CHECK_INTERVAL` | `PT3M` | How often the status job asks the bank. |
+| `STAFF_LOANS_PAYOUT_MIN_DAYS_BEFORE_DUE` | `7` | A payout is not sent once its repayment date is fewer days away (held READY: Credit cancels, the borrower re-applies). |
+| `STAFF_LOANS_PAYOUT_NOT_BOOKED_MIN_AGE` | `PT24H` | How long the bank must have reported a payout missing, or held it as declined, before it may be recorded as never booked. The bank must also still be saying so: its last answer no older than twice `STATUS_CHECK_INTERVAL`. |
+| `STAFF_LOANS_PAYOUT_FAILED_WATCH` | `P14D` | How long a payout recorded as never booked is still asked about. |
+| `STAFF_LOANS_PAYOUT_PAID_STATUSES` | `SETTLED` | The bank's loan statuses (any case) meaning the money is in the account. |
+| `STAFF_LOANS_PAYOUT_PENDING_STATUSES` | `PROCESSING,PENDING,APPROVED,BOOKED` | Its statuses meaning booked, not yet paid. Any other is held and audited. |
+| `STAFF_LOANS_PAYOUT_FAILED_STATUSES` | `REJECTED,CANCELLED,FAILED` | Its statuses meaning it holds the loan and declined it: no money moved. |
+| `INNBUCKS_TOKEN_TTL` | `PT5M` | How long an InnBucks login is used when its token carries no readable `exp`. |
+
+The ticketing companion change should add these, commented out, to
+`deploy/cells/loans.example.env`, and drop its `GETMORE_*` block, which loans
+has never read.
+
+### What the portal does with a payout
+
+All under `/lending/v1/staff-loans`, on the existing `/lending/**` route (no
+gateway change). Nobody acts on a loan they are a party to: the borrower, by ID
+number or phone, gets 403 whatever their role.
+
+| Endpoint | Roles | Does |
+|---|---|---|
+| `GET ?payoutStatus=&payoutMethod=` | CREDIT_MANAGER, FINANCE, HUMAN_CAPITAL, SUPER_ADMIN | Lists loans with their payout (`payoutStatus`, `payoutMessage`, the bank's answers, masked). A payout field with no value is left out, and a voucher loan carries none (not even `payoutMethod`): it reads exactly as before. |
+| `POST /{id}/payout` | FINANCE, SUPER_ADMIN | 202 with the loan as it was queued, READY (the payout thread may already have claimed it; read it again for the outcome). Sends one READY payout, or one REFUSED (READY again, same reference). 409 for any other. |
+| `POST /payouts` | FINANCE, SUPER_ADMIN | 202 `{ready, skippedOwn}`. Pay all ready: one pass over READY payouts, oldest first; stops at the first not sent, refused or in doubt, and goes on past one not sent for a reason of its own (a 403, a booking that could not be built). |
+| `POST /{id}/payout/status-check` | CREDIT_MANAGER, FINANCE, SUPER_ADMIN | 200. Asks the bank now; holds a stale SENDING claim first. 502 `BANK_UNANSWERED` when the bank did not answer or said nothing to go on; 503 `PAYOUT_NOT_RECORDED` when it answered and that could not be saved here. |
+| `POST /{id}/payout/paid` | FINANCE, SUPER_ADMIN | 200. Records a BOOKED or IN_DOUBT payout paid on the bank's word: `{bankReference, note}`. |
+| `POST /{id}/payout/not-booked` | SUPER_ADMIN | 200. Records a payout never paid, `{note}`, either an IN_DOUBT one the bank never said it holds (no 2xx to its booking either) and reports missing (`004`), or a BOOKED or IN_DOUBT one it holds in a declined status; in both cases for `NOT_BOOKED_MIN_AGE`, and still lately (press status-check first). The loan is cancelled and the borrower may borrow again, so confirm with the bank first. |
+
+A payout recorded as never booked is still asked about for `FAILED_WATCH`. If
+the bank holds it after all, in any but a declined status
+(`payoutPaidAfterCancelAt`, an ERROR and an audit row), that borrower's further
+payouts are held until it is settled with the bank.
+
+The status job stops a run when the bank cannot be reached (no answer, a failed
+login, a 5xx) or the inquiry breaks. An answer about one loan that says nothing
+(a bare 404, an HTML page, an unknown code), or one that cannot be saved, is
+counted and logged, and the run goes on: one loan never holds the queue. A loan
+whose inquiry answers a bare 404 for good can only be settled by a person
+(Record paid), until the bank says what that answer means.
+
+Metrics: `loans.staff_loan_payout.outcomes{outcome}` (registered at 0; alert on
+any `in_doubt`, `not_found`, `declined`, `abandoned`, `not_recorded`, `echo_mismatch`,
+`unknown_bank_status` or `paid_after_cancel`, and a sustained `not_sent` or
+`inquiry_unanswered`), `loans.staff_loan_payout.pending{status}` and
+`.oldest_seconds{status}`, and `loans.executor.rejected{executor="staff-loan-payout"}`.
+No alert rule exists for loans in ticketing's Prometheus yet.
+
+### Going live with cash
+
+Each step is a Secret change plus a restart, with no manifest change.
+
+1. **The bank's answers first:** the product code, the loan type for the
+   destination, which destination, the statuses its inquiry reports, and that
+   it charges no interest on these loans.
+2. **Cancel the loans awaiting a voucher.** They were accepted under voucher
+   wording and are never paid in cash: list them with
+   `GET /lending/v1/staff-loans?status=AWAITING_DISBURSEMENT&payoutMethod=VOUCHER`
+   and cancel each (`POST /{id}/cancel`).
+3. **Switch.** Set `STAFF_LOANS_PAYOUT_DESTINATION`, `_PRODUCT` (and `_LOAN_TYPE`
+   for `BR_ACCOUNT`), the `INNBUCKS_*` credentials and
+   `STAFF_LOANS_PAYOUT_METHOD=CASH`, and restart. A SUPER_ADMIN then publishes
+   the cash-worded agreement (section 12) at once: acceptance answers 503 for
+   those minutes.
+4. **Watch the first payout end to end** (`GET ?payoutMethod=CASH`, then
+   status-check). No real apply or inquiry answer has ever been recorded: copy
+   the first ones (`payoutApplyAnswer` and `payoutLastAnswer` on the loan; the
+   apply answer is kept apart, so the status job's inquiry does not overwrite
+   it) into the contract stubs (`InnbucksPreApprovedBookingContractTest`,
+   `InnbucksLoanInquiryContractTest`) and correct the client where they differ:
+   above all which `responseCode` a booked apply carries, which fields the
+   inquiry echoes the amount and account in, and what an unknown reference
+   answers.
+5. **After any restart, Finance presses Pay all ready** (`POST /payouts`).
+   Payouts queued when the process stopped are lost from the queue (they stay
+   READY), and there is no sweep at boot.
+
+### Rolling back
+
+1. Set `STAFF_LOANS_PAYOUT_METHOD=VOUCHER` and publish a voucher-worded
+   agreement first, or acceptance answers 503.
+2. Before rolling the image back below this change, no cash loan may still be
+   awaiting payout: `SELECT payout_status, count(*) FROM staff_loans WHERE
+   payout_method = 'CASH' AND status = 'AWAITING_DISBURSEMENT' GROUP BY 1` must
+   be empty. Settle each (status-check, paid, not-booked) or cancel it (READY,
+   REFUSED).
+3. **Roll forward only once any loan notice exists**
+   (`SELECT count(*) FROM staff_notifications WHERE template LIKE 'LOAN_%'`):
+   an older image cannot read the `LOAN_PAID_OUT` / `LOAN_NOT_PAID_OUT` rows.
+
+V36 is never undone. On it, an older image inserts voucher loans (the column
+default stays), and its CHECKs stop that image cancelling a cash loan the bank
+may hold.
+
+### Not done here
+
+- Recording repayment (REPAID) for a cash loan: nothing writes it today, for
+  either method. Collection on the 20th is the core banking system's.
+- Ledger postings for staff loans.
+- Taking the voucher merchant off cash loans: each still records the merchant
+  set at its acceptance, which is not used.
+- Changing how the SSB booking classifies a 3xx (it still fails the booking).
+- A bank account column of its own on the register.
+- Holding a borrower's new loan while one of theirs recorded as never booked is
+  still watched: only a payout found paid after all holds them.

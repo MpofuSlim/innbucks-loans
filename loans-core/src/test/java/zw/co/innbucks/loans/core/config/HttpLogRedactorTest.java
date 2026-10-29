@@ -113,6 +113,21 @@ class HttpLogRedactorTest {
     }
 
     @Test
+    @DisplayName("account numbers are masked: the settlement account a booking pays, and the bank's loan account")
+    void redactsAccountNumbers() {
+        String redacted = body("{\"participantReference\":\"SGL-2026-000143\",\"settlementAccount\":\"1234567890\","
+                + "\"settlement_account\":\"2234567890\",\"accountNumber\":\"3234567890\","
+                + "\"additionalData\":{\"loanDetails\":{\"loanAccountNumber\":\"LA-4234567890\","
+                + "\"status\":\"SETTLED\",\"msisdn\":\"263772123123\"}}}");
+
+        assertThat(redacted).doesNotContain("1234567890", "2234567890", "3234567890", "LA-4234567890")
+                .contains("\"participantReference\":\"SGL-2026-000143\"", "\"status\":\"SETTLED\"",
+                        "\"settlementAccount\":\"***\"", "\"loanAccountNumber\":\"***\"");
+        assertThat(HttpLogRedactor.redactText("settlementAccount=1234567890&status=OK"))
+                .doesNotContain("1234567890").contains("status=OK");
+    }
+
+    @Test
     @DisplayName("keys match in any case and spelling: ACCESS_TOKEN, Refresh-Token, SecurityCode, API_KEY, pin")
     void keysAreCaseAndSeparatorInsensitive() {
         String redacted = body("{\"ACCESS_TOKEN\":\"s1\",\"Refresh-Token\":\"s2\",\"id_token\":\"s3\","
@@ -250,6 +265,10 @@ class HttpLogRedactorTest {
         assertThat(HttpLogRedactor.isSensitiveKey("nextOfKinIdNumber")).isTrue();
         assertThat(HttpLogRedactor.isSensitiveKey("payslipPicture")).isTrue();
         assertThat(HttpLogRedactor.isSensitiveKey("pin")).isTrue();
+        assertThat(HttpLogRedactor.isSensitiveKey("settlementAccount")).isTrue();
+        assertThat(HttpLogRedactor.isSensitiveKey("loanAccountNumber")).isTrue();
+        assertThat(HttpLogRedactor.isSensitiveKey("bank_account_number")).isTrue();
+        assertThat(HttpLogRedactor.isSensitiveKey("accountName")).isFalse();
         assertThat(HttpLogRedactor.isSensitiveKey("username")).isFalse();
         assertThat(HttpLogRedactor.isSensitiveKey("reference")).isFalse();
         assertThat(HttpLogRedactor.isSensitiveKey("amountInCents")).isFalse();

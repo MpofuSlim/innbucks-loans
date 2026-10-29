@@ -2,6 +2,8 @@ package zw.co.innbucks.loans.core.staff.loan;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import zw.co.innbucks.loans.core.loan.DisbursementType;
 import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
@@ -16,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What the SuperApp tells a borrower about a loan (FR-SGL-030): once it is paid out, the words follow its voucher,
  * and then when it is collected, or that it is overdue. Chipo Banda's SGL-2026-000143, USD 300.00 due on 20 November
- * 2026, voucher 7 at GetMore Groceries.
+ * 2026, voucher 7 at GetMore Groceries; and SGL-2026-000144, USD 150.00 paid in cash into her own account.
  */
 class StaffLoanViewTest {
 
@@ -110,5 +112,68 @@ class StaffLoanViewTest {
                 null, BEFORE_DUE)).isEqualTo("This loan was cancelled before it was paid out. Nothing is owed.");
         assertThat(StaffLoanView.message(loan(StaffLoanStatus.WRITTEN_OFF, UnredeemedVoucherTreatment.DEBT_STANDS),
                 expired, DUE.plusDays(40))).isEqualTo("Please contact the Credit department about this loan.");
+        assertThat(StaffLoanView.maskedPayoutAccount(paidOut())).as("a voucher loan has no account").isNull();
+    }
+
+    // --- Paid in cash: SGL-2026-000144, USD 150.00 into Chipo's wallet, no merchant read, no voucher ---
+
+    private static StaffLoan cash(StaffLoanStatus status, StaffLoanPayoutDestination destination, String account,
+                                  StaffLoanPayoutStatus payout) {
+        return StaffLoan.builder().reference("SGL-2026-000144").status(status).currency("USD")
+                .amount(new BigDecimal("150.00")).totalRepayable(new BigDecimal("150.00")).dueDate(DUE)
+                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
+                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(destination).payoutAccount(account)
+                .payoutStatus(payout).build();
+    }
+
+    private static StaffLoan wallet(StaffLoanStatus status, StaffLoanPayoutStatus payout) {
+        return cash(status, StaffLoanPayoutDestination.VEENGU_WALLET, "263772123123", payout);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StaffLoanPayoutStatus.class, names = {"READY", "SENDING", "BOOKED", "IN_DOUBT", "REFUSED"})
+    @DisplayName("a cash loan awaiting payout is being paid into the borrower's own account, however its payout stands")
+    void cashAwaiting(StaffLoanPayoutStatus payout) {
+        assertThat(StaffLoanView.message(wallet(StaffLoanStatus.AWAITING_DISBURSEMENT, payout), null, BEFORE_DUE))
+                .isEqualTo("Your loan is approved. USD 150.00 is being paid into your InnBucks wallet ending 3123.");
+    }
+
+    @Test
+    @DisplayName("a cash loan paid out says where it went, then when it is collected, or that it is overdue")
+    void cashPaid() {
+        StaffLoan paid = wallet(StaffLoanStatus.DISBURSED, StaffLoanPayoutStatus.PAID);
+
+        assertThat(StaffLoanView.message(paid, null, BEFORE_DUE)).isEqualTo("USD 150.00 was paid into your InnBucks"
+                + " wallet ending 3123. USD 150.00 will be collected from your salary on 20 Nov 2026.");
+        assertThat(StaffLoanView.message(paid, null, DUE.plusDays(1))).isEqualTo("USD 150.00 was paid into your"
+                + " InnBucks wallet ending 3123. USD 150.00 was due from your salary on 20 Nov 2026 and is still"
+                + " owed. Please contact the Credit department.");
+        assertThat(StaffLoanView.message(cash(StaffLoanStatus.DISBURSED, StaffLoanPayoutDestination.BR_ACCOUNT,
+                "1234567890", StaffLoanPayoutStatus.PAID), null, BEFORE_DUE))
+                .startsWith("USD 150.00 was paid into your InnBucks account ending 7890. ");
+    }
+
+    @Test
+    @DisplayName("a cash loan cancelled, repaid or written off keeps the words every loan has")
+    void cashClosed() {
+        for (StaffLoanPayoutStatus ended : new StaffLoanPayoutStatus[]{StaffLoanPayoutStatus.WITHDRAWN,
+                StaffLoanPayoutStatus.FAILED}) {
+            assertThat(StaffLoanView.message(wallet(StaffLoanStatus.CANCELLED, ended), null, BEFORE_DUE))
+                    .isEqualTo("This loan was cancelled before it was paid out. Nothing is owed.");
+        }
+        assertThat(StaffLoanView.message(wallet(StaffLoanStatus.REPAID, StaffLoanPayoutStatus.PAID), null, DUE))
+                .isEqualTo("Repaid in full. Thank you.");
+        assertThat(StaffLoanView.message(wallet(StaffLoanStatus.WRITTEN_OFF, StaffLoanPayoutStatus.PAID), null,
+                DUE.plusDays(40))).isEqualTo("Please contact the Credit department about this loan.");
+    }
+
+    @Test
+    @DisplayName("the borrower sees the account a cash loan is paid into by its last four digits only")
+    void cashAccountMasked() {
+        assertThat(StaffLoanView.maskedPayoutAccount(wallet(StaffLoanStatus.AWAITING_DISBURSEMENT,
+                StaffLoanPayoutStatus.READY))).isEqualTo("****3123");
+        assertThat(StaffLoanView.maskedPayoutAccount(cash(StaffLoanStatus.DISBURSED,
+                StaffLoanPayoutDestination.BR_ACCOUNT, "1234567890", StaffLoanPayoutStatus.PAID)))
+                .isEqualTo("****7890");
     }
 }

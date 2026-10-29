@@ -30,6 +30,15 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanHome;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanOfferView;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutNotRecordedException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutQueueFullException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutRequests;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutSweepResponse;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutUnansweredException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanResponse;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanRequestInvalidException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus;
@@ -37,6 +46,7 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
 import zw.co.innbucks.loans.core.staff.loan.StepUpRequiredException;
+import zw.co.innbucks.loans.core.staff.loan.UnredeemedVoucherTreatment;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 import zw.co.innbucks.loans.web.StaffLoanApiExamples;
@@ -54,6 +64,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -83,11 +94,12 @@ class StaffLoanWebContractTest {
     private static final StaffLoanView LOAN = new StaffLoanView("SGL-2026-000143",
             StaffLoanStatus.AWAITING_DISBURSEMENT, "Your loan is approved.", new BigDecimal("300.00"), "USD",
             new BigDecimal("300.00"), new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries",
-            LocalDateTime.of(2026, 10, 1, 7, 10, 41), null);
+            LocalDateTime.of(2026, 10, 1, 7, 10, 41), null, StaffLoanPayoutMethod.VOUCHER, null);
 
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean StaffLoanJourneyService journeyService;
     @MockitoBean StaffLoanService loanService;
+    @MockitoBean StaffLoanPayoutRequests payoutRequests;
 
     @Autowired WebApplicationContext context;
 
@@ -145,7 +157,8 @@ class StaffLoanWebContractTest {
     void history() throws Exception {
         StaffLoanView repaid = new StaffLoanView("SGL-2026-000143", StaffLoanStatus.REPAID, "Repaid in full. Thank you.",
                 new BigDecimal("300.00"), "USD", new BigDecimal("300.00"), new BigDecimal("0.00"),
-                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null);
+                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null,
+                StaffLoanPayoutMethod.VOUCHER, null);
         when(journeyService.loans(eq(2L), any())).thenReturn(new PageImpl<>(List.of(repaid),
                 org.springframework.data.domain.PageRequest.of(1, 5), 6));
 
@@ -267,13 +280,14 @@ class StaffLoanWebContractTest {
         mvc.perform(as("borrower", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
         mvc.perform(as("AGENTS", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
 
-        when(loanService.loans(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+        when(loanService.loans(any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
         mvc.perform(as("HUMAN_CAPITAL", get("/lending/v1/staff-loans").param("status", "AWAITING_DISBURSEMENT")))
                 .andExpect(status().isOk());
-        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), isNull(), any());
+        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), isNull(), isNull(), isNull(),
+                any());
         mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "true")))
                 .andExpect(status().isOk());
-        verify(loanService).loans(isNull(), isNull(), eq(true), any());
+        verify(loanService).loans(isNull(), isNull(), eq(true), isNull(), isNull(), any());
         mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "maybe")))
                 .andExpect(status().isBadRequest());
         mvc.perform(as("HUMAN_CAPITAL", post("/lending/v1/staff-loans/143/cancel"))
@@ -294,5 +308,138 @@ class StaffLoanWebContractTest {
                         .contentType(MediaType.APPLICATION_JSON).content(StaffLoanApiExamples.CANCEL_REQUEST))
                 .andExpect(status().isOk());
         verify(loanService).cancel(143L, "Accepted in error: the borrower asked to cancel before payout");
+    }
+
+    private static StaffLoanResponse cashLoan(StaffLoanPayoutStatus payout) {
+        return new StaffLoanResponse(245L, "SGL-2027-000245", 58L, 2L, "E1012", "Chipo Banda", "****6789", "C4",
+                "getmore-groceries", "GetMore Groceries", new BigDecimal("150.00"), "USD", BigDecimal.ZERO,
+                new BigDecimal("150.00"), LocalDate.of(2027, 2, 20),
+                UnredeemedVoucherTreatment.DEBT_STANDS,
+                StaffLoanStatus.AWAITING_DISBURSEMENT, false, LocalDateTime.of(2027, 2, 2, 7, 12, 5), null, null, null,
+                null, null, null, null, null, StaffLoanPayoutMethod.CASH,
+                StaffLoanPayoutDestination.VEENGU_WALLET, "****6789", payout,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("the list filters on payout status and method")
+    void listFiltersOnPayout() throws Exception {
+        when(loanService.loans(any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+
+        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("payoutStatus", "IN_DOUBT")
+                        .param("payoutMethod", "CASH")))
+                .andExpect(status().isOk());
+
+        verify(loanService).loans(isNull(), isNull(), isNull(), eq(StaffLoanPayoutStatus.IN_DOUBT),
+                eq(StaffLoanPayoutMethod.CASH), any());
+        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("payoutStatus", "LANDED")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+    }
+
+    @Test
+    @DisplayName("Pay out: 202 ACCEPTED with the loan as it was queued, READY, never read again after (the payout"
+            + " thread may already have claimed it); empty payout fields are left out")
+    void payOut() throws Exception {
+        when(payoutRequests.sendNow(245L)).thenReturn(cashLoan(StaffLoanPayoutStatus.READY));
+        when(loanService.summary(245L)).thenReturn(cashLoan(StaffLoanPayoutStatus.SENDING));
+
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout")))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.code").value("ACCEPTED"))
+                .andExpect(jsonPath("$.message").value("Payout of SGL-2027-000245 queued"))
+                .andExpect(jsonPath("$.data.payoutStatus").value("READY"))
+                .andExpect(jsonPath("$.data.payoutAccount").value("****6789"))
+                .andExpect(jsonPath("$.data.payoutMethod").value("CASH"))
+                .andExpect(jsonPath("$.data.payoutMessage").doesNotExist())
+                .andExpect(jsonPath("$.data.bankLoanAccount").doesNotExist());
+
+        verify(loanService, never()).summary(anyLong());
+    }
+
+    @Test
+    @DisplayName("Pay all ready: 202 ACCEPTED with how many, and how many were the caller's own")
+    void payAllReady() throws Exception {
+        when(payoutRequests.payAllReady()).thenReturn(new StaffLoanPayoutSweepResponse(3, 1));
+
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/payouts")))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.code").value("ACCEPTED"))
+                .andExpect(jsonPath("$.message")
+                        .value("Paying 3 ready payouts; 1 you are a party to is left for someone else"))
+                .andExpect(jsonPath("$.data.ready").value(3))
+                .andExpect(jsonPath("$.data.skippedOwn").value(1));
+
+        when(payoutRequests.payAllReady()).thenReturn(new StaffLoanPayoutSweepResponse(2, 0));
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/payouts")))
+                .andExpect(jsonPath("$.message").value("Paying 2 ready payouts"));
+    }
+
+    @Test
+    @DisplayName("a full payout queue is a 503 PAYOUT_QUEUE_FULL; an inquiry with no answer a 502 BANK_UNANSWERED")
+    void payoutFailures() throws Exception {
+        doThrow(new StaffLoanPayoutQueueFullException("The payout queue is full")).when(payoutRequests).sendNow(245L);
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYOUT_QUEUE_FULL"));
+
+        when(payoutRequests.checkNow(245L)).thenThrow(new StaffLoanPayoutUnansweredException("no answer"));
+        mvc.perform(as("CREDIT_MANAGER", post("/lending/v1/staff-loans/245/payout/status-check")))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("BANK_UNANSWERED"))
+                .andExpect(jsonPath("$.message").value("no answer"));
+
+        org.mockito.Mockito.reset(payoutRequests);
+        when(payoutRequests.checkNow(245L)).thenThrow(new StaffLoanPayoutNotRecordedException("could not be saved"));
+        mvc.perform(as("CREDIT_MANAGER", post("/lending/v1/staff-loans/245/payout/status-check")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PAYOUT_NOT_RECORDED"))
+                .andExpect(jsonPath("$.message").value("could not be saved"));
+        verify(loanService, never()).summary(anyLong());
+    }
+
+    @Test
+    @DisplayName("status check: 200 with the loan as the inquiry left it")
+    void statusCheck() throws Exception {
+        when(loanService.summary(245L)).thenReturn(cashLoan(StaffLoanPayoutStatus.BOOKED));
+
+        mvc.perform(as("CREDIT_MANAGER", post("/lending/v1/staff-loans/245/payout/status-check")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.payoutStatus").value("BOOKED"));
+        verify(payoutRequests).checkNow(245L);
+    }
+
+    @Test
+    @DisplayName("paid: a bank reference and a note are required, before the service; then 200")
+    void confirmPaid() throws Exception {
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout/paid"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"note\": \"the bank said so\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.bankReference").value("bankReference is required"));
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout/paid"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"bankReference\": \"" + "R".repeat(65) + "\", \"note\": \" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.bankReference").value("bankReference must be at most 64 characters"))
+                .andExpect(jsonPath("$.data.note").value("note is required"));
+        verifyNoInteractions(payoutRequests);
+
+        when(loanService.summary(245L)).thenReturn(cashLoan(StaffLoanPayoutStatus.BOOKED));
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout/paid"))
+                        .contentType(MediaType.APPLICATION_JSON).content(StaffLoanApiExamples.PAYOUT_PAID_REQUEST))
+                .andExpect(status().isOk());
+        verify(payoutRequests).confirmPaid(245L, "IBK-PAY-77120",
+                "InnBucks operations (T. Ncube) confirmed USD 150.00 reached wallet ****6789 on 2 February");
+    }
+
+    @Test
+    @DisplayName("never booked: SUPER_ADMIN only, with a note")
+    void confirmNotBooked() throws Exception {
+        mvc.perform(as("FINANCE", post("/lending/v1/staff-loans/245/payout/not-booked"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(StaffLoanApiExamples.PAYOUT_NOT_BOOKED_REQUEST))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(payoutRequests);
     }
 }
