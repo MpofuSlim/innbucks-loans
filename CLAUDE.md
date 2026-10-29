@@ -14,6 +14,13 @@ cell) is in `docs/fleet-wiring.md`; read it first.
 > refused (`graphql_rate_limit`); that left ticketing PR #570 green but
 > unmergeable. One feature per branch.
 
+## Files for the owner: Markdown only for the frontend (owner rule, 2026-10-29)
+
+**Send a Markdown file (`SendUserFile`) only when it is a frontend integration
+guide.** Everything meant for Tawanda (plans, briefs for another session,
+deploy steps, investigation results, summaries) goes in the chat reply, not a
+file. Don't re-send a file because one line in it changed; say what changed.
+
 ## Upstream tokens: never hold a lock across a login
 
 **A cached upstream bearer token goes through `SingleFlightTokenCache`
