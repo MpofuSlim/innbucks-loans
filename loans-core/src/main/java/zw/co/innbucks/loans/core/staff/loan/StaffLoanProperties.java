@@ -146,6 +146,21 @@ public class StaffLoanProperties {
         /** Sent to the bank as the borrower's {@code employer}; blank, it is left out. */
         private String employerName = "InnBucks MicroBank";
 
+        /** Sent to the bank as the booking's {@code businessLine}, which it requires; blank, it is left out. */
+        private String businessLine = "Services";
+
+        /** Sent to the bank as the booking's {@code loanPurpose}, which it requires; blank, it is left out. */
+        private String loanPurpose = "Groceries";
+
+        /**
+         * STAGING ONLY. The bank requires personal details the staff register does not hold (date of birth, address,
+         * marital status, place of birth, gross salary, next of kin). True sends fixed, obviously fake values for them
+         * so a staging booking can be tested end to end; false sends none, and the bank refuses the booking (held
+         * REFUSED, never cancelled). Never true where real money moves: the bank would hold made-up details against a
+         * real loan.
+         */
+        private boolean testPlaceholders;
+
         /**
          * A payout claimed this long ago and never settled (the process died mid-call) is held IN_DOUBT for the
          * bank's inquiry, never sent again.

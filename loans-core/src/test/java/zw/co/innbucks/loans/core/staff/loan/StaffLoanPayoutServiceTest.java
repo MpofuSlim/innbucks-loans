@@ -614,6 +614,41 @@ class StaffLoanPayoutServiceTest {
         assertThat(booking.employer()).isEqualTo("InnBucks MicroBank");
         assertThat(booking.employerNumber()).isEqualTo("E1012");
         assertThat(booking.employmentStartDate()).isEqualTo(LocalDate.of(2015, 2, 2));
+        assertThat(booking.businessLine()).isEqualTo("Services");
+        assertThat(booking.loanPurpose()).isEqualTo("Groceries");
+        assertThat(booking.autoSettle()).as("the bank pays it out itself").isTrue();
+        assertThat(booking.personal()).as("no placeholders unless staging asks for them").isNull();
+    }
+
+    @Test
+    @DisplayName("a wallet payout never names the register's account number: the bank finds the wallet by the phone"
+            + " the borrower proved")
+    void walletBookingNeverNamesTheRegistersAccount() {
+        member.setWalletAccountNumber("2004667048836");
+
+        service.payOut(143L);
+
+        PreApprovedLoanBooking booking = sent();
+        assertThat(booking.settlementAccount()).isNull();
+        assertThat(booking.msisdn()).isEqualTo("263772123123");
+        assertThat(booking.loanType()).isEqualTo("PERSONAL");
+    }
+
+    @Test
+    @DisplayName("staging placeholders: fake personal details are sent only when the setting is on, and the next of"
+            + " kin's phone is the borrower's own")
+    void stagingPlaceholders() {
+        properties.getPayout().setTestPlaceholders(true);
+
+        service.payOut(143L);
+
+        PreApprovedLoanBooking.PersonalDetails personal = sent().personal();
+        assertThat(personal).isNotNull();
+        assertThat(personal.address()).startsWith("TEST");
+        assertThat(personal.nextOfKinFullName()).startsWith("TEST");
+        assertThat(personal.dateOfBirth()).isEqualTo("01-01-1990");
+        assertThat(personal.nextOfKinMsisdn()).isEqualTo("263772123123");
+        assertThat(personal.grossSalary()).isEqualByComparingTo("1000");
     }
 
     @Test

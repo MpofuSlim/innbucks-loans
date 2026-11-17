@@ -14,6 +14,7 @@ import zw.co.innbucks.loans.core.disbursements.InnbucksParameters;
 import zw.co.innbucks.loans.core.disbursements.InquiryAnswer;
 import zw.co.innbucks.loans.core.disbursements.LoanAccountCreationRequest;
 import zw.co.innbucks.loans.core.disbursements.PreApprovedLoanBooking;
+import zw.co.innbucks.loans.core.disbursements.PreApprovedLoanRequest;
 import zw.co.innbucks.loans.core.document.AmendDocumentRequest;
 import zw.co.innbucks.loans.core.document.DocumentOrigin;
 import zw.co.innbucks.loans.core.document.DocumentType;
@@ -327,7 +328,10 @@ class SensitiveToStringTest {
                 .bankLoanAccount("LA-55443322").build();
         PreApprovedLoanBooking booking = new PreApprovedLoanBooking("SGL-2026-000143", "Chipo", "Banda", NATIONAL_ID,
                 new BigDecimal("150.00"), "USD", "STAFFGROC", "PERSONAL", 1, wallet, ACCOUNT_NUMBER, "InnBucks",
-                "E1012", LocalDate.of(2015, 2, 2));
+                "E1012", LocalDate.of(2015, 2, 2), "Services", "Groceries",
+                new PreApprovedLoanBooking.PersonalDetails("12 Main Road, Harare", "14-05-1990", "M", "Harare",
+                        new BigDecimal("1500"), NATIONAL_ID, "Jane Banda", wallet, "12 Main Road, Harare", "Spouse"),
+                true);
         LoanAccountCreationRequest application = LoanAccountCreationRequest.builder()
                 .participantReference("SGL-2026-000143").idNumber(NATIONAL_ID).settlementAccount(ACCOUNT_NUMBER)
                 .build();
@@ -341,7 +345,15 @@ class SensitiveToStringTest {
             assertThat(value.toString()).doesNotContain(wallet, "LA-55443322", "Chipo Banda");
         }
         assertThat(loan.toString()).contains("SGL-2026-000143", "CASH", "BOOKED");
-        assertThat(booking.toString()).contains("SGL-2026-000143", "****3123", "****4556", "150.00");
+        assertThat(booking.toString()).contains("SGL-2026-000143", "****3123", "****4556", "150.00")
+                .doesNotContain("12 Main Road", "Jane Banda", "14-05-1990", "1500");
+        PreApprovedLoanRequest staffBody = new PreApprovedLoanRequest("Chipo", "Banda", NATIONAL_ID,
+                "12 Main Road, Harare", "14-05-1990", 150, "USD", 1, "MONTHLY", "GETMOR", "PERSONAL", "M", wallet,
+                "SGL-2026-000143", "InnBucks", NATIONAL_ID, "Jane Banda", wallet, "12 Main Road, Harare", "E1012",
+                "Spouse", "Harare", "02-02-2015", 1500, "Services", "Groceries", ACCOUNT_NUMBER, true);
+        assertNoPii(staffBody);
+        assertThat(staffBody.toString()).contains("SGL-2026-000143", "****3123", "autoSettle=true")
+                .doesNotContain(wallet, "Chipo", "Banda", "12 Main Road", "14-05-1990", "Jane", "1500");
         assertThat(inquiry.toString()).contains("FOUND", "SETTLED");
         assertThat(target.toString()).contains("BR_ACCOUNT", "****4556");
     }

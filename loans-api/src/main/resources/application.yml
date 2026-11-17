@@ -297,6 +297,13 @@ loans:
       loan-type: "${STAFF_LOANS_PAYOUT_LOAN_TYPE:}"
       # Sent as the borrower's employer; blank leaves it out.
       employer-name: "${STAFF_LOANS_PAYOUT_EMPLOYER_NAME:InnBucks MicroBank}"
+      # The booking's businessLine and loanPurpose, both required by the bank; blank leaves one out.
+      business-line: "${STAFF_LOANS_PAYOUT_BUSINESS_LINE:Services}"
+      loan-purpose: "${STAFF_LOANS_PAYOUT_LOAN_PURPOSE:Groceries}"
+      # STAGING ONLY: true sends fixed, fake values for the personal details the bank requires and the staff register
+      # does not hold (date of birth, address, marital status, place of birth, gross salary, next of kin). False sends
+      # none, and the bank refuses the booking. Never true where real money moves; the service logs an ERROR at boot.
+      test-placeholders: "${STAFF_LOANS_PAYOUT_TEST_PLACEHOLDERS:false}"
       # A payout claimed this long ago and never settled (the process died mid-call) is held IN_DOUBT for the bank's
       # inquiry; it is never sent again. At least as long as a booking can take (two logins and two posts at the
       # http.client timeouts, about 5 minutes with the defaults), or the service refuses to start.

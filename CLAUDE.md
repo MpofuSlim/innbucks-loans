@@ -321,7 +321,16 @@ setting never moves a loan already accepted. Settings, endpoints, go-live and ro
 - **Where it pays:** `VEENGU_WALLET` is the member's registered phone (the number their PIN proves); `BR_ACCOUNT` is
   the register's `wallet_account_number`, only when it is account-shaped (never a mobile number). A member with
   neither is declined DETAILS_NOT_CONFIRMED before anything is spent, and the claim re-checks the register still
-  holds the frozen account.
+  holds the frozen account. A wallet payout names no `settlementAccount`: the bank then finds the wallet by `msisdn`
+  (the bank's rule), the phone the borrower proved. Never send the register's account number for one: the bank pays a
+  named account first, and nobody proved that number.
+- **The booking's own body** (`PreApprovedLoanRequest`, never the SSB's `LoanAccountCreationRequest`): `amount` in
+  DOLLARS (150 for USD 150.00, 150.5 only when there are cents), as the bank confirmed for this call, and
+  `"autoSettle": true`, which is what makes the bank pay the booked loan out. `businessLine` and `loanPurpose` are
+  settings. The bank also requires date of birth, address, marital status, place of birth, gross salary and next of
+  kin, which the register does not hold: `loans.staff-loans.payout.test-placeholders` (STAGING ONLY, default false)
+  sends fixed fake values for them (the next of kin's phone is the borrower's own) and logs an ERROR at every boot;
+  off, they are left out and the bank refuses the booking (REFUSED, held). Never on where real money moves.
 - **The agreement must fit the method.** A cash agreement names `{{payoutAccount}}` and no voucher placeholder; a
   voucher agreement names no account. Otherwise quote and accept answer 503 STAFF_LOAN_TERMS_UNAVAILABLE.
 - **A voucher loan reads exactly as before.** Every payout field of `StaffLoanResponse`, `StaffLoanView` and

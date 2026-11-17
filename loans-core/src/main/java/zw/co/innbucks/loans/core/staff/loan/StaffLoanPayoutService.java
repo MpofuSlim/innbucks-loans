@@ -18,10 +18,12 @@ import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -473,6 +475,11 @@ public class StaffLoanPayoutService {
     static PreApprovedLoanBooking booking(StaffLoan loan, StaffMember member, StaffLoanProperties.Payout settings) {
         String[] names = names(loan.getFullName());
         boolean account = loan.getPayoutDestination() == StaffLoanPayoutDestination.BR_ACCOUNT;
+        // A wallet payout names no account: the bank then finds the wallet by the phone (msisdn), as it confirmed,
+        // and that is the number the borrower proves with their PIN and the agreement names. The register's account
+        // number is never sent for one: the bank pays a named account first, and nobody proves that number, so a typo
+        // there would pay a stranger. An account payout names the account it was accepted for.
+        String settlementAccount = account ? loan.getPayoutAccount() : null;
         return new PreApprovedLoanBooking(
                 loan.getReference(),
                 names[0],
@@ -485,11 +492,26 @@ public class StaffLoanPayoutService {
                 TENURE_MONTHS,
                 // A wallet payout pays the wallet it was accepted for; an account payout names the borrower's phone.
                 account ? loan.getMsisdn() : loan.getPayoutAccount(),
-                account ? loan.getPayoutAccount() : null,
+                settlementAccount,
                 isBlank(settings.getEmployerName()) ? null : settings.getEmployerName().strip(),
                 loan.getEmployeeNumber(),
-                member.getEngagementDate());
+                member.getEngagementDate(),
+                isBlank(settings.getBusinessLine()) ? null : settings.getBusinessLine().strip(),
+                isBlank(settings.getLoanPurpose()) ? null : settings.getLoanPurpose().strip(),
+                settings.isTestPlaceholders() ? TEST_PLACEHOLDERS.apply(loan.getMsisdn()) : null,
+                // The bank pays the booked loan into the account itself: that is what a cash payout is.
+                true);
     }
+
+    /**
+     * STAGING ONLY (loans.staff-loans.payout.test-placeholders): obviously fake values for the personal details the
+     * bank requires and the staff register does not hold. The next of kin's phone is the borrower's own, as the
+     * bank's sample writes it, so no stranger's number is ever sent.
+     */
+    static final Function<String, PreApprovedLoanBooking.PersonalDetails> TEST_PLACEHOLDERS =
+            msisdn -> new PreApprovedLoanBooking.PersonalDetails("TEST ADDRESS, HARARE", "01-01-1990", "M", "Harare",
+                    new BigDecimal("1000"), "63-0000000A00", "TEST NEXT OF KIN", msisdn, "TEST ADDRESS, HARARE",
+                    "Spouse");
 
     /** The booking's {@code type}: the one set, else PERSONAL for a loan paid into a wallet; null when neither. */
     static String loanType(StaffLoan loan, StaffLoanProperties.Payout settings) {

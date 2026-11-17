@@ -152,7 +152,7 @@ public class InnbucksDisbursementService extends DisbursementService {
      */
     public PreApprovedBookingResult bookPreApproved(PreApprovedLoanBooking booking) {
         String reference = booking.participantReference();
-        LoanAccountCreationRequest requestBody;
+        PreApprovedLoanRequest requestBody;
         try {
             requestBody = preApprovedRequest(booking);
         } catch (RuntimeException ex) {
@@ -181,29 +181,55 @@ public class InnbucksDisbursementService extends DisbursementService {
         }
     }
 
-    private LoanAccountCreationRequest preApprovedRequest(PreApprovedLoanBooking booking) {
+    private PreApprovedLoanRequest preApprovedRequest(PreApprovedLoanBooking booking) {
         if (booking.participantReference() == null || booking.participantReference().isBlank()) {
             throw new IllegalArgumentException("a booking needs its participant reference");
         }
-        return LoanAccountCreationRequest.builder()
-                .participantReference(booking.participantReference())
-                .firstName(trimToNull(booking.firstName()))
-                .lastName(trimToNull(booking.lastName()))
-                .idNumber(trimToNull(booking.idNumber()))
-                .amount(toCents(booking.amount()))
-                .currency(booking.currency())
-                .product(trimToNull(booking.product()))
-                .tenureInMonths(booking.tenureInMonths())
-                .repaymentFrequency(MONTHLY)
-                .type(booking.loanType())
+        PreApprovedLoanBooking.PersonalDetails personal = booking.personal();
+        return new PreApprovedLoanRequest(
+                trimToNull(booking.firstName()),
+                trimToNull(booking.lastName()),
+                trimToNull(booking.idNumber()),
+                personal == null ? null : trimToNull(personal.address()),
+                personal == null ? null : trimToNull(personal.dateOfBirth()),
+                dollars(booking.amount()),
+                booking.currency(),
+                booking.tenureInMonths(),
+                MONTHLY,
+                trimToNull(booking.product()),
+                booking.loanType(),
+                personal == null ? null : trimToNull(personal.maritalStatus()),
                 // The InnBucks customer whose wallet the booked loan pays.
-                .msisdn(formatMsisdnInternational(booking.msisdn()))
-                .settlementAccount(trimToNull(booking.settlementAccount()))
-                .employer(trimToNull(booking.employer()))
-                .employerNumber(trimToNull(booking.employerNumber()))
-                .employmentStartDate(booking.employmentStartDate() == null
-                        ? null : booking.employmentStartDate().format(DAY_MONTH_YEAR))
-                .build();
+                formatMsisdnInternational(booking.msisdn()),
+                booking.participantReference(),
+                trimToNull(booking.employer()),
+                personal == null ? null : trimToNull(personal.nextOfKinIdNumber()),
+                personal == null ? null : trimToNull(personal.nextOfKinFullName()),
+                personal == null || personal.nextOfKinMsisdn() == null ? null
+                        : formatMsisdnInternational(personal.nextOfKinMsisdn()),
+                personal == null ? null : trimToNull(personal.nextOfKinAddress()),
+                trimToNull(booking.employerNumber()),
+                personal == null ? null : trimToNull(personal.nextOfKinRelationship()),
+                personal == null ? null : trimToNull(personal.placeOfBirth()),
+                booking.employmentStartDate() == null ? null : booking.employmentStartDate().format(DAY_MONTH_YEAR),
+                personal == null || personal.grossSalary() == null ? null : dollars(personal.grossSalary()),
+                trimToNull(booking.businessLine()),
+                trimToNull(booking.loanPurpose()),
+                trimToNull(booking.settlementAccount()),
+                booking.autoSettle() ? Boolean.TRUE : null);
+    }
+
+    /**
+     * An amount as this call takes it, in dollars: a whole number when it is one (150.00 is 150), else its cents
+     * (150.50 is 150.5). Never in scientific notation, never with more than two decimals.
+     */
+    static Number dollars(BigDecimal amount) {
+        if (amount == null) {
+            throw new IllegalArgumentException("a booking needs an amount");
+        }
+        BigDecimal cents = amount.setScale(2, RoundingMode.UNNECESSARY);
+        BigDecimal plain = cents.stripTrailingZeros();
+        return plain.scale() <= 0 ? cents.toBigIntegerExact() : plain;
     }
 
     /**
@@ -213,7 +239,7 @@ public class InnbucksDisbursementService extends DisbursementService {
      * opened. Everything after the connection opened — a read timeout, a reset, a 5xx, a 4xx — is
      * left to the caller, because InnBucks books and pays on this call.
      */
-    private ResponseEntity<String> sendBooking(String reference, LoanAccountCreationRequest requestBody) {
+    private ResponseEntity<String> sendBooking(String reference, Object requestBody) {
         String token = notSentIfFails(reference, innbucksAuthService::getAccessToken);
         try {
             return postBooking(reference, requestBody, token);
@@ -229,9 +255,9 @@ public class InnbucksDisbursementService extends DisbursementService {
         }
     }
 
-    private ResponseEntity<String> postBooking(String reference, LoanAccountCreationRequest requestBody,
+    private ResponseEntity<String> postBooking(String reference, Object requestBody,
                                                String token) {
-        HttpEntity<LoanAccountCreationRequest> requestEntity = new HttpEntity<>(requestBody,
+        HttpEntity<Object> requestEntity = new HttpEntity<>(requestBody,
                 headers(reference, token));
 
         ResponseEntity<String> responseEntity;

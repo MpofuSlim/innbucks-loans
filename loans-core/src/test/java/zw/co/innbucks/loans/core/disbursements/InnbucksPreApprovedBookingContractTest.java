@@ -93,18 +93,18 @@ class InnbucksPreApprovedBookingContractTest {
     private static PreApprovedLoanBooking wallet() {
         return new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42", new BigDecimal("150.00"),
                 "USD", "STAFFGROC", "PERSONAL", 1, "263772123123", null, "InnBucks MicroBank", "E1012",
-                LocalDate.of(2015, 2, 2));
+                LocalDate.of(2015, 2, 2), "Services", "Groceries", null, true);
     }
 
     /** The same borrower paid into their bank account. */
     private static PreApprovedLoanBooking account() {
         return new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42", new BigDecimal("150.00"),
                 "USD", "STAFFGROC", "CONSUMER_FINANCE", 1, "263772123123", "1234567890", "InnBucks MicroBank",
-                "E1012", LocalDate.of(2015, 2, 2));
+                "E1012", LocalDate.of(2015, 2, 2), "Services", "Groceries", null, true);
     }
 
     @Test
-    @DisplayName("wallet: every field the booking carries, in the collection's names, cents and date format")
+    @DisplayName("wallet: every field the booking carries, in the collection's names, dollars and date format")
     void walletBodyIsPinned() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
 
@@ -117,8 +117,11 @@ class InnbucksPreApprovedBookingContractTest {
                 .withRequestBody(matchingJsonPath("$.firstName", equalTo("Chipo")))
                 .withRequestBody(matchingJsonPath("$.lastName", equalTo("Banda")))
                 .withRequestBody(matchingJsonPath("$.idNumber", equalTo("63-2345678B42")))
-                // USD 150.00 -> 15000 cents.
-                .withRequestBody(matchingJsonPath("$.amount", equalTo("15000")))
+                // In dollars, as the bank confirmed for this call: USD 150.00 is 150, not 15000.
+                .withRequestBody(matchingJsonPath("$.amount", equalTo("150")))
+                .withRequestBody(matchingJsonPath("$.autoSettle", equalTo("true")))
+                .withRequestBody(matchingJsonPath("$.businessLine", equalTo("Services")))
+                .withRequestBody(matchingJsonPath("$.loanPurpose", equalTo("Groceries")))
                 .withRequestBody(matchingJsonPath("$.currency", equalTo("USD")))
                 .withRequestBody(matchingJsonPath("$.product", equalTo("STAFFGROC")))
                 .withRequestBody(matchingJsonPath("$.tenureInMonths", equalTo("1")))
@@ -136,9 +139,7 @@ class InnbucksPreApprovedBookingContractTest {
                 .withRequestBody(notContaining("numberOfDependents"))
                 .withRequestBody(notContaining("grossSalary"))
                 .withRequestBody(notContaining("placeOfBirth"))
-                .withRequestBody(notContaining("nextOfKin"))
-                .withRequestBody(notContaining("businessLine"))
-                .withRequestBody(notContaining("loanPurpose")));
+                .withRequestBody(notContaining("nextOfKin")));
     }
 
     @Test
@@ -275,7 +276,7 @@ class InnbucksPreApprovedBookingContractTest {
         assertThat(result.httpStatus()).isEqualTo(200);
         wireMock.verify(2, postRequestedFor(urlEqualTo(APPLY))
                 .withRequestBody(matchingJsonPath("$.participantReference", equalTo(REFERENCE)))
-                .withRequestBody(matchingJsonPath("$.amount", equalTo("15000"))));
+                .withRequestBody(matchingJsonPath("$.amount", equalTo("150"))));
         wireMock.verify(2, postRequestedFor(urlEqualTo(LOGIN)));
     }
 
@@ -388,11 +389,11 @@ class InnbucksPreApprovedBookingContractTest {
     }
 
     @Test
-    @DisplayName("a booking that cannot be built (an amount past the wire's int) is 'not sent', and nothing is sent")
+    @DisplayName("a booking that cannot be built (an amount finer than cents) is 'not sent', and nothing is sent")
     void anUnbuildableBookingIsNotSent() {
         PreApprovedLoanBooking tooLarge = new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", null,
-                new BigDecimal("21474836.48"), "USD", "STAFFGROC", "PERSONAL", 1, "263772123123", null, null, null,
-                null);
+                new BigDecimal("150.005"), "USD", "STAFFGROC", "PERSONAL", 1, "263772123123", null, null, null,
+                null, null, null, null, true);
 
         PreApprovedBookingResult result = service.bookPreApproved(tooLarge);
 
@@ -408,16 +409,82 @@ class InnbucksPreApprovedBookingContractTest {
     void blankFieldsAreLeftOut() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
         PreApprovedLoanBooking bare = new PreApprovedLoanBooking(REFERENCE, null, "Banda", " ", new BigDecimal("10"),
-                "USD", "STAFFGROC", "PERSONAL", 1, "263772123123", "  ", "", null, null);
+                "USD", "STAFFGROC", "PERSONAL", 1, "263772123123", "  ", "", null, null, " ", "", null, false);
 
         service.bookPreApproved(bare);
 
         wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
-                .withRequestBody(matchingJsonPath("$.amount", equalTo("1000")))
+                .withRequestBody(matchingJsonPath("$.amount", equalTo("10")))
                 .withRequestBody(notContaining("firstName"))
+                .withRequestBody(notContaining("autoSettle"))
+                .withRequestBody(notContaining("businessLine"))
+                .withRequestBody(notContaining("loanPurpose"))
                 .withRequestBody(notContaining("idNumber"))
                 .withRequestBody(notContaining("settlementAccount"))
                 .withRequestBody(notContaining("employer"))
                 .withRequestBody(notContaining("employmentStartDate")));
+    }
+
+    @Test
+    @DisplayName("amount: dollars with cents only when there are some; never cents, never scientific notation")
+    void amountIsDollars() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+
+        service.bookPreApproved(withAmount(new BigDecimal("150.50")));
+        service.bookPreApproved(withAmount(new BigDecimal("2000.00")));
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY)).withRequestBody(containing("\"amount\":150.5,")));
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY)).withRequestBody(containing("\"amount\":2000,")));
+        assertThat(InnbucksDisbursementService.dollars(new BigDecimal("20.00"))).hasToString("20");
+        assertThat(InnbucksDisbursementService.dollars(new BigDecimal("1E+3"))).hasToString("1000");
+    }
+
+    @Test
+    @DisplayName("wallet with a wallet account on the register: it is named as settlementAccount, the type stays PERSONAL")
+    void walletWithItsAccountNumber() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        PreApprovedLoanBooking named = new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42",
+                new BigDecimal("150.00"), "USD", "GETMOR", "PERSONAL", 1, "263772123123", "2004667048836",
+                "InnBucks MicroBank", "E1012", LocalDate.of(2015, 2, 2), "Services", "Groceries", null, true);
+
+        service.bookPreApproved(named);
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.settlementAccount", equalTo("2004667048836")))
+                .withRequestBody(matchingJsonPath("$.msisdn", equalTo("263772123123")))
+                .withRequestBody(matchingJsonPath("$.type", equalTo("PERSONAL"))));
+    }
+
+    @Test
+    @DisplayName("personal details, when given (staging placeholders), are each sent under the bank's names")
+    void personalDetailsAreSent() {
+        wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
+        PreApprovedLoanBooking.PersonalDetails personal = new PreApprovedLoanBooking.PersonalDetails(
+                "TEST ADDRESS, HARARE", "01-01-1990", "M", "Harare", new BigDecimal("1000.00"), "63-0000000A00",
+                "TEST NEXT OF KIN", "0772123123", "TEST ADDRESS, HARARE", "Spouse");
+        PreApprovedLoanBooking booking = new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42",
+                new BigDecimal("150.00"), "USD", "GETMOR", "PERSONAL", 1, "263772123123", null, "InnBucks MicroBank",
+                "E1012", LocalDate.of(2015, 2, 2), "Services", "Groceries", personal, true);
+
+        service.bookPreApproved(booking);
+
+        wireMock.verify(postRequestedFor(urlEqualTo(APPLY))
+                .withRequestBody(matchingJsonPath("$.address", equalTo("TEST ADDRESS, HARARE")))
+                .withRequestBody(matchingJsonPath("$.dateOfBirth", equalTo("01-01-1990")))
+                .withRequestBody(matchingJsonPath("$.maritalStatus", equalTo("M")))
+                .withRequestBody(matchingJsonPath("$.placeOfBirth", equalTo("Harare")))
+                .withRequestBody(matchingJsonPath("$.grossSalary", equalTo("1000")))
+                .withRequestBody(matchingJsonPath("$.nextOfKinIdNumber", equalTo("63-0000000A00")))
+                .withRequestBody(matchingJsonPath("$.nextOfKinFullName", equalTo("TEST NEXT OF KIN")))
+                .withRequestBody(matchingJsonPath("$.nextOfKinMsisdn", equalTo("263772123123")))
+                .withRequestBody(matchingJsonPath("$.nextOfKinAddress", equalTo("TEST ADDRESS, HARARE")))
+                .withRequestBody(matchingJsonPath("$.nextOfKinRelationship", equalTo("Spouse")))
+                .withRequestBody(matchingJsonPath("$.autoSettle", equalTo("true"))));
+    }
+
+    private static PreApprovedLoanBooking withAmount(BigDecimal amount) {
+        return new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42", amount, "USD", "GETMOR",
+                "PERSONAL", 1, "263772123123", null, "InnBucks MicroBank", "E1012", LocalDate.of(2015, 2, 2),
+                "Services", "Groceries", null, true);
     }
 }

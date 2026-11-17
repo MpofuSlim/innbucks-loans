@@ -215,7 +215,8 @@ class StaffLoanPayoutPostgresIT {
         assertThat(applies).singleElement().satisfies(apply -> {
             JsonNode body = json.readTree(apply.getBodyAsString());
             assertThat(body.path("participantReference").asString()).isEqualTo(reference);
-            assertThat(body.path("amount").asInt()).isEqualTo(15000);
+            assertThat(body.path("amount").asString()).as("in dollars").isEqualTo("150");
+            assertThat(body.path("autoSettle").asBoolean()).as("the bank pays it out").isTrue();
             assertThat(body.path("currency").asString()).isEqualTo("USD");
             assertThat(body.path("product").asString()).isEqualTo("STAFFGROC");
             assertThat(body.path("type").asString()).isEqualTo("PERSONAL");

@@ -663,6 +663,9 @@ it starts and logs an ERROR at every boot.
 | `STAFF_LOANS_PAYOUT_PRODUCT` | blank | The bank's product code for the Staff Grocery Loan (`NANOUS` is the SSB loan's). CASH needs it. |
 | `STAFF_LOANS_PAYOUT_LOAN_TYPE` | blank | `PERSONAL` or `CONSUMER_FINANCE`. Blank: `PERSONAL` for a wallet; `BR_ACCOUNT` refuses to start without it. |
 | `STAFF_LOANS_PAYOUT_EMPLOYER_NAME` | `InnBucks MicroBank` | Sent as the borrower's employer. |
+| `STAFF_LOANS_PAYOUT_BUSINESS_LINE` | `Services` | Sent as `businessLine`, which the bank requires. Confirm the value with the bank. |
+| `STAFF_LOANS_PAYOUT_LOAN_PURPOSE` | `Groceries` | Sent as `loanPurpose`, which the bank requires. Confirm the value with the bank. |
+| `STAFF_LOANS_PAYOUT_TEST_PLACEHOLDERS` | `false` | **Staging only.** `true` sends fixed fake values for the personal details the bank requires and the register does not hold (date of birth, address, marital status, place of birth, gross salary, next of kin), and logs an ERROR at every boot. `false` leaves them out, and the bank refuses the booking. |
 | `STAFF_LOANS_PAYOUT_STALE_CLAIM_MINUTES` | `30` | A claim never settled is held IN_DOUBT after this. At least as long as a booking can take, or the service refuses to start. |
 | `STAFF_LOANS_PAYOUT_STATUS_CHECK_INTERVAL` | `PT3M` | How often the status job asks the bank. |
 | `STAFF_LOANS_PAYOUT_MIN_DAYS_BEFORE_DUE` | `7` | A payout is not sent once its repayment date is fewer days away (held READY: Credit cancels, the borrower re-applies). |
