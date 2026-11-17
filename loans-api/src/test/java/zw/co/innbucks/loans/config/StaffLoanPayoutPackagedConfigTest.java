@@ -64,6 +64,9 @@ class StaffLoanPayoutPackagedConfigTest {
             assertThat(payout.getFailedWatch()).isEqualTo(Duration.ofDays(14));
             assertThat(payout.getPaidStatuses()).containsExactly("SETTLED");
             assertThat(payout.getPendingStatuses()).containsExactly("PROCESSING", "PENDING", "APPROVED", "BOOKED");
+            assertThat(payout.getBusinessLine()).isEqualTo("Services");
+            assertThat(payout.getLoanPurpose()).isEqualTo("Groceries");
+            assertThat(payout.isTestPlaceholders()).isFalse();
             assertThat(context.getBean(InnbucksParameters.class).getTokenTtl()).isEqualTo(Duration.ofMinutes(5));
             assertThat(context).doesNotHaveBean(StaffLoanPayoutStatusJob.class);
         });
@@ -85,6 +88,9 @@ class StaffLoanPayoutPackagedConfigTest {
                         "STAFF_LOANS_PAYOUT_FAILED_WATCH=P30D",
                         "STAFF_LOANS_PAYOUT_PAID_STATUSES=SETTLED,DISBURSED",
                         "STAFF_LOANS_PAYOUT_PENDING_STATUSES=PROCESSING",
+                        "STAFF_LOANS_PAYOUT_BUSINESS_LINE=Retail",
+                        "STAFF_LOANS_PAYOUT_LOAN_PURPOSE=Household",
+                        "STAFF_LOANS_PAYOUT_TEST_PLACEHOLDERS=true",
                         "INNBUCKS_TOKEN_TTL=PT8M")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -101,6 +107,9 @@ class StaffLoanPayoutPackagedConfigTest {
                     assertThat(payout.getFailedWatch()).isEqualTo(Duration.ofDays(30));
                     assertThat(payout.getPaidStatuses()).containsExactly("SETTLED", "DISBURSED");
                     assertThat(payout.getPendingStatuses()).containsExactly("PROCESSING");
+                    assertThat(payout.getBusinessLine()).isEqualTo("Retail");
+                    assertThat(payout.getLoanPurpose()).isEqualTo("Household");
+                    assertThat(payout.isTestPlaceholders()).isTrue();
                     assertThat(context.getBean(InnbucksParameters.class).getTokenTtl())
                             .isEqualTo(Duration.ofMinutes(8));
                     assertThat(context).hasSingleBean(StaffLoanPayoutStatusJob.class);

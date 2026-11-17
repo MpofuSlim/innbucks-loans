@@ -469,8 +469,10 @@ public class StaffLoanPayoutService {
     }
 
     /**
-     * What the bank is sent for one loan: only what the register and the loan hold, every other field left out. The
-     * participant reference is the loan's own, which the bank's inquiry is keyed by.
+     * What the bank is sent for one loan: what the register, the loan and the settings hold, with {@code autoSettle} so
+     * the bank pays it out. A wallet payout names no {@code settlementAccount} (the bank finds the wallet by the phone
+     * the borrower proved). Personal details are sent only when staging's placeholders are on; otherwise every other
+     * field is left out. The participant reference is the loan's own, which the bank's inquiry is keyed by.
      */
     static PreApprovedLoanBooking booking(StaffLoan loan, StaffMember member, StaffLoanProperties.Payout settings) {
         String[] names = names(loan.getFullName());

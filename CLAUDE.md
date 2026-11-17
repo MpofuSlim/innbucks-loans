@@ -329,8 +329,9 @@ setting never moves a loan already accepted. Settings, endpoints, go-live and ro
   `"autoSettle": true`, which is what makes the bank pay the booked loan out. `businessLine` and `loanPurpose` are
   settings. The bank also requires date of birth, address, marital status, place of birth, gross salary and next of
   kin, which the register does not hold: `loans.staff-loans.payout.test-placeholders` (STAGING ONLY, default false)
-  sends fixed fake values for them (the next of kin's phone is the borrower's own) and logs an ERROR at every boot;
-  off, they are left out and the bank refuses the booking (REFUSED, held). Never on where real money moves.
+  sends fixed fake values for them (the next of kin's phone is the borrower's own) and logs an ERROR at every boot,
+  CASH or VOUCHER. Off, they are left out and the bank's answer is read like any other (a refusal is REFUSED, held).
+  Never on where real money moves. The inquiry's echoed amount is compared in dollars too; a cents echo is a mismatch.
 - **The agreement must fit the method.** A cash agreement names `{{payoutAccount}}` and no voucher placeholder; a
   voucher agreement names no account. Otherwise quote and accept answer 503 STAFF_LOAN_TERMS_UNAVAILABLE.
 - **A voucher loan reads exactly as before.** Every payout field of `StaffLoanResponse`, `StaffLoanView` and

@@ -155,9 +155,9 @@ public class StaffLoanProperties {
         /**
          * STAGING ONLY. The bank requires personal details the staff register does not hold (date of birth, address,
          * marital status, place of birth, gross salary, next of kin). True sends fixed, obviously fake values for them
-         * so a staging booking can be tested end to end; false sends none, and the bank refuses the booking (held
-         * REFUSED, never cancelled). Never true where real money moves: the bank would hold made-up details against a
-         * real loan.
+         * so a staging booking can be tested end to end; false sends none, and whatever the bank answers is read like
+         * any other answer (a refusal holds the loan REFUSED, never cancelled). Never true where real money moves: the
+         * bank would hold made-up details against a real loan.
          */
         private boolean testPlaceholders;
 

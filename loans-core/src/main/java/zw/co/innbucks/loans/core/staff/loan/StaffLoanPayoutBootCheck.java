@@ -28,6 +28,12 @@ public class StaffLoanPayoutBootCheck {
     public StaffLoanPayoutBootCheck(StaffLoanProperties properties, InnbucksParameters innbucks,
                                     BorrowerProperties borrower, HttpClientConfig http) {
         StaffLoanProperties.Payout payout = properties.getPayout();
+        if (payout.isTestPlaceholders()) {
+            log.error("[startup] loans.staff-loans.payout.test-placeholders (STAFF_LOANS_PAYOUT_TEST_PLACEHOLDERS) is"
+                    + " true: a Staff Grocery Loan paid in cash is booked with FAKE personal details (date of birth,"
+                    + " address, marital status, place of birth, gross salary and next of kin are made up). Staging"
+                    + " only.");
+        }
         if (!payout.cash()) {
             log.info("[startup] Staff Grocery Loans are paid by voucher (STAFF_LOANS_PAYOUT_METHOD=VOUCHER): nothing is"
                     + " sent to the bank");
@@ -59,11 +65,6 @@ public class StaffLoanPayoutBootCheck {
         log.info("[startup] Staff Grocery Loans are paid in cash into the borrower's {} ({}), product {}, type {}, as"
                         + " soon as they accept", payout.getDestination().label(), payout.getDestination(),
                 payout.getProduct().strip(), payout.effectiveLoanType());
-        if (payout.isTestPlaceholders()) {
-            log.error("[startup] Staff Grocery Loans are booked with FAKE personal details"
-                    + " (loans.staff-loans.payout.test-placeholders is true): date of birth, address, marital status,"
-                    + " place of birth, gross salary and next of kin are made up. Staging only.");
-        }
         if (borrower.getTestAssertions().isEnabled()) {
             log.error("[startup] Staff Grocery Loans are paid in CASH while loans.borrower.test-assertions.enabled is"
                     + " true: whoever holds the test-assertion key can accept a loan as any staff member, and it is"

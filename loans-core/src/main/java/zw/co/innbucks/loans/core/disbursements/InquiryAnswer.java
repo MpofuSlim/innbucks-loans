@@ -14,8 +14,8 @@ import java.math.BigDecimal;
  * @param bankLoanAccount {@code loanDetails.loanAccountNumber}, the bank's own loan account; null when blank or longer
  *                        than 64 characters
  * @param echoedReference {@code loanDetails.participantReference}, else the envelope's {@code participantReference}
- * @param amount          {@code loanDetails.amount}, else the envelope's {@code amount}, as the bank wrote it (cents
- *                        or major units: it has not said which)
+ * @param amount          {@code loanDetails.amount}, else the envelope's {@code amount}, as the bank wrote it: in
+ *                        dollars, like the amount booked
  * @param interestRate    {@code loanDetails.interestRate}
  * @param echoedMsisdn    {@code loanDetails.msisdn}: the borrower's phone, which is also the wallet a wallet payout
  *                        pays

@@ -232,7 +232,7 @@ class StaffLoanPayoutPostgresIT {
         BANK.stubFor(get(urlEqualTo(INQUIRY + reference)).willReturn(okJson("""
                 {"responseCode":"000","responseDescription":"Approved or completed successfully",
                  "participantReference":"%s",
-                 "additionalData":{"loanDetails":{"status":"SETTLED","participantReference":"%s","amount":15000,
+                 "additionalData":{"loanDetails":{"status":"SETTLED","participantReference":"%s","amount":150,
                    "interestRate":0.0,"msisdn":"263773456789","loanAccountNumber":"LN-2027-0245"}}}""".formatted(
                 reference, reference))));
         HttpResponse<String> checked = send(finance(), postTo(BASE + "/staff-loans/" + id + "/payout/status-check"));

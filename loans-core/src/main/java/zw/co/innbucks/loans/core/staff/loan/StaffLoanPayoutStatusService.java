@@ -690,7 +690,7 @@ public class StaffLoanPayoutStatusService {
 
     /**
      * What the bank's "paid" answer names that is not this loan's, for each of these it carries (one it leaves out is
-     * not checked): its reference; its amount, which must be the loan's in cents or in major units exactly; and where
+     * not checked): its reference; its amount, which must be the loan's in dollars exactly, as it was booked; and where
      * it paid, read by the payout's destination. A wallet payout pays the borrower's phone, so the echoed
      * {@code msisdn} is the account (by its last nine digits, however the bank writes a phone) and a
      * {@code settlementAccount} is not read. An account payout pays {@code settlementAccount}, compared by its digits,
@@ -702,8 +702,7 @@ public class StaffLoanPayoutStatusService {
             mismatches.add("reference");
         }
         BigDecimal amount = answer.amount();
-        if (amount != null && loan.getAmount() != null && amount.compareTo(loan.getAmount()) != 0
-                && amount.compareTo(loan.getAmount().movePointRight(2)) != 0) {
+        if (amount != null && loan.getAmount() != null && amount.compareTo(loan.getAmount()) != 0) {
             mismatches.add("amount");
         }
         if (loan.getPayoutDestination() == StaffLoanPayoutDestination.BR_ACCOUNT) {

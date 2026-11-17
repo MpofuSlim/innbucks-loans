@@ -82,8 +82,12 @@ class StaffLoanPayoutSettingsTest {
             assertThat(payout.getFailedWatch()).isEqualTo(Duration.ofDays(14));
             assertThat(payout.getPaidStatuses()).containsExactly("SETTLED");
             assertThat(payout.getPendingStatuses()).containsExactly("PROCESSING", "PENDING", "APPROVED", "BOOKED");
+            assertThat(payout.getBusinessLine()).isEqualTo("Services");
+            assertThat(payout.getLoanPurpose()).isEqualTo("Groceries");
+            assertThat(payout.isTestPlaceholders()).isFalse();
         });
         assertThat(messages(Level.INFO)).anyMatch(m -> m.contains("paid by voucher"));
+        assertThat(messages(Level.ERROR)).isEmpty();
     }
 
     @Test
@@ -202,6 +206,21 @@ class StaffLoanPayoutSettingsTest {
                 .run(context -> assertThat(context).hasNotFailed());
 
         assertThat(messages(Level.ERROR)).anyMatch(m -> m.contains("test-assertions.enabled"));
+    }
+
+    @Test
+    @DisplayName("the staging placeholders start, and are said at ERROR on every boot, with CASH or VOUCHER alike: a"
+            + " cell that has them on must not wait for the switch to CASH to say so")
+    void testPlaceholdersAreShouted() {
+        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
+                .withPropertyValues("loans.staff-loans.payout.test-placeholders=true")
+                .run(context -> assertThat(context).hasNotFailed());
+        assertThat(messages(Level.ERROR)).singleElement().asString().contains("test-placeholders", "FAKE");
+
+        logged.list.clear();
+        runner.withPropertyValues("loans.staff-loans.payout.test-placeholders=true")
+                .run(context -> assertThat(context).hasNotFailed());
+        assertThat(messages(Level.ERROR)).singleElement().asString().contains("test-placeholders", "FAKE");
     }
 
     @Test

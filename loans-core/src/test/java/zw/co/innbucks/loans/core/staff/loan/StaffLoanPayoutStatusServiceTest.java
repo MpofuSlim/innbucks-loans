@@ -120,7 +120,7 @@ class StaffLoanPayoutStatusServiceTest {
 
     private static InquiryAnswer found(String status) {
         return new InquiryAnswer(InquiryAnswer.Kind.FOUND, "000", status, "LN-0001", REFERENCE,
-                new BigDecimal("15000"), BigDecimal.ZERO, "263772123123", null, "{\"responseCode\":\"000\"}", 200);
+                new BigDecimal("150"), BigDecimal.ZERO, "263772123123", null, "{\"responseCode\":\"000\"}", 200);
     }
 
     /** A FOUND answer that echoes only these. */
@@ -291,8 +291,8 @@ class StaffLoanPayoutStatusServiceTest {
     }
 
     @Test
-    @DisplayName("the amount echoed in major units is the loan's too; no echo at all is no mismatch")
-    void amountInMajorUnits() {
+    @DisplayName("the amount echoed in dollars is the loan's; no echo at all is no mismatch")
+    void amountInDollars() {
         answer = echoing(null, new BigDecimal("150"), null, null);
 
         assertThat(service.check(143L)).isEqualTo(Checked.PAID);
@@ -313,7 +313,7 @@ class StaffLoanPayoutStatusServiceTest {
     void accountPayoutEchoingThePhone() {
         loan = cashLoan(StaffLoanPayoutStatus.BOOKED).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
                 .payoutAccount("1234567890").build();
-        answer = echoing(REFERENCE, new BigDecimal("15000"), "263772123123", null);
+        answer = echoing(REFERENCE, new BigDecimal("150"), "263772123123", null);
 
         assertThat(service.check(143L)).isEqualTo(Checked.PAID);
         assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
@@ -396,8 +396,11 @@ class StaffLoanPayoutStatusServiceTest {
                 .containsExactly("reference");
         assertThat(StaffLoanPayoutStatusService.echoMismatches(base, echoing(null, new BigDecimal("149.99"), null,
                 null))).containsExactly("amount");
-        assertThat(StaffLoanPayoutStatusService.echoMismatches(base, echoing(null, new BigDecimal("15000.00"), null,
+        assertThat(StaffLoanPayoutStatusService.echoMismatches(base, echoing(null, new BigDecimal("150.00"), null,
                 null))).isEmpty();
+        assertThat(StaffLoanPayoutStatusService.echoMismatches(base, echoing(null, new BigDecimal("15000"), null,
+                null))).as("the amount in cents is not the loan's: the bank books and answers in dollars")
+                .containsExactly("amount");
         assertThat(StaffLoanPayoutStatusService.echoMismatches(base, echoing(null, null, null, null))).isEmpty();
     }
 

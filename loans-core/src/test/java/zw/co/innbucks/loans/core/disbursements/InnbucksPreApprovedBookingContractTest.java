@@ -35,8 +35,9 @@ import static org.mockito.Mockito.mock;
  * Contract test: the Staff Grocery Loan's cash payout, booked on InnBucks' pre-approved endpoint
  * ({@code POST /bank/api/loan/apply/pre-approved}) by {@link InnbucksDisbursementService#bookPreApproved}.
  *
- * <p>The REQUEST is pinned field by field: the collection's names, cents, {@code dd-MM-yyyy}, and nothing the register
- * does not hold (no address, date of birth or next of kin is made up). The ANSWERS are shapes, not recordings: no real
+ * <p>The REQUEST is pinned field by field: the collection's names, the amount in dollars, {@code autoSettle},
+ * {@code dd-MM-yyyy}, and only the personal details the booking carries (none, unless staging's placeholders are on:
+ * the client makes none up). The ANSWERS are shapes, not recordings: no real
  * apply answer has been captured yet (see {@link InnbucksLoanApiContractTest}). Every shape is one this client must
  * survive, and each is pinned to how often the booking was sent: once, or twice only after a 401. What each answer
  * MEANS for the loan is the payout service's to decide; here it is only reported, never thrown.
@@ -440,8 +441,9 @@ class InnbucksPreApprovedBookingContractTest {
     }
 
     @Test
-    @DisplayName("wallet with a wallet account on the register: it is named as settlementAccount, the type stays PERSONAL")
-    void walletWithItsAccountNumber() {
+    @DisplayName("a booking that names a settlementAccount sends it as given, beside the msisdn; the type stays PERSONAL"
+            + " (the payout service names one for an account payout only)")
+    void aNamedAccountIsSent() {
         wireMock.stubFor(post(urlEqualTo(APPLY)).willReturn(okJson("{}")));
         PreApprovedLoanBooking named = new PreApprovedLoanBooking(REFERENCE, "Chipo", "Banda", "63-2345678B42",
                 new BigDecimal("150.00"), "USD", "GETMOR", "PERSONAL", 1, "263772123123", "2004667048836",

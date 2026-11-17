@@ -147,8 +147,8 @@ public class InnbucksDisbursementService extends DisbursementService {
      * Books a pre-approved loan that is not an SSB application (a Staff Grocery Loan paid in cash) on the same endpoint,
      * under the same rules: sent once; replayed once only after a 401, which InnBucks never processed; never re-sent
      * after anything else, because InnBucks books AND pays on this call. Never throws: what happened is returned for the
-     * caller to classify (see {@link PreApprovedBookingResult}). Only what the booking carries is sent; nothing an SSB
-     * application sends (an address, a date of birth, next of kin) is made up for it.
+     * caller to classify (see {@link PreApprovedBookingResult}). Only what the booking carries is sent, the amount in
+     * dollars; this method makes nothing up (the personal details are sent only when the booking carries them).
      */
     public PreApprovedBookingResult bookPreApproved(PreApprovedLoanBooking booking) {
         String reference = booking.participantReference();

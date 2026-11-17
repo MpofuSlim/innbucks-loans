@@ -81,7 +81,7 @@ class InnbucksLoanInquiryContractTest {
                 {"responseCode":"000","responseDescription":"Approved or completed successfully",
                  "participantReference":"SGL-2026-000143",
                  "additionalData":{"loanDetails":{"status":"SETTLED","participantReference":"SGL-2026-000143",
-                   "amount":15000,"interestRate":0.0,"msisdn":"263772123123","loanAccountNumber":"LA-0001234",
+                   "amount":150,"interestRate":0.0,"msisdn":"263772123123","loanAccountNumber":"LA-0001234",
                    "idNumber":"63-2345678B42"}}}
                 """);
 
@@ -93,7 +93,7 @@ class InnbucksLoanInquiryContractTest {
         assertThat(found.bankStatus()).isEqualTo("SETTLED");
         assertThat(found.bankLoanAccount()).isEqualTo("LA-0001234");
         assertThat(found.echoedReference()).isEqualTo(REFERENCE);
-        assertThat(found.amount()).isEqualByComparingTo("15000");
+        assertThat(found.amount()).isEqualByComparingTo("150");
         assertThat(found.interestRate()).isEqualByComparingTo("0");
         assertThat(found.echoedMsisdn()).isEqualTo("263772123123");
         assertThat(found.echoedSettlementAccount()).isNull();
@@ -317,10 +317,10 @@ class InnbucksLoanInquiryContractTest {
     @DisplayName("an answer never prints its account, amount or raw text")
     void toStringHidesTheAnswer() {
         InquiryAnswer answer = new InquiryAnswer(InquiryAnswer.Kind.FOUND, "000", "SETTLED", "LA-0001234", REFERENCE,
-                new BigDecimal("15000"), BigDecimal.ZERO, "263772123123", "1234567890",
+                new BigDecimal("150.75"), BigDecimal.ZERO, "263772123123", "1234567890",
                 "{\"msisdn\":\"263772123123\"}", 200);
 
         assertThat(answer.toString()).contains("FOUND", "SETTLED", "000")
-                .doesNotContain("LA-0001234", "1234567890", "263772123123", "15000");
+                .doesNotContain("LA-0001234", "1234567890", "263772123123", "150.75");
     }
 }
