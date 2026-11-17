@@ -14,6 +14,7 @@ import zw.co.innbucks.loans.core.DisbursementRequest;
 import zw.co.innbucks.loans.core.DisbursementResponse;
 import zw.co.innbucks.loans.core.ManualDisbursementResponse;
 import zw.co.innbucks.loans.core.auth.AuthService;
+import zw.co.innbucks.loans.core.config.HttpClientConfig;
 import zw.co.innbucks.loans.core.exception.DisbursementNotAllowedException;
 import zw.co.innbucks.loans.core.ledger.DisbursementLedger;
 import zw.co.innbucks.loans.core.loan.DeductionCancellationService;
@@ -154,7 +155,7 @@ class InnbucksDepositContractTest {
 
         return new InnbucksDisbursementService(loans, mock(LoanNotificationService.class), attemptRepository,
                 mock(DeductionCancellationService.class), restTemplate, params,
-                new InnbucksAuthService(restTemplate, params), mock(DisbursementLedger.class),
+                new InnbucksAuthService(restTemplate, params, new HttpClientConfig()), mock(DisbursementLedger.class),
                 new CheckpointGate(stages, loans, decisions), authService, mock(PlatformTransactionManager.class));
     }
 

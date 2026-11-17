@@ -27,6 +27,9 @@ import zw.co.innbucks.loans.core.borrower.BorrowerSignInUnavailableException;
 import zw.co.innbucks.loans.core.borrower.NotOnStaffRegisterException;
 import zw.co.innbucks.loans.core.document.DocumentProblem;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutNotRecordedException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutQueueFullException;
+import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutUnansweredException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanRequestInvalidException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
@@ -321,6 +324,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(StaffLoanTermsUnavailableException.class)
     public ResponseEntity<ApiResult<Void>> staffLoanTermsUnavailable(StaffLoanTermsUnavailableException ex) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, "STAFF_LOAN_TERMS_UNAVAILABLE", ex.getMessage());
+    }
+
+    /** The payout queue had no room: nothing was queued, every payout named is READY, and asking again later works. */
+    @ExceptionHandler(StaffLoanPayoutQueueFullException.class)
+    public ResponseEntity<ApiResult<Void>> staffLoanPayoutQueueFull(StaffLoanPayoutQueueFullException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "PAYOUT_QUEUE_FULL", ex.getMessage());
+    }
+
+    /** The bank's inquiry, asked for one payout, gave nothing to go on: the bank's failure, and nothing changed. */
+    @ExceptionHandler(StaffLoanPayoutUnansweredException.class)
+    public ResponseEntity<ApiResult<Void>> staffLoanPayoutUnanswered(StaffLoanPayoutUnansweredException ex) {
+        return error(HttpStatus.BAD_GATEWAY, "BANK_UNANSWERED", ex.getMessage());
+    }
+
+    /** The bank's inquiry answered, and what it said could not be saved: our fault, nothing changed, try again. */
+    @ExceptionHandler(StaffLoanPayoutNotRecordedException.class)
+    public ResponseEntity<ApiResult<Void>> staffLoanPayoutNotRecorded(StaffLoanPayoutNotRecordedException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "PAYOUT_NOT_RECORDED", ex.getMessage());
     }
 
     /** The agreement accepted is not the one in force now: the borrower must see the current one first. */

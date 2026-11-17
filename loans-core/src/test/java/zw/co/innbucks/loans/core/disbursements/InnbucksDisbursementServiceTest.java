@@ -112,6 +112,7 @@ class InnbucksDisbursementServiceTest {
                 HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, new byte[0], null);
 
         // First call throws unauthorized, second call succeeds
+        when(innbucksAuthService.refreshAfterRejection(testToken)).thenReturn("fresh-token");
         when(restTemplate.exchange(
                 anyString(),
                 eq(HttpMethod.GET),
@@ -126,8 +127,8 @@ class InnbucksDisbursementServiceTest {
         assertNotNull(result);
         assertTrue(result.isSuccess());
 
-        // Verify token was refreshed
-        verify(innbucksAuthService).refreshToken();
+        // Verify the refused token was refreshed, once
+        verify(innbucksAuthService).refreshAfterRejection(testToken);
 
         // Verify exchange was called twice (first throws, second succeeds)
         verify(restTemplate, times(2)).exchange(

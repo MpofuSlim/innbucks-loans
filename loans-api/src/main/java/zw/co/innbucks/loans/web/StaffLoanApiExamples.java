@@ -6,6 +6,18 @@ package zw.co.innbucks.loans.web;
  * run 1 of Monday 5 October, takes it in full in the SuperApp on Tuesday 6 October as loan SGL-2026-000143, due on
  * 20 November; once paid out, it is voucher 7 of the voucher examples. The Apply example is a member who held no offer
  * that week (taken on after Monday's run, say): offer 3, made on Wednesday 7 October.
+ *
+ * <p>The cash examples tell one later loan's story, in a cell paying Staff Grocery Loans in cash into the borrower's
+ * InnBucks wallet (STAFF_LOANS_PAYOUT_METHOD=CASH, VEENGU_WALLET), under agreement version 2, which names the wallet.
+ * Chipo takes offer 58 for USD 150.00 on Tuesday 2 February 2027 at 09:12:05 as SGL-2027-000245 (staff loan 245), due
+ * 20 February, paid into her wallet ending 6789. Its payout is sent as the acceptance commits, and the bank refuses it
+ * (HTTP 400, 09:12:07). Finance (finance1) has it put right and presses Pay out at 11:40:00: READY again, under the same
+ * reference. That send times out (11:41:01): IN_DOUBT, never sent again. The status job's inquiry at 11:44:01 finds it
+ * PROCESSING (BOOKED), and Finance's check-now at 11:46:30 finds it SETTLED: PAID, the loan DISBURSED. Two branches
+ * show the other ways it ends: had Finance had the bank's word instead, Confirm paid at 11:46:30; had the 11:44:01
+ * inquiry found nothing (responseCode 004), a SUPER_ADMIN (admin) records it never booked the next day, 3 February at
+ * 14:20:00, once the bank confirms it and while its inquiry still reports it missing (last at 14:18:02), and the loan
+ * is cancelled. A cash loan's payout fields are left out while empty; a voucher loan carries none of them.
  */
 public final class StaffLoanApiExamples {
 
@@ -538,9 +550,9 @@ public final class StaffLoanApiExamples {
                 "borrowerName": "Full name on the staff register",
                 "employeeNumber": "Employee number",
                 "nationalIdNumber": "National ID number",
-                "mobileNumber": "Mobile number the voucher is sent to",
+                "mobileNumber": "Mobile number on the staff register",
                 "department": "Department",
-                "amount": "Amount borrowed, the voucher's value",
+                "amount": "Amount borrowed",
                 "currency": "Currency, e.g. USD",
                 "interestRate": "Interest rate, percent (0)",
                 "totalRepayable": "Total to repay",
@@ -548,7 +560,473 @@ public final class StaffLoanApiExamples {
                 "merchantName": "Where the voucher can be spent",
                 "voucherValidityDays": "Days the voucher can be spent for",
                 "unredeemedVoucherTerms": "What happens if the voucher is not spent in full before it expires",
+                "payoutAccount": "Where a cash loan is paid, by its last four digits, e.g. InnBucks wallet ****3123 (blank for a voucher loan)",
                 "acceptedDate": "Date accepted, yyyy-MM-dd"
               }
+            }""";
+
+    // --- A loan paid in cash: SGL-2027-000245 (see the class comment) ---
+
+    public static final String CASH_AGREEMENT_CONTENT = "STAFF GROCERY LOAN AGREEMENT\\n\\nI, Chipo Banda, employee"
+            + " number E1012, borrow USD 150.00 from InnBucks Microfinance Bank at 0% interest, paid into my InnBucks"
+            + " wallet ****6789. I will repay USD 150.00, collected from my salary on 2027-02-20.\\n\\n"
+            + "Accepted on 2027-02-02.";
+
+    public static final String CASH_AGREEMENT_SHA256 =
+            "6c53c4c02fd12786b5a5c5e8993a3ed73a563efc88473418dfe1a58e35342220";
+
+    private static final String LOAN_245_HEAD = """
+            {
+                  "reference": "SGL-2027-000245",""";
+
+    private static final String LOAN_245_TERMS = """
+                  "amount": 150.00,
+                  "currency": "USD",
+                  "totalRepayable": 150.00,
+                  "outstandingBalance": 150.00,
+                  "repaymentDate": "2027-02-20",
+                  "merchantName": null,
+                  "acceptedAt": "2027-02-02T09:12:05+02:00",
+                  "voucher": null,
+                  "payoutMethod": "CASH",
+                  "payoutAccount": "****6789"
+                }""";
+
+    private static final String LOAN_245_AWAITING = LOAN_245_HEAD + """
+
+                  "status": "AWAITING_DISBURSEMENT",
+                  "statusMessage": "Your loan is approved. USD 150.00 is being paid into your InnBucks wallet ending 6789.",
+            """ + LOAN_245_TERMS;
+
+    private static final String LOAN_245_DISBURSED = LOAN_245_HEAD + """
+
+                  "status": "DISBURSED",
+                  "statusMessage": "USD 150.00 was paid into your InnBucks wallet ending 6789. USD 150.00 will be collected from your salary on 20 Feb 2027.",
+            """ + LOAN_245_TERMS;
+
+    public static final String HOME_CASH_AWAITING = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loan": """ + LOAN_245_AWAITING + """
+            ,
+                "offer": null,
+                "canApply": false,
+                "unavailable": null
+              }
+            }""";
+
+    public static final String HOME_CASH_PAID = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "loan": """ + LOAN_245_DISBURSED + """
+            ,
+                "offer": null,
+                "canApply": false,
+                "unavailable": null
+              }
+            }""";
+
+    public static final String QUOTE_CASH = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "offerId": 58,
+                "amount": 150.00,
+                "currency": "USD",
+                "interestRate": 0,
+                "interest": 0.00,
+                "fees": 0.00,
+                "totalRepayable": 150.00,
+                "repaymentDate": "2027-02-20",
+                "collection": "USD 150.00 will be collected automatically from your salary on 2027-02-20. There is nothing for you to pay yourself.",
+                "merchantName": null,
+                "redemption": "Once you accept, USD 150.00 is paid into your InnBucks wallet ending 6789.",
+                "voucherValidityDays": null,
+                "unredeemedVoucher": null,
+                "agreement": {
+                  "version": 2,
+                  "title": "Staff Grocery Loan Agreement",
+                  "content": \"""" + CASH_AGREEMENT_CONTENT + """
+            ",
+                  "contentSha256": \"""" + CASH_AGREEMENT_SHA256 + """
+            "
+                },
+                "payoutMethod": "CASH",
+                "payoutAccount": "****6789"
+              }
+            }""";
+
+    public static final String ACCEPTED_CASH = """
+            {
+              "code": "CREATED",
+              "message": "Created",
+              "data": """ + LOAN_245_AWAITING + """
+
+            }""";
+
+    // The portal's view of the same loan, at each step.
+
+    private static final String STAFF_LOAN_245_HEAD = """
+            {
+                  "id": 245,
+                  "reference": "SGL-2027-000245",
+                  "offerId": 58,
+                  "staffMemberId": 2,
+                  "employeeNumber": "E1012",
+                  "fullName": "Chipo Banda",
+                  "msisdn": "****6789",
+                  "grade": "C4",
+                  "merchantCode": "getmore-groceries",
+                  "merchantName": "GetMore Groceries",
+                  "amount": 150.00,
+                  "currency": "USD",
+                  "interestRate": 0.0000,
+                  "totalRepayable": 150.00,
+                  "dueDate": "2027-02-20",
+                  "unredeemedVoucherTreatment": "DEBT_STANDS",""";
+
+    private static final String STAFF_LOAN_245_CASH = """
+
+                  "employmentFlag": null,
+                  "arrearsOverrideId": null,
+                  "payoutMethod": "CASH",
+                  "payoutDestination": "VEENGU_WALLET",
+                  "payoutAccount": "****6789",""";
+
+    private static final String STAFF_LOAN_245_AWAITING = STAFF_LOAN_245_HEAD + """
+
+                  "status": "AWAITING_DISBURSEMENT",
+                  "inArrears": false,
+                  "acceptedAt": "2027-02-02T09:12:05+02:00",
+                  "disbursedAt": null,
+                  "disbursementReference": null,
+                  "settledAt": null,
+                  "cancelledAt": null,
+                  "cancelledBy": null,
+                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+
+    private static final String REFUSED_ANSWER =
+            "{\\\"responseCode\\\":\\\"400\\\",\\\"responseDescription\\\":\\\"Product STAFFGROC is not set up for"
+                    + " pre-approved loans\\\"}";
+
+    private static final String BOOKED_ANSWER = "{\\\"responseCode\\\":\\\"000\\\",\\\"responseDescription\\\":"
+            + "\\\"Approved or completed successfully\\\",\\\"participantReference\\\":\\\"SGL-2027-000245\\\","
+            + "\\\"additionalData\\\":{\\\"loanDetails\\\":{\\\"status\\\":\\\"PROCESSING\\\","
+            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":15000,\\\"interestRate\\\":0.0,"
+            + "\\\"msisdn\\\":\\\"****6789\\\",\\\"loanAccountNumber\\\":\\\"***\\\"}}}";
+
+    private static final String SETTLED_ANSWER = "{\\\"responseCode\\\":\\\"000\\\",\\\"responseDescription\\\":"
+            + "\\\"Approved or completed successfully\\\",\\\"participantReference\\\":\\\"SGL-2027-000245\\\","
+            + "\\\"additionalData\\\":{\\\"loanDetails\\\":{\\\"status\\\":\\\"SETTLED\\\","
+            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":15000,\\\"interestRate\\\":0.0,"
+            + "\\\"msisdn\\\":\\\"****6789\\\",\\\"loanAccountNumber\\\":\\\"***\\\"}}}";
+
+    private static final String NOT_FOUND_ANSWER =
+            "{\\\"responseCode\\\":\\\"004\\\",\\\"responseDescription\\\":\\\"No loan found\\\"}";
+
+    /** What the 11:41:01 send came to: no answer, kept as the booking's answer. */
+    private static final String TIMED_OUT = "ResourceAccessException: Read timed out";
+
+    // 09:12:07: the bank refused the first send.
+    private static final String STAFF_LOAN_245_REFUSED = STAFF_LOAN_245_AWAITING + """
+
+                  "payoutStatus": "REFUSED",
+                  "payoutMessage": "The bank refused it (HTTP 400), so nothing was booked. Send it again with Pay out once what the bank said is put right, or Credit cancels the loan.",
+                  "payoutApplyAnswer": \"""" + REFUSED_ANSWER + """
+            ",
+                  "payoutLastAnswer": \"""" + REFUSED_ANSWER + """
+            "
+                }""";
+
+    // 11:40:00: Finance pressed Pay out; READY again, the bank's refusal kept as evidence.
+    private static final String STAFF_LOAN_245_READY_AGAIN = STAFF_LOAN_245_AWAITING + """
+
+                  "payoutStatus": "READY",
+                  "payoutApplyAnswer": \"""" + REFUSED_ANSWER + """
+            ",
+                  "payoutLastAnswer": \"""" + REFUSED_ANSWER + """
+            "
+                }""";
+
+    // The branch where the bank never booked it: at 11:41:01 the send timed out, and at 11:44:01 the inquiry found no
+    // loan under the reference.
+    private static final String STAFF_LOAN_245_IN_DOUBT = STAFF_LOAN_245_AWAITING + """
+
+                  "payoutStatus": "IN_DOUBT",
+                  "payoutMessage": "The bank's inquiry reports no loan under SGL-2027-000245, so it may never have been booked. Ask the bank; from 2027-02-03T11:44:01+02:00 a SUPER_ADMIN may record it as not booked if the bank confirms it.",
+                  "payoutNotFoundAt": "2027-02-02T11:44:01+02:00",
+                  "payoutCheckedAt": "2027-02-02T11:44:01+02:00",
+                  "payoutApplyAnswer": \"""" + TIMED_OUT + """
+            ",
+                  "payoutLastAnswer": \"""" + NOT_FOUND_ANSWER + """
+            "
+                }""";
+
+    private static final String STAFF_LOAN_245_DISBURSED = STAFF_LOAN_245_HEAD + """
+
+                  "status": "DISBURSED",
+                  "inArrears": false,
+                  "acceptedAt": "2027-02-02T09:12:05+02:00",
+                  "disbursedAt": "2027-02-02T11:46:30+02:00",
+                  "disbursementReference": "SGL-2027-000245",
+                  "settledAt": null,
+                  "cancelledAt": null,
+                  "cancelledBy": null,
+                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+
+    // 11:46:30: Finance's check-now found it SETTLED (the 11:44:01 inquiry had found it PROCESSING).
+    private static final String STAFF_LOAN_245_PAID = STAFF_LOAN_245_DISBURSED + """
+
+                  "payoutStatus": "PAID",
+                  "payoutBankStatus": "SETTLED",
+                  "payoutBankSeenAt": "2027-02-02T11:44:01+02:00",
+                  "payoutCheckedAt": "2027-02-02T11:46:30+02:00",
+                  "payoutApplyAnswer": \"""" + TIMED_OUT + """
+            ",
+                  "payoutLastAnswer": \"""" + SETTLED_ANSWER + """
+            ",
+                  "bankLoanAccount": "****0245"
+                }""";
+
+    // The branch where Finance had the bank's word instead: Confirm paid at 11:46:30, over the 11:44:01 answer.
+    private static final String STAFF_LOAN_245_CONFIRMED_PAID = STAFF_LOAN_245_DISBURSED + """
+
+                  "payoutStatus": "PAID",
+                  "payoutBankStatus": "PROCESSING",
+                  "payoutBankSeenAt": "2027-02-02T11:44:01+02:00",
+                  "payoutCheckedAt": "2027-02-02T11:44:01+02:00",
+                  "payoutApplyAnswer": \"""" + TIMED_OUT + """
+            ",
+                  "payoutLastAnswer": \"""" + BOOKED_ANSWER + """
+            "
+                }""";
+
+    // The branch where the bank never booked it: recorded so by a SUPER_ADMIN on 3 February at 14:20:00, two minutes
+    // after the status job's inquiry last reported it missing.
+    private static final String STAFF_LOAN_245_NOT_BOOKED = STAFF_LOAN_245_HEAD + """
+
+                  "status": "CANCELLED",
+                  "inArrears": false,
+                  "acceptedAt": "2027-02-02T09:12:05+02:00",
+                  "disbursedAt": null,
+                  "disbursementReference": null,
+                  "settledAt": null,
+                  "cancelledAt": "2027-02-03T14:20:00+02:00",
+                  "cancelledBy": "admin",
+                  "cancellationReason": "The bank confirmed this loan's payout was never booked (recorded by admin)",""" + STAFF_LOAN_245_CASH + """
+
+                  "payoutStatus": "FAILED",
+                  "payoutMessage": "The bank confirmed this loan's payout was never booked (recorded by admin)",
+                  "payoutNotFoundAt": "2027-02-02T11:44:01+02:00",
+                  "payoutCheckedAt": "2027-02-03T14:18:02+02:00",
+                  "payoutApplyAnswer": \"""" + TIMED_OUT + """
+            ",
+                  "payoutLastAnswer": \"""" + NOT_FOUND_ANSWER + """
+            ",
+                  "payoutFailedAt": "2027-02-03T14:20:00+02:00"
+                }""";
+
+    public static final String STAFF_LOANS_REFUSED = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  """ + STAFF_LOAN_245_REFUSED + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String STAFF_LOANS_IN_DOUBT = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": {
+                "items": [
+                  """ + STAFF_LOAN_245_IN_DOUBT + """
+
+                ],
+                "page": 0,
+                "size": 20,
+                "totalItems": 1,
+                "totalPages": 1
+              }
+            }""";
+
+    public static final String PAYOUT_REQUESTED = """
+            {
+              "code": "ACCEPTED",
+              "message": "Payout of SGL-2027-000245 queued",
+              "data": """ + STAFF_LOAN_245_READY_AGAIN + """
+
+            }""";
+
+    public static final String PAYOUTS_REQUESTED = """
+            {
+              "code": "ACCEPTED",
+              "message": "Paying 3 ready payouts; 1 you are a party to is left for someone else",
+              "data": {
+                "ready": 3,
+                "skippedOwn": 1
+              }
+            }""";
+
+    public static final String PAYOUT_CHECKED = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_LOAN_245_PAID + """
+
+            }""";
+
+    public static final String PAYOUT_PAID_REQUEST = """
+            {
+              "bankReference": "IBK-PAY-77120",
+              "note": "InnBucks operations (T. Ncube) confirmed USD 150.00 reached wallet ****6789 on 2 February"
+            }""";
+
+    public static final String PAYOUT_CONFIRMED_PAID = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_LOAN_245_CONFIRMED_PAID + """
+
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_REQUEST = """
+            {
+              "note": "InnBucks operations (T. Ncube) confirmed no loan was booked under SGL-2027-000245; ticket IB-8812"
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED = """
+            {
+              "code": "OK",
+              "message": "Success",
+              "data": """ + STAFF_LOAN_245_NOT_BOOKED + """
+
+            }""";
+
+    public static final String NOT_FOUND_245 = """
+            {
+              "code": "NOT_FOUND",
+              "message": "Staff loan 245 not found"
+            }""";
+
+    public static final String PAYOUT_SEND_CONFLICT = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 has payout IN_DOUBT (loan AWAITING_DISBURSEMENT); only a payout READY to send, or REFUSED by the bank, can be sent. The bank took it or may have taken it, so it is never sent again: check its status instead"
+            }""";
+
+    public static final String PAYOUT_SEND_PARTY = """
+            {
+              "code": "FORBIDDEN",
+              "message": "cbanda is a party to staff loan SGL-2027-000245 and cannot send its payout; someone else must"
+            }""";
+
+    public static final String PAYOUT_QUEUE_FULL = """
+            {
+              "code": "PAYOUT_QUEUE_FULL",
+              "message": "The payout queue is full, so staff loan SGL-2027-000245 was not queued; it is READY, and nothing was sent. Try again in a few minutes."
+            }""";
+
+    public static final String PAYOUTS_QUEUE_FULL = """
+            {
+              "code": "PAYOUT_QUEUE_FULL",
+              "message": "The payout queue is full, so the 3 ready payout(s) were not queued; they are READY, and nothing was sent. Try again in a few minutes."
+            }""";
+
+    public static final String PAYOUT_CHECK_SENDING = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 is being sent to the bank right now (since 2027-02-02T11:40:01+02:00); its status can be checked once that send is settled, or from 2027-02-02T12:10:01+02:00 if it never is"
+            }""";
+
+    public static final String PAYOUT_CHECK_NOT_CHECKABLE = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 has payout REFUSED (loan AWAITING_DISBURSEMENT); only a payout the bank took (BOOKED) or may have taken (IN_DOUBT), or one recorded as never booked in the last 14 days, can be checked"
+            }""";
+
+    public static final String PAYOUT_CHECK_UNANSWERED = """
+            {
+              "code": "BANK_UNANSWERED",
+              "message": "The bank's inquiry about staff loan SGL-2027-000245 gave no answer to go on (UNANSWERED); nothing changed. Try again later."
+            }""";
+
+    public static final String PAYOUT_CHECK_NOT_RECORDED = """
+            {
+              "code": "PAYOUT_NOT_RECORDED",
+              "message": "What the bank's inquiry said about staff loan SGL-2027-000245 could not be saved; nothing changed. Try again in a minute."
+            }""";
+
+    public static final String PAYOUT_PAID_INVALID = """
+            {
+              "code": "VALIDATION_ERROR",
+              "message": "Request validation failed",
+              "data": {
+                "bankReference": "bankReference is required"
+              }
+            }""";
+
+    public static final String PAYOUT_PAID_PARTY = """
+            {
+              "code": "FORBIDDEN",
+              "message": "cbanda is a party to staff loan SGL-2027-000245 and cannot confirm its payout paid; someone else must"
+            }""";
+
+    public static final String PAYOUT_PAID_CONFLICT = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 has payout REFUSED (loan AWAITING_DISBURSEMENT); only a payout the bank took (BOOKED) or may have taken (IN_DOUBT) can be confirmed paid"
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_INVALID = """
+            {
+              "code": "VALIDATION_ERROR",
+              "message": "Request validation failed",
+              "data": {
+                "note": "note is required"
+              }
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_PARTY = """
+            {
+              "code": "FORBIDDEN",
+              "message": "cbanda is a party to staff loan SGL-2027-000245 and cannot record its payout as never booked; someone else must"
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_SEEN = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 cannot be recorded as never booked: the bank has said it holds it (since 2027-02-02T11:44:01+02:00)"
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_TOO_SOON = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 cannot be recorded as never booked: the bank's inquiry has reported it missing only since 2027-02-02T11:44:01+02:00, and a booking may still be on its way; it can be from 2027-02-03T11:44:01+02:00"
+            }""";
+
+    public static final String PAYOUT_NOT_BOOKED_STALE = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 cannot be recorded as never booked: the bank's inquiry last answered at 2027-02-03T13:02:44+02:00, so it may have changed since; check its status now, then record it within 6 minutes"
+            }""";
+
+    public static final String CANCEL_CONFLICT_PAYOUT = """
+            {
+              "code": "CONFLICT",
+              "message": "Staff loan SGL-2027-000245 is being paid out (payout IN_DOUBT): the bank may already have paid it, so it can no longer be cancelled. Its status check settles it; if the bank confirms it was never booked, a SUPER_ADMIN records that with POST /lending/v1/staff-loans/245/payout/not-booked"
             }""";
 }

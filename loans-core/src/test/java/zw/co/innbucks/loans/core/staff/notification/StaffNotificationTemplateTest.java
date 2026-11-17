@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.notifications.SmsTextSanitizer;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
@@ -31,13 +32,30 @@ class StaffNotificationTemplateTest {
     }
 
     @Test
+    @DisplayName("a paid-out notice names the amount, where it was paid by its last four digits, the repayment day and"
+            + " the reference; a not-paid notice says nothing is owed")
+    void loanWording() {
+        assertThat(StaffNotificationTemplate.LOAN_PAID_OUT.paidOutText("USD", new BigDecimal("150"), "InnBucks wallet",
+                "3123", LocalDate.of(2026, 11, 20), "SGL-2026-000143"))
+                .isEqualTo("InnBucks paid your Staff Grocery Loan of USD 150.00 into your InnBucks wallet ending 3123."
+                        + " Repaid from your salary on 20 Nov 2026. Ref SGL-2026-000143");
+        assertThat(StaffNotificationTemplate.LOAN_NOT_PAID_OUT.notPaidOutText("SGL-2026-000143"))
+                .isEqualTo("InnBucks did not pay out your Staff Grocery Loan SGL-2026-000143, so it is cancelled and"
+                        + " nothing is owed. Log in to the InnBucks app for details.");
+    }
+
+    @Test
     @DisplayName("every wording passes the notification API unchanged and fits one 160-character SMS, even for a"
-            + " six-figure limit")
+            + " six-figure limit and the longest account label")
     void smsSafe() {
         for (StaffNotificationTemplate template : StaffNotificationTemplate.values()) {
-            String text = template.aboutAnOffer()
-                    ? template.offerText(new BigDecimal("999999.99"), LAPSES)
-                    : template.text();
+            String text = switch (template) {
+                case OFFER_NEW, OFFER_REFRESHED -> template.offerText(new BigDecimal("999999.99"), LAPSES);
+                case LOAN_PAID_OUT -> template.paidOutText("USD", new BigDecimal("99999.99"), "InnBucks account",
+                        "1234", LocalDate.of(2026, 12, 20), "SGL-2026-9999999");
+                case LOAN_NOT_PAID_OUT -> template.notPaidOutText("SGL-2026-9999999");
+                case LAUNCH -> template.text();
+            };
             assertThat(SmsTextSanitizer.toGsmSafe(text)).as(template + " is changed by the sanitiser").isEqualTo(text);
             assertThat(text.length()).as(template + " length").isLessThanOrEqualTo(160);
             assertThat(template.title()).isNotBlank().hasSizeLessThanOrEqualTo(120);
@@ -52,6 +70,24 @@ class StaffNotificationTemplateTest {
                 .containsExactly(StaffNotificationTemplate.OFFER_NEW, StaffNotificationTemplate.OFFER_REFRESHED);
         assertThatThrownBy(StaffNotificationTemplate.OFFER_NEW::text).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> StaffNotificationTemplate.LAUNCH.offerText(BigDecimal.ONE, LAPSES))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("a loan notice is about a loan, not an offer, and is worded only with its loan")
+    void loanNoticesAreNotOffers() {
+        assertThat(Arrays.stream(StaffNotificationTemplate.values()).filter(StaffNotificationTemplate::aboutALoan))
+                .containsExactly(StaffNotificationTemplate.LOAN_PAID_OUT, StaffNotificationTemplate.LOAN_NOT_PAID_OUT);
+        assertThat(StaffNotificationTemplate.LOAN_PAID_OUT.aboutAnOffer()).isFalse();
+        assertThat(StaffNotificationTemplate.LOAN_NOT_PAID_OUT.aboutAnOffer()).isFalse();
+        assertThat(StaffNotificationTemplate.LAUNCH.aboutALoan()).isFalse();
+        assertThatThrownBy(StaffNotificationTemplate.LOAN_PAID_OUT::text).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> StaffNotificationTemplate.LOAN_PAID_OUT.offerText(BigDecimal.ONE, LAPSES))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> StaffNotificationTemplate.LOAN_NOT_PAID_OUT.paidOutText("USD", BigDecimal.ONE,
+                "InnBucks wallet", "3123", LocalDate.of(2026, 11, 20), "SGL-2026-000143"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> StaffNotificationTemplate.LOAN_PAID_OUT.notPaidOutText("SGL-2026-000143"))
                 .isInstanceOf(IllegalStateException.class);
     }
 }

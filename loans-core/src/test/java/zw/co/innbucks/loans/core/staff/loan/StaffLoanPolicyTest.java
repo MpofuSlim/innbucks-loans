@@ -103,7 +103,7 @@ class StaffLoanPolicyTest {
         assertThat(terms).isEqualTo(new StaffLoanTerms.Signing("Chipo Banda", "E1012", "632223334C55",
                 "263773456789", "Treasury", new BigDecimal("300.00"), "USD", BigDecimal.ZERO,
                 new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries", 30,
-                UnredeemedVoucherTreatment.DEBT_STANDS.terms(), LocalDate.of(2026, 10, 1)));
+                UnredeemedVoucherTreatment.DEBT_STANDS.terms(), null, LocalDate.of(2026, 10, 1)));
         properties.setUnredeemedVoucherTreatment(UnredeemedVoucherTreatment.REDUCED_TO_AMOUNT_SPENT);
         assertThat(policy.signing(chipo, new BigDecimal("300"), LocalDate.of(2026, 10, 1), "Pick n Pay"))
                 .extracting(StaffLoanTerms.Signing::merchantName, StaffLoanTerms.Signing::unredeemedVoucherTerms)
@@ -117,7 +117,7 @@ class StaffLoanPolicyTest {
         StaffLoanTerms.Signing terms = new StaffLoanTerms.Signing("Chipo Banda", "E1012", "632223334C55",
                 "263773456789", "Treasury", new BigDecimal("300.00"), "USD", BigDecimal.ZERO,
                 new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries", 30,
-                UnredeemedVoucherTreatment.DEBT_STANDS.terms(), LocalDate.of(2026, 10, 1));
+                UnredeemedVoucherTreatment.DEBT_STANDS.terms(), null, LocalDate.of(2026, 10, 1));
 
         assertThat(StaffLoanTerms.render("I, {{ borrowerName }} ({{employeeNumber}}), borrow {{currency}} {{amount}}"
                 + " at {{interestRate}}% to spend at {{merchantName}} within {{voucherValidityDays}} days, and repay"
@@ -127,5 +127,77 @@ class StaffLoanPolicyTest {
                 + " expires, you still repay the full amount. Accepted 2026-10-01.");
         assertThat(StaffLoanTerms.placeholders()).containsKeys("borrowerName", "repaymentDate", "totalRepayable",
                 "unredeemedVoucherTerms").doesNotContainKeys("tenor", "monthlyInstalment");
+    }
+
+    // --- Paid in cash ---
+
+    private static StaffMember chipo(String walletAccountNumber) {
+        return StaffMember.builder().id(2L).employeeNumber("E1012").fullName("Chipo Banda")
+                .nationalId("632223334C55").msisdn("263773456789").department("Treasury").grade("C4")
+                .walletAccountNumber(walletAccountNumber).employmentStatus(StaffEmploymentStatus.ACTIVE).build();
+    }
+
+    private void cashInto(StaffLoanPayoutDestination destination) {
+        properties.getPayout().setMethod(StaffLoanPayoutMethod.CASH);
+        properties.getPayout().setDestination(destination);
+        properties.getPayout().setProduct("SGL01");
+    }
+
+    @Test
+    @DisplayName("paid by voucher (the default): nothing is paid into an account, so there is no payout target")
+    void voucherHasNoTarget() {
+        assertThat(policy.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.VOUCHER);
+        assertThat(policy.payoutTarget(chipo("1234567890"))).isEmpty();
+
+        properties.getPayout().setDestination(StaffLoanPayoutDestination.BR_ACCOUNT);
+        assertThat(policy.payoutTarget(chipo("1234567890"))).as("a destination alone does not make it cash")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("paid in cash into the wallet: the registered phone, the one the borrower proves with their PIN")
+    void walletTarget() {
+        cashInto(StaffLoanPayoutDestination.VEENGU_WALLET);
+
+        StaffLoanPolicy.PayoutTarget target = policy.payoutTarget(chipo("1234567890")).orElseThrow();
+
+        assertThat(target.destination()).isEqualTo(StaffLoanPayoutDestination.VEENGU_WALLET);
+        assertThat(target.account()).isEqualTo("263773456789");
+        assertThat(target.masked()).isEqualTo("****6789");
+        assertThat(target.last4()).isEqualTo("6789");
+        assertThat(target.named()).isEqualTo("InnBucks wallet ****6789");
+        assertThat(target.toString()).doesNotContain("263773456789").contains("****6789");
+    }
+
+    @Test
+    @DisplayName("paid in cash into the account: the register's account number, and none when it holds a wallet")
+    void accountTarget() {
+        cashInto(StaffLoanPayoutDestination.BR_ACCOUNT);
+
+        assertThat(policy.payoutTarget(chipo("1234567890"))).contains(
+                new StaffLoanPolicy.PayoutTarget(StaffLoanPayoutDestination.BR_ACCOUNT, "1234567890"));
+        assertThat(policy.payoutTarget(chipo("263773456789"))).as("a wallet is never taken for an account")
+                .isEmpty();
+        assertThat(policy.payoutTarget(chipo(null))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a cash loan's terms name the account by its last four digits, and nothing about a voucher")
+    void cashSigning() {
+        cashInto(StaffLoanPayoutDestination.BR_ACCOUNT);
+        StaffMember member = chipo("1234567890");
+        StaffLoanPolicy.PayoutTarget target = policy.payoutTarget(member).orElseThrow();
+
+        StaffLoanTerms.Signing terms = policy.signing(member, new BigDecimal("150"), LocalDate.of(2026, 10, 1), null,
+                target);
+
+        assertThat(terms).isEqualTo(new StaffLoanTerms.Signing("Chipo Banda", "E1012", "632223334C55",
+                "263773456789", "Treasury", new BigDecimal("150.00"), "USD", BigDecimal.ZERO,
+                new BigDecimal("150.00"), LocalDate.of(2026, 11, 20), null, 0, null, "InnBucks account ****7890",
+                LocalDate.of(2026, 10, 1)));
+        assertThat(policy.signing(member, new BigDecimal("150"), LocalDate.of(2026, 10, 1), "GetMore Groceries"))
+                .as("the voucher terms are unchanged by the setting").extracting(StaffLoanTerms.Signing::merchantName,
+                        StaffLoanTerms.Signing::voucherValidityDays, StaffLoanTerms.Signing::payoutAccount)
+                .containsExactly("GetMore Groceries", 30, null);
     }
 }

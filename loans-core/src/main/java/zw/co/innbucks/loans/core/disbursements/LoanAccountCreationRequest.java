@@ -86,6 +86,8 @@ public class LoanAccountCreationRequest {
     @JsonProperty("type")
     private String type;
 
+    /** The account a booking pays instead of the wallet: a merchant's, or a staff borrower's own. Never printed. */
+    @ToString.Exclude
     @JsonProperty("settlementAccount")
     private String settlementAccount;
 
