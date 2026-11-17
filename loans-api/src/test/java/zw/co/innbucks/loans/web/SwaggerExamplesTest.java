@@ -503,6 +503,18 @@ class SwaggerExamplesTest {
                         .isAfter(OffsetDateTime.parse(loan.path("payoutBankSeenAt").asString()));
             }
         }
+        for (Map.Entry<String, JsonNode> step : portal.entrySet()) {
+            // The bank books and answers in dollars, and an answer naming another amount is never recorded as paid
+            // (StaffLoanPayoutStatusService.echoMismatches): each bank answer shown must name the loan's own amount.
+            String answer = step.getValue().path("payoutLastAnswer").asString("");
+            if (answer.startsWith("{")) {
+                JsonNode echoed = JSON.readTree(answer).path("additionalData").path("loanDetails").path("amount");
+                if (!echoed.isMissingNode()) {
+                    assertThat(echoed.decimalValue()).as(step.getKey() + ": the bank's echoed amount, in dollars")
+                            .isEqualByComparingTo(step.getValue().path("amount").decimalValue());
+                }
+            }
+        }
         assertThat(portal.get("sent again").path("payoutLastAnswer"))
                 .as("Pay out sends the refused payout again, its refusal kept")
                 .isEqualTo(first.path("payoutLastAnswer"));
