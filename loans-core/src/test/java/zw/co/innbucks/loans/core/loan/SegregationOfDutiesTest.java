@@ -4,8 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.user.User;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +48,6 @@ class SegregationOfDutiesTest {
             + " phone, the wallet it pays or their phone on the register now, however either is written")
     void staffLoanParty() {
         StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").msisdn("263772123123")
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263772123123").build();
         StaffMember borrower = StaffMember.builder().id(2L).nationalId("632345678B42").msisdn("263773456789").build();
 
@@ -63,16 +60,6 @@ class SegregationOfDutiesTest {
                 .as("no register record: matched on the loan's numbers alone").isFalse();
         assertThat(SegregationOfDuties.isPartyTo(loan, borrower, null)).isFalse();
         assertThat(SegregationOfDuties.isPartyTo(loan, borrower, user(null, null))).isFalse();
-    }
-
-    @Test
-    @DisplayName("an account payout's account number is never matched against a phone")
-    void staffLoanAccountIsNotAPhone() {
-        StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").msisdn("263772123123")
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1771000000").build();
-
-        assertThat(SegregationOfDuties.isPartyTo(loan, null, user(null, "0771000000"))).isFalse();
     }
 
     private static User user(String idNumber, String mobile) {

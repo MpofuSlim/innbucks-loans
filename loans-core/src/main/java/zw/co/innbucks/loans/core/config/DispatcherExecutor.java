@@ -10,7 +10,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * The one-thread executor a dispatcher ({@code VoucherDeliveryDispatcher}, {@code StaffNotificationDispatcher}) sends
+ * The one-thread executor a dispatcher ({@code StaffNotificationDispatcher}, {@code StaffLoanPayoutDispatcher}) sends
  * on. It replaced {@code Executors.newSingleThreadExecutor()}, whose queue had no bound. Three things it adds:
  * <ul>
  *   <li><b>A bounded queue.</b> A task that does not fit is refused with {@link RejectedExecutionException}, which the

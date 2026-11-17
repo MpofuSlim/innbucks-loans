@@ -16,8 +16,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutBacklog;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanRepository;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus;
@@ -81,13 +79,17 @@ class StaffLoanPayoutQueriesPostgresIT {
         ids.put("failedRecently", loan("CANCELLED", failed(now.minusDays(2), null), now.minusDays(5)));
         ids.put("failedLongAgo", loan("CANCELLED", failed(now.minusDays(30), null), now.minusDays(40)));
         ids.put("paidAfterCancel", loan("CANCELLED", failed(now.minusDays(3), now.minusDays(1)), now.minusDays(5)));
-        ids.put("voucher", loan("AWAITING_DISBURSEMENT", Map.of(), now.minusDays(4)));
+        // Accepted before vouchers were withdrawn (and before V37 cancelled it): no payout.
+        Map<String, Object> noPayout = new LinkedHashMap<>();
+        noPayout.put("payout_method", "VOUCHER");
+        noPayout.put("payout_destination", null);
+        ids.put("voucher", loan("AWAITING_DISBURSEMENT", noPayout, now.minusDays(4)));
         ids.put("paid", loan("DISBURSED", with(with(cash("PAID"), "disbursed_at", now.minusDays(1)),
                 "disbursement_reference", "SGL-PAID"), now.minusDays(2)));
     }
 
     @Test
-    @DisplayName("each queue hands out exactly its own cash payouts, in id order above the cursor")
+    @DisplayName("each queue hands out exactly its own payouts, in id order above the cursor")
     void eachQueueHoldsItsOwn() {
         assertThat(loans.findPayoutReadyIds(0, CHUNK)).containsExactly(id("ready1"), id("ready2"));
         assertThat(loans.findPayoutReadyIds(id("ready1"), CHUNK)).containsExactly(id("ready2"));
@@ -111,7 +113,8 @@ class StaffLoanPayoutQueriesPostgresIT {
         List<String> sql = CapturedSql.statements();
         assertThat(sql).hasSize(4);
         for (String pending : sql.subList(0, 3)) {
-            assertThat(pending).contains("'CASH'", "'AWAITING_DISBURSEMENT'");
+            assertThat(pending.toLowerCase(java.util.Locale.ROOT)).contains("is not null", "'awaiting_disbursement'")
+                    .doesNotContain("'cash'");
         }
         assertThat(sql.get(0)).contains("'READY'");
         assertThat(sql.get(1)).contains("'BOOKED'", "'IN_DOUBT'");
@@ -120,8 +123,8 @@ class StaffLoanPayoutQueriesPostgresIT {
     }
 
     @Test
-    @DisplayName("a 2xx whose settle failed is recorded as seen by the bank, once, its version moved; never on a voucher"
-            + " loan")
+    @DisplayName("a 2xx whose settle failed is recorded as seen by the bank, once, its version moved; never on a loan"
+            + " with no payout")
     void markSeenByBank() {
         long sending = id("staleSending");
         long version = jdbc.queryForObject("SELECT version FROM staff_loans WHERE id = ?", Long.class, sending);
@@ -183,20 +186,30 @@ class StaffLoanPayoutQueriesPostgresIT {
     }
 
     @Test
-    @DisplayName("a cash loan's payout columns round-trip through the entity; a voucher loan reads as VOUCHER")
+    @DisplayName("a loan's payout columns round-trip through the entity; one accepted before vouchers were withdrawn has"
+            + " no payout")
     void theEntityReadsThePayout() {
         StaffLoan cash = new TransactionTemplate(transactionManager).execute(status ->
                 loans.lockById(id("inDoubt")).orElseThrow());
-        StaffLoan voucher = loans.findById(id("voucher")).orElseThrow();
+        StaffLoan legacy = loans.findById(id("voucher")).orElseThrow();
 
-        assertThat(cash.getPayoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-        assertThat(cash.getPayoutDestination()).isEqualTo(StaffLoanPayoutDestination.VEENGU_WALLET);
         assertThat(cash.getPayoutAccount()).isEqualTo(WALLET);
         assertThat(cash.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.IN_DOUBT);
         assertThat(cash.payoutInFlight()).isTrue();
-        assertThat(voucher.getPayoutMethod()).isEqualTo(StaffLoanPayoutMethod.VOUCHER);
-        assertThat(voucher.getPayoutStatus()).isNull();
+        assertThat(cash.hasPayout()).isTrue();
+        assertThat(legacy.hasPayout()).isFalse();
+        assertThat(legacy.getPayoutStatus()).isNull();
         assertThat(loans.findById(id("paidAfterCancel")).orElseThrow().getPayoutPaidAfterCancelAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("the queues' partial index has their predicate, now that they name no payout method (V37)")
+    void theQueuesIndexMatchesThem() {
+        String definition = jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname ="
+                + " 'idx_staff_loans_payout_pending'", String.class);
+
+        assertThat(definition).contains("payout_status IS NOT NULL").contains("'AWAITING_DISBURSEMENT'")
+                .doesNotContain("payout_method");
     }
 
     // --- fixtures --------------------------------------------------------------------------------------------------
@@ -210,8 +223,7 @@ class StaffLoanPayoutQueriesPostgresIT {
     }
 
     private static Map<String, Object> cash(String payout) {
-        return Map.of("payout_method", "CASH", "payout_destination", "VEENGU_WALLET", "payout_account", WALLET,
-                "payout_status", payout);
+        return Map.of("payout_account", WALLET, "payout_status", payout);
     }
 
     private Map<String, Object> failed(LocalDateTime failedAt, LocalDateTime paidAfterCancelAt) {
@@ -245,18 +257,11 @@ class StaffLoanPayoutQueriesPostgresIT {
                     VALUES (?, DATE '2026-10-26', 'G4', 'A', 1, 150.00, now(), now() + interval '7 days', 'TAKEN_UP',
                         now(), 'APPLY')
                     RETURNING id""", Long.class, member);
-            Long merchant = jdbc.query("SELECT id FROM merchants WHERE id = 990002",
-                    rs -> rs.next() ? rs.getLong(1) : null);
-            if (merchant == null) {
-                merchant = jdbc.queryForObject("INSERT INTO merchants (id, created_date, version) VALUES (990002,"
-                        + " now(), 0) RETURNING id", Long.class);
-            }
             StringBuilder names = new StringBuilder("reference, staff_member_id, offer_id, employee_number, full_name,"
-                    + " msisdn, grade, merchant_id, amount, currency, interest_rate, total_repayable, due_date,"
-                    + " unredeemed_voucher_treatment, status, accepted_at");
-            StringBuilder marks = new StringBuilder("?, ?, ?, ?, 'Chipo Banda', ?, 'G4', ?, 150.00, 'USD', 0, 150.00,"
-                    + " DATE '2026-11-20', 'DEBT_STANDS', ?, ?");
-            List<Object> values = new ArrayList<>(List.of("SGL-PAY-" + n, member, offer, "PAY" + n, WALLET, merchant,
+                    + " msisdn, grade, amount, currency, interest_rate, total_repayable, due_date, status, accepted_at");
+            StringBuilder marks = new StringBuilder("?, ?, ?, ?, 'Chipo Banda', ?, 'G4', 150.00, 'USD', 0, 150.00,"
+                    + " DATE '2026-11-20', ?, ?");
+            List<Object> values = new ArrayList<>(List.of("SGL-PAY-" + n, member, offer, "PAY" + n, WALLET,
                     status, Timestamp.valueOf(acceptedAt)));
             columns.forEach((column, value) -> {
                 names.append(", ").append(column);

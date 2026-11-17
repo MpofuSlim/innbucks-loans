@@ -34,7 +34,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static zw.co.innbucks.loans.core.voucher.VoucherSettlementService.cell;
 
 /**
  * The daily arrears and exception report for Credit and Human Capital (FR-SGL-045): every paid-out Staff Grocery Loan
@@ -56,7 +55,7 @@ public class StaffLoanArrearsService {
     static final int EMAIL_LINE_LIMIT = 200;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH);
     private static final String[] CSV_HEADER = {"reference", "employeeNumber", "fullName", "department",
-            "employmentStatus", "grade", "msisdn", "merchantCode", "status", "currency", "amount", "outstanding",
+            "employmentStatus", "grade", "msisdn", "status", "currency", "amount", "outstanding",
             "disbursedAt", "dueDate", "daysPastDue", "bucket", "inArrears", "escalated", "employmentFlag",
             "employmentFlagAction"};
 
@@ -106,7 +105,7 @@ public class StaffLoanArrearsService {
             out.append(String.join(",", cell(line.reference()), cell(line.employeeNumber()),
                             cell(line.fullName()), cell(line.department()),
                             line.employmentStatus() == null ? "" : line.employmentStatus().name(), cell(line.grade()),
-                            cell(line.msisdn()), cell(line.merchantCode()), line.status().name(), line.currency(),
+                            cell(line.msisdn()), line.status().name(), line.currency(),
                             line.amount().toPlainString(), line.outstanding().toPlainString(),
                             line.disbursedAt() == null ? "" : marketTimeZone.render(line.disbursedAt()),
                             line.dueDate().toString(), String.valueOf(line.daysPastDue()), line.bucket().name(),
@@ -174,7 +173,7 @@ public class StaffLoanArrearsService {
         return new StaffLoanArrearsReport.Line(loan.getId(), loan.getReference(), loan.getEmployeeNumber(),
                 loan.getFullName(), member == null ? null : member.getDepartment(),
                 member == null ? null : member.getEmploymentStatus(), loan.getGrade(),
-                MsisdnUtils.mask(loan.getMsisdn()), loan.getMerchant().getMerchantCode(), loan.getStatus(),
+                MsisdnUtils.mask(loan.getMsisdn()), loan.getStatus(),
                 loan.getCurrency(), loan.getAmount(), loan.outstanding(), loan.getDisbursedAt(), loan.getDueDate(),
                 daysPastDue, StaffLoanArrearsBucket.of(daysPastDue), loan.inArrearsOn(today, grace), escalated,
                 StaffLoanEmploymentFlag.of(loan));
@@ -276,5 +275,20 @@ public class StaffLoanArrearsService {
             };
         }
         return text + ".";
+    }
+
+    /**
+     * A field made safe for a spreadsheet: quoted when it holds a comma, quote or line break, and with a leading
+     * {@code = + - @} neutralised, so a value typed into the register cannot run as a formula when the file is opened.
+     */
+    static String cell(String value) {
+        if (value == null) {
+            return "";
+        }
+        String safe = !value.isEmpty() && "=+-@\t\r".indexOf(value.charAt(0)) >= 0 ? "'" + value : value;
+        if (safe.contains(",") || safe.contains("\"") || safe.contains("\n") || safe.contains("\r")) {
+            return "\"" + safe.replace("\"", "\"\"") + "\"";
+        }
+        return safe;
     }
 }

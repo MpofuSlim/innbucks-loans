@@ -52,7 +52,7 @@ public record StaffLoanArrearsReport(LocalDate asOf, LocalDateTime generatedAt, 
      * @param employmentFlag   set when the borrower is no longer ACTIVE
      */
     public record Line(Long staffLoanId, String reference, String employeeNumber, String fullName, String department,
-                       StaffEmploymentStatus employmentStatus, String grade, String msisdn, String merchantCode,
+                       StaffEmploymentStatus employmentStatus, String grade, String msisdn,
                        StaffLoanStatus status, String currency, BigDecimal amount, BigDecimal outstanding,
                        LocalDateTime disbursedAt, LocalDate dueDate, long daysPastDue, StaffLoanArrearsBucket bucket,
                        boolean inArrears, boolean escalated, StaffLoanEmploymentFlag employmentFlag) {

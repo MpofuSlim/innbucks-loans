@@ -254,7 +254,7 @@ public class StaffLoanPayoutService {
         // a leaver's loan) never interleave, and the member read below is the register as it now stands.
         memberRepository.lockRegister(StaffRegisterService.REGISTER_LOCK);
         StaffLoan loan = loanRepository.lockById(id).orElse(null);
-        if (loan == null || loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH
+        if (loan == null || !loan.hasPayout()
                 || loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT
                 || loan.getPayoutStatus() != StaffLoanPayoutStatus.READY) {
             log.info("Staff loan {} is not ready to pay out (claimed, settled or cancelled since); skipped", id);
@@ -302,14 +302,10 @@ public class StaffLoanPayoutService {
                     + " days away, too close to the repayment date. Credit should cancel this loan, or the borrower"
                     + " re-apply.";
         }
-        StaffLoanPayoutDestination destination = loan.getPayoutDestination();
-        String account = destination == null ? null : destination.accountOf(member);
-        if (account == null || !account.equals(loan.getPayoutAccount())) {
-            return "Not sent: the borrower's " + (destination == StaffLoanPayoutDestination.BR_ACCOUNT
-                    ? "account number" : "phone") + " on the staff register is no longer the "
-                    + (destination == null ? "account" : destination.label())
-                    + " they accepted this loan to be paid into. Credit should cancel this loan; the borrower may"
-                    + " re-apply.";
+        if (member == null || member.getMsisdn() == null || !member.getMsisdn().equals(loan.getPayoutAccount())) {
+            return "Not sent: the borrower's phone on the staff register is no longer the "
+                    + StaffLoanPolicy.PayoutTarget.LABEL + " they accepted this loan to be paid into. Credit should"
+                    + " cancel this loan; the borrower may re-apply.";
         }
         if (loanRepository.existsByStaffMemberIdAndPayoutPaidAfterCancelAtIsNotNull(loan.getStaffMemberId())) {
             return "Not sent: the bank holds a payout of this borrower's that was confirmed never booked. Settle that"
@@ -317,10 +313,6 @@ public class StaffLoanPayoutService {
         }
         if (isBlank(properties.getPayout().getProduct())) {
             return "Not sent: loans.staff-loans.payout.product (STAFF_LOANS_PAYOUT_PRODUCT) is not set.";
-        }
-        if (loanType(loan, properties.getPayout()) == null) {
-            return "Not sent: loans.staff-loans.payout.loan-type (STAFF_LOANS_PAYOUT_LOAN_TYPE) is not set, and a "
-                    + destination + " payout needs it.";
         }
         return null;
     }
@@ -365,7 +357,7 @@ public class StaffLoanPayoutService {
 
     /** A cash payout awaiting disbursement that the bank's inquiry settles: what a late 2xx can still be recorded on. */
     private static boolean heldForInquiry(StaffLoan loan) {
-        return loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH
+        return loan.hasPayout()
                 && loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
                 && loan.getPayoutStatus() != null && loan.getPayoutStatus().awaitsInquiry();
     }
@@ -389,7 +381,7 @@ public class StaffLoanPayoutService {
 
     /** Still this send's to settle: the loan carries this claim and is still being sent. */
     private static boolean holdsClaim(StaffLoan loan, Claim claim) {
-        return loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH
+        return loan.hasPayout()
                 && loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
                 && loan.getPayoutStatus() == StaffLoanPayoutStatus.SENDING
                 && claim.claimedAt().equals(loan.getPayoutClaimedAt());
@@ -470,18 +462,15 @@ public class StaffLoanPayoutService {
 
     /**
      * What the bank is sent for one loan: what the register, the loan and the settings hold, with {@code autoSettle} so
-     * the bank pays it out. A wallet payout names no {@code settlementAccount} (the bank finds the wallet by the phone
-     * the borrower proved). Personal details are sent only when staging's placeholders are on; otherwise every other
-     * field is left out. The participant reference is the loan's own, which the bank's inquiry is keyed by.
+     * the bank pays it out. It names no {@code settlementAccount}: the bank then finds the wallet by the phone
+     * ({@code msisdn}), as it confirmed, and that is the number the borrower proves with their PIN and the agreement
+     * names. The register's account number is never sent: the bank pays a named account first, and nobody proves that
+     * number, so a typo there would pay a stranger. Personal details are sent only when staging's placeholders are on;
+     * otherwise every other field is left out. The participant reference is the loan's own, which the bank's inquiry
+     * is keyed by.
      */
     static PreApprovedLoanBooking booking(StaffLoan loan, StaffMember member, StaffLoanProperties.Payout settings) {
         String[] names = names(loan.getFullName());
-        boolean account = loan.getPayoutDestination() == StaffLoanPayoutDestination.BR_ACCOUNT;
-        // A wallet payout names no account: the bank then finds the wallet by the phone (msisdn), as it confirmed,
-        // and that is the number the borrower proves with their PIN and the agreement names. The register's account
-        // number is never sent for one: the bank pays a named account first, and nobody proves that number, so a typo
-        // there would pay a stranger. An account payout names the account it was accepted for.
-        String settlementAccount = account ? loan.getPayoutAccount() : null;
         return new PreApprovedLoanBooking(
                 loan.getReference(),
                 names[0],
@@ -490,11 +479,11 @@ public class StaffLoanPayoutService {
                 loan.getAmount(),
                 loan.getCurrency(),
                 settings.getProduct() == null ? null : settings.getProduct().strip(),
-                loanType(loan, settings),
+                StaffLoanProperties.Payout.LOAN_TYPE,
                 TENURE_MONTHS,
-                // A wallet payout pays the wallet it was accepted for; an account payout names the borrower's phone.
-                account ? loan.getMsisdn() : loan.getPayoutAccount(),
-                settlementAccount,
+                // The wallet it was accepted for.
+                loan.getPayoutAccount(),
+                null,
                 isBlank(settings.getEmployerName()) ? null : settings.getEmployerName().strip(),
                 loan.getEmployeeNumber(),
                 member.getEngagementDate(),
@@ -514,15 +503,6 @@ public class StaffLoanPayoutService {
             msisdn -> new PreApprovedLoanBooking.PersonalDetails("TEST ADDRESS, HARARE", "01-01-1990", "M", "Harare",
                     new BigDecimal("1000"), "63-0000000A00", "TEST NEXT OF KIN", msisdn, "TEST ADDRESS, HARARE",
                     "Spouse");
-
-    /** The booking's {@code type}: the one set, else PERSONAL for a loan paid into a wallet; null when neither. */
-    static String loanType(StaffLoan loan, StaffLoanProperties.Payout settings) {
-        if (!isBlank(settings.getLoanType())) {
-            return settings.getLoanType().strip();
-        }
-        return loan.getPayoutDestination() == StaffLoanPayoutDestination.VEENGU_WALLET
-                ? StaffLoanProperties.Payout.PERSONAL : null;
-    }
 
     /** {first, last}: the last word is the surname, the rest the first names; one word is a surname alone. */
     static String[] names(String fullName) {

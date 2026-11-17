@@ -85,8 +85,6 @@ class StaffLoanPayoutServiceTest {
     };
 
     StaffLoanPayoutServiceTest() {
-        properties.getPayout().setMethod(StaffLoanPayoutMethod.CASH);
-        properties.getPayout().setDestination(StaffLoanPayoutDestination.VEENGU_WALLET);
         properties.getPayout().setProduct(" STAFFGROC ");
         service = new StaffLoanPayoutService(loans, members, properties, bank, metrics, audit,
                 new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC)), transactions);
@@ -107,9 +105,7 @@ class StaffLoanPayoutServiceTest {
                 .employeeNumber("E1012").fullName("Chipo  Rudo Banda").msisdn("263772123123").grade("C4")
                 .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 29, 7, 50))
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263772123123").payoutStatus(payout)
                 .payoutClaimedAt(payout == StaffLoanPayoutStatus.SENDING ? CLAIMED_AT.minusMinutes(5) : null);
     }
@@ -340,8 +336,9 @@ class StaffLoanPayoutServiceTest {
     }
 
     @Test
-    @DisplayName("a voucher loan, a cancelled one, or one that is gone is never sent")
-    void neverAVoucherLoan() {
+    @DisplayName("a loan with no payout (accepted before vouchers were withdrawn), a cancelled one, or one that is gone"
+            + " is never sent")
+    void neverWithoutAPayout() {
         loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(2L)
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
         assertThat(service.payOut(143L)).isEqualTo(Outcome.SKIPPED);
@@ -391,26 +388,6 @@ class StaffLoanPayoutServiceTest {
     }
 
     @Test
-    @DisplayName("an account payout whose register account changed, or now holds a wallet: HELD; the same account: sent"
-            + " to it")
-    void heldWhenTheAccountChanged() {
-        properties.getPayout().setLoanType("CONSUMER_FINANCE");
-        loan = cashLoan(StaffLoanPayoutStatus.READY).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1234567890").build();
-        member.setWalletAccountNumber("1234567891");
-        assertHeld("account number on the staff register is no longer");
-
-        loan = cashLoan(StaffLoanPayoutStatus.READY).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1234567890").build();
-        member.setWalletAccountNumber("263772123123");
-        assertHeld("account number on the staff register is no longer");
-
-        member.setWalletAccountNumber("1234567890");
-        assertThat(service.payOut(143L)).isEqualTo(Outcome.BOOKED);
-        assertThat(sent().settlementAccount()).isEqualTo("1234567890");
-    }
-
-    @Test
     @DisplayName("a borrower the bank was found to have paid for a cancelled loan is not paid again: HELD")
     void heldAfterPaidAfterCancel() {
         when(loans.existsByStaffMemberIdAndPayoutPaidAfterCancelAtIsNotNull(2L)).thenReturn(true);
@@ -419,16 +396,10 @@ class StaffLoanPayoutServiceTest {
     }
 
     @Test
-    @DisplayName("no product, or an account payout with no loan type: HELD, never sent half-made")
+    @DisplayName("no product: HELD, never sent half-made")
     void heldWithoutSettings() {
         properties.getPayout().setProduct("");
         assertHeld("loans.staff-loans.payout.product");
-
-        properties.getPayout().setProduct("STAFFGROC");
-        loan = cashLoan(StaffLoanPayoutStatus.READY).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1234567890").build();
-        member.setWalletAccountNumber("1234567890");
-        assertHeld("loans.staff-loans.payout.loan-type");
     }
 
     private void assertHeld(String why) {
@@ -652,21 +623,18 @@ class StaffLoanPayoutServiceTest {
     }
 
     @Test
-    @DisplayName("an account payout names the account to settle into and the borrower's phone; a blank employer is"
-            + " left out")
-    void accountBooking() {
-        properties.getPayout().setLoanType(" CONSUMER_FINANCE ");
+    @DisplayName("a wallet payout names no account to settle into, whatever the register holds as one: the bank finds"
+            + " the wallet by the phone the borrower proved; a blank employer is left out")
+    void walletBookingNamesNoAccount() {
         properties.getPayout().setEmployerName(" ");
-        loan = cashLoan(StaffLoanPayoutStatus.READY).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1234567890").build();
         member.setWalletAccountNumber("1234567890");
 
         service.payOut(143L);
 
         PreApprovedLoanBooking booking = sent();
-        assertThat(booking.settlementAccount()).isEqualTo("1234567890");
+        assertThat(booking.settlementAccount()).isNull();
         assertThat(booking.msisdn()).isEqualTo("263772123123");
-        assertThat(booking.loanType()).isEqualTo("CONSUMER_FINANCE");
+        assertThat(booking.loanType()).isEqualTo("PERSONAL");
         assertThat(booking.employer()).isNull();
     }
 

@@ -27,9 +27,9 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
 
     /**
      * Paid-out loans not recovered in full on {@code today} (FR-SGL-045): written off; or still DISBURSED and past their
-     * due date, or with a borrower no longer ACTIVE. With their merchant.
+     * due date, or with a borrower no longer ACTIVE.
      */
-    @Query("select l from StaffLoan l join fetch l.merchant where l.status = :writtenOff or (l.status = :disbursed"
+    @Query("select l from StaffLoan l where l.status = :writtenOff or (l.status = :disbursed"
             + " and (l.dueDate < :today or l.employmentFlag is not null))")
     List<StaffLoan> findNotRecovered(@Param("today") LocalDate today,
                                      @Param("disbursed") StaffLoanStatus disbursed,
@@ -57,13 +57,13 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
     List<Long> findIdsByStaffMemberIdAndStatusIn(@Param("staffMemberId") Long staffMemberId,
                                                  @Param("statuses") Collection<StaffLoanStatus> statuses);
 
-    // The cash payout queues. Each repeats the literals of idx_staff_loans_payout_pending (or _failed), so the planner
-    // can prove it against the index predicate; each is a keyset chunk for IdChunks: the ids above {@code after}.
+    // The payout queues. Each repeats the predicate of idx_staff_loans_payout_pending (or _failed), so the planner can
+    // prove it against the index; each is a keyset chunk for IdChunks: the ids above {@code after}.
 
     /** Cash payouts READY to send, oldest first: a chunk above {@code after}. */
     @Query("""
             select l.id from StaffLoan l
-            where l.payoutMethod = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod.CASH
+            where l.payoutStatus is not null
               and l.status = zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus.AWAITING_DISBURSEMENT
               and l.payoutStatus = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus.READY
               and l.id > :after
@@ -74,7 +74,7 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
     /** Cash payouts the bank's inquiry settles, BOOKED or IN_DOUBT, oldest first: a chunk above {@code after}. */
     @Query("""
             select l.id from StaffLoan l
-            where l.payoutMethod = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod.CASH
+            where l.payoutStatus is not null
               and l.status = zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus.AWAITING_DISBURSEMENT
               and l.payoutStatus in (zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus.BOOKED,
                                      zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus.IN_DOUBT)
@@ -89,7 +89,7 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
      */
     @Query("""
             select l.id from StaffLoan l
-            where l.payoutMethod = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod.CASH
+            where l.payoutStatus is not null
               and l.status = zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus.AWAITING_DISBURSEMENT
               and l.payoutStatus = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus.SENDING
               and l.payoutClaimedAt < :cutoff
@@ -120,7 +120,7 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
             select new zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutBacklog(
                 l.payoutStatus, count(l), min(l.acceptedAt), min(l.payoutClaimedAt))
             from StaffLoan l
-            where l.payoutMethod = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod.CASH
+            where l.payoutStatus is not null
               and l.status = zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus.AWAITING_DISBURSEMENT
             group by l.payoutStatus
             """)
@@ -138,7 +138,7 @@ public interface StaffLoanRepository extends JpaRepository<StaffLoan, Long>, Jpa
             update StaffLoan l
             set l.payoutBankSeenAt = :at, l.payoutApplyAnswer = :answer, l.version = l.version + 1
             where l.id = :id
-              and l.payoutMethod = zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod.CASH
+              and l.payoutStatus is not null
               and l.payoutBankSeenAt is null
             """)
     int markPayoutSeenByBank(@Param("id") Long id, @Param("at") LocalDateTime at, @Param("answer") String answer);

@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.innbucks.loans.core.staff.loan.CancelStaffLoanRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDetailResponse;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutNotBookedRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutPaidRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutRequests;
@@ -42,13 +41,11 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff Grocery Loans", description = "Staff Grocery Loans accepted in the SuperApp, for Credit, Finance"
         + " and Human Capital: each with the terms accepted and the agreement it was accepted under, with its evidence"
-        + " (device, address, how it was authenticated). How a loan is paid out was decided when it was accepted"
-        + " (payoutMethod CASH; a voucher loan carries no payoutMethod). A voucher loan awaits disbursement through"
-        + " the bank's system. A CASH loan is booked with"
-        + " the bank as a pre-approved loan and paid into the borrower's own account (payoutDestination,"
-        + " payoutAccount) as soon as it is accepted, never twice: payoutStatus says where that stands, payoutMessage"
-        + " why, and Finance sends it again, asks the bank about it, or records what the bank said here. Credit can"
-        + " cancel a loan until it is paid out, but never a cash payout the bank may have taken. A borrower who stops"
+        + " (device, address, how it was authenticated). Each loan is booked with the bank as a pre-approved loan and"
+        + " paid into the borrower's InnBucks wallet (payoutAccount) as soon as it is accepted, never twice:"
+        + " payoutStatus says where that stands, payoutMessage why, and Finance sends it again, asks the bank about"
+        + " it, or records what the bank said here. Credit can cancel a loan until it is paid out, but never one whose"
+        + " payout the bank may have taken. A borrower who stops"
         + " being ACTIVE on the register has theirs cancelled at once; once it is paid out, it is flagged instead"
         + " (employmentFlag) and Human Capital and Payroll, or Credit, are emailed.")
 @RestController
@@ -73,10 +70,10 @@ public class StaffLoanController {
                     + " Capital and the Payroll mailboxes were emailed), CREDIT_TO_DECIDE when they are SUSPENDED or"
                     + " on UNPAID_LEAVE (Credit was emailed). It clears when they are ACTIVE again. flagged=true lists"
                     + " only those. arrearsOverrideId is set on a loan accepted under Credit's arrears override"
-                    + " (FR-SGL-014), when the borrower owed a written-off loan. A CASH loan carries its payout:"
+                    + " (FR-SGL-014), when the borrower owed a written-off loan. Each loan carries its payout:"
                     + " payoutStatus READY (to be sent), SENDING (being sent), BOOKED (the bank took it), IN_DOUBT (it"
                     + " may or may not have been booked: never sent again, settled by the bank's inquiry or a person),"
-                    + " REFUSED (the bank said no: nothing was booked), PAID (in the borrower's account, the loan"
+                    + " REFUSED (the bank said no: nothing was booked), PAID (in the borrower's wallet, the loan"
                     + " DISBURSED), FAILED (confirmed never booked, the loan CANCELLED) or WITHDRAWN (cancelled before"
                     + " anything was booked); payoutMessage says why it stands there, payoutApplyAnswer is the bank's"
                     + " answer to the booking and payoutLastAnswer its last answer (account, ID and phone numbers"
@@ -84,9 +81,8 @@ public class StaffLoanController {
                     + " inquiry first said it holds nothing under the reference, payoutDeclinedAt when it first held it"
                     + " in a declined status (REJECTED, CANCELLED, FAILED), payoutCheckedAt when its inquiry last"
                     + " answered, and bankLoanAccount the bank's own loan account by its last four characters. A payout"
-                    + " field with no value is left out, and a voucher loan carries none of them (not even"
-                    + " payoutMethod), exactly as before. payoutStatus and payoutMethod (VOUCHER or CASH) filter the"
-                    + " list.")
+                    + " field with no value is left out (a loan accepted before vouchers were withdrawn has none)."
+                    + " payoutStatus filters the list.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "All", value = StaffLoanApiExamples.STAFF_LOANS),
@@ -109,15 +105,13 @@ public class StaffLoanController {
             @Parameter(description = "true: only loans flagged for a borrower no longer ACTIVE; false: only those not",
                     example = "true")
             @RequestParam(required = false) Boolean flagged,
-            @Parameter(description = "Only cash loans whose payout is in this status", example = "IN_DOUBT")
+            @Parameter(description = "Only loans whose payout is in this status", example = "IN_DOUBT")
             @RequestParam(required = false) StaffLoanPayoutStatus payoutStatus,
-            @Parameter(description = "Only loans paid out this way: VOUCHER or CASH", example = "CASH")
-            @RequestParam(required = false) StaffLoanPayoutMethod payoutMethod,
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100", example = "20")
             @RequestParam(required = false) Integer size) {
         return ApiResult.ok(PageResponse.from(loanService.loans(status, employeeNumber, flagged, payoutStatus,
-                payoutMethod, Paging.of(page, size))));
+                Paging.of(page, size))));
     }
 
     @Operation(summary = "A Staff Grocery Loan",
@@ -142,9 +136,9 @@ public class StaffLoanController {
 
     @Operation(summary = "Cancel a loan before payout",
             description = "CREDIT_MANAGER or SUPER_ADMIN. Stops a loan still awaiting disbursement, with the reason;"
-                    + " nothing was paid, so nothing is owed. The borrower may apply again. A CASH loan can be stopped"
-                    + " only while nothing was booked for it (payoutStatus READY, or REFUSED by the bank): its payout"
-                    + " is WITHDRAWN and the borrower is told it was not paid out. One SENDING, BOOKED or IN_DOUBT is"
+                    + " nothing was paid, so nothing is owed. The borrower may apply again. A loan can be stopped only"
+                    + " while nothing was booked for it (payoutStatus READY, or REFUSED by the bank): its payout is"
+                    + " WITHDRAWN and the borrower is told it was not paid out. One SENDING, BOOKED or IN_DOUBT is"
                     + " refused: the bank may already have paid it.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cancelled",
@@ -164,8 +158,8 @@ public class StaffLoanController {
                     content = @Content(examples = @ExampleObject(ApiExamples.FORBIDDEN))),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.NOT_FOUND_143))),
-            @ApiResponse(responseCode = "409", description = "Paid out, already closed, or a cash payout the bank may"
-                    + " have taken", content = @Content(examples = {
+            @ApiResponse(responseCode = "409", description = "Paid out, already closed, or a payout the bank may have"
+                    + " taken", content = @Content(examples = {
                     @ExampleObject(name = "Closed", value = StaffLoanApiExamples.CANCEL_CONFLICT),
                     @ExampleObject(name = "Payout in flight", value = StaffLoanApiExamples.CANCEL_CONFLICT_PAYOUT)}))
     })
@@ -178,8 +172,8 @@ public class StaffLoanController {
         return ApiResult.ok(loanService.cancel(staffLoanId, request.reason()));
     }
 
-    @Operation(summary = "Pay out a cash loan now",
-            description = "FINANCE or SUPER_ADMIN. Sends one CASH loan's payout to the bank: one READY (not yet sent,"
+    @Operation(summary = "Pay out a loan now",
+            description = "FINANCE or SUPER_ADMIN. Sends one loan's payout to the bank: one READY (not yet sent,"
                     + " or held: payoutMessage says why), or one the bank REFUSED, which becomes READY again under the"
                     + " same reference (a refusal proves nothing was booked). Answers at once with the loan as it was"
                     + " queued, READY: the payout is sent on its own thread once this request has committed, and may"
@@ -198,7 +192,7 @@ public class StaffLoanController {
                             @ExampleObject(name = "Their own loan", value = StaffLoanApiExamples.PAYOUT_SEND_PARTY)})),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.NOT_FOUND_245))),
-            @ApiResponse(responseCode = "409", description = "Not a cash payout READY or REFUSED",
+            @ApiResponse(responseCode = "409", description = "Not a payout READY or REFUSED",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.PAYOUT_SEND_CONFLICT))),
             @ApiResponse(responseCode = "503", description = "The payout queue is full: it is READY, and nothing was"
                     + " sent", content = @Content(examples = @ExampleObject(StaffLoanApiExamples.PAYOUT_QUEUE_FULL)))
@@ -211,8 +205,8 @@ public class StaffLoanController {
         return new ApiResult<>("ACCEPTED", "Payout of " + loan.reference() + " queued", loan);
     }
 
-    @Operation(summary = "Pay all ready cash loans",
-            description = "FINANCE or SUPER_ADMIN. Queues one pass over every CASH loan whose payout is READY, oldest"
+    @Operation(summary = "Pay all ready loans",
+            description = "FINANCE or SUPER_ADMIN. Queues one pass over every loan whose payout is READY, oldest"
                     + " first, and answers at once with how many. Payouts are sent as each loan is accepted; this sends"
                     + " what a restart, a full queue or a bank that could not be reached left READY (there is no sweep"
                     + " at boot, so press it after a restart). The pass stops at the first payout that is not sent,"
@@ -241,9 +235,9 @@ public class StaffLoanController {
                 + " left for someone else"), pass);
     }
 
-    @Operation(summary = "Ask the bank about a cash payout now",
+    @Operation(summary = "Ask the bank about a payout now",
             description = "CREDIT_MANAGER, FINANCE or SUPER_ADMIN. What the status job does every few minutes, for one"
-                    + " CASH loan, at once: asks the bank's inquiry about a payout it took (BOOKED), may have taken"
+                    + " loan, at once: asks the bank's inquiry about a payout it took (BOOKED), may have taken"
                     + " (IN_DOUBT), or was recorded as never booked within the watch window, and records the answer."
                     + " Paid (paid-statuses), and the answer names this loan's reference, amount and account where it"
                     + " carries them (one it leaves out is not checked; one that differs holds it BOOKED): PAID, the"
@@ -280,8 +274,8 @@ public class StaffLoanController {
         return ApiResult.ok(loanService.summary(staffLoanId));
     }
 
-    @Operation(summary = "Record a cash payout as paid, on the bank's word",
-            description = "FINANCE or SUPER_ADMIN. For a CASH payout the bank took (BOOKED) or may have taken"
+    @Operation(summary = "Record a payout as paid, on the bank's word",
+            description = "FINANCE or SUPER_ADMIN. For a payout the bank took (BOOKED) or may have taken"
                     + " (IN_DOUBT) whose inquiry cannot say it is paid, once the bank has confirmed it another way:"
                     + " PAID, the loan DISBURSED, and the borrower told. Give the bank's reference for the payment and"
                     + " a note of how it was confirmed (kept as its hash). Nothing is sent to the bank. Nobody may"
@@ -299,7 +293,7 @@ public class StaffLoanController {
                             @ExampleObject(name = "Their own loan", value = StaffLoanApiExamples.PAYOUT_PAID_PARTY)})),
             @ApiResponse(responseCode = "404", description = "No such loan",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.NOT_FOUND_245))),
-            @ApiResponse(responseCode = "409", description = "Not a cash payout BOOKED or IN_DOUBT",
+            @ApiResponse(responseCode = "409", description = "Not a payout BOOKED or IN_DOUBT",
                     content = @Content(examples = @ExampleObject(StaffLoanApiExamples.PAYOUT_PAID_CONFLICT)))
     })
     @PostMapping("/{staffLoanId}/payout/paid")
@@ -313,9 +307,9 @@ public class StaffLoanController {
         return ApiResult.ok(loanService.summary(staffLoanId));
     }
 
-    @Operation(summary = "Record a cash payout as never booked",
+    @Operation(summary = "Record a payout as never booked",
             description = "SUPER_ADMIN only. Once the bank has confirmed it never paid the loan: FAILED, the loan"
-                    + " CANCELLED, and the borrower told; they may borrow again. Only for a CASH payout whose inquiry"
+                    + " CANCELLED, and the borrower told; they may borrow again. Only for a payout whose inquiry"
                     + " has said so for at least not-booked-min-age (24 hours) and still says so (its last answer,"
                     + " payoutCheckedAt, no older than twice status-check-interval: press status-check first), either"
                     + " way: IN_DOUBT, the bank has never said it holds it (no 2xx to its booking either), and its"

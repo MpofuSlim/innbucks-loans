@@ -156,26 +156,6 @@ class WorkflowStageServiceTest {
     }
 
     @Test
-    @DisplayName("the voucher roles, MERCHANT_TILL and VOUCHER_SUPPORT, get no loan stage and no escalation")
-    void voucherRolesRefused() {
-        when(repository.findById("CREDIT_DECISION"))
-                .thenReturn(Optional.of(WorkflowFixtures.creditDecision(AssignmentMode.OPTIONAL)));
-
-        for (UserGroup role : List.of(UserGroup.MERCHANT_TILL, UserGroup.VOUCHER_SUPPORT)) {
-            assertThatThrownBy(() -> service.update("CREDIT_DECISION",
-                    tightened().workRoles(Set.of(role)).build()))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage(role + " works on grocery vouchers and cannot be given a loan workflow stage");
-            assertThatThrownBy(() -> service.update("CREDIT_DECISION",
-                    tightened().escalateTo(Set.of(role)).build()))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("Escalations cannot be sent to " + role);
-        }
-        verify(repository, never()).save(any());
-        verifyNoInteractions(auditService);
-    }
-
-    @Test
     @DisplayName("an escalation point before the target is refused")
     void escalationBeforeTarget() {
         when(repository.findById("CREDIT_DECISION"))

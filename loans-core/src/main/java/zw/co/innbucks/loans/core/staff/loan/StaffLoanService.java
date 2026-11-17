@@ -62,12 +62,11 @@ public class StaffLoanService {
 
     /**
      * Loans, newest first, optionally of one status, one employee number, only those flagged (true) or not (false)
-     * for a borrower no longer ACTIVE, one payout status (cash loans only), and one way of paying out.
+     * for a borrower no longer ACTIVE, and one payout status.
      */
     @Transactional(readOnly = true)
     public Page<StaffLoanResponse> loans(StaffLoanStatus status, String employeeNumber, Boolean flagged,
-                                         StaffLoanPayoutStatus payoutStatus, StaffLoanPayoutMethod payoutMethod,
-                                         Pageable pageable) {
+                                         StaffLoanPayoutStatus payoutStatus, Pageable pageable) {
         Specification<StaffLoan> filter = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
@@ -75,9 +74,6 @@ public class StaffLoanService {
             }
             if (payoutStatus != null) {
                 predicates.add(cb.equal(root.get("payoutStatus"), payoutStatus));
-            }
-            if (payoutMethod != null) {
-                predicates.add(cb.equal(root.get("payoutMethod"), payoutMethod));
             }
             if (flagged != null) {
                 predicates.add(flagged ? cb.isNotNull(root.get("employmentFlag"))
@@ -110,7 +106,7 @@ public class StaffLoanService {
 
     /**
      * A loan as the list shows it, read as it stands now: what an action on its payout answers with, once that action
-     * has committed. Read in a transaction of its own, as it names its merchant.
+     * has committed. Read in a transaction of its own.
      *
      * @throws NotFoundException no such loan
      */
@@ -244,7 +240,7 @@ public class StaffLoanService {
                 .actorId(by).channelUsed(channel)
                 .detail("reference:" + loan.getReference() + ";reason:" + reason));
         log.info("Staff loan {} of {} cancelled by {}: {}", loan.getReference(), loan.getEmployeeNumber(), by, reason);
-        if (loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH) {
+        if (loan.hasPayout()) {
             notificationService.notifyLoan(loan, StaffNotificationTemplate.LOAN_NOT_PAID_OUT,
                     StaffNotificationTemplate.LOAN_NOT_PAID_OUT.notPaidOutText(loan.getReference()));
         }

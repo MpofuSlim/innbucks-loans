@@ -94,22 +94,6 @@ class MerchantServiceTest {
     }
 
     @Test
-    @DisplayName("the Staff Grocery Loan's merchant cannot be switched to paying the borrower; other edits still work")
-    void staffLoanMerchantKeepsBeingPaid() {
-        Merchant merchant = existing(DisbursementType.MERCHANT_MOBILE_WALLET, "0771234521");
-        merchant.setStaffLoanMerchant(true);
-
-        assertThatThrownBy(() -> service.updateMerchant("acme",
-                update(DisbursementType.CUSTOMER_MOBILE_WALLET, null), "admin"))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageStartingWith("Merchant acme is the Staff Grocery Loan's merchant");
-        verify(merchantRepository, never()).save(any());
-
-        service.updateMerchant("acme", update(DisbursementType.MERCHANT_MOBILE_WALLET, "0771999888"), "admin");
-        assertThat(merchant.getAccountNumber()).isEqualTo("0771999888");
-    }
-
-    @Test
     @DisplayName("an edit that leaves the payee alone writes no payee audit")
     void unchangedPayeeIsNotAudited() {
         existing(DisbursementType.MERCHANT_MOBILE_WALLET, "263771111111");

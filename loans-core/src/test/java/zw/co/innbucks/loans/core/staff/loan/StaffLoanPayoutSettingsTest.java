@@ -23,9 +23,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The cash payout's settings (loans.staff-loans.payout) as the application binds them, and what refuses to start. The
- * default, VOUCHER, is the behaviour before the cash payout existed and needs nothing else set; CASH is refused at boot
- * unless everything a booking needs is there, so a misconfigured cell fails at deploy rather than on a borrower.
+ * The payout's settings (loans.staff-loans.payout) as the application binds them, and what refuses to start. Every
+ * Staff Grocery Loan is paid into the borrower's InnBucks wallet through the bank, so a deployment refuses to start
+ * unless everything a booking needs is there: a misconfigured cell fails at deploy rather than on a borrower.
  */
 class StaffLoanPayoutSettingsTest {
 
@@ -35,10 +35,6 @@ class StaffLoanPayoutSettingsTest {
             "innbucks.create-loan-account-endpoint=https://bank.test/bank/api/loan/apply/pre-approved",
             "innbucks.loan-inquiry-endpoint=https://bank.test/bank/api/loan/inquiry/{participantReference}"};
 
-    private static final String[] CASH_TO_WALLET = {
-            "loans.staff-loans.payout.method=CASH", "loans.staff-loans.payout.destination=VEENGU_WALLET",
-            "loans.staff-loans.payout.product=STAFFGROC"};
-
     @Configuration
     @EnableConfigurationProperties({StaffLoanProperties.class, InnbucksParameters.class, BorrowerProperties.class,
             HttpClientConfig.class})
@@ -46,7 +42,9 @@ class StaffLoanPayoutSettingsTest {
     static class Config {
     }
 
-    private final ApplicationContextRunner runner = new ApplicationContextRunner().withUserConfiguration(Config.class);
+    /** No profile: a deployment, as a container started without SPRING_PROFILES_ACTIVE is. */
+    private final ApplicationContextRunner bare = new ApplicationContextRunner().withUserConfiguration(Config.class);
+    private final ApplicationContextRunner runner = bare.withPropertyValues(INNBUCKS);
 
     private ListAppender<ILoggingEvent> logged;
 
@@ -63,17 +61,14 @@ class StaffLoanPayoutSettingsTest {
     }
 
     @Test
-    @DisplayName("the defaults: VOUCHER, as before; nothing else needed, not even the InnBucks credentials")
-    void defaultsAreVoucher() {
+    @DisplayName("the defaults: product GETMOR, booked PERSONAL; with the InnBucks credentials it starts and says how"
+            + " loans are paid")
+    void defaults() {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
             StaffLoanProperties.Payout payout = context.getBean(StaffLoanProperties.class).getPayout();
-            assertThat(payout.getMethod()).isEqualTo(StaffLoanPayoutMethod.VOUCHER);
-            assertThat(payout.cash()).isFalse();
-            assertThat(payout.getDestination()).isNull();
-            assertThat(payout.getProduct()).isEmpty();
-            assertThat(payout.getLoanType()).isNull();
-            assertThat(payout.effectiveLoanType()).isNull();
+            assertThat(payout.getProduct()).isEqualTo("GETMOR");
+            assertThat(StaffLoanProperties.Payout.LOAN_TYPE).isEqualTo("PERSONAL");
             assertThat(payout.getEmployerName()).isEqualTo("InnBucks MicroBank");
             assertThat(payout.getStaleClaimMinutes()).isEqualTo(30);
             assertThat(payout.getStatusCheckInterval()).isEqualTo(Duration.ofMinutes(3));
@@ -85,112 +80,58 @@ class StaffLoanPayoutSettingsTest {
             assertThat(payout.getBusinessLine()).isEqualTo("Services");
             assertThat(payout.getLoanPurpose()).isEqualTo("Groceries");
             assertThat(payout.isTestPlaceholders()).isFalse();
+            assertThat(context.getBean(StaffLoanProperties.class).getMinimumDraw()).isEqualByComparingTo("20.00");
         });
-        assertThat(messages(Level.INFO)).anyMatch(m -> m.contains("paid by voucher"));
+        assertThat(messages(Level.INFO)).anyMatch(m -> m.contains("paid into the borrower's InnBucks wallet")
+                && m.contains("GETMOR") && m.contains("PERSONAL"));
         assertThat(messages(Level.ERROR)).isEmpty();
     }
 
     @Test
-    @DisplayName("blank values, as the cell's env file writes an unset key: a blank destination and loan type are unset")
-    void blankValuesAreUnset() {
-        runner.withPropertyValues("loans.staff-loans.payout.destination=", "loans.staff-loans.payout.loan-type=",
-                "loans.staff-loans.payout.product=").run(context -> {
+    @DisplayName("a product set elsewhere is used; a blank one refuses to start, naming the setting")
+    void product() {
+        runner.withPropertyValues("loans.staff-loans.payout.product=STAFFGROC").run(context -> {
             assertThat(context).hasNotFailed();
-            StaffLoanProperties.Payout payout = context.getBean(StaffLoanProperties.class).getPayout();
-            assertThat(payout.getDestination()).isNull();
-            assertThat(payout.effectiveLoanType()).isNull();
+            assertThat(context.getBean(StaffLoanProperties.class).getPayout().getProduct()).isEqualTo("STAFFGROC");
         });
-    }
-
-    @Test
-    @DisplayName("a blank method is the default, VOUCHER: the binder leaves a blank enum unset, never CASH")
-    void aBlankMethodIsVoucher() {
-        runner.withPropertyValues("loans.staff-loans.payout.method=").run(context -> {
-            assertThat(context).hasNotFailed();
-            assertThat(context.getBean(StaffLoanProperties.class).getPayout().getMethod())
-                    .isEqualTo(StaffLoanPayoutMethod.VOUCHER);
-        });
-        runner.withPropertyValues("loans.staff-loans.payout.method=CHEQUE")
-                .run(context -> assertThat(context).hasFailed());
-    }
-
-    @Test
-    @DisplayName("CASH to a wallet with the InnBucks credentials starts; its type is PERSONAL unless set")
-    void cashToAWalletStarts() {
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS).run(context -> {
-            assertThat(context).hasNotFailed();
-            StaffLoanProperties.Payout payout = context.getBean(StaffLoanProperties.class).getPayout();
-            assertThat(payout.cash()).isTrue();
-            assertThat(payout.effectiveLoanType()).isEqualTo("PERSONAL");
-        });
-        assertThat(messages(Level.INFO)).anyMatch(m -> m.contains("paid in cash into the borrower's InnBucks wallet")
-                && m.contains("STAFFGROC") && m.contains("PERSONAL"));
-        assertThat(messages(Level.ERROR)).isEmpty();
-    }
-
-    @Test
-    @DisplayName("CASH without a destination, or without a product, refuses to start, naming the setting")
-    void cashNeedsADestinationAndAProduct() {
-        runner.withPropertyValues("loans.staff-loans.payout.method=CASH", "loans.staff-loans.payout.product=STAFFGROC")
-                .withPropertyValues(INNBUCKS).run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure()).rootCause()
-                            .hasMessageContaining("loans.staff-loans.payout.method CASH needs"
-                                    + " loans.staff-loans.payout.destination");
-                });
-        runner.withPropertyValues("loans.staff-loans.payout.method=CASH",
-                        "loans.staff-loans.payout.destination=VEENGU_WALLET", "loans.staff-loans.payout.product= ")
-                .withPropertyValues(INNBUCKS).run(context -> assertThat(context).hasFailed());
-    }
-
-    @Test
-    @DisplayName("CASH to an account needs its loan type set: what the bank books an account payout as is undecided")
-    void cashToAnAccountNeedsALoanType() {
-        runner.withPropertyValues("loans.staff-loans.payout.method=CASH",
-                        "loans.staff-loans.payout.destination=BR_ACCOUNT", "loans.staff-loans.payout.product=STAFFGROC")
-                .withPropertyValues(INNBUCKS).run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure()).rootCause()
-                            .hasMessageContaining("BR_ACCOUNT needs loans.staff-loans.payout.loan-type");
-                });
-        runner.withPropertyValues("loans.staff-loans.payout.method=CASH",
-                        "loans.staff-loans.payout.destination=BR_ACCOUNT", "loans.staff-loans.payout.product=STAFFGROC",
-                        "loans.staff-loans.payout.loan-type=CONSUMER_FINANCE")
-                .withPropertyValues(INNBUCKS).run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(StaffLoanProperties.class).getPayout().effectiveLoanType())
-                            .isEqualTo("CONSUMER_FINANCE");
-                });
-    }
-
-    @Test
-    @DisplayName("a loan type the bank does not take is refused")
-    void anUnknownLoanTypeIsRefused() {
-        runner.withPropertyValues("loans.staff-loans.payout.loan-type=MORTGAGE").run(context -> {
+        assertThat(messages(Level.INFO)).anyMatch(m -> m.contains("STAFFGROC"));
+        runner.withPropertyValues("loans.staff-loans.payout.product= ").run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).rootCause()
-                    .hasMessageContaining("loans.staff-loans.payout.loan-type must be PERSONAL or CONSUMER_FINANCE");
+                    .hasMessageContaining("loans.staff-loans.payout.product is required");
         });
     }
 
     @Test
-    @DisplayName("CASH without the InnBucks credentials refuses to start, naming each one missing")
-    void cashNeedsTheInnbucksCredentials() {
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("innbucks.api-key=", "innbucks.password= ").run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure()).rootCause().isInstanceOf(IllegalStateException.class)
-                            .hasMessageContaining("innbucks.api-key (INNBUCKS_API_KEY)")
-                            .hasMessageContaining("innbucks.password (INNBUCKS_PASSWORD)")
-                            .hasMessageNotContaining("innbucks.username");
-                });
+    @DisplayName("a deployment without the InnBucks credentials refuses to start, naming each one missing")
+    void aDeploymentNeedsTheInnbucksCredentials() {
+        runner.withPropertyValues("innbucks.api-key=", "innbucks.password= ").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).rootCause().isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("innbucks.api-key (INNBUCKS_API_KEY)")
+                    .hasMessageContaining("innbucks.password (INNBUCKS_PASSWORD)")
+                    .hasMessageNotContaining("innbucks.username");
+        });
+        bare.withPropertyValues("spring.profiles.active=api").run(context -> assertThat(context)
+                .as("the cell's own profile is a deployment").hasFailed());
     }
 
     @Test
-    @DisplayName("CASH with an inquiry endpoint that does not name the reference refuses to start")
-    void cashNeedsTheInquiryToNameTheReference() {
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("innbucks.loan-inquiry-endpoint=https://bank.test/bank/api/loan/inquiry")
+    @DisplayName("a local or test run without them starts, and says at ERROR that nothing can be paid out")
+    void aTestRunWithoutThemStarts() {
+        for (String profile : new String[]{"test", "it", "local", "dev"}) {
+            logged.list.clear();
+            bare.withPropertyValues("spring.profiles.active=api," + profile)
+                    .run(context -> assertThat(context).as(profile).hasNotFailed());
+            assertThat(messages(Level.ERROR)).as(profile).singleElement().asString()
+                    .contains("innbucks.api-key (INNBUCKS_API_KEY)", "no Staff Grocery Loan can be paid out");
+        }
+    }
+
+    @Test
+    @DisplayName("an inquiry endpoint that does not name the reference refuses to start")
+    void theInquiryMustNameTheReference() {
+        runner.withPropertyValues("innbucks.loan-inquiry-endpoint=https://bank.test/bank/api/loan/inquiry")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure()).rootCause()
@@ -199,37 +140,20 @@ class StaffLoanPayoutSettingsTest {
     }
 
     @Test
-    @DisplayName("CASH with staging's test assertions on starts, and says at ERROR that anyone with the key is paid")
-    void cashWithTestAssertionsIsShouted() {
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("loans.borrower.test-assertions.enabled=true")
+    @DisplayName("staging's test assertions on: it starts, and says at ERROR that anyone with the key is paid")
+    void testAssertionsAreShouted() {
+        runner.withPropertyValues("loans.borrower.test-assertions.enabled=true")
                 .run(context -> assertThat(context).hasNotFailed());
 
         assertThat(messages(Level.ERROR)).anyMatch(m -> m.contains("test-assertions.enabled"));
     }
 
     @Test
-    @DisplayName("the staging placeholders start, and are said at ERROR on every boot, with CASH or VOUCHER alike: a"
-            + " cell that has them on must not wait for the switch to CASH to say so")
+    @DisplayName("the staging placeholders start, and are said at ERROR on every boot")
     void testPlaceholdersAreShouted() {
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("loans.staff-loans.payout.test-placeholders=true")
-                .run(context -> assertThat(context).hasNotFailed());
-        assertThat(messages(Level.ERROR)).singleElement().asString().contains("test-placeholders", "FAKE");
-
-        logged.list.clear();
         runner.withPropertyValues("loans.staff-loans.payout.test-placeholders=true")
                 .run(context -> assertThat(context).hasNotFailed());
         assertThat(messages(Level.ERROR)).singleElement().asString().contains("test-placeholders", "FAKE");
-    }
-
-    @Test
-    @DisplayName("VOUCHER never looks at the InnBucks credentials, or the test assertions")
-    void voucherIgnoresTheBank() {
-        runner.withPropertyValues("loans.borrower.test-assertions.enabled=true",
-                "loans.staff-loans.payout.destination=BR_ACCOUNT").run(context -> assertThat(context).hasNotFailed());
-
-        assertThat(messages(Level.ERROR)).isEmpty();
     }
 
     @Test
@@ -261,24 +185,19 @@ class StaffLoanPayoutSettingsTest {
     }
 
     @Test
-    @DisplayName("CASH refuses to start with stale-claim-minutes shorter than a booking can take (two logins and two"
-            + " posts at the http.client timeouts); VOUCHER does not look")
+    @DisplayName("stale-claim-minutes shorter than a booking can take (two logins and two posts at the http.client"
+            + " timeouts) refuses to start")
     void staleClaimMustOutlastABooking() {
         assertThat(StaffLoanPayoutBootCheck.longestBooking(new HttpClientConfig())).as("10s + 60s: 2 x 70s + 2 x 72s")
                 .hasSeconds(284);
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=4")
+        runner.withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=4")
                 .run(context -> assertThat(context).hasFailed().getFailure().rootCause()
                         .hasMessageContaining("stale-claim-minutes").hasMessageContaining("284s")
                         .hasMessageContaining("at least 5"));
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=5")
+        runner.withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=5")
                 .run(context -> assertThat(context).hasNotFailed());
-        runner.withPropertyValues(CASH_TO_WALLET).withPropertyValues(INNBUCKS)
-                .withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=5", "http.client.read-timeout=120000")
+        runner.withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=5", "http.client.read-timeout=120000")
                 .run(context -> assertThat(context).as("a longer read timeout needs a longer hold").hasFailed());
-        runner.withPropertyValues("loans.staff-loans.payout.stale-claim-minutes=1")
-                .run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test
@@ -291,7 +210,7 @@ class StaffLoanPayoutSettingsTest {
         runner.withPropertyValues("loans.staff-loans.payout.min-days-before-due=32")
                 .run(context -> assertThat(context).hasFailed());
         runner.withPropertyValues("loans.staff-loans.payout.min-days-before-due=0",
-                "loans.staff-loans.payout.status-check-interval=PT30S")
+                "loans.staff-loans.payout.status-check-interval=PT30S", "loans.staff-loans.payout.stale-claim-minutes=5")
                 .run(context -> assertThat(context).hasNotFailed());
     }
 

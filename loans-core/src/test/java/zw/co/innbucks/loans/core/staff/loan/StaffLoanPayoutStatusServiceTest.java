@@ -87,8 +87,6 @@ class StaffLoanPayoutStatusServiceTest {
     private InquiryAnswer answer = found("SETTLED");
 
     StaffLoanPayoutStatusServiceTest() {
-        properties.getPayout().setMethod(StaffLoanPayoutMethod.CASH);
-        properties.getPayout().setDestination(StaffLoanPayoutDestination.VEENGU_WALLET);
         properties.getPayout().setProduct("STAFFGROC");
         when(loans.findById(143L)).thenAnswer(i -> Optional.ofNullable(loan));
         when(loans.lockById(143L)).thenAnswer(i -> Optional.ofNullable(loan));
@@ -105,9 +103,7 @@ class StaffLoanPayoutStatusServiceTest {
                 .offerId(31L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263772123123").grade("C4")
                 .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 29, 7, 0))
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263772123123").payoutStatus(payout);
         if (payout == StaffLoanPayoutStatus.SENDING) {
             builder.payoutClaimedAt(NOW.minusMinutes(31));
@@ -248,7 +244,7 @@ class StaffLoanPayoutStatusServiceTest {
             assertThat(entry.getActorId()).isEqualTo(StaffLoanPayoutStatusService.SYSTEM_ACTOR);
             assertThat(entry.getChannelUsed()).isEqualTo("system");
             assertThat(entry.getDetail()).isEqualTo("reference:" + REFERENCE + ";amount:150.00;currency:USD;"
-                    + "destination:VEENGU_WALLET;account:****3123;bankLoanAccount:****0001;bankStatus:SETTLED;"
+                    + "account:****3123;bankLoanAccount:****0001;bankStatus:SETTLED;"
                     + "via:inquiry");
         });
         verify(loanService, never()).flagEmploymentAtPayout(any(), any(), any(), any());
@@ -305,18 +301,6 @@ class StaffLoanPayoutStatusServiceTest {
         answer = echoing(REFERENCE, null, "0772123123", null);
 
         assertThat(service.check(143L)).isEqualTo(Checked.PAID);
-    }
-
-    @Test
-    @DisplayName("an account payout's answer that echoes the borrower's phone and no account is PAID: the phone is"
-            + " checked against the borrower's, never against the account")
-    void accountPayoutEchoingThePhone() {
-        loan = cashLoan(StaffLoanPayoutStatus.BOOKED).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount("1234567890").build();
-        answer = echoing(REFERENCE, new BigDecimal("150"), "263772123123", null);
-
-        assertThat(service.check(143L)).isEqualTo(Checked.PAID);
-        assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
     }
 
     @Test
@@ -405,9 +389,8 @@ class StaffLoanPayoutStatusServiceTest {
     }
 
     @Test
-    @DisplayName("where it paid is read by the destination: a wallet by the echoed phone (a settlementAccount is not"
-            + " read), an account by the echoed settlementAccount, its phone by the borrower's")
-    void accountEchoesByDestination() {
+    @DisplayName("where it paid is read by the echoed phone; a settlementAccount echoed beside it is not read")
+    void walletEchoedByPhone() {
         StaffLoan wallet = cashLoan(StaffLoanPayoutStatus.BOOKED).build();
         assertThat(StaffLoanPayoutStatusService.echoMismatches(wallet, echoing(null, null, "+263 772 123 123", null)))
                 .isEmpty();
@@ -415,17 +398,8 @@ class StaffLoanPayoutStatusServiceTest {
                 .containsExactly("account");
         assertThat(StaffLoanPayoutStatusService.echoMismatches(wallet, echoing(null, null, "263772123123",
                 "WALLET-77001"))).as("the wallet's own internal account is not the payout's").isEmpty();
-
-        StaffLoan account = cashLoan(StaffLoanPayoutStatus.BOOKED)
-                .payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT).payoutAccount("1234567890").build();
-        assertThat(StaffLoanPayoutStatusService.echoMismatches(account, echoing(null, null, null, "12-3456-7890")))
-                .isEmpty();
-        assertThat(StaffLoanPayoutStatusService.echoMismatches(account, echoing(null, null, null, "001234567890")))
-                .containsExactly("account");
-        assertThat(StaffLoanPayoutStatusService.echoMismatches(account, echoing(null, null, "263772123123", null)))
-                .as("the borrower's phone, echoed and no account: nothing to compare the account with").isEmpty();
-        assertThat(StaffLoanPayoutStatusService.echoMismatches(account, echoing(null, null, "263782606983",
-                "1234567890"))).containsExactly("phone");
+        assertThat(StaffLoanPayoutStatusService.echoMismatches(wallet, echoing(null, null, null, "1234567890")))
+                .as("no phone echoed: nothing to compare the wallet with").isEmpty();
     }
 
     @Test
@@ -593,8 +567,9 @@ class StaffLoanPayoutStatusServiceTest {
     }
 
     @Test
-    @DisplayName("a voucher loan, or one that is gone, is never asked about")
-    void voucherNotAskedAbout() {
+    @DisplayName("a loan with no payout (accepted before vouchers were withdrawn), or one that is gone, is never asked"
+            + " about")
+    void noPayoutNotAskedAbout() {
         loan = StaffLoan.builder().id(143L).reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
         assertThat(service.check(143L)).isEqualTo(Checked.SKIPPED);
         loan = null;
@@ -683,12 +658,12 @@ class StaffLoanPayoutStatusServiceTest {
     }
 
     @Test
-    @DisplayName("check now on a voucher loan is 409, on no loan 404")
-    void checkNowVoucherOrMissing() {
+    @DisplayName("check now on a loan with no payout is 409, on no loan 404")
+    void checkNowNoPayoutOrMissing() {
         loan = StaffLoan.builder().id(143L).reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
         assertThatThrownBy(() -> service.checkNow(143L, "finance1"))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Staff loan " + REFERENCE + " is a voucher loan: it has no payout for the bank to report"
+                .hasMessage("Staff loan " + REFERENCE + " was accepted before vouchers were withdrawn: it has no payout for the bank to report"
                         + " on");
         loan = null;
         assertThatThrownBy(() -> service.checkNow(143L, "finance1"))
@@ -873,14 +848,14 @@ class StaffLoanPayoutStatusServiceTest {
     }
 
     @Test
-    @DisplayName("confirm paid: an unknown loan is 404, a voucher loan 409, a blank bank reference or note 400")
+    @DisplayName("confirm paid: an unknown loan is 404, one with no payout 409, a blank bank reference or note 400")
     void confirmPaidOtherwiseRefused() {
         loan = null;
         assertThatThrownBy(() -> service.confirmPaid(143L, "BR-1", "note", FINANCE))
                 .isInstanceOf(NotFoundException.class);
         loan = StaffLoan.builder().id(143L).reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT).build();
         assertThatThrownBy(() -> service.confirmPaid(143L, "BR-1", "note", FINANCE))
-                .isInstanceOf(ConflictException.class).hasMessageContaining("voucher loan");
+                .isInstanceOf(ConflictException.class).hasMessageContaining("accepted before vouchers were withdrawn");
         assertThatThrownBy(() -> service.confirmPaid(143L, " ", "note", FINANCE))
                 .isInstanceOf(ValidationException.class).hasMessage("bankReference is required");
         assertThatThrownBy(() -> service.confirmPaid(143L, "BR-1", null, FINANCE))

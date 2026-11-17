@@ -69,8 +69,7 @@ public final class ApiExamples {
                 "physicalAddress": "45 Kenneth Kaunda Ave, Harare",
                 "contactPersonName": "Farai Ndlovu",
                 "contactPersonMobileNumber": "+263772100200",
-                "contactPersonEmail": "farai@hararemotors.co.zw",
-                "staffLoanMerchant": false
+                "contactPersonEmail": "farai@hararemotors.co.zw"
               }""";
 
     public static final String AGENT_USER = """

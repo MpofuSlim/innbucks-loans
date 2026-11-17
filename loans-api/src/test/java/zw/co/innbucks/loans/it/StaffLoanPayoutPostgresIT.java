@@ -83,8 +83,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * security chain, and the bank stood in for by WireMock: the borrower accepts in the SuperApp's endpoints; the payout
  * is sent once the acceptance commits, on the payout thread; the bank's answer settles it; Finance's endpoints send a
  * refused one again under the same reference, ask the bank, and a SUPER_ADMIN records one never booked. On the way,
- * a payout the bank may hold is never sent again and never cancelled, nobody acts on their own loan, and every
- * endpoint renders the loan's LAZY merchant (open-in-view is off) without a LazyInitializationException.
+ * a payout the bank may hold is never sent again and never cancelled, and nobody acts on their own loan.
  *
  * <p>The status job is replaced: its first run would be two minutes after boot, and these tests ask the bank
  * themselves, through the operators' "check now".
@@ -100,7 +99,6 @@ class StaffLoanPayoutPostgresIT {
     private static final String APPLY = "/bank/api/loan/apply/pre-approved";
     private static final String INQUIRY = "/bank/api/loan/inquiry/";
     private static final String TEST_ASSERTIONS_KEY = "it-test-assertions-key-0123456789abcdefgh";
-    private static final String MERCHANT_NAME = "GetMore Groceries";
     private static final String AGREEMENT = "STAFF GROCERY LOAN AGREEMENT\n\nI, {{borrowerName}}, employee number"
             + " {{employeeNumber}}, borrow {{currency}} {{amount}} from InnBucks Microfinance Bank at {{interestRate}}%"
             + " interest, paid into my {{payoutAccount}}. I will repay {{currency}} {{totalRepayable}}, collected from"
@@ -131,8 +129,6 @@ class StaffLoanPayoutPostgresIT {
         registry.add("innbucks.api-key", () -> "it-innbucks-api-key");
         registry.add("innbucks.username", () -> "it-innbucks-user");
         registry.add("innbucks.password", () -> "it-innbucks-password");
-        registry.add("loans.staff-loans.payout.method", () -> "CASH");
-        registry.add("loans.staff-loans.payout.destination", () -> "VEENGU_WALLET");
         registry.add("loans.staff-loans.payout.product", () -> "STAFFGROC");
         // Whatever day the test runs on, the loan's repayment date is near enough to pay.
         registry.add("loans.staff-loans.payout.min-days-before-due", () -> "0");
@@ -180,9 +176,6 @@ class StaffLoanPayoutPostgresIT {
                     .title("Staff Grocery Loan Agreement").body(AGREEMENT).publishedBy("it-admin")
                     .publishedAt(LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS)).build());
         }
-        if (merchantRepository.findByStaffLoanMerchantTrue().isEmpty()) {
-            merchantRepository.save(merchant("getmore-groceries", MERCHANT_NAME, true));
-        }
         if (gradeLimitRepository.findGradesByStatus(StaffGradeLimitChangeStatus.APPROVED).isEmpty()) {
             LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
             gradeLimitRepository.save(StaffGradeLimitChange.builder().grade("C4").scoreBand("All")
@@ -203,7 +196,6 @@ class StaffLoanPayoutPostgresIT {
 
         JsonNode accepted = accept(chipo);
         assertThat(accepted.path("status").asString()).isEqualTo("AWAITING_DISBURSEMENT");
-        assertThat(accepted.path("payoutMethod").asString()).isEqualTo("CASH");
         assertThat(accepted.path("payoutAccount").asString()).isEqualTo("****6789");
         assertThat(accepted.path("statusMessage").asString())
                 .isEqualTo("Your loan is approved. USD 150.00 is being paid into your InnBucks wallet ending 6789.");
@@ -252,8 +244,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(paid.path("payoutApplyAnswer").asString()).as("the booking's answer, kept apart")
                 .contains("Loan application received");
         assertThat(checked.body()).doesNotContain("263773456789");
-        assertThat(paid.path("merchantName").asString()).as("the LAZY merchant, read in its transaction")
-                .isEqualTo(MERCHANT_NAME);
+        assertThat(paid.has("merchantName")).isFalse();
         assertThat(notices(id)).containsExactly("LOAN_PAID_OUT");
 
         // Settled: not asked about again, not sent again, and the borrower told once.
@@ -267,15 +258,15 @@ class StaffLoanPayoutPostgresIT {
         assertThat(tile.path("status").asString()).isEqualTo("DISBURSED");
         assertThat(tile.path("statusMessage").asString())
                 .startsWith("USD 150.00 was paid into your InnBucks wallet ending 6789.");
-        assertThat(tile.path("voucher").isNull()).isTrue();
+        assertThat(tile.has("voucher")).isFalse();
 
-        JsonNode listed = data(send(finance(), getFrom(BASE + "/staff-loans?payoutMethod=CASH&payoutStatus=PAID")));
+        JsonNode listed = data(send(finance(), getFrom(BASE + "/staff-loans?payoutStatus=PAID")));
         List<String> references = new java.util.ArrayList<>();
         listed.path("items").forEach(item -> references.add(item.path("reference").asString()));
         assertThat(references).contains(reference);
         HttpResponse<String> detail = send(finance(), getFrom(BASE + "/staff-loans/" + id));
         assertThat(detail.statusCode()).as(detail.body()).isEqualTo(200);
-        assertThat(data(detail).path("loan").path("merchantName").asString()).isEqualTo(MERCHANT_NAME);
+        assertThat(data(detail).path("loan").has("merchantName")).isFalse();
         assertThat(data(detail).path("agreement").path("content").asString())
                 .contains("paid into my InnBucks wallet ****6789");
     }
@@ -316,7 +307,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(sent.statusCode()).as(sent.body()).isEqualTo(202);
         assertThat(json.readTree(sent.body()).path("code").asString()).isEqualTo("ACCEPTED");
         assertThat(data(sent).path("reference").asString()).isEqualTo(reference);
-        assertThat(data(sent).path("merchantName").asString()).isEqualTo(MERCHANT_NAME);
+        assertThat(data(sent).has("merchantName")).isFalse();
 
         awaitPayout(id, "BOOKED");
         assertThat(applies(tendai)).hasSize(2).allSatisfy(apply -> assertThat(json.readTree(apply.getBodyAsString())
@@ -379,7 +370,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(data(checked).path("payoutStatus").asString()).isEqualTo("IN_DOUBT");
         assertThat(data(checked).path("payoutNotFoundAt").asString()).isNotEmpty();
         assertThat(data(checked).path("payoutCheckedAt").asString()).isNotEmpty();
-        assertThat(data(checked).path("merchantName").asString()).isEqualTo(MERCHANT_NAME);
+        assertThat(data(checked).has("merchantName")).isFalse();
 
         HttpResponse<String> tooSoon = send(admin(), postJson(BASE + "/staff-loans/" + id + "/payout/not-booked",
                 note));
@@ -414,7 +405,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(failed.path("status").asString()).isEqualTo("CANCELLED");
         assertThat(failed.path("cancelledBy").asString()).isEqualTo("it-admin");
         assertThat(failed.path("payoutFailedAt").asString()).isNotEmpty();
-        assertThat(failed.path("merchantName").asString()).isEqualTo(MERCHANT_NAME);
+        assertThat(failed.has("merchantName")).isFalse();
         assertThat(notices(id)).containsExactly("LOAN_NOT_PAID_OUT");
         assertThat(applies(rudo)).as("never sent again").hasSize(1);
 
@@ -442,8 +433,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(paid.path("status").asString()).isEqualTo("DISBURSED");
         assertThat(paid.path("disbursementReference").asString()).isEqualTo(reference);
         assertThat(paid.path("payoutBankSeenAt").asString()).isNotEmpty();
-        assertThat(paid.path("merchantName").asString()).as("the LAZY merchant, read in its transaction")
-                .isEqualTo(MERCHANT_NAME);
+        assertThat(paid.has("merchantName")).isFalse();
         assertThat(notices(id)).containsExactly("LOAN_PAID_OUT");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_logs WHERE event_type ="
                 + " 'STAFF_LOAN_PAYOUT_CONFIRMED_PAID' AND entity_id = ?", Integer.class, String.valueOf(id)))
@@ -465,7 +455,7 @@ class StaffLoanPayoutPostgresIT {
         assertThat(cancelled.statusCode()).as(cancelled.body()).isEqualTo(200);
         assertThat(data(cancelled).path("status").asString()).isEqualTo("CANCELLED");
         assertThat(data(cancelled).path("payoutStatus").asString()).isEqualTo("WITHDRAWN");
-        assertThat(data(cancelled).path("merchantName").asString()).isEqualTo(MERCHANT_NAME);
+        assertThat(data(cancelled).has("merchantName")).isFalse();
         assertThat(notices(unsentId)).containsExactly("LOAN_NOT_PAID_OUT");
     }
 
@@ -510,7 +500,7 @@ class StaffLoanPayoutPostgresIT {
     }
 
     @Test
-    @DisplayName("the portal's list of cash loans costs the same at 3 more loans as at 12, each with its own merchant")
+    @DisplayName("the portal's list of loans costs the same at 3 more loans as at 12")
     void theListCostsTheSameAtAnySize() throws Exception {
         Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
         assertThat(stats.isStatisticsEnabled()).as("hibernate.generate_statistics in the it profile").isTrue();
@@ -519,8 +509,7 @@ class StaffLoanPayoutPostgresIT {
         seedBooked(4, 12);
         long atTwelve = listStatements(stats, 12);
 
-        assertThat(atTwelve).as("each loan's merchant is read in one batch, never one query per loan")
-                .isEqualTo(atThree);
+        assertThat(atTwelve).as("never one query per loan").isEqualTo(atThree);
     }
 
     @Test
@@ -543,31 +532,29 @@ class StaffLoanPayoutPostgresIT {
     /** Statements the portal's list of cash loans costs, with at least {@code seeded} of the seeded loans on it. */
     private long listStatements(Statistics stats, int seeded) throws Exception {
         stats.clear();
-        HttpResponse<String> listed = send(finance(), getFrom(BASE + "/staff-loans?payoutMethod=CASH&size=100"));
+        HttpResponse<String> listed = send(finance(), getFrom(BASE + "/staff-loans?size=100"));
         long statements = stats.getPrepareStatementCount();
         assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
-        List<String> merchants = new java.util.ArrayList<>();
-        data(listed).path("items").forEach(item -> merchants.add(item.path("merchantName").asString()));
-        assertThat(merchants.stream().filter(name -> name.startsWith("Seeded merchant")).count())
+        List<String> references = new java.util.ArrayList<>();
+        data(listed).path("items").forEach(item -> references.add(item.path("reference").asString()));
+        assertThat(references.stream().filter(reference -> reference.startsWith("SGL-2099-")).count())
                 .isEqualTo(seeded);
         return statements;
     }
 
-    /** Cash loans BOOKED, numbered {@code from} to {@code to}, each of a borrower and merchant of its own. */
+    /** Loans BOOKED, numbered {@code from} to {@code to}, each of a borrower of its own. */
     private void seedBooked(int from, int to) {
         for (int n = from; n <= to; n++) {
             String msisdn = String.format("2637750000%02d", n);
             Borrower borrower = borrower(String.format("E9%03d", n), msisdn, String.format("6390%05dZ99", n));
-            Merchant merchant = merchantRepository.save(merchant("seeded-" + n, "Seeded merchant " + n, false));
             jdbc.update("""
                     INSERT INTO staff_loans (reference, staff_member_id, offer_id, employee_number, full_name, msisdn,
-                        grade, merchant_id, amount, currency, interest_rate, total_repayable, due_date,
-                        unredeemed_voucher_treatment, status, accepted_at, payout_method, payout_destination,
+                        grade, amount, currency, interest_rate, total_repayable, due_date, status, accepted_at,
                         payout_account, payout_status, payout_bank_seen_at)
-                    VALUES (?, ?, ?, ?, 'Seeded borrower', ?, 'C4', ?, 150.00, 'USD', 0, 150.00, CURRENT_DATE + 20,
-                        'DEBT_STANDS', 'AWAITING_DISBURSEMENT', now(), 'CASH', 'VEENGU_WALLET', ?, 'BOOKED', now())""",
+                    VALUES (?, ?, ?, ?, 'Seeded borrower', ?, 'C4', 150.00, 'USD', 0, 150.00, CURRENT_DATE + 20,
+                        'AWAITING_DISBURSEMENT', now(), ?, 'BOOKED', now())""",
                     String.format("SGL-2099-%06d", n), borrower.memberId(), borrower.offerId(),
-                    borrower.employeeNumber(), msisdn, merchant.getId(), msisdn);
+                    borrower.employeeNumber(), msisdn, msisdn);
         }
     }
 
@@ -580,8 +567,8 @@ class StaffLoanPayoutPostgresIT {
                 "{\"offerId\":" + borrower.offerId() + ",\"amount\":150.00}"));
         assertThat(quoted.statusCode()).as(quoted.body()).isEqualTo(200);
         JsonNode quote = data(quoted);
-        assertThat(quote.path("payoutMethod").asString()).isEqualTo("CASH");
-        assertThat(quote.path("merchantName").isNull()).isTrue();
+        assertThat(quote.path("payoutAccount").asString()).isEqualTo("****" + borrower.msisdn().substring(8));
+        assertThat(quote.has("merchantName") || quote.has("payoutMethod")).isFalse();
         JsonNode agreement = quote.path("agreement");
         HttpResponse<String> accepted = send(token, postJson(JOURNEY + "/loans", """
                 {"offerId":%d,"amount":150.00,"agreementVersion":%d,"agreementSha256":"%s","assertion":"%s"}"""
@@ -662,12 +649,13 @@ class StaffLoanPayoutPostgresIT {
         return new Borrower(member.getId(), employeeNumber, msisdn, nationalId, offer.getId());
     }
 
-    private Merchant merchant(String code, String name, boolean staffLoans) {
-        return Merchant.builder().merchantCode(code).companyName(name)
+    /** The merchant the portal's users belong to: every user names one. */
+    private Merchant portalMerchant() {
+        return Merchant.builder().merchantCode("it-portal").companyName("IT portal")
                 .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).accountNumber("263771000001")
                 .commissionGroup(commissionGroupRepository.findByNameIgnoreCase(StartupTask.ZERO_BASED_DEFAULT)
                         .orElseThrow())
-                .commissionStructure(CommissionStructure.MERCHANT_DEFINED).staffLoanMerchant(staffLoans).build();
+                .commissionStructure(CommissionStructure.MERCHANT_DEFINED).build();
     }
 
     private User user(String username, UserGroup group, String idNumber, String mobile) {
@@ -679,7 +667,7 @@ class StaffLoanPayoutPostgresIT {
             user.setLastName(username);
             user.setGroups(new java.util.HashSet<>(Set.of(group)));
             user.setMerchant(merchantRepository.findByMerchantCode("it-portal")
-                    .orElseGet(() -> merchantRepository.save(merchant("it-portal", "IT portal", false))));
+                    .orElseGet(() -> merchantRepository.save(portalMerchant())));
             user.setIdNumber(idNumber);
             user.setMobileNumber(mobile);
             user.setTemporaryPassword(false);

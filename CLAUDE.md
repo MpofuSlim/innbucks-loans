@@ -138,7 +138,7 @@ log pattern in `loans-core/src/main/resources/logback.xml`.
   bean `TracingConfig.traceContextTaskDecorator()` to it — a
   `ContextPropagatingTaskDecorator` scoped to the OBSERVATION only, because the
   default one also snapshots Spring Security's context and would hand the
-  caller's authentication to the notification threads. The voucher and staff
+  caller's authentication to the notification threads. The payout and staff
   notification dispatchers run on their own `DispatcherExecutor`s, which pass
   every task through the context's unique `TaskDecorator` (that same bean, the
   way Boot applies it to `@Async`), so their sends carry the trace of the
@@ -168,10 +168,10 @@ with a throttled WARN that names no recipient (`config/RejectedTasks`).
   these messages, so keep the bound large; it is there for a gateway outage,
   not to shed load. A new `@Async` method must return `void`: a dropped task's
   `Future` never completes.
-- **The voucher and staff-notification dispatchers** (`config/DispatcherExecutor`,
-  one thread each, 10 000 / 16 queued): a refusal throws
-  `RejectedExecutionException`, which each dispatcher catches; what it was to
-  send is a PENDING row the next sweep or pass sends. Neither may become a
+- **The payout and staff-notification dispatchers** (`config/DispatcherExecutor`,
+  one thread each): a refusal throws `RejectedExecutionException`, which each
+  dispatcher catches; what it was to send is a READY payout Finance's "Pay all
+  ready" sends, or a PENDING notification the next sweep sends. Neither may become a
   Spring `Executor` bean (Boot would then build no `@Async` executor).
 - **Caches**: `spring.cache.cache-names` is a closed list and
   `spring.cache.caffeine.spec` gives every cache `maximumSize=500`,
@@ -218,7 +218,7 @@ booking held AMBIGUOUS or a payout SMS that never goes. So:
 **A scheduled job reads its queue a chunk of ids at a time, by keyset on the id** (`jobs/IdChunks`: ids above the
 last one handed out, ascending, `IdChunks.SIZE` = 100 per chunk), never the whole backlog at once. The lodgement
 and booking jobs (and their stale-claim sweeps), the disbursement status job and the saga reconciler do; the
-voucher and staff-notification dispatchers already did.
+staff-notification dispatcher already did.
 
 - What it keeps: id order; the job's own stop (a handler returning false ends the walk, so a run that stops on an
   unreachable partner never reads the next chunk); each row's claim, lock, settle and retry exactly as before. What
@@ -273,12 +273,21 @@ The job only reads InnBucks' status: nothing it does is retried, and no paying c
 
 ## Staff Grocery Loan cash payout
 
-**How a Staff Grocery Loan is paid is a setting, `loans.staff-loans.payout.method` (`STAFF_LOANS_PAYOUT_METHOD`):
-`VOUCHER`, the default and exactly the behaviour before (nothing is sent to the bank), or `CASH`, where the bank books
-it as a pre-approved loan (`POST /bank/api/loan/apply/pre-approved`) and pays it into the borrower's own account on
-that one call.** The method, the destination and the account are frozen on the loan at acceptance (V36); changing the
-setting never moves a loan already accepted. Settings, endpoints, go-live and rollback: `docs/fleet-wiring.md` §13.
+**Every Staff Grocery Loan is paid into the borrower's InnBucks (Veengu) wallet: the bank books it as a pre-approved
+loan (`POST /bank/api/loan/apply/pre-approved`) and pays it out on that one call.** There is no voucher and no
+setting that chooses how a loan is paid (owner decision, 2026-11-17: vouchers withdrawn; V37). The wallet is the
+borrower's phone on the staff register, frozen on the loan at acceptance (`payout_account`). Settings, endpoints,
+go-live and rollback: `docs/fleet-wiring.md` §13.
 
+- **Vouchers are gone, their history is not.** V37 cancelled every voucher loan still awaiting disbursement (none was
+  ever issued a voucher, so none was paid), audited as `STAFF_LOAN_CANCELLED` by `SYSTEM_USER`, and retired the till
+  and voucher-support roles (sessions ended; a till-only account has no password). The voucher tables, the merchants'
+  `staff_loan_merchant` flag and, on `staff_loans`, `merchant_id`, `unredeemed_voucher_treatment`, `payout_method` and
+  `payout_destination` stay, unmapped; the last two now default to `CASH` / `VEENGU_WALLET`, so every row the
+  application inserts meets V36's CHECKs. A loan accepted before V37 has no payout (`StaffLoan.hasPayout()` false):
+  every payout action refuses it with 409, and its views name no wallet. Dropping the columns is a later decision.
+- **Roll forward only past V37.** An image from before it maps a merchant on every staff loan and offers vouchers; it
+  would misread a loan made after V37. Fix forward.
 - **A payout is sent once, never twice.** `StaffLoanPayoutService` is the only code that sends one: claim (READY to
   SENDING, committed under the register lock and the loan's row lock), call (no transaction open), settle (its own
   transaction, only while the loan still holds that claim). It runs on `StaffLoanPayoutDispatcher`'s one
@@ -300,8 +309,8 @@ setting never moves a loan already accepted. Settings, endpoints, go-live and ro
   `GET /bank/api/loan/inquiry/{participantReference}` with no transaction open, through `InnbucksLoanInquiry`, which
   cannot book. PAID needs `000`, a status in `paid-statuses`, and echoes that name our reference, amount and account
   when the answer carries them (one left out is not checked; one that differs holds it BOOKED). Where it paid is read
-  by destination: a wallet by the echoed `msisdn`, an account by the echoed `settlementAccount` (and its `msisdn` must
-  be the borrower's); one is never read in place of the other. Then the loan is DISBURSED and the borrower told once.
+  from the echoed `msisdn` (an echoed `settlementAccount` is never read for a wallet). Then the loan is DISBURSED and
+  the borrower told once.
   `004` is recorded and never fails a payout by itself; a status in `failed-statuses` (REJECTED, CANCELLED, FAILED) is
   dated (`payout_declined_at`). A claim never settled is held IN_DOUBT after `stale-claim-minutes`.
 - **"Never booked" is a SUPER_ADMIN's record, and narrow.** Either an IN_DOUBT payout the bank never said it holds
@@ -311,42 +320,45 @@ setting never moves a loan already accepted. Settings, endpoints, go-live and ro
   has not repeated is not enough. It is still asked about for `failed-watch`; the bank holding it after all, in any
   but a declined status, holds that borrower's further payouts. Nobody sends, records or resolves a payout of a loan
   they are a party to (`SegregationOfDuties.isPartyTo(StaffLoan, ...)`).
-- **The status job only reads, on its own switch.** `StaffLoanPayoutStatusJob` runs wherever the method is CASH, not
-  behind `STAFF_LOANS_JOBS_ENABLED` (which also starts the Monday offer run) and never `scheduled-tasks`. It stops a
+- **The status job only reads, and always runs.** `StaffLoanPayoutStatusJob` has no gate: not
+  `STAFF_LOANS_JOBS_ENABLED` (which also starts the Monday offer run) and never `scheduled-tasks`. It stops a
   run when the bank cannot be reached (no answer, a failed login, a 5xx) or the inquiry breaks; an answer about one
   loan that says nothing, or that cannot be saved, is counted and the run goes on, so one loan never holds the queue.
   `StaffLoanPayoutWiringTest` fails if it, or the status service, can reach anything that books.
 - **No sweep at boot, no timer that sends.** A payout left READY by a restart or a full queue waits for Finance's
   "Pay all ready" (`POST /lending/v1/staff-loans/payouts`).
-- **Where it pays:** `VEENGU_WALLET` is the member's registered phone (the number their PIN proves); `BR_ACCOUNT` is
-  the register's `wallet_account_number`, only when it is account-shaped (never a mobile number). A member with
-  neither is declined DETAILS_NOT_CONFIRMED before anything is spent, and the claim re-checks the register still
-  holds the frozen account. A wallet payout names no `settlementAccount`: the bank then finds the wallet by `msisdn`
-  (the bank's rule), the phone the borrower proved. Never send the register's account number for one: the bank pays a
-  named account first, and nobody proved that number.
+- **Where it pays:** the member's registered phone, the number their PIN proves, when it is wallet-shaped
+  (`2637[13789]` + 7 digits, the same pattern V36's CHECK holds). A member with none is declined DETAILS_NOT_CONFIRMED
+  before an offer is shown or anything spent, and the claim re-checks the register still holds that phone. The booking
+  names no `settlementAccount`: the bank finds the wallet by `msisdn` (the bank's rule). Never send the register's
+  `wallet_account_number`: the bank pays a named account first, and nobody proved that number.
+- **The bank's product and type:** `loans.staff-loans.payout.product` (`STAFF_LOANS_PAYOUT_PRODUCT`, default `GETMOR`,
+  whose least is USD 20.00, hence `minimum-draw` 20.00), booked as `PERSONAL` (a constant, not a setting).
+- **The bank's credentials are required.** A deployment (no dev/test/local/it profile) without the InnBucks
+  credentials or an inquiry endpoint naming `{participantReference}` refuses to start; a local or test run starts with
+  an ERROR, and its payouts fail the login and stay READY.
 - **The booking's own body** (`PreApprovedLoanRequest`, never the SSB's `LoanAccountCreationRequest`): `amount` in
   DOLLARS (150 for USD 150.00, 150.5 only when there are cents), as the bank confirmed for this call, and
   `"autoSettle": true`, which is what makes the bank pay the booked loan out. `businessLine` and `loanPurpose` are
   settings. The bank also requires date of birth, address, marital status, place of birth, gross salary and next of
   kin, which the register does not hold: `loans.staff-loans.payout.test-placeholders` (STAGING ONLY, default false)
-  sends fixed fake values for them (the next of kin's phone is the borrower's own) and logs an ERROR at every boot,
-  CASH or VOUCHER. Off, they are left out and the bank's answer is read like any other (a refusal is REFUSED, held).
+  sends fixed fake values for them (the next of kin's phone is the borrower's own) and logs an ERROR at every boot.
+  Off, they are left out and the bank's answer is read like any other (a refusal is REFUSED, held).
   Never on where real money moves. The inquiry's echoed amount is compared in dollars too; a cents echo is a mismatch.
-- **The agreement must fit the method.** A cash agreement names `{{payoutAccount}}` and no voucher placeholder; a
-  voucher agreement names no account. Otherwise quote and accept answer 503 STAFF_LOAN_TERMS_UNAVAILABLE.
-- **A voucher loan reads exactly as before.** Every payout field of `StaffLoanResponse`, `StaffLoanView` and
-  `StaffLoanQuote` is `@JsonInclude(NON_NULL)`, and `payoutMethod` is set only for CASH, so a VOUCHER cell's loans,
-  quotes and loan lists are byte for byte what they were. What a VOUCHER cell does see is in the agreement placeholder
-  list, on purpose: `payoutAccount`, which the cash wording needs and is written before the switch, and the
-  descriptions of `mobileNumber` and `amount`, which no longer speak of a voucher. `SwaggerExamplesTest` pins every
-  example to that shape.
+- **The agreement must say where the money goes.** It names `{{payoutAccount}}` (`StaffLoanTerms.REQUIRED`) and no
+  term that no longer exists (`{{merchantName}}`, `{{voucherValidityDays}}`, `{{unredeemedVoucherTerms}}` are unknown
+  now). Otherwise quote and accept answer 503 STAFF_LOAN_TERMS_UNAVAILABLE, and the log says which.
+- **The wire names no method.** `StaffLoanResponse`, `StaffLoanView` and `StaffLoanQuote` carry `payoutAccount`
+  (`****6789`) and the payout fields, each `@JsonInclude(NON_NULL)`; there is no `payoutMethod`, `payoutDestination`,
+  merchant or voucher field. The quote says where it is paid in `paidInto`. `SwaggerExamplesTest` pins every example to
+  that shape.
 - **What the bank said is kept, masked.** `payout_apply_answer` (the booking's) and `payout_last_answer` (the last
   of either) go through `BankAnswers.kept`: the log redactor, then every phone, and the value of any other field named
   an account, masked to `****1234`. Every reader of staff loans, Human Capital included, sees them. `bankLoanAccount`
   is shown by its last four characters.
 - **The InnBucks login is single-flight** (above). Never log the account in full: `****1234`. The datasource sets
   pgjdbc's `logServerErrorDetail: false`, so a refused write (a V36 CHECK) names its constraint and never prints the
-  failing row, which holds the borrower's phone and account.
+  failing row, which holds the borrower's phone.
 
 Pinned by the `StaffLoanPayout*Test` classes, `StaffLoanPayoutMigrationIT` (every V36 CHECK, each alone over NULLs)
 and `StaffLoanPayoutPostgresIT` (real HTTP, tokens and a WireMock bank, end to end).

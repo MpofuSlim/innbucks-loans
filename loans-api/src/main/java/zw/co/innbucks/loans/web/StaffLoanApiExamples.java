@@ -1,23 +1,22 @@
 package zw.co.innbucks.loans.web;
 
 /**
- * Example bodies for the Staff Grocery Loan journey and its portal screens, as one story, the same one the offer,
- * notification and voucher examples tell: Chipo Banda (E1012, grade C4, Treasury) holds offer 2 for USD 300.00 from
- * run 1 of Monday 5 October, takes it in full in the SuperApp on Tuesday 6 October as loan SGL-2026-000143, due on
- * 20 November; once paid out, it is voucher 7 of the voucher examples. The Apply example is a member who held no offer
- * that week (taken on after Monday's run, say): offer 3, made on Wednesday 7 October.
+ * Example bodies for the Staff Grocery Loan journey and its portal screens, as one story, the same one the offer and
+ * notification examples tell: Chipo Banda (E1012, grade C4, Treasury) holds offer 2 for USD 300.00 from run 1 of Monday
+ * 5 October, takes it in full in the SuperApp on Tuesday 6 October as loan SGL-2026-000143, due on 20 November, paid
+ * into her InnBucks wallet ending 6789. The Apply example is a member who held no offer that week (taken on after
+ * Monday's run, say): offer 3, made on Wednesday 7 October.
  *
- * <p>The cash examples tell one later loan's story, in a cell paying Staff Grocery Loans in cash into the borrower's
- * InnBucks wallet (STAFF_LOANS_PAYOUT_METHOD=CASH, VEENGU_WALLET), under agreement version 2, which names the wallet.
- * Chipo takes offer 58 for USD 150.00 on Tuesday 2 February 2027 at 09:12:05 as SGL-2027-000245 (staff loan 245), due
- * 20 February, paid into her wallet ending 6789. Its payout is sent as the acceptance commits, and the bank refuses it
- * (HTTP 400, 09:12:07). Finance (finance1) has it put right and presses Pay out at 11:40:00: READY again, under the same
- * reference. That send times out (11:41:01): IN_DOUBT, never sent again. The status job's inquiry at 11:44:01 finds it
- * PROCESSING (BOOKED), and Finance's check-now at 11:46:30 finds it SETTLED: PAID, the loan DISBURSED. Two branches
- * show the other ways it ends: had Finance had the bank's word instead, Confirm paid at 11:46:30; had the 11:44:01
- * inquiry found nothing (responseCode 004), a SUPER_ADMIN (admin) records it never booked the next day, 3 February at
- * 14:20:00, once the bank confirms it and while its inquiry still reports it missing (last at 14:18:02), and the loan
- * is cancelled. A cash loan's payout fields are left out while empty; a voucher loan carries none of them.
+ * <p>The payout examples tell one later loan's story, under agreement version 2. Chipo takes offer 58 for USD 150.00
+ * on Tuesday 2 February 2027 at 09:12:05 as SGL-2027-000245 (staff loan 245), due 20 February, paid into her wallet
+ * ending 6789. Its payout is sent as the acceptance commits, and the bank refuses it (HTTP 400, 09:12:07). Finance
+ * (finance1) has it put right and presses Pay out at 11:40:00: READY again, under the same reference. That send times
+ * out (11:41:01): IN_DOUBT, never sent again. The status job's inquiry at 11:44:01 finds it PROCESSING (BOOKED), and
+ * Finance's check-now at 11:46:30 finds it SETTLED: PAID, the loan DISBURSED. Two branches show the other ways it ends:
+ * had Finance had the bank's word instead, Confirm paid at 11:46:30; had the 11:44:01 inquiry found nothing
+ * (responseCode 004), a SUPER_ADMIN (admin) records it never booked the next day, 3 February at 14:20:00, once the bank
+ * confirms it and while its inquiry still reports it missing (last at 14:18:02), and the loan is cancelled. A payout
+ * field is left out while it is empty.
  */
 public final class StaffLoanApiExamples {
 
@@ -26,7 +25,7 @@ public final class StaffLoanApiExamples {
 
     private static final String DRAW = """
             {
-                    "minimum": 10.00,
+                    "minimum": 20.00,
                     "increment": 5.00,
                     "maximum": 300.00,
                     "currency": "USD"
@@ -62,39 +61,18 @@ public final class StaffLoanApiExamples {
                   "totalRepayable": 300.00,
                   "outstandingBalance": 300.00,
                   "repaymentDate": "2026-11-20",
-                  "merchantName": "GetMore Groceries",
-                  "acceptedAt": "2026-10-06T09:10:41+02:00",""";
+                  "acceptedAt": "2026-10-06T09:10:41+02:00",
+                  "payoutAccount": "****6789"
+                }""";
 
     private static final String LOAN_143_AWAITING = LOAN_143_HEAD + """
 
                   "status": "AWAITING_DISBURSEMENT",
-                  "statusMessage": "Your loan is approved. Your voucher will be sent to you once the loan is paid out to GetMore Groceries.",
-            """ + LOAN_143_TERMS + """
+                  "statusMessage": "Your loan is approved. USD 300.00 is being paid into your InnBucks wallet ending 6789.",
+            """ + LOAN_143_TERMS;
 
-                  "voucher": null
-                }""";
-
-    private static final String LOAN_143_DISBURSED = LOAN_143_HEAD + """
-
-                  "status": "DISBURSED",
-                  "statusMessage": "You have USD 120.00 left to spend at GetMore Groceries.",
-            """ + LOAN_143_TERMS + """
-
-                  "voucher": {
-                    "status": "PARTIALLY_REDEEMED",
-                    "faceValue": 300.00,
-                    "balance": 120.00,
-                    "currency": "USD",
-                    "expiresAt": "2026-11-05T23:59:59+02:00",
-                    "maskedCode": "**** **** **** 8406",
-                    "code": "4829 1506 7331 8406",
-                    "scanValue": "4829150673318406"
-                  }
-                }""";
-
-    // As it stands on 9 December: SGL-2026-000143 was collected from Chipo's salary on 20 November, with voucher 7
-    // lapsed on 5 November at USD 120.00 unspent (owed all the same: DEBT_STANDS); on 7 December she took a new
-    // offer up as SGL-2026-000212, awaiting payout.
+    // As it stands on 9 December: SGL-2026-000143 was paid into Chipo's wallet and collected from her salary on 20
+    // November; on 7 December she took a new offer up as SGL-2026-000212, being paid into the same wallet.
     public static final String LOAN_HISTORY = """
             {
               "code": "OK",
@@ -104,15 +82,14 @@ public final class StaffLoanApiExamples {
                   {
                     "reference": "SGL-2026-000212",
                     "status": "AWAITING_DISBURSEMENT",
-                    "statusMessage": "Your loan is approved. Your voucher will be sent to you once the loan is paid out to GetMore Groceries.",
+                    "statusMessage": "Your loan is approved. USD 200.00 is being paid into your InnBucks wallet ending 6789.",
                     "amount": 200.00,
                     "currency": "USD",
                     "totalRepayable": 200.00,
                     "outstandingBalance": 200.00,
                     "repaymentDate": "2027-01-20",
-                    "merchantName": "GetMore Groceries",
                     "acceptedAt": "2026-12-07T10:31:16+02:00",
-                    "voucher": null
+                    "payoutAccount": "****6789"
                   },
                   {
                     "reference": "SGL-2026-000143",
@@ -123,18 +100,8 @@ public final class StaffLoanApiExamples {
                     "totalRepayable": 300.00,
                     "outstandingBalance": 0.00,
                     "repaymentDate": "2026-11-20",
-                    "merchantName": "GetMore Groceries",
                     "acceptedAt": "2026-10-06T09:10:41+02:00",
-                    "voucher": {
-                      "status": "EXPIRED",
-                      "faceValue": 300.00,
-                      "balance": 120.00,
-                      "currency": "USD",
-                      "expiresAt": "2026-11-05T23:59:59+02:00",
-                      "maskedCode": "**** **** **** 8406",
-                      "code": null,
-                      "scanValue": null
-                    }
+                    "payoutAccount": "****6789"
                   }
                 ],
                 "page": 0,
@@ -195,19 +162,6 @@ public final class StaffLoanApiExamples {
               }
             }""";
 
-    public static final String HOME_VOUCHER = """
-            {
-              "code": "OK",
-              "message": "Success",
-              "data": {
-                "loan": """ + LOAN_143_DISBURSED + """
-            ,
-                "offer": null,
-                "canApply": false,
-                "unavailable": null
-              }
-            }""";
-
     public static final String HOME_UNAVAILABLE = """
             {
               "code": "OK",
@@ -252,12 +206,11 @@ public final class StaffLoanApiExamples {
             }""";
 
     public static final String AGREEMENT_CONTENT = "STAFF GROCERY LOAN AGREEMENT\\n\\nI, Chipo Banda, employee"
-            + " number E1012, borrow USD 300.00 from InnBucks Microfinance Bank at 0% interest, as a voucher to spend"
-            + " at GetMore Groceries within 30 days. I will repay USD 300.00, collected from my salary on 2026-11-20."
-            + " If you do not spend the whole voucher before it expires, you still repay the full amount.\\n\\n"
+            + " number E1012, borrow USD 300.00 from InnBucks Microfinance Bank at 0% interest, paid into my InnBucks"
+            + " wallet ****6789. I will repay USD 300.00, collected from my salary on 2026-11-20.\\n\\n"
             + "Accepted on 2026-10-06.";
 
-    public static final String AGREEMENT_SHA256 = "f884d117b9c52ef69491a3a85ba4a7b42573127cb1847f168187bb49a9b3ad17";
+    public static final String AGREEMENT_SHA256 = "eae1f67d7a1020fbd6b1d67c1eeee03cab5ccfd36e8bfb3a254a9ffcd417d9d1";
 
     public static final String QUOTE = """
             {
@@ -273,10 +226,8 @@ public final class StaffLoanApiExamples {
                 "totalRepayable": 300.00,
                 "repaymentDate": "2026-11-20",
                 "collection": "USD 300.00 will be collected automatically from your salary on 2026-11-20. There is nothing for you to pay yourself.",
-                "merchantName": "GetMore Groceries",
-                "redemption": "You receive a voucher for USD 300.00 to spend at GetMore Groceries only, valid for 30 days. The loan is never paid into your wallet.",
-                "voucherValidityDays": 30,
-                "unredeemedVoucher": "If you do not spend the whole voucher before it expires, you still repay the full amount.",
+                "paidInto": "Once you accept, USD 300.00 is paid into your InnBucks wallet ending 6789.",
+                "payoutAccount": "****6789",
                 "agreement": {
                   "version": 1,
                   "title": "Staff Grocery Loan Agreement",
@@ -338,7 +289,7 @@ public final class StaffLoanApiExamples {
               "code": "VALIDATION_ERROR",
               "message": "Request validation failed",
               "data": {
-                "amount": "Choose an amount from USD 10.00 to USD 300.00 in steps of USD 5.00"
+                "amount": "Choose an amount from USD 20.00 to USD 300.00 in steps of USD 5.00"
               }
             }""";
 
@@ -381,14 +332,12 @@ public final class StaffLoanApiExamples {
                   "fullName": "Chipo Banda",
                   "msisdn": "****6789",
                   "grade": "C4",
-                  "merchantCode": "getmore-groceries",
-                  "merchantName": "GetMore Groceries",
                   "amount": 300.00,
                   "currency": "USD",
                   "interestRate": 0.0000,
                   "totalRepayable": 300.00,
                   "dueDate": "2026-11-20",
-                  "unredeemedVoucherTreatment": "DEBT_STANDS",""";
+""";
 
     private static final String STAFF_LOAN_143 = STAFF_LOAN_143_HEAD + """
 
@@ -402,12 +351,14 @@ public final class StaffLoanApiExamples {
                   "cancelledBy": null,
                   "cancellationReason": null,
                   "employmentFlag": null,
-                  "arrearsOverrideId": null
+                  "arrearsOverrideId": null,
+                  "payoutAccount": "****6789",
+                  "payoutStatus": "READY"
                 }""";
 
-    // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151 on 8 October; it was paid out and voucher 8 issued
-    // (the voucher examples). Human Capital's register batch 21 moved her to RESIGNED on 28 October, so the loan is
-    // flagged for recovery from her terminal benefits.
+    // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151 on 8 October; it was paid into her wallet the same
+    // morning. Human Capital's register batch 21 moved her to RESIGNED on 28 October, so the loan is flagged for
+    // recovery from her terminal benefits.
     private static final String STAFF_LOAN_151_FLAGGED = """
             {
                   "id": 151,
@@ -418,19 +369,16 @@ public final class StaffLoanApiExamples {
                   "fullName": "Nyasha Dube",
                   "msisdn": "****6983",
                   "grade": "C4",
-                  "merchantCode": "getmore-groceries",
-                  "merchantName": "GetMore Groceries",
                   "amount": 250.00,
                   "currency": "USD",
                   "interestRate": 0.0000,
                   "totalRepayable": 250.00,
                   "dueDate": "2026-11-20",
-                  "unredeemedVoucherTreatment": "DEBT_STANDS",
                   "status": "DISBURSED",
                   "inArrears": false,
                   "acceptedAt": "2026-10-08T07:58:30+02:00",
                   "disbursedAt": "2026-10-08T08:05:38+02:00",
-                  "disbursementReference": "BRNET-20261008-0002",
+                  "disbursementReference": "SGL-2026-000151",
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
@@ -441,7 +389,12 @@ public final class StaffLoanApiExamples {
                     "flaggedAt": "2026-10-28T10:14:03+02:00",
                     "registerBatchId": 21
                   },
-                  "arrearsOverrideId": null
+                  "arrearsOverrideId": null,
+                  "payoutAccount": "****6983",
+                  "payoutStatus": "PAID",
+                  "payoutBankStatus": "SETTLED",
+                  "payoutBankSeenAt": "2026-10-08T07:58:32+02:00",
+                  "payoutCheckedAt": "2026-10-08T08:05:38+02:00"
                 }""";
 
     public static final String STAFF_LOANS_FLAGGED = """
@@ -499,7 +452,7 @@ public final class StaffLoanApiExamples {
                   "userAgent": "InnBucks/2.4.1 (Android 14)",
                   "authenticationMethod": "pin",
                   "assertionId": "mw-7c1d9e2a",
-                  "evidenceSha256": "3eb6aa62f4d351766cb2c6b70316065dfda5323f4f0e56ad1ce03d039737b512",
+                  "evidenceSha256": "b598a93e9a4596b7471840b104e4c3d8367ea97ba13fd6308fa5a42ba4ec274b",
                   "intact": true
                 }
               }
@@ -526,7 +479,9 @@ public final class StaffLoanApiExamples {
                   "cancelledBy": "cmanager",
                   "cancellationReason": "Accepted in error: the borrower asked to cancel before payout",
                   "employmentFlag": null,
-                  "arrearsOverrideId": null
+                  "arrearsOverrideId": null,
+                  "payoutAccount": "****6789",
+                  "payoutStatus": "WITHDRAWN"
                 }
             }""";
 
@@ -557,23 +512,12 @@ public final class StaffLoanApiExamples {
                 "interestRate": "Interest rate, percent (0)",
                 "totalRepayable": "Total to repay",
                 "repaymentDate": "Date it is collected from salary, yyyy-MM-dd",
-                "merchantName": "Where the voucher can be spent",
-                "voucherValidityDays": "Days the voucher can be spent for",
-                "unredeemedVoucherTerms": "What happens if the voucher is not spent in full before it expires",
-                "payoutAccount": "Where a cash loan is paid, by its last four digits, e.g. InnBucks wallet ****3123 (blank for a voucher loan)",
+                "payoutAccount": "Where the loan is paid, by its last four digits, e.g. InnBucks wallet ****3123",
                 "acceptedDate": "Date accepted, yyyy-MM-dd"
               }
             }""";
 
-    // --- A loan paid in cash: SGL-2027-000245 (see the class comment) ---
-
-    public static final String CASH_AGREEMENT_CONTENT = "STAFF GROCERY LOAN AGREEMENT\\n\\nI, Chipo Banda, employee"
-            + " number E1012, borrow USD 150.00 from InnBucks Microfinance Bank at 0% interest, paid into my InnBucks"
-            + " wallet ****6789. I will repay USD 150.00, collected from my salary on 2027-02-20.\\n\\n"
-            + "Accepted on 2027-02-02.";
-
-    public static final String CASH_AGREEMENT_SHA256 =
-            "6c53c4c02fd12786b5a5c5e8993a3ed73a563efc88473418dfe1a58e35342220";
+    // --- The payout story: SGL-2027-000245 (see the class comment) ---
 
     private static final String LOAN_245_HEAD = """
             {
@@ -585,18 +529,9 @@ public final class StaffLoanApiExamples {
                   "totalRepayable": 150.00,
                   "outstandingBalance": 150.00,
                   "repaymentDate": "2027-02-20",
-                  "merchantName": null,
                   "acceptedAt": "2027-02-02T09:12:05+02:00",
-                  "voucher": null,
-                  "payoutMethod": "CASH",
                   "payoutAccount": "****6789"
                 }""";
-
-    private static final String LOAN_245_AWAITING = LOAN_245_HEAD + """
-
-                  "status": "AWAITING_DISBURSEMENT",
-                  "statusMessage": "Your loan is approved. USD 150.00 is being paid into your InnBucks wallet ending 6789.",
-            """ + LOAN_245_TERMS;
 
     private static final String LOAN_245_DISBURSED = LOAN_245_HEAD + """
 
@@ -604,20 +539,7 @@ public final class StaffLoanApiExamples {
                   "statusMessage": "USD 150.00 was paid into your InnBucks wallet ending 6789. USD 150.00 will be collected from your salary on 20 Feb 2027.",
             """ + LOAN_245_TERMS;
 
-    public static final String HOME_CASH_AWAITING = """
-            {
-              "code": "OK",
-              "message": "Success",
-              "data": {
-                "loan": """ + LOAN_245_AWAITING + """
-            ,
-                "offer": null,
-                "canApply": false,
-                "unavailable": null
-              }
-            }""";
-
-    public static final String HOME_CASH_PAID = """
+    public static final String HOME_PAID = """
             {
               "code": "OK",
               "message": "Success",
@@ -628,45 +550,6 @@ public final class StaffLoanApiExamples {
                 "canApply": false,
                 "unavailable": null
               }
-            }""";
-
-    public static final String QUOTE_CASH = """
-            {
-              "code": "OK",
-              "message": "Success",
-              "data": {
-                "offerId": 58,
-                "amount": 150.00,
-                "currency": "USD",
-                "interestRate": 0,
-                "interest": 0.00,
-                "fees": 0.00,
-                "totalRepayable": 150.00,
-                "repaymentDate": "2027-02-20",
-                "collection": "USD 150.00 will be collected automatically from your salary on 2027-02-20. There is nothing for you to pay yourself.",
-                "merchantName": null,
-                "redemption": "Once you accept, USD 150.00 is paid into your InnBucks wallet ending 6789.",
-                "voucherValidityDays": null,
-                "unredeemedVoucher": null,
-                "agreement": {
-                  "version": 2,
-                  "title": "Staff Grocery Loan Agreement",
-                  "content": \"""" + CASH_AGREEMENT_CONTENT + """
-            ",
-                  "contentSha256": \"""" + CASH_AGREEMENT_SHA256 + """
-            "
-                },
-                "payoutMethod": "CASH",
-                "payoutAccount": "****6789"
-              }
-            }""";
-
-    public static final String ACCEPTED_CASH = """
-            {
-              "code": "CREATED",
-              "message": "Created",
-              "data": """ + LOAN_245_AWAITING + """
-
             }""";
 
     // The portal's view of the same loan, at each step.
@@ -681,21 +564,17 @@ public final class StaffLoanApiExamples {
                   "fullName": "Chipo Banda",
                   "msisdn": "****6789",
                   "grade": "C4",
-                  "merchantCode": "getmore-groceries",
-                  "merchantName": "GetMore Groceries",
                   "amount": 150.00,
                   "currency": "USD",
                   "interestRate": 0.0000,
                   "totalRepayable": 150.00,
                   "dueDate": "2027-02-20",
-                  "unredeemedVoucherTreatment": "DEBT_STANDS",""";
+""";
 
-    private static final String STAFF_LOAN_245_CASH = """
+    private static final String STAFF_LOAN_245_PAYOUT = """
 
                   "employmentFlag": null,
                   "arrearsOverrideId": null,
-                  "payoutMethod": "CASH",
-                  "payoutDestination": "VEENGU_WALLET",
                   "payoutAccount": "****6789",""";
 
     private static final String STAFF_LOAN_245_AWAITING = STAFF_LOAN_245_HEAD + """
@@ -708,7 +587,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
-                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+                  "cancellationReason": null,""" + STAFF_LOAN_245_PAYOUT;
 
     private static final String REFUSED_ANSWER =
             "{\\\"responseCode\\\":\\\"400\\\",\\\"responseDescription\\\":\\\"Product STAFFGROC is not set up for"
@@ -777,7 +656,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
-                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+                  "cancellationReason": null,""" + STAFF_LOAN_245_PAYOUT;
 
     // 11:46:30: Finance's check-now found it SETTLED (the 11:44:01 inquiry had found it PROCESSING).
     private static final String STAFF_LOAN_245_PAID = STAFF_LOAN_245_DISBURSED + """
@@ -818,7 +697,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": "2027-02-03T14:20:00+02:00",
                   "cancelledBy": "admin",
-                  "cancellationReason": "The bank confirmed this loan's payout was never booked (recorded by admin)",""" + STAFF_LOAN_245_CASH + """
+                  "cancellationReason": "The bank confirmed this loan's payout was never booked (recorded by admin)",""" + STAFF_LOAN_245_PAYOUT + """
 
                   "payoutStatus": "FAILED",
                   "payoutMessage": "The bank confirmed this loan's payout was never booked (recorded by admin)",

@@ -38,15 +38,15 @@ class DispatcherExecutorTest {
     @Test
     @DisplayName("the refusal counter exists at 0 before anything is refused")
     void counterRegisteredAtZero() {
-        executor = new DispatcherExecutor("voucher-delivery", 4, null, registry);
+        executor = new DispatcherExecutor("staff-notification", 4, null, registry);
 
-        assertThat(rejected("voucher-delivery")).isZero();
+        assertThat(rejected("staff-notification")).isZero();
     }
 
     @Test
     @DisplayName("a full queue refuses the next task with RejectedExecutionException, counted; the queued ones still run")
     void fullQueueRefusesAndCounts() throws Exception {
-        executor = new DispatcherExecutor("voucher-delivery", 2, null, registry);
+        executor = new DispatcherExecutor("staff-notification", 2, null, registry);
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch ran = new CountDownLatch(3);
         Runnable blocking = () -> {
@@ -60,8 +60,8 @@ class DispatcherExecutorTest {
         assertThat(executor.queued()).isEqualTo(2);
 
         assertThatThrownBy(() -> executor.execute(() -> {
-        })).isInstanceOf(RejectedExecutionException.class).hasMessageContaining("voucher-delivery");
-        assertThat(rejected("voucher-delivery")).isEqualTo(1);
+        })).isInstanceOf(RejectedExecutionException.class).hasMessageContaining("staff-notification");
+        assertThat(rejected("staff-notification")).isEqualTo(1);
 
         release.countDown();
         assertThat(ran.await(5, TimeUnit.SECONDS)).as("what was accepted still runs").isTrue();
@@ -111,7 +111,7 @@ class DispatcherExecutorTest {
     @Test
     @DisplayName("no meter registry (a context without metrics): still bounded, still counted, never a failure")
     void noRegistry() {
-        executor = new DispatcherExecutor("voucher-delivery", 1, null, null);
+        executor = new DispatcherExecutor("staff-notification", 1, null, null);
         CountDownLatch release = new CountDownLatch(1);
         executor.execute(() -> await(release));
         executor.execute(() -> {

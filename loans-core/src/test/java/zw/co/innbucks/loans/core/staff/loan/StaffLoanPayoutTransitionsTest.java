@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * A cash loan's payout moves only through {@link StaffLoan}'s own methods, each refusing a move its payout is not in a
+ * A loan's payout moves only through {@link StaffLoan}'s own methods, each refusing a move its payout is not in a
  * state for: the bank books and pays on one call, so a payout sent twice, or cancelled while the bank may hold it, is
  * money paid out wrongly. The same rules are in V36's CHECKs; these pin them where the code decides.
  */
@@ -23,35 +23,25 @@ class StaffLoanPayoutTransitionsTest {
 
     private static StaffLoan cash(StaffLoanPayoutStatus payout) {
         return StaffLoan.builder().id(143L).reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT)
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263772123123").payoutStatus(payout)
                 .payoutClaimedAt(payout == StaffLoanPayoutStatus.SENDING ? AT.minusMinutes(1) : null).build();
     }
 
-    private static StaffLoan voucher() {
+    /** A loan accepted before vouchers were withdrawn: it has no payout. */
+    private static StaffLoan beforeVouchersWereWithdrawn() {
         return StaffLoan.builder().id(142L).reference("SGL-2026-000142").status(StaffLoanStatus.AWAITING_DISBURSEMENT)
                 .build();
     }
 
     @Test
-    @DisplayName("a loan built without a method is a voucher loan, with no payout")
-    void theDefaultIsVoucher() {
-        StaffLoan loan = voucher();
+    @DisplayName("a loan accepted before vouchers were withdrawn has no payout to move, and cancels exactly as before")
+    void aLoanWithoutAPayout() {
+        StaffLoan loan = beforeVouchersWereWithdrawn();
 
-        assertThat(loan.getPayoutMethod()).isEqualTo(StaffLoanPayoutMethod.VOUCHER);
-        assertThat(loan.getPayoutStatus()).isNull();
+        assertThat(loan.hasPayout()).isFalse();
         assertThat(loan.payoutInFlight()).isFalse();
-        assertThat(new StaffLoan().getPayoutMethod()).as("as Hibernate builds one").isEqualTo(
-                StaffLoanPayoutMethod.VOUCHER);
-    }
-
-    @Test
-    @DisplayName("a voucher loan has no payout to move, and cancels exactly as before")
-    void aVoucherLoanHasNoPayout() {
-        StaffLoan loan = voucher();
-
         assertThatThrownBy(() -> loan.claimPayout(AT)).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("voucher loan");
+                .hasMessageContaining("cannot claim");
         assertThatThrownBy(() -> loan.notePayout("x")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> loan.paidOut(AT, null)).isInstanceOf(IllegalStateException.class);
 
@@ -185,8 +175,7 @@ class StaffLoanPayoutTransitionsTest {
     @Test
     @DisplayName("PAID without a loan account from the bank keeps the one already recorded")
     void paidOutKeepsTheLoanAccount() {
-        StaffLoan loan = StaffLoan.builder().reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT)
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutStatus(StaffLoanPayoutStatus.IN_DOUBT)
+        StaffLoan loan = StaffLoan.builder().reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT).payoutStatus(StaffLoanPayoutStatus.IN_DOUBT)
                 .bankLoanAccount("LA-1").build();
 
         loan.paidOut(AT, null);
@@ -396,8 +385,7 @@ class StaffLoanPayoutTransitionsTest {
         assertThat(StaffLoanPayoutStatus.PENDING).containsExactlyInAnyOrder(StaffLoanPayoutStatus.READY,
                 StaffLoanPayoutStatus.SENDING, StaffLoanPayoutStatus.BOOKED, StaffLoanPayoutStatus.IN_DOUBT,
                 StaffLoanPayoutStatus.REFUSED);
-        assertThat(StaffLoanPayoutDestination.VEENGU_WALLET.label()).isEqualTo("InnBucks wallet");
-        assertThat(StaffLoanPayoutDestination.BR_ACCOUNT.label()).isEqualTo("InnBucks account");
+        assertThat(StaffLoanPolicy.PayoutTarget.LABEL).isEqualTo("InnBucks wallet");
     }
 
     @Test

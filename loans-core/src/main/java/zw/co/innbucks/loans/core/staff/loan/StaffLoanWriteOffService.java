@@ -22,9 +22,6 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
-import zw.co.innbucks.loans.core.voucher.Voucher;
-import zw.co.innbucks.loans.core.voucher.VoucherRepository;
-import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -43,9 +40,7 @@ import java.util.stream.Collectors;
  * One request may wait per loan. Approval re-checks the loan, then applies the change in the same transaction.</p>
  *
  * <ul>
- *   <li>A write-off is for a paid-out (DISBURSED) loan whose voucher can no longer be spent: writing off a debt whose
- *   value can still be drawn would let the borrower keep spending it. A loan awaiting disbursement is cancelled, not
- *   written off. A written-off loan is still owed and still recovered; it also stops the borrower taking another
+ *   <li>A write-off is for a paid-out (DISBURSED) loan. A loan awaiting disbursement is cancelled, not written off. A written-off loan is still owed and still recovered; it also stops the borrower taking another
  *   Staff Grocery Loan unless Credit overrides (FR-SGL-014).</li>
  *   <li>A reversal puts a loan written off in error back to DISBURSED. It is refused while the borrower holds another
  *   open loan, such as one taken under Credit's arrears override: nobody holds two (FR-SGL-013).</li>
@@ -72,7 +67,6 @@ public class StaffLoanWriteOffService {
     private final StaffLoanWriteOffRepository repository;
     private final StaffLoanRepository loanRepository;
     private final StaffMemberRepository memberRepository;
-    private final VoucherRepository voucherRepository;
     private final AuthService authService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
@@ -81,14 +75,14 @@ public class StaffLoanWriteOffService {
      * Proposes writing off a loan, or reversing its write-off.
      *
      * @throws NotFoundException no such loan
-     * @throws ConflictException the loan is not in a state this kind applies to, its voucher can still be spent, the
-     *                           borrower holds another open loan, or a request already waits for this loan
+     * @throws ConflictException the loan is not in a state this kind applies to, the borrower holds another open
+     *                           loan, or a request already waits for this loan
      */
     @Transactional
     public StaffLoanWriteOffResponse propose(ProposeStaffLoanWriteOffRequest request) {
         StaffLoan loan = loanRepository.findById(request.getStaffLoanId())
                 .orElseThrow(() -> new NotFoundException("Staff loan " + request.getStaffLoanId() + " not found"));
-        requireApplicable(request.getKind(), loan, marketTimeZone.nowUtc());
+        requireApplicable(request.getKind(), loan);
         repository.findByStaffLoanIdAndStatus(loan.getId(), StaffLoanWriteOffStatus.PENDING).ifPresent(pending -> {
             throw pendingExists(loan, pending.getId());
         });
@@ -143,7 +137,7 @@ public class StaffLoanWriteOffService {
             audit(pending, REJECTED, username, describe(pending, loan) + ";reason:" + comment);
             return StaffLoanWriteOffResponse.of(pending, loan);
         }
-        requireApplicable(pending.getKind(), loan, now);
+        requireApplicable(pending.getKind(), loan);
         StaffLoanStatus from = loan.getStatus();
         if (pending.getKind() == StaffLoanWriteOffKind.WRITE_OFF) {
             loan.writeOff(now);
@@ -212,8 +206,8 @@ public class StaffLoanWriteOffService {
         return page.map(request -> StaffLoanWriteOffResponse.of(request, loans.get(request.getStaffLoanId())));
     }
 
-    /** Refuses {@code kind} for {@code loan} as it stands at {@code now}, with what to do instead. */
-    private void requireApplicable(StaffLoanWriteOffKind kind, StaffLoan loan, LocalDateTime now) {
+    /** Refuses {@code kind} for {@code loan} as it stands, with what to do instead. */
+    private void requireApplicable(StaffLoanWriteOffKind kind, StaffLoan loan) {
         if (kind == StaffLoanWriteOffKind.WRITE_OFF) {
             if (loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT) {
                 throw new ConflictException("Staff loan " + loan.getReference() + " has not been paid out: cancel it"
@@ -223,12 +217,6 @@ public class StaffLoanWriteOffService {
                 throw new ConflictException("Staff loan " + loan.getReference() + " is " + loan.getStatus()
                         + "; only a paid-out loan (DISBURSED) can be written off");
             }
-            voucherRepository.findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(loan.getStaffMemberId(),
-                            loan.getReference())
-                    .filter(voucher -> voucher.statusAt(now).isOpen())
-                    .ifPresent(voucher -> {
-                        throw voucherOpen(loan, voucher, now);
-                    });
             return;
         }
         if (loan.getStatus() != StaffLoanStatus.WRITTEN_OFF) {
@@ -242,14 +230,6 @@ public class StaffLoanWriteOffService {
                                     + " is closed", loan.getEmployeeNumber(), open.getReference(), loan.getReference(),
                             open.getReference()));
                 });
-    }
-
-    private ConflictException voucherOpen(StaffLoan loan, Voucher voucher, LocalDateTime now) {
-        String how = voucher.statusAt(now) == VoucherStatus.ISSUED ? "cancel the voucher or wait until it expires"
-                : "wait until it expires";
-        return new ConflictException(String.format("Staff loan %s's voucher %d can still be spent, until %s; a loan"
-                        + " whose value can still be drawn cannot be written off: %s", loan.getReference(),
-                voucher.getId(), marketTimeZone.render(voucher.getExpiresAt()), how));
     }
 
     private StaffLoanWriteOff pendingForUpdate(Long id) {

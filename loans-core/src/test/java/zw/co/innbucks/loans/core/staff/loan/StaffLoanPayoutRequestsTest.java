@@ -96,9 +96,7 @@ class StaffLoanPayoutRequestsTest {
                 .employeeNumber("E1012").fullName("Chipo Banda").msisdn("263772123123").grade("C4")
                 .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 29, 7, 0))
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263772123123").payoutStatus(payout);
     }
 
@@ -190,7 +188,7 @@ class StaffLoanPayoutRequestsTest {
     }
 
     @Test
-    @DisplayName("a payout settled or ended is 409; a voucher loan is 409; no loan is 404")
+    @DisplayName("a payout settled or ended is 409; a loan with no payout is 409; no loan is 404")
     void otherwiseRefused() {
         store(cashLoan(143L, StaffLoanPayoutStatus.PAID).status(StaffLoanStatus.DISBURSED).build());
         assertThatThrownBy(() -> requests.sendNow(143L)).isInstanceOf(ConflictException.class)
@@ -202,7 +200,7 @@ class StaffLoanPayoutRequestsTest {
 
         store(StaffLoan.builder().id(143L).reference(REFERENCE).status(StaffLoanStatus.AWAITING_DISBURSEMENT).build());
         assertThatThrownBy(() -> requests.sendNow(143L)).isInstanceOf(ConflictException.class)
-                .hasMessage("Staff loan " + REFERENCE + " is a voucher loan: it is not paid out in cash");
+                .hasMessage("Staff loan " + REFERENCE + " was accepted before vouchers were withdrawn: it has no payout");
 
         assertThatThrownBy(() -> requests.sendNow(999L)).isInstanceOf(NotFoundException.class)
                 .hasMessage("Staff loan 999 not found");

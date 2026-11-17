@@ -44,15 +44,12 @@ import zw.co.innbucks.loans.controller.StaffLimitOverrideController;
 import zw.co.innbucks.loans.controller.StaffLoanArrearsReportController;
 import zw.co.innbucks.loans.controller.StaffLoanWriteOffController;
 import zw.co.innbucks.loans.controller.StaffLoanController;
-import zw.co.innbucks.loans.controller.StaffLoanMerchantController;
 import zw.co.innbucks.loans.controller.StaffNotificationController;
 import zw.co.innbucks.loans.controller.StaffOfferController;
 import zw.co.innbucks.loans.controller.StaffRegisterController;
 import zw.co.innbucks.loans.controller.StaffRegisterReconciliationController;
 import zw.co.innbucks.loans.controller.TestAssertionController;
 import zw.co.innbucks.loans.controller.UserController;
-import zw.co.innbucks.loans.controller.VoucherController;
-import zw.co.innbucks.loans.controller.VoucherRedemptionController;
 import zw.co.innbucks.loans.controller.CheckpointController;
 import zw.co.innbucks.loans.controller.CreditAuthorityController;
 import zw.co.innbucks.loans.controller.WorkQueueController;
@@ -68,7 +65,6 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanQuote;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanResponse;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
-import zw.co.innbucks.loans.core.voucher.VoucherCodes;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
@@ -113,11 +109,9 @@ class SwaggerExamplesTest {
             WorkflowStageController.class, WorkQueueController.class, CheckpointController.class,
             CreditAuthorityController.class, StaffGradeLimitController.class,
             StaffRegisterController.class, StaffRegisterReconciliationController.class, StaffOfferController.class,
-            StaffLimitOverrideController.class, StaffNotificationController.class, VoucherController.class,
-            VoucherRedemptionController.class, BorrowerAuthController.class, TestAssertionController.class,
-            BorrowerController.class, BorrowerStaffLoanController.class, StaffLoanController.class,
-            BorrowerNotificationController.class, StaffLoanMerchantController.class,
-            StaffArrearsOverrideController.class, StaffLoanWriteOffController.class,
+            StaffLimitOverrideController.class, StaffNotificationController.class, BorrowerAuthController.class,
+            TestAssertionController.class, BorrowerController.class, BorrowerStaffLoanController.class,
+            StaffLoanController.class, BorrowerNotificationController.class, StaffArrearsOverrideController.class, StaffLoanWriteOffController.class,
             StaffLoanArrearsReportController.class);
 
     record Example(String where, String json) {
@@ -278,27 +272,6 @@ class SwaggerExamplesTest {
     }
 
     @Test
-    void theVoucherExamplesCarryARealCodeAndAgreeOnIt() {
-        // The code a reader sees in full is one the till would accept, and the masked form everywhere else is its tail.
-        String code = JSON.readTree(VoucherApiExamples.VOUCHER_7_CODE).path("data").path("scanValue").asString();
-        assertThat(code).isEqualTo(VoucherApiExamples.CODE_7);
-        assertThat(VoucherCodes.normalize(code)).contains(code);
-        assertThat(VoucherCodes.normalize(JSON.readTree(VoucherApiExamples.VALIDATION_REQUEST).path("code")
-                .asString())).contains(code);
-        assertThat(VoucherCodes.normalize(JSON.readTree(VoucherApiExamples.REDEMPTION_REQUEST).path("code")
-                .asString())).contains(code);
-        assertThat(JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("voucher").path("maskedCode")
-                .asString()).isEqualTo("**** **** **** " + code.substring(12));
-        assertThat(VoucherCodes.normalize("7391045288672151")).as("voucher 8, masked as **** 2151").isPresent();
-        JsonNode detail = JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data");
-        JsonNode redemption = detail.path("redemptions").get(0);
-        assertThat(detail.path("voucher").path("faceValue").decimalValue()
-                .subtract(redemption.path("amount").decimalValue()))
-                .isEqualByComparingTo(detail.path("voucher").path("balance").decimalValue())
-                .isEqualByComparingTo(redemption.path("balanceAfter").decimalValue());
-    }
-
-    @Test
     void theStaffLoanAgreementExamplesCarryTheRealHashesOfTheirText() {
         // The app sends the quote's contentSha256 back at Accept, and the portal shows the seal over the acceptance;
         // a reader re-hashing either example must get what it says.
@@ -333,26 +306,16 @@ class SwaggerExamplesTest {
     }
 
     @Test
-    void theFlaggedLoanIsTheOneVoucherEightWasIssuedFor() {
-        // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151, paid out as voucher 8, then resigned: the flagged
-        // loan in the portal must be that loan, with that offer, that payout and that voucher's value.
+    void theFlaggedLoanIsNyashasPaidLoan() {
+        // Nyasha Dube (E1001) took offer 1 up as SGL-2026-000151, paid into her wallet, then resigned: the flagged
+        // loan in the portal must be that loan, with that offer and that payout.
         JsonNode loan = JSON.readTree(StaffLoanApiExamples.STAFF_LOANS_FLAGGED).path("data").path("items").get(0);
-        JsonNode voucher = null;
-        for (JsonNode item : JSON.readTree(VoucherApiExamples.VOUCHERS).path("data").path("items")) {
-            if (item.path("id").asLong() == 8) {
-                voucher = item;
-            }
-        }
-        assertThat(voucher).isNotNull();
-        assertThat(loan.path("reference").asString()).isEqualTo(voucher.path("loanAccount").asString());
-        assertThat(loan.path("disbursementReference").asString())
-                .isEqualTo(voucher.path("disbursementReference").asString());
-        assertThat(loan.path("amount").decimalValue()).isEqualByComparingTo(voucher.path("faceValue").decimalValue());
-        assertThat(loan.path("employeeNumber").asString()).isEqualTo(voucher.path("customerReference").asString());
-        assertThat(loan.path("fullName").asString()).isEqualTo(voucher.path("customerName").asString());
-        assertThat(loan.path("msisdn").asString()).isEqualTo(voucher.path("customerMsisdn").asString());
+        assertThat(loan.path("disbursementReference").asString()).isEqualTo(loan.path("reference").asString());
+        assertThat(loan.path("payoutAccount").asString()).isEqualTo(loan.path("msisdn").asString());
+        assertThat(loan.path("payoutStatus").asString()).isEqualTo("PAID");
         assertThat(OffsetDateTime.parse(loan.path("disbursedAt").asString()))
-                .isBefore(OffsetDateTime.parse(voucher.path("issuedAt").asString()));
+                .isAfter(OffsetDateTime.parse(loan.path("acceptedAt").asString()))
+                .isAfterOrEqualTo(OffsetDateTime.parse(loan.path("payoutBankSeenAt").asString()));
 
         JsonNode offer = null;
         for (JsonNode item : JSON.readTree(ApiExamples.STAFF_OFFERS).path("data").path("items")) {
@@ -392,22 +355,29 @@ class SwaggerExamplesTest {
         assertThat(JSON.readTree(StaffLoanApiExamples.APPLIED).path("data").path("offer").path("offerId").asLong())
                 .as("an Apply offer is a new offer, not the run's").isNotEqualTo(listed.path("id").asLong());
 
-        JsonNode voucher7 = JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("voucher");
-        assertThat(voucher7.path("loanAccount").asString()).isEqualTo(loan.path("reference").asString());
-        assertThat(voucher7.path("issuedAt").asString()).isGreaterThan(loan.path("acceptedAt").asString());
         Map<String, String> registerPhones = new HashMap<>();
         for (JsonNode member : JSON.readTree(ApiExamples.STAFF_MEMBERS).path("data").path("items")) {
             registerPhones.put(member.path("employeeNumber").asString(),
                     MsisdnUtils.mask(member.path("mobileNumber").asString()));
         }
-        assertThat(List.of(loan.path("msisdn").asString(), voucher7.path("customerMsisdn").asString(),
+        String wallet = registerPhones.get("E1012");
+        JsonNode quote = data(StaffLoanApiExamples.QUOTE);
+        assertThat(List.of(loan.path("msisdn").asString(), loan.path("payoutAccount").asString(),
                 JSON.readTree(BorrowerApiExamples.PROFILE).path("data").path("maskedMsisdn").asString(),
-                JSON.readTree(VoucherApiExamples.VOUCHER_7_DETAIL).path("data").path("deliveries").get(0)
-                        .path("recipient").asString()))
-                .containsOnly(registerPhones.get("E1012"));
-        for (JsonNode voucher : JSON.readTree(VoucherApiExamples.VOUCHERS).path("data").path("items")) {
-            assertThat(voucher.path("customerMsisdn").asString()).as(voucher.path("customerReference").asString())
-                    .isEqualTo(registerPhones.get(voucher.path("customerReference").asString()));
+                data(StaffLoanApiExamples.HOME_LOAN).path("loan").path("payoutAccount").asString(),
+                data(StaffLoanApiExamples.ACCEPTED).path("payoutAccount").asString(),
+                quote.path("payoutAccount").asString()))
+                .as("the wallet it is paid into is her phone on the register").containsOnly(wallet);
+        String last4 = wallet.substring(wallet.length() - 4);
+        assertThat(quote.path("paidInto").asString()).endsWith("InnBucks wallet ending " + last4 + ".");
+        assertThat(quote.path("agreement").path("content").asString()).contains("InnBucks wallet " + wallet)
+                .doesNotContainIgnoringCase("voucher");
+        for (String example : List.of(StaffLoanApiExamples.STAFF_LOANS, StaffLoanApiExamples.STAFF_LOANS_FLAGGED)) {
+            for (JsonNode listedLoan : items(example)) {
+                assertThat(listedLoan.path("msisdn").asString()).as(listedLoan.path("reference").asString())
+                        .isEqualTo(registerPhones.get(listedLoan.path("employeeNumber").asString()))
+                        .isEqualTo(listedLoan.path("payoutAccount").asString());
+            }
         }
     }
 
@@ -416,62 +386,51 @@ class SwaggerExamplesTest {
     }
 
     @Test
-    void theLoanHistoryShowsTheSameLoanAndVoucherAsTheTile() {
-        // In December Chipo's list holds SGL-2026-000143 repaid: the loan the tile showed in October, with voucher 7
-        // lapsed at what was left of it. Its terms, dates and voucher must be the ones every other screen shows.
-        JsonNode tile = JSON.readTree(StaffLoanApiExamples.HOME_VOUCHER).path("data").path("loan");
+    void theLoanHistoryShowsTheSameLoanAsTheTile() {
+        // In December Chipo's list holds SGL-2026-000143 repaid: the loan the tile showed in October. Its terms, dates
+        // and wallet must be the ones every other screen shows.
+        JsonNode tile = JSON.readTree(StaffLoanApiExamples.HOME_LOAN).path("data").path("loan");
         JsonNode items = JSON.readTree(StaffLoanApiExamples.LOAN_HISTORY).path("data").path("items");
         JsonNode repaid = items.get(1);
         assertThat(repaid.path("reference").asString()).isEqualTo(tile.path("reference").asString());
-        for (String field : List.of("amount", "totalRepayable", "repaymentDate", "acceptedAt", "merchantName")) {
+        for (String field : List.of("amount", "totalRepayable", "repaymentDate", "acceptedAt", "payoutAccount")) {
             assertThat(repaid.path(field)).as(field).isEqualTo(tile.path(field));
         }
-        JsonNode voucher = repaid.path("voucher");
-        for (String field : List.of("faceValue", "balance", "expiresAt", "maskedCode")) {
-            assertThat(voucher.path(field)).as(field).isEqualTo(tile.path("voucher").path(field));
-        }
-        assertThat(voucher.path("code").isNull()).as("a lapsed voucher's code is not shown").isTrue();
+        assertThat(items.get(0).path("payoutAccount")).isEqualTo(tile.path("payoutAccount"));
         assertThat(OffsetDateTime.parse(items.get(0).path("acceptedAt").asString()))
                 .as("newest first").isAfter(OffsetDateTime.parse(repaid.path("acceptedAt").asString()));
     }
 
     @Test
     void everyStaffLoanExampleHasTheShapeTheApiAnswersWith() {
-        // A client codes against these fields: each portal loan, cash or voucher, is a StaffLoanResponse, and each
-        // screen of the SuperApp, cash or voucher, a StaffLoanView or StaffLoanQuote. A field left out while empty is
-        // left out of the example, never shown as null; every other field is there, in the record's order.
-        List<JsonNode> voucherLoans = List.of(items(StaffLoanApiExamples.STAFF_LOANS).get(0),
+        // A client codes against these fields: each portal loan is a StaffLoanResponse, and each screen of the
+        // SuperApp a StaffLoanView or StaffLoanQuote. A field left out while empty is left out of the example, never
+        // shown as null; every other field is there, in the record's order.
+        List<JsonNode> loans = new ArrayList<>(List.of(items(StaffLoanApiExamples.STAFF_LOANS).get(0),
                 items(StaffLoanApiExamples.STAFF_LOANS_FLAGGED).get(0),
                 JSON.readTree(StaffLoanApiExamples.STAFF_LOAN_DETAIL).path("data").path("loan"),
-                data(StaffLoanApiExamples.CANCELLED));
-        for (JsonNode loan : voucherLoans) {
+                data(StaffLoanApiExamples.CANCELLED)));
+        loans.addAll(cashLoans().values());
+        for (JsonNode loan : loans) {
             assertShape(loan, StaffLoanResponse.class);
         }
-        for (JsonNode loan : cashLoans().values()) {
-            assertShape(loan, StaffLoanResponse.class);
-        }
-        List<JsonNode> voucherViews = new ArrayList<>(List.of(
-                data(StaffLoanApiExamples.HOME_LOAN).path("loan"), data(StaffLoanApiExamples.HOME_VOUCHER).path("loan"),
-                data(StaffLoanApiExamples.ACCEPTED)));
-        items(StaffLoanApiExamples.LOAN_HISTORY).forEach(voucherViews::add);
-        for (JsonNode view : voucherViews) {
+        List<JsonNode> views = new ArrayList<>(List.of(data(StaffLoanApiExamples.HOME_LOAN).path("loan"),
+                data(StaffLoanApiExamples.HOME_PAID).path("loan"), data(StaffLoanApiExamples.ACCEPTED)));
+        items(StaffLoanApiExamples.LOAN_HISTORY).forEach(views::add);
+        for (JsonNode view : views) {
             assertShape(view, StaffLoanView.class);
-        }
-        for (JsonNode view : List.of(data(StaffLoanApiExamples.HOME_CASH_AWAITING).path("loan"),
-                data(StaffLoanApiExamples.HOME_CASH_PAID).path("loan"), data(StaffLoanApiExamples.ACCEPTED_CASH))) {
-            assertShape(view, StaffLoanView.class);
-            assertThat(view.path("payoutMethod").asString()).isEqualTo("CASH");
         }
         assertShape(data(StaffLoanApiExamples.QUOTE), StaffLoanQuote.class);
-        assertShape(data(StaffLoanApiExamples.QUOTE_CASH), StaffLoanQuote.class);
 
-        // A voucher loan reads exactly as it did before cash payouts: no payout field at all, not even payoutMethod.
-        List<JsonNode> voucher = new ArrayList<>(voucherLoans);
-        voucher.addAll(voucherViews);
-        voucher.add(data(StaffLoanApiExamples.QUOTE));
-        for (JsonNode loan : voucher) {
-            assertThat(names(loan)).as(loan.path("reference").asString())
-                    .noneMatch(name -> name.startsWith("payout") || name.equals("bankLoanAccount"));
+        // Every loan is paid into a wallet, and nothing of the withdrawn voucher is left on the wire.
+        List<JsonNode> all = new ArrayList<>(loans);
+        all.addAll(views);
+        all.add(data(StaffLoanApiExamples.QUOTE));
+        for (JsonNode loan : all) {
+            assertThat(loan.path("payoutAccount").asString()).as(loan.path("reference").asString()).startsWith("****");
+            assertThat(names(loan)).as(loan.path("reference").asString()).doesNotContain("payoutMethod",
+                    "payoutDestination", "merchantName", "merchantCode", "voucher", "redemption",
+                    "unredeemedVoucher", "voucherValidityDays");
         }
     }
 
@@ -523,8 +482,6 @@ class SwaggerExamplesTest {
             assertThat(loan.path("employeeNumber").asString()).as(as).isEqualTo("E1012");
             assertThat(loan.path("msisdn").asString()).as(as).isEqualTo(masked);
             assertThat(loan.path("payoutAccount").asString()).as(as).isEqualTo(masked);
-            assertThat(loan.path("payoutMethod").asString()).as(as).isEqualTo("CASH");
-            assertThat(loan.path("payoutDestination").asString()).as(as).isEqualTo("VEENGU_WALLET");
             for (String field : List.of("acceptedAt", "amount", "dueDate", "offerId", "totalRepayable")) {
                 assertThat(loan.path(field)).as(as + " " + field).isEqualTo(first.path(field));
             }
@@ -586,34 +543,17 @@ class SwaggerExamplesTest {
         assertThat(JSON.readTree(StaffLoanApiExamples.PAYOUT_NOT_BOOKED_SEEN).path("message").asString())
                 .endsWith("(since " + portal.get("checked").path("payoutBankSeenAt").asString() + ")");
 
-        // The SuperApp's screens of the same loan.
+        // The SuperApp's screen of the same loan, paid.
         LocalDate due = LocalDate.parse(first.path("dueDate").asString());
-        JsonNode awaiting = data(StaffLoanApiExamples.HOME_CASH_AWAITING).path("loan");
-        JsonNode paid = data(StaffLoanApiExamples.HOME_CASH_PAID).path("loan");
-        for (JsonNode loan : List.of(awaiting, paid, data(StaffLoanApiExamples.ACCEPTED_CASH))) {
-            assertThat(loan.path("reference").asString()).isEqualTo("SGL-2027-000245");
-            assertThat(loan.path("payoutAccount").asString()).isEqualTo(masked);
-            assertThat(loan.path("payoutMethod").asString()).isEqualTo("CASH");
-            assertThat(loan.path("acceptedAt")).isEqualTo(first.path("acceptedAt"));
-            assertThat(loan.path("repaymentDate")).isEqualTo(first.path("dueDate"));
-            assertThat(loan.path("amount")).isEqualTo(first.path("amount"));
-            assertThat(loan.path("merchantName").isNull() && loan.path("voucher").isNull()).isTrue();
-            assertThat(loan.path("statusMessage").asString()).contains("InnBucks wallet ending " + last4);
-        }
-        assertThat(paid.path("statusMessage").asString()).endsWith("collected from your salary on "
+        JsonNode paid = data(StaffLoanApiExamples.HOME_PAID).path("loan");
+        assertThat(paid.path("reference").asString()).isEqualTo("SGL-2027-000245");
+        assertThat(paid.path("payoutAccount").asString()).isEqualTo(masked);
+        assertThat(paid.path("acceptedAt")).isEqualTo(first.path("acceptedAt"));
+        assertThat(paid.path("repaymentDate")).isEqualTo(first.path("dueDate"));
+        assertThat(paid.path("amount")).isEqualTo(first.path("amount"));
+        assertThat(paid.path("statusMessage").asString()).startsWith("USD 150.00 was paid into your InnBucks wallet"
+                + " ending " + last4 + ".").endsWith("collected from your salary on "
                 + DateTimeFormatter.ofPattern("d MMM uuuu", Locale.ENGLISH).format(due) + ".");
-        JsonNode quote = data(StaffLoanApiExamples.QUOTE_CASH);
-        assertThat(quote.path("payoutAccount").asString()).isEqualTo(masked);
-        assertThat(quote.path("amount")).isEqualTo(first.path("amount"));
-        assertThat(quote.path("repaymentDate")).isEqualTo(first.path("dueDate"));
-        assertThat(quote.path("offerId")).isEqualTo(first.path("offerId"));
-        assertThat(quote.path("redemption").asString()).endsWith("InnBucks wallet ending " + last4 + ".");
-        JsonNode agreement = quote.path("agreement");
-        assertThat(AuditService.sha256Hex(agreement.path("content").asString()))
-                .isEqualTo(agreement.path("contentSha256").asString())
-                .isEqualTo(StaffLoanApiExamples.CASH_AGREEMENT_SHA256);
-        assertThat(agreement.path("content").asString()).contains("InnBucks wallet " + masked)
-                .doesNotContainIgnoringCase("voucher");
 
         // Every refusal of it names it.
         for (String refusal : List.of(StaffLoanApiExamples.PAYOUT_SEND_CONFLICT, StaffLoanApiExamples.PAYOUT_SEND_PARTY,

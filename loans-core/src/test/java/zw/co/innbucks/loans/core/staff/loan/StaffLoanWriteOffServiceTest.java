@@ -19,9 +19,6 @@ import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.exception.ValidationException;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
-import zw.co.innbucks.loans.core.voucher.Voucher;
-import zw.co.innbucks.loans.core.voucher.VoucherRepository;
-import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -38,7 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -52,7 +48,6 @@ class StaffLoanWriteOffServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 12, 15, 8, 20, 31);
 
     private final List<StaffLoan> loans = new ArrayList<>();
-    private final List<Voucher> vouchers = new ArrayList<>();
     private final List<StaffLoanWriteOff> requests = new ArrayList<>();
     private StaffMemberRepository memberRepository;
     private StaffLoanWriteOffRepository repository;
@@ -60,9 +55,9 @@ class StaffLoanWriteOffServiceTest {
     private AuditService auditService;
     private StaffLoanWriteOffService service;
 
-    /** Nyasha Dube's loan, paid out on 8 October; its voucher expired on 7 November. */
+    /** Nyasha Dube's loan, paid out on 8 October and due on 20 November. */
     private StaffLoan nyasha;
-    /** Chipo Banda's loan, paid out, with a voucher partly spent and still open. */
+    /** Chipo Banda's loan, paid out and still owed. */
     private StaffLoan chipo;
     /** Tatenda Mhlanga's loan, written off in September, and the one she took since under Credit's override. */
     private StaffLoan tatendaWrittenOff;
@@ -74,8 +69,6 @@ class StaffLoanWriteOffServiceTest {
         chipo = loan(143L, "SGL-2026-000143", 2L, "E1012", StaffLoanStatus.DISBURSED, "300.00");
         tatendaWrittenOff = loan(112L, "SGL-2026-000112", 6L, "E1060", StaffLoanStatus.WRITTEN_OFF, "200.00");
         tatendaOpen = loan(158L, "SGL-2026-000158", 6L, "E1060", StaffLoanStatus.AWAITING_DISBURSEMENT, "120.00");
-        vouchers.add(voucher(8L, nyasha, VoucherStatus.ISSUED, LocalDateTime.of(2026, 11, 7, 21, 59, 59)));
-        vouchers.add(voucher(7L, chipo, VoucherStatus.PARTIALLY_REDEEMED, LocalDateTime.of(2026, 12, 20, 21, 59, 59)));
 
         StaffLoanRepository loanRepository = mock(StaffLoanRepository.class);
         when(loanRepository.findById(anyLong())).thenAnswer(i -> loanById(i.getArgument(0)));
@@ -91,11 +84,6 @@ class StaffLoanWriteOffServiceTest {
                     && statuses.contains(loan.getStatus())).reduce((first, second) -> second);
         });
 
-        VoucherRepository voucherRepository = mock(VoucherRepository.class);
-        when(voucherRepository.findFirstByStaffMemberIdAndLoanAccountOrderByIdDesc(anyLong(), anyString()))
-                .thenAnswer(i -> vouchers.stream().filter(v -> v.getStaffMemberId().equals(i.getArgument(0))
-                        && v.getLoanAccount().equals(i.getArgument(1))).findFirst());
-
         repository = mock(StaffLoanWriteOffRepository.class);
         when(repository.saveAndFlush(any())).thenAnswer(i -> store(i.getArgument(0)));
         when(repository.save(any())).thenAnswer(i -> store(i.getArgument(0)));
@@ -109,7 +97,7 @@ class StaffLoanWriteOffServiceTest {
         authService = mock(AuthService.class);
         as("credit1");
         auditService = mock(AuditService.class);
-        service = new StaffLoanWriteOffService(repository, loanRepository, memberRepository, voucherRepository,
+        service = new StaffLoanWriteOffService(repository, loanRepository, memberRepository,
                 authService, auditService, new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-12-15T08:20:31Z"),
                 ZoneOffset.UTC)));
     }
@@ -125,11 +113,6 @@ class StaffLoanWriteOffServiceTest {
                 .settledAt(status == StaffLoanStatus.WRITTEN_OFF ? NOW.minusDays(90) : null).build();
         loans.add(loan);
         return loan;
-    }
-
-    private static Voucher voucher(Long id, StaffLoan loan, VoucherStatus status, LocalDateTime expiresAt) {
-        return Voucher.builder().id(id).loanAccount(loan.getReference()).staffMemberId(loan.getStaffMemberId())
-                .status(status).expiresAt(expiresAt).build();
     }
 
     private Optional<StaffLoan> loanById(Long id) {
@@ -168,7 +151,7 @@ class StaffLoanWriteOffServiceTest {
     }
 
     @Test
-    @DisplayName("a write-off is proposed for a paid-out loan whose voucher has lapsed, at what the loan owes; one may"
+    @DisplayName("a write-off is proposed for a paid-out loan, at what the loan owes; one may"
             + " wait per loan; an unknown loan is a 404")
     void proposesAWriteOff() {
         StaffLoanWriteOffResponse proposed = service.propose(propose(nyasha, StaffLoanWriteOffKind.WRITE_OFF));
@@ -200,20 +183,12 @@ class StaffLoanWriteOffServiceTest {
     }
 
     @Test
-    @DisplayName("a loan not paid out is cancelled, not written off; one whose voucher can still be spent waits; one"
-            + " already written off has nothing to write off")
+    @DisplayName("a loan not paid out is cancelled, not written off; one already written off has nothing to write"
+            + " off")
     void refusesWhatCannotBeWrittenOff() {
         assertThatThrownBy(() -> service.propose(propose(tatendaOpen, StaffLoanWriteOffKind.WRITE_OFF)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("Staff loan SGL-2026-000158 has not been paid out: cancel it instead of writing it off");
-        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Staff loan SGL-2026-000143's voucher 7 can still be spent, until"
-                        + " 2026-12-20T23:59:59+02:00; a loan whose value can still be drawn cannot be written off:"
-                        + " wait until it expires");
-        vouchers.set(1, voucher(7L, chipo, VoucherStatus.ISSUED, LocalDateTime.of(2026, 12, 20, 21, 59, 59)));
-        assertThatThrownBy(() -> service.propose(propose(chipo, StaffLoanWriteOffKind.WRITE_OFF)))
-                .hasMessageEndingWith("cancel the voucher or wait until it expires");
         assertThatThrownBy(() -> service.propose(propose(tatendaWrittenOff, StaffLoanWriteOffKind.WRITE_OFF)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessage("Staff loan SGL-2026-000112 is WRITTEN_OFF; only a paid-out loan (DISBURSED) can be"
@@ -268,20 +243,22 @@ class StaffLoanWriteOffServiceTest {
     }
 
     @Test
-    @DisplayName("approval checks the loan again: if its voucher can be spent again by then, the loan stays as it is,"
-            + " and so does the request")
+    @DisplayName("approval checks the loan again: if it was repaid by then, the loan stays as it is, and so does the"
+            + " request")
     void approvalRechecksTheLoan() {
         service.propose(propose(nyasha, StaffLoanWriteOffKind.WRITE_OFF));
-        vouchers.set(0, voucher(8L, nyasha, VoucherStatus.ISSUED, NOW.plusDays(3)));
+        loans.remove(nyasha);
+        StaffLoan repaid = loan(151L, "SGL-2026-000151", 1L, "E1001", StaffLoanStatus.REPAID, "250.00");
         as("finance1");
 
         assertThatThrownBy(() -> service.decide(1L, decision(StaffLoanWriteOffDecision.APPROVED, null)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageStartingWith("Staff loan SGL-2026-000151's voucher 8 can still be spent");
-        assertThat(nyasha.getStatus()).isEqualTo(StaffLoanStatus.DISBURSED);
+                .hasMessage("Staff loan SGL-2026-000151 is REPAID; only a paid-out loan (DISBURSED) can be written"
+                        + " off");
+        assertThat(repaid.getStatus()).isEqualTo(StaffLoanStatus.REPAID);
         assertThat(requests.getFirst().getStatus()).isEqualTo(StaffLoanWriteOffStatus.PENDING);
 
-        assertThat(service.decide(1L, decision(StaffLoanWriteOffDecision.REJECTED, "Voucher still live")).status())
+        assertThat(service.decide(1L, decision(StaffLoanWriteOffDecision.REJECTED, "Repaid from salary")).status())
                 .as("it can still be rejected").isEqualTo(StaffLoanWriteOffStatus.REJECTED);
     }
 

@@ -25,8 +25,6 @@ import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
 import zw.co.innbucks.loans.core.instrument.StaffLoanTerms;
-import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.merchant.StaffLoanMerchantService;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.StaffRegisterService;
@@ -38,8 +36,6 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRepository;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
-import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
-import zw.co.innbucks.loans.core.voucher.VoucherService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -47,7 +43,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -65,14 +60,11 @@ import java.util.stream.Collectors;
  * </ol>
  * Who may borrow is decided the same way at every step as by the weekly run ({@link StaffOfferVerdict}), so an offer
  * the borrower still holds is refused at acceptance if, say, they have since fallen into arrears (FR-SGL-013,
- * FR-SGL-014). A declined borrower is told why in plain words (FR-SGL-029). The merchant is the one set for the
- * Staff Grocery Loan at acceptance ({@link StaffLoanMerchantService}), and stays the loan's whatever is set later.
+ * FR-SGL-014). A declined borrower is told why in plain words (FR-SGL-029).
  *
- * <p>How a loan is paid out is decided at acceptance ({@link StaffLoanPolicy#payoutMethod()}) and kept on it. A loan
- * paid by voucher waits for disbursement through the bank's system (BR.NET, FR-SGL-032), which pays the merchant and
- * issues the voucher. A loan paid in cash is paid into the borrower's own account (their wallet, or the account the
- * register holds for them), which its agreement names; a borrower the register holds no such account for is declined
- * as DETAILS_NOT_CONFIRMED, before anything is spent. Once its acceptance commits, it is handed to
+ * <p>Every loan is paid in cash into the borrower's InnBucks wallet, their registered phone, which its agreement
+ * names; a borrower the register holds no wallet-shaped phone for is declined as DETAILS_NOT_CONFIRMED, before
+ * anything is spent. Once its acceptance commits, it is handed to
  * {@link StaffLoanPayoutDispatcher}, which pays it on a thread of its own. Nothing here moves money or calls the bank,
  * and an agreement that does not fit the way loans are paid now is not offered for signing (503).
  */
@@ -86,9 +78,6 @@ public class StaffLoanJourneyService {
     static final String DEVICE_HEADER = "X-Device-Id";
     /** Visible ASCII, as the signed instruments take it: an app's installation id, a hardware id. */
     private static final Pattern DEVICE_ID = Pattern.compile("[\\x21-\\x7E]{1,128}");
-    /** A voucher loan paid out has a voucher: only these are looked up. A cash loan has none. */
-    private static final Set<StaffLoanStatus> PAID_OUT = EnumSet.of(StaffLoanStatus.DISBURSED, StaffLoanStatus.REPAID,
-            StaffLoanStatus.WRITTEN_OFF);
     private static final char SEPARATOR = '\u001F';
     /** The acceptance time as the seal writes it: UTC, always six decimals, as the column holds it. */
     private static final DateTimeFormatter SEALED_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSS");
@@ -99,12 +88,10 @@ public class StaffLoanJourneyService {
     private final StaffLoanRepository loanRepository;
     private final StaffLoanAgreementRepository agreementRepository;
     private final StaffLoanPolicy policy;
-    private final StaffLoanMerchantService merchants;
     private final StaffArrearsOverrideService arrearsOverrides;
     private final InstrumentTemplateService templateService;
     private final MiddlewareAssertionVerifier verifier;
     private final AssertionUses assertionUses;
-    private final VoucherService voucherService;
     private final AuditService auditService;
     private final MarketTimeZone marketTimeZone;
     private final StaffLoanPayoutDispatcher payoutDispatcher;
@@ -124,10 +111,7 @@ public class StaffLoanJourneyService {
         if (assessment.verdict() != StaffOfferVerdict.ELIGIBLE) {
             return StaffLoanHome.unavailable(StaffLoanDecline.of(assessment.verdict()));
         }
-        if (merchants.current().isEmpty()) {
-            return StaffLoanHome.unavailable(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
-        }
-        if (policy.payoutMethod() == StaffLoanPayoutMethod.CASH && policy.payoutTarget(member).isEmpty()) {
+        if (policy.payoutTarget(member).isEmpty()) {
             return StaffLoanHome.unavailable(noPayoutAccount(member).decline());
         }
         LocalDateTime now = marketTimeZone.nowUtc();
@@ -156,12 +140,11 @@ public class StaffLoanJourneyService {
     /**
      * "Apply" (FR-SGL-025): the offer they hold, or one made now if they may be offered.
      *
-     * @throws StaffLoanDeclinedException they may not borrow now, with the reason in plain words; or a loan would be
-     *                                    paid in cash and the register holds no account to pay it into
+     * @throws StaffLoanDeclinedException they may not borrow now, with the reason in plain words; or the register
+     *                                    holds no wallet to pay a loan into
      */
     public StaffLoanAppliedOffer apply(Long staffMemberId) {
         StaffMember member = member(staffMemberId);
-        merchantForNewLoan();
         payoutTargetOrDecline(member);
         StaffOfferApplication application = offerService.apply(member.getId());
         if (application.offer() == null) {
@@ -175,12 +158,11 @@ public class StaffLoanJourneyService {
      * What borrowing {@code amount} from the offer means, shown before acceptance (FR-SGL-026), and the agreement to
      * accept, filled with it (FR-SGL-027). Changes nothing.
      *
-     * @throws StaffLoanDeclinedException         the offer cannot be taken up, or they may not borrow now; or a loan
-     *                                            would be paid in cash and the register holds no account to pay it
-     *                                            into
+     * @throws StaffLoanDeclinedException         the offer cannot be taken up, or they may not borrow now; or the
+     *                                            register holds no wallet to pay the loan into
      * @throws StaffLoanRequestInvalidException   the amount is not one the offer can be drawn in
-     * @throws StaffLoanTermsUnavailableException no agreement has been published, or the one in force does not fit
-     *                                            the way loans are paid now
+     * @throws StaffLoanTermsUnavailableException no agreement has been published, or the one in force does not name
+     *                                            where the money is paid
      */
     @Transactional(readOnly = true)
     public StaffLoanQuote quote(Long staffMemberId, StaffLoanQuoteRequest request) {
@@ -189,25 +171,15 @@ public class StaffLoanJourneyService {
         requireEligible(member);
         requireAmount(offer, request.amount());
         LocalDate today = marketTimeZone.today();
-        Merchant merchant = merchantForNewLoan();
         StaffLoanPolicy.PayoutTarget payout = payoutTargetOrDecline(member);
-        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today,
-                payout == null ? merchant.getCompanyName() : null, payout);
-        InstrumentTemplate template = agreementInForce(payout == null ? StaffLoanPayoutMethod.VOUCHER
-                : StaffLoanPayoutMethod.CASH);
+        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today, payout);
+        InstrumentTemplate template = agreementInForce();
         String content = StaffLoanTerms.render(template.getBody(), terms);
         StaffLoanAgreementText agreement = new StaffLoanAgreementText(template.getVersion(), template.getTitle(),
                 content, AuditService.sha256Hex(content));
-        if (payout != null) {
-            return new StaffLoanQuote(offer.getId(), terms.amount(), terms.currency(), terms.interestRate(),
-                    money(BigDecimal.ZERO), money(BigDecimal.ZERO), terms.totalRepayable(), terms.repaymentDate(),
-                    collection(terms), null, paidInto(terms, payout), null, null, agreement,
-                    StaffLoanPayoutMethod.CASH, payout.masked());
-        }
         return new StaffLoanQuote(offer.getId(), terms.amount(), terms.currency(), terms.interestRate(),
                 money(BigDecimal.ZERO), money(BigDecimal.ZERO), terms.totalRepayable(), terms.repaymentDate(),
-                collection(terms), terms.merchantName(), redemption(terms), terms.voucherValidityDays(),
-                terms.unredeemedVoucherTerms(), agreement, null, null);
+                collection(terms), paidInto(terms, payout), payout.masked(), agreement);
     }
 
     /**
@@ -224,11 +196,11 @@ public class StaffLoanJourneyService {
      * it, and is READY to pay out. It is paid only once this transaction commits, never inside it: an acceptance
      * rolled back pays nothing.
      *
-     * @throws StaffLoanDeclinedException         the offer cannot be taken up, or they may not borrow now; or it would
-     *                                            be paid in cash and the register holds no account to pay it into
+     * @throws StaffLoanDeclinedException         the offer cannot be taken up, or they may not borrow now; or the
+     *                                            register holds no wallet to pay the loan into
      * @throws StaffLoanRequestInvalidException   the amount, or the device id
-     * @throws StaffLoanTermsUnavailableException no agreement has been published, or the one in force does not fit
-     *                                            the way loans are paid now
+     * @throws StaffLoanTermsUnavailableException no agreement has been published, or the one in force does not name
+     *                                            where the money is paid
      * @throws StaffLoanTermsChangedException     the agreement accepted is not the one that would be signed now
      * @throws AssertionRejectedException         the assertion is forged, expired, used, or another phone's
      * @throws StepUpRequiredException            it is genuine but not a PIN or biometric from just now
@@ -251,13 +223,10 @@ public class StaffLoanJourneyService {
         StaffOffer offer = offerToTakeUp(member, request.offerId(), now);
         StaffArrearsOverride arrearsOverride = requireEligible(member).arrearsOverride();
         requireAmount(offer, request.amount());
-        Merchant merchant = merchantForNewLoan();
         // Before the step-up: a borrower who cannot be paid is declined without spending their assertion.
         StaffLoanPolicy.PayoutTarget payout = payoutTargetOrDecline(member);
-        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today,
-                payout == null ? merchant.getCompanyName() : null, payout);
-        InstrumentTemplate template = agreementInForce(payout == null ? StaffLoanPayoutMethod.VOUCHER
-                : StaffLoanPayoutMethod.CASH);
+        StaffLoanTerms.Signing terms = policy.signing(member, request.amount(), today, payout);
+        InstrumentTemplate template = agreementInForce();
         String content = StaffLoanTerms.render(template.getBody(), terms);
         String contentSha256 = AuditService.sha256Hex(content);
         if (template.getVersion() != request.agreementVersion() || !contentSha256.equals(request.agreementSha256())) {
@@ -277,20 +246,16 @@ public class StaffLoanJourneyService {
                 .fullName(member.getFullName())
                 .msisdn(member.getMsisdn())
                 .grade(member.getGrade())
-                .merchant(merchant)
                 .amount(terms.amount())
                 .currency(terms.currency())
                 .interestRate(terms.interestRate())
                 .totalRepayable(terms.totalRepayable())
                 .dueDate(terms.repaymentDate())
-                .unredeemedVoucherTreatment(policy.unredeemedVoucherTreatment())
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT)
                 .acceptedAt(now)
                 .arrearsOverrideId(arrearsOverride == null ? null : arrearsOverride.getId())
-                .payoutMethod(payout == null ? StaffLoanPayoutMethod.VOUCHER : StaffLoanPayoutMethod.CASH)
-                .payoutDestination(payout == null ? null : payout.destination())
-                .payoutAccount(payout == null ? null : payout.account())
-                .payoutStatus(payout == null ? null : StaffLoanPayoutStatus.READY)
+                .payoutAccount(payout.account())
+                .payoutStatus(StaffLoanPayoutStatus.READY)
                 .build());
         if (arrearsOverride != null) {
             arrearsOverrides.use(arrearsOverride, loan, borrower);
@@ -319,19 +284,15 @@ public class StaffLoanJourneyService {
                 .entityType("STAFF_LOAN").entityId(String.valueOf(loan.getId()))
                 .actorId(borrower).channelUsed("superapp")
                 .detail("reference:" + reference + ";offer:" + offer.getId() + ";amount:" + loan.getAmount()
-                        + ";dueDate:" + loan.getDueDate() + ";merchant:" + merchant.getMerchantCode()
-                        + ";agreement:v" + template.getVersion()
+                        + ";dueDate:" + loan.getDueDate() + ";agreement:v" + template.getVersion()
                         + (arrearsOverride == null ? "" : ";arrearsOverride:" + arrearsOverride.getId())
-                        + (payout == null ? "" : ";payout:" + StaffLoanPayoutMethod.CASH + ";destination:"
-                        + payout.destination() + ";account:" + payout.masked())
+                        + ";account:" + payout.masked()
                         + ";assertion:" + assertion.jti()));
         log.info("Staff member {} accepted Staff Grocery Loan {} for {} {}, due {}", member.getEmployeeNumber(),
                 reference, loan.getCurrency(), loan.getAmount(), loan.getDueDate());
-        if (payout != null) {
-            log.info("Staff Grocery Loan {} is paid in cash into the borrower's {} {} once this acceptance commits",
-                    reference, payout.destination(), payout.masked());
-            payoutDispatcher.afterCommit(loan.getId());
-        }
+        log.info("Staff Grocery Loan {} is paid into the borrower's InnBucks wallet {} once this acceptance commits",
+                reference, payout.masked());
+        payoutDispatcher.afterCommit(loan.getId());
         return view(loan);
     }
 
@@ -343,18 +304,6 @@ public class StaffLoanJourneyService {
         return offerRepository.findById(offerId)
                 .filter(offer -> offer.getStaffMemberId().equals(member.getId()) && offer.isOpenAt(now))
                 .orElseThrow(() -> new StaffLoanDeclinedException(StaffLoanDecline.OFFER_NOT_AVAILABLE));
-    }
-
-    /**
-     * The merchant a loan taken up now is for. None is set only if the product was never given one, and then no loan
-     * can be taken up: the borrower is told it is unavailable, and the log says why.
-     */
-    private Merchant merchantForNewLoan() {
-        return merchants.current().orElseThrow(() -> {
-            log.error("No merchant is set for the Staff Grocery Loan, so no loan can be taken up: set one with"
-                    + " PUT /staff-loan-merchant");
-            return new StaffLoanDeclinedException(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
-        });
     }
 
     /** @return their assessment, ELIGIBLE */
@@ -373,68 +322,59 @@ public class StaffLoanJourneyService {
     }
 
     /**
-     * Where a loan {@code member} accepts now is paid, when loans are paid in cash; null when they are paid by
-     * voucher.
+     * The InnBucks wallet a loan {@code member} accepts now is paid into.
      *
-     * @throws StaffLoanDeclinedException DETAILS_NOT_CONFIRMED: paid in cash, and the register holds no account to
-     *                                    pay it into
+     * @throws StaffLoanDeclinedException DETAILS_NOT_CONFIRMED: the register holds no wallet-shaped phone for them
      */
     private StaffLoanPolicy.PayoutTarget payoutTargetOrDecline(StaffMember member) {
-        if (policy.payoutMethod() != StaffLoanPayoutMethod.CASH) {
-            return null;
-        }
         return policy.payoutTarget(member).orElseThrow(() -> noPayoutAccount(member));
     }
 
     /**
-     * The decline for a member a cash loan cannot be paid to: the register holds no account of the kind loans are paid
-     * into (a member whose register entry holds a wallet has no bank account). Human Capital puts it right, as for any
-     * register detail; the log names the member, never an account.
+     * The decline for a member a loan cannot be paid to: the register holds no wallet-shaped phone for them. Human
+     * Capital puts it right, as for any register detail; the log names the member, never a number.
      */
     private StaffLoanDeclinedException noPayoutAccount(StaffMember member) {
-        log.warn("Staff member {} has no {} on the staff register, so a Staff Grocery Loan cannot be paid to them in"
-                + " cash; declined as DETAILS_NOT_CONFIRMED until Human Capital corrects the register",
-                member.getEmployeeNumber(), policy.payoutDestination());
+        log.warn("Staff member {} has no InnBucks wallet number on the staff register, so a Staff Grocery Loan cannot"
+                + " be paid to them; declined as DETAILS_NOT_CONFIRMED until Human Capital corrects the register",
+                member.getEmployeeNumber());
         return new StaffLoanDeclinedException(StaffLoanDecline.DETAILS_NOT_CONFIRMED);
     }
 
     /**
-     * The agreement in force, if it fits the way loans are paid now ({@link #agreementMisfit}): a borrower never signs
-     * for a voucher and is paid in cash, or the reverse.
+     * The agreement in force, if it says where the money is paid and names no term that no longer exists
+     * ({@link #agreementMisfit}).
      */
-    private InstrumentTemplate agreementInForce(StaffLoanPayoutMethod method) {
+    private InstrumentTemplate agreementInForce() {
         InstrumentTemplate template = templateService.currentTemplate(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)
                 .orElseThrow(() -> {
                     log.error("A Staff Grocery Loan cannot be accepted: no STAFF_GROCERY_LOAN_AGREEMENT is published"
                             + " (POST /lending/v1/instrument-templates)");
                     return new StaffLoanTermsUnavailableException();
                 });
-        String misfit = agreementMisfit(template.getBody(), method);
+        String misfit = agreementMisfit(template.getBody());
         if (misfit != null) {
-            log.error("A Staff Grocery Loan cannot be accepted: loans are paid {} (STAFF_LOANS_PAYOUT_METHOD={}), and"
-                    + " the STAFF_GROCERY_LOAN_AGREEMENT in force (v{}) {}. Publish one worded for it (POST"
-                    + " /lending/v1/instrument-templates)", method == StaffLoanPayoutMethod.CASH ? "in cash"
-                    : "by voucher", method, template.getVersion(), misfit);
+            log.error("A Staff Grocery Loan cannot be accepted: the STAFF_GROCERY_LOAN_AGREEMENT in force (v{}) {}."
+                    + " Publish one worded for a loan paid into the borrower's InnBucks wallet (POST"
+                    + " /lending/v1/instrument-templates)", template.getVersion(), misfit);
             throw new StaffLoanTermsUnavailableException();
         }
         return template;
     }
 
     /**
-     * Why an agreement worded as {@code body} does not fit loans paid by {@code method}, or null when it does: a cash
-     * agreement names where the money is paid and nothing about a voucher; a voucher agreement names no account.
+     * Why an agreement worded as {@code body} cannot be signed, or null when it can: it must name where the money is
+     * paid, and no term that no longer exists (one published for the withdrawn voucher would be signed with
+     * {@code {{merchantName}}} left in it).
      */
-    static String agreementMisfit(String body, StaffLoanPayoutMethod method) {
-        Set<String> used = StaffLoanTerms.placeholdersIn(body);
-        if (method == StaffLoanPayoutMethod.CASH) {
-            if (!used.containsAll(StaffLoanTerms.CASH_ONLY)) {
-                return "does not name where the money is paid ({{payoutAccount}})";
-            }
-            List<String> voucher = used.stream().filter(StaffLoanTerms.VOUCHER_ONLY::contains).toList();
-            return voucher.isEmpty() ? null : "names a voucher (" + placeholders(voucher) + ")";
+    static String agreementMisfit(String body) {
+        List<String> unknown = StaffLoanTerms.unknownPlaceholders(body);
+        if (!unknown.isEmpty()) {
+            return "names terms that no longer exist (" + placeholders(unknown) + ")";
         }
-        List<String> cash = used.stream().filter(StaffLoanTerms.CASH_ONLY::contains).toList();
-        return cash.isEmpty() ? null : "names an account a cash loan is paid into (" + placeholders(cash) + ")";
+        Set<String> used = StaffLoanTerms.placeholdersIn(body);
+        return used.containsAll(StaffLoanTerms.REQUIRED) ? null
+                : "does not name where the money is paid ({{payoutAccount}})";
     }
 
     private static String placeholders(List<String> names) {
@@ -485,15 +425,10 @@ public class StaffLoanJourneyService {
     }
 
     private StaffLoanView view(StaffLoan loan) {
-        boolean cash = loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH;
-        BorrowerVoucherResponse voucher = !cash && PAID_OUT.contains(loan.getStatus())
-                ? voucherService.forBorrower(loan.getStaffMemberId(), loan.getReference()).orElse(null)
-                : null;
         return new StaffLoanView(loan.getReference(), loan.getStatus(),
-                StaffLoanView.message(loan, voucher, marketTimeZone.today()), loan.getAmount(), loan.getCurrency(),
-                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(),
-                cash ? null : loan.getMerchant().getCompanyName(), loan.getAcceptedAt(), voucher,
-                cash ? StaffLoanPayoutMethod.CASH : null, StaffLoanView.maskedPayoutAccount(loan));
+                StaffLoanView.message(loan, marketTimeZone.today()), loan.getAmount(), loan.getCurrency(),
+                loan.getTotalRepayable(), loan.outstanding(), loan.getDueDate(), loan.getAcceptedAt(),
+                StaffLoanView.maskedPayoutAccount(loan));
     }
 
     private static String collection(StaffLoanTerms.Signing terms) {
@@ -501,16 +436,10 @@ public class StaffLoanJourneyService {
                 + " to pay yourself.", terms.currency(), terms.totalRepayable(), terms.repaymentDate());
     }
 
-    /** How a cash loan reaches the borrower, in the quote's {@code redemption}: paid as soon as they accept. */
+    /** How the loan reaches the borrower, in the quote's {@code paidInto}: paid as soon as they accept. */
     private static String paidInto(StaffLoanTerms.Signing terms, StaffLoanPolicy.PayoutTarget payout) {
         return String.format("Once you accept, %s %s is paid into your %s ending %s.", terms.currency(),
-                terms.amount(), payout.destination().label(), payout.last4());
-    }
-
-    private static String redemption(StaffLoanTerms.Signing terms) {
-        return String.format("You receive a voucher for %s %s to spend at %s only, valid for %d days. The loan is never"
-                        + " paid into your wallet.", terms.currency(), terms.amount(), terms.merchantName(),
-                terms.voucherValidityDays());
+                terms.amount(), StaffLoanPolicy.PayoutTarget.LABEL, payout.last4());
     }
 
     /**

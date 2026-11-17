@@ -4,12 +4,9 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
@@ -17,7 +14,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
-import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGrades;
 
@@ -31,9 +27,9 @@ import java.util.Arrays;
  * A Staff Grocery Loan a borrower accepted in the SuperApp (FR-SGL-027): the terms they were shown and accepted, which
  * never change after, and where it stands. Who borrowed is kept as the register held them at acceptance.
  *
- * <p>How it is paid out ({@link #payoutMethod}), and for a cash loan where ({@link #payoutDestination},
- * {@link #payoutAccount}), is decided at acceptance and never changes. A cash loan's payout moves only through the
- * methods below, each of which refuses a move its payout is not in a state for. Every payout column is written only on
+ * <p>It is paid in cash into the borrower's InnBucks wallet ({@link #payoutAccount}, decided at acceptance and never
+ * changed). A loan accepted before vouchers were withdrawn has no payout ({@link #payoutStatus} null) and never gets
+ * one. A payout moves only through the methods below, each of which refuses a move its payout is not in a state for. Every payout column is written only on
  * an entity loaded by {@link StaffLoanRepository#lockById} in the same transaction, or by a conditional UPDATE: the bank
  * books and pays on one call, so two writers deciding on the same payout could pay it twice.
  */
@@ -43,7 +39,7 @@ import java.util.Arrays;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(of = {"id", "reference", "staffMemberId", "status", "payoutMethod", "payoutStatus"})
+@ToString(of = {"id", "reference", "staffMemberId", "status", "payoutStatus"})
 public class StaffLoan {
 
     /** The longest {@link #payoutMessage} kept; a longer one is cut. */
@@ -57,7 +53,7 @@ public class StaffLoan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** SGL-2026-000143: the loan account its disbursement and voucher name. */
+    /** SGL-2026-000143: the loan account its disbursement names, and the bank's participant reference. */
     @Column(name = "reference", length = 32, nullable = false, updatable = false)
     private String reference;
 
@@ -74,23 +70,12 @@ public class StaffLoan {
     @Column(name = "full_name", length = 160, nullable = false, updatable = false)
     private String fullName;
 
-    /**
-     * 2637XXXXXXXX, the borrower's registered phone: the number the voucher goes to, and the wallet a cash loan is paid
-     * into when its destination is VEENGU_WALLET.
-     */
+    /** 2637XXXXXXXX, the borrower's registered phone: the InnBucks wallet the loan is paid into. */
     @Column(name = "msisdn", length = 12, nullable = false, updatable = false)
     private String msisdn;
 
     @Column(name = "grade", length = StaffGrades.MAX_LENGTH, nullable = false, updatable = false)
     private String grade;
-
-    /**
-     * The merchant it was accepted for: for a voucher loan, named in its agreement, paid the loan, and whose tills take
-     * its voucher. Recorded, and not used, for a cash loan.
-     */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "merchant_id", nullable = false, updatable = false)
-    private Merchant merchant;
 
     @Column(name = "amount", precision = 19, scale = 2, nullable = false, updatable = false)
     private BigDecimal amount;
@@ -108,10 +93,6 @@ public class StaffLoan {
     /** The market day it is collected from salary. */
     @Column(name = "due_date", nullable = false, updatable = false)
     private LocalDate dueDate;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "unredeemed_voucher_treatment", length = 32, nullable = false, updatable = false)
-    private UnredeemedVoucherTreatment unredeemedVoucherTreatment;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 32, nullable = false)
@@ -156,22 +137,11 @@ public class StaffLoan {
     @Column(name = "arrears_override_id", updatable = false)
     private Long arrearsOverrideId;
 
-    /** VOUCHER, or CASH: paid into the borrower's own account by the bank. Decided at acceptance. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "payout_method", length = 16, nullable = false, updatable = false)
-    @Builder.Default
-    private StaffLoanPayoutMethod payoutMethod = StaffLoanPayoutMethod.VOUCHER;
-
-    /** Where a cash loan is paid, as at acceptance; null for a voucher loan. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "payout_destination", length = 16, updatable = false)
-    private StaffLoanPayoutDestination payoutDestination;
-
-    /** The wallet (2637XXXXXXXX) or account number a cash loan is paid into, as at acceptance. Never printed. */
+    /** The InnBucks wallet (2637XXXXXXXX) the loan is paid into, as at acceptance. Never printed in full. */
     @Column(name = "payout_account", length = 20, updatable = false)
     private String payoutAccount;
 
-    /** Where a cash loan's payout stands; null for a voucher loan. */
+    /** Where its payout stands; null only for a loan accepted before vouchers were withdrawn, which has none. */
     @Enumerated(EnumType.STRING)
     @Column(name = "payout_status", length = 16)
     private StaffLoanPayoutStatus payoutStatus;
@@ -252,13 +222,13 @@ public class StaffLoan {
     }
 
     /**
-     * Stops it before anything is paid. The caller checks it is AWAITING_DISBURSEMENT. A cash loan's payout is
-     * WITHDRAWN with it, and only one nothing was booked for (READY or REFUSED) can be.
+     * Stops it before anything is paid. The caller checks it is AWAITING_DISBURSEMENT. Its payout is WITHDRAWN with
+     * it, and only one nothing was booked for (READY or REFUSED) can be.
      *
-     * @throws IllegalStateException a cash loan the bank may have booked
+     * @throws IllegalStateException a loan the bank may have booked
      */
     void cancel(LocalDateTime at, String by, String reason) {
-        if (payoutMethod == StaffLoanPayoutMethod.CASH) {
+        if (hasPayout()) {
             requirePayout("cancel", StaffLoanPayoutStatus.READY, StaffLoanPayoutStatus.REFUSED);
             this.payoutStatus = StaffLoanPayoutStatus.WITHDRAWN;
         }
@@ -443,10 +413,11 @@ public class StaffLoan {
         this.disbursementReference = reference;
     }
 
-    /** Notes why a cash payout stands where it does, changing nothing else. */
+    /** Notes why its payout stands where it does, changing nothing else. */
     void notePayout(String message) {
-        if (payoutMethod != StaffLoanPayoutMethod.CASH) {
-            throw new IllegalStateException("Staff loan " + reference + " is a voucher loan: it has no payout");
+        if (!hasPayout()) {
+            throw new IllegalStateException("Staff loan " + reference + " was accepted before vouchers were withdrawn:"
+                    + " it has no payout");
         }
         this.payoutMessage = cut(message, MESSAGE_LENGTH);
     }
@@ -463,7 +434,7 @@ public class StaffLoan {
      * the bank has not repeated lately is no evidence that it still holds.
      */
     public boolean mayConfirmNotBooked(LocalDateTime evidenceBy, LocalDateTime answeredSince) {
-        if (payoutMethod != StaffLoanPayoutMethod.CASH || status != StaffLoanStatus.AWAITING_DISBURSEMENT
+        if (!hasPayout() || status != StaffLoanStatus.AWAITING_DISBURSEMENT
                 || payoutCheckedAt == null || payoutCheckedAt.isBefore(answeredSince)) {
             return false;
         }
@@ -472,13 +443,13 @@ public class StaffLoan {
 
     /** IN_DOUBT, never seen by the bank, and reported missing since no later than {@code by}. */
     public boolean reportedMissingSince(LocalDateTime by) {
-        return payoutMethod == StaffLoanPayoutMethod.CASH && payoutStatus == StaffLoanPayoutStatus.IN_DOUBT
+        return payoutStatus == StaffLoanPayoutStatus.IN_DOUBT
                 && payoutBankSeenAt == null && payoutNotFoundAt != null && !payoutNotFoundAt.isAfter(by);
     }
 
     /** BOOKED or IN_DOUBT, and held by the bank in a status that says it did not pay it since no later than {@code by}. */
     public boolean reportedDeclinedSince(LocalDateTime by) {
-        return payoutMethod == StaffLoanPayoutMethod.CASH && payoutStatus != null && payoutStatus.awaitsInquiry()
+        return payoutStatus != null && payoutStatus.awaitsInquiry()
                 && payoutDeclinedAt != null && !payoutDeclinedAt.isAfter(by);
     }
 
@@ -511,7 +482,7 @@ public class StaffLoan {
      * @return whether this is the first time
      */
     boolean payoutPaidAfterCancel(LocalDateTime at, String bankStatus, String answer) {
-        if (payoutMethod != StaffLoanPayoutMethod.CASH || payoutStatus != StaffLoanPayoutStatus.FAILED) {
+        if (payoutStatus != StaffLoanPayoutStatus.FAILED) {
             throw new IllegalStateException("Staff loan " + reference + ": a payout that is " + describePayout()
                     + " was not confirmed not booked");
         }
@@ -531,18 +502,23 @@ public class StaffLoan {
         }
     }
 
-    /** A cash loan awaiting disbursement whose payout is one of {@code from}, else refused. */
+    /** A loan awaiting disbursement whose payout is one of {@code from}, else refused. */
     private void requirePayout(String move, StaffLoanPayoutStatus... from) {
-        if (payoutMethod != StaffLoanPayoutMethod.CASH || status != StaffLoanStatus.AWAITING_DISBURSEMENT
+        if (status != StaffLoanStatus.AWAITING_DISBURSEMENT
                 || payoutStatus == null || !Arrays.asList(from).contains(payoutStatus)) {
             throw new IllegalStateException("Staff loan " + reference + ": cannot " + move + " a payout that is "
                     + describePayout() + "; only one " + Arrays.toString(from) + " awaiting disbursement");
         }
     }
 
+    /** Whether it has a payout: every loan does, but one accepted before vouchers were withdrawn. */
+    public boolean hasPayout() {
+        return payoutStatus != null;
+    }
+
     private String describePayout() {
-        return payoutMethod == StaffLoanPayoutMethod.CASH ? payoutStatus + " (loan " + status + ")"
-                : "none (a voucher loan)";
+        return hasPayout() ? payoutStatus + " (loan " + status + ")"
+                : "none (accepted before vouchers were withdrawn)";
     }
 
     private static String cut(String text, int length) {

@@ -7,8 +7,6 @@ import org.mockito.ArgumentCaptor;
 import zw.co.innbucks.loans.core.audit.AuditLog;
 import zw.co.innbucks.loans.core.audit.AuditService;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
-import zw.co.innbucks.loans.core.loan.DisbursementType;
-import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.notifications.NotificationService;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffMember;
@@ -16,7 +14,6 @@ import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.core.user.UserGroup;
 import zw.co.innbucks.loans.core.user.UserRepository;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -72,16 +69,14 @@ class StaffLoanArrearsServiceTest {
         auditService = mock(AuditService.class);
         properties.setArrearsEscalationDays(30);
         service = new StaffLoanArrearsService(loanRepository, memberRepository, userRepository, notifications,
-                auditService, new StaffLoanPolicy(properties, new VoucherProperties()), properties,
+                auditService, new StaffLoanPolicy(properties), properties,
                 new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-12-02T05:00:01Z"), ZoneOffset.UTC)));
     }
 
     private StaffLoan loan(long id, String employeeNumber, String name, StaffLoanStatus status, String amount,
                            LocalDate due, StaffEmploymentStatus flag) {
-        Merchant getMore = Merchant.builder().merchantCode("getmore-groceries").companyName("GetMore Groceries")
-                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).build();
         StaffLoan loan = StaffLoan.builder().id(id).reference(String.format("SGL-2026-%06d", id)).staffMemberId(id)
-                .employeeNumber(employeeNumber).fullName(name).msisdn("263773451290").grade("C4").merchant(getMore)
+                .employeeNumber(employeeNumber).fullName(name).msisdn("263773451290").grade("C4")
                 .status(status).currency("USD").amount(new BigDecimal(amount)).totalRepayable(new BigDecimal(amount))
                 .dueDate(due).disbursedAt(LocalDateTime.of(2026, 9, 18, 8, 12, 40)).employmentFlag(flag)
                 .employmentFlaggedAt(flag == null ? null : LocalDateTime.of(2026, 10, 28, 8, 14, 3))
@@ -132,7 +127,6 @@ class StaffLoanArrearsServiceTest {
             assertThat(line.department()).isEqualTo("Retail Banking");
             assertThat(line.employmentStatus()).isEqualTo(StaffEmploymentStatus.RESIGNED);
             assertThat(line.msisdn()).doesNotContain("773451").endsWith("1290");
-            assertThat(line.merchantCode()).isEqualTo("getmore-groceries");
             assertThat(line.employmentFlag().action()).isEqualTo(EmploymentFlagAction.RECOVER_FROM_TERMINAL_BENEFITS);
         });
         assertThat(report.lines().get(4).employmentFlag().action()).isEqualTo(EmploymentFlagAction.CREDIT_TO_DECIDE);

@@ -3,9 +3,8 @@ package zw.co.innbucks.loans.web;
 /**
  * Example bodies for writing off Staff Grocery Loans (FR-GEN-011), continuing the staff loan examples: Nyasha Dube
  * (E1001) resigned in October with SGL-2026-000151 (USD 250.00) paid out and flagged for recovery from her terminal
- * benefits; voucher 8 expired on 7 November. On Tuesday 15 December credit1 proposes write-off request 1, and
- * finance1 approves it: the loan is WRITTEN_OFF. Chipo Banda's SGL-2026-000143 cannot be written off on 4 November,
- * because voucher 7 can still be spent.
+ * benefits. On Tuesday 15 December credit1 proposes write-off request 1, and finance1 approves it: the loan is
+ * WRITTEN_OFF.
  */
 public final class StaffLoanWriteOffApiExamples {
 
@@ -110,12 +109,6 @@ public final class StaffLoanWriteOffApiExamples {
             {
               "code": "NOT_FOUND",
               "message": "Staff loan 999 not found"
-            }""";
-
-    public static final String VOUCHER_OPEN = """
-            {
-              "code": "CONFLICT",
-              "message": "Staff loan SGL-2026-000143's voucher 7 can still be spent, until 2026-11-05T23:59:59+02:00; a loan whose value can still be drawn cannot be written off: wait until it expires"
             }""";
 
     public static final String NOT_PAID_OUT = """
