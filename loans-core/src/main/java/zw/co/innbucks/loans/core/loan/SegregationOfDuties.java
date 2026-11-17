@@ -3,7 +3,6 @@ package zw.co.innbucks.loans.core.loan;
 import org.apache.commons.lang3.StringUtils;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
 import zw.co.innbucks.loans.core.user.User;
 
 import java.util.Locale;
@@ -69,8 +68,7 @@ public final class SegregationOfDuties {
                 && idNumber.equals(identityNumber(borrower.getNationalId()));
         boolean sameMobile = mobile != null
                 && (mobile.equals(nationalMobileNumber(loan.getMsisdn()))
-                || (loan.getPayoutDestination() == StaffLoanPayoutDestination.VEENGU_WALLET
-                && mobile.equals(nationalMobileNumber(loan.getPayoutAccount())))
+                || mobile.equals(nationalMobileNumber(loan.getPayoutAccount()))
                 || (borrower != null && mobile.equals(nationalMobileNumber(borrower.getMsisdn()))));
         return sameId || sameMobile;
     }

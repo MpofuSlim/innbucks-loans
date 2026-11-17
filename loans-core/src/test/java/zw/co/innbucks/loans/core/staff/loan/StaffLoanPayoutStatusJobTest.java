@@ -186,8 +186,8 @@ class StaffLoanPayoutStatusJobTest {
     }
 
     @Test
-    @DisplayName("the job exists only where payouts are paid in cash: never by default, never for VOUCHER")
-    void onlyForCash() {
+    @DisplayName("the job exists in every process: every loan is paid through the bank")
+    void alwaysOn() {
         ApplicationContextRunner runner = new ApplicationContextRunner()
                 .withBean(StaffLoanPayoutStatusService.class, () -> statusService)
                 .withBean(StaffLoanRepository.class, () -> loans)
@@ -196,12 +196,6 @@ class StaffLoanPayoutStatusJobTest {
                 .withBean(MarketTimeZone.class, () -> new MarketTimeZone("ZW"))
                 .withUserConfiguration(StaffLoanPayoutStatusJob.class);
 
-        runner.run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(StaffLoanPayoutStatusJob.class));
-        runner.withPropertyValues("loans.staff-loans.payout.method=VOUCHER")
-                .run(context -> assertThat(context).doesNotHaveBean(StaffLoanPayoutStatusJob.class));
-        runner.withPropertyValues("loans.staff-loans.payout.method=CASH")
-                .run(context -> assertThat(context).hasSingleBean(StaffLoanPayoutStatusJob.class));
-        runner.withPropertyValues("loans.staff-loans.payout.method=cash")
-                .run(context -> assertThat(context).hasSingleBean(StaffLoanPayoutStatusJob.class));
+        runner.run(context -> assertThat(context).hasNotFailed().hasSingleBean(StaffLoanPayoutStatusJob.class));
     }
 }

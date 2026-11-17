@@ -51,7 +51,7 @@ public class SmsNotificationClient {
 
     /**
      * As {@link #sendSms(String, String, String)}; with {@code withholdUpstreamReply}, a rejection is logged without the
-     * API's reply, for a message whose text must never reach a log (a voucher code) in case the reply echoes it.
+     * API's reply, for a message whose text must never reach a log (a code or a secret) in case the reply echoes it.
      */
     public void sendSms(String destination, String message, String reference, boolean withholdUpstreamReply) {
         if (destination == null || destination.isBlank()) {

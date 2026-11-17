@@ -4,7 +4,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * Where a cash Staff Grocery Loan's payout stands; null for a voucher loan. The bank books AND pays on one call, so a
+ * Where a Staff Grocery Loan's payout stands; null only for a loan accepted before vouchers were withdrawn. The bank books AND pays on one call, so a
  * payout is claimed before it is sent and is never sent twice. An answer that does not prove it was booked, or that it
  * was not, holds it IN_DOUBT, and only the bank's inquiry or a person settles it. No bank answer cancels a loan by
  * itself: only a person ends a payout that has not been paid.

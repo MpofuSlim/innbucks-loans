@@ -39,8 +39,8 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff loan write-offs", description = "Writing off a Staff Grocery Loan, and reversing a write-off"
         + " (FR-GEN-011), under maker-checker: CREDIT_MANAGER, FINANCE or SUPER_ADMIN proposes, with a reason; FINANCE"
-        + " or a SUPER_ADMIN approves or rejects, never the proposer. Only a paid-out loan whose voucher can no longer be"
-        + " spent can be written off. A written-off loan is still owed, and it stops the borrower taking another Staff"
+        + " or a SUPER_ADMIN approves or rejects, never the proposer. Only a paid-out loan can be"
+        + " written off. A written-off loan is still owed, and it stops the borrower taking another Staff"
         + " Grocery Loan unless Credit overrides (FR-SGL-014). A reversal puts a loan written off in error back to"
         + " DISBURSED. Audited, the loan's change of state too.")
 @RestController
@@ -56,8 +56,8 @@ public class StaffLoanWriteOffController {
     private final StaffLoanWriteOffService writeOffService;
 
     @Operation(summary = "Propose writing off a staff loan, or reversing its write-off",
-            description = "CREDIT_MANAGER, FINANCE or SUPER_ADMIN. kind WRITE_OFF is for a paid-out (DISBURSED) loan"
-                    + " whose voucher can no longer be spent; a loan awaiting disbursement is cancelled instead."
+            description = "CREDIT_MANAGER, FINANCE or SUPER_ADMIN. kind WRITE_OFF is for a paid-out (DISBURSED) loan;"
+                    + " a loan awaiting disbursement is cancelled instead."
                     + " kind WRITE_OFF_REVERSAL is for a WRITTEN_OFF loan, and is refused while the borrower holds"
                     + " another open loan. amount is what the loan owes as loans knows it. One request per loan may"
                     + " wait at a time. Nothing changes until FINANCE or a SUPER_ADMIN approves it. Audited.")
@@ -83,8 +83,6 @@ public class StaffLoanWriteOffController {
             @ApiResponse(responseCode = "409", description = "The loan does not allow it now, or a request already"
                     + " waits for it",
                     content = @Content(examples = {
-                            @ExampleObject(name = "Voucher can still be spent",
-                                    value = StaffLoanWriteOffApiExamples.VOUCHER_OPEN),
                             @ExampleObject(name = "Not paid out", value = StaffLoanWriteOffApiExamples.NOT_PAID_OUT),
                             @ExampleObject(name = "Nothing to reverse",
                                     value = StaffLoanWriteOffApiExamples.NOTHING_TO_REVERSE),

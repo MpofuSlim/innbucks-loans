@@ -56,7 +56,7 @@ public class ApiSecurityConfig {
     /**
      * {@code /actuator/prometheus}, for the cell's Prometheus and nobody else: the fleet's scrape token
      * ({@link MetricsScrapeAuthFilter}) or a 401. Its own chain, ahead of the other two, so no loans token
-     * reads it (a merchant till's credential has no business with every route's error counts) and none of the
+     * reads it (no user's credential has any business with every route's error counts) and none of the
      * API chain's session filters apply to the scraper. Blank token: a 401 for every caller.
      */
     @Bean
@@ -96,9 +96,8 @@ public class ApiSecurityConfig {
      * gap where root-mapped controllers fell outside a path-prefix matcher and were reachable
      * with no authentication. A missing, expired or revoked token is a 401 and a role refusal a
      * 403, both in the standard error envelope rather than an empty body; a token minted on a temporary
-     * password is a 403 PASSWORD_CHANGE_REQUIRED for anything but changing it, a voucher role is a 403 outside the
-     * voucher endpoints ({@link VoucherRoleFilter}), and a borrower session is a 403 outside the borrower endpoints, which
-     * refuse every other session ({@link BorrowerSessionFilter}).
+     * password is a 403 PASSWORD_CHANGE_REQUIRED for anything but changing it, and a borrower session is a 403 outside
+     * the borrower endpoints, which refuse every other session ({@link BorrowerSessionFilter}).
      */
     @Bean
     @Order(2)
@@ -117,10 +116,8 @@ public class ApiSecurityConfig {
                 // After the token is authenticated, before any role check: a session on a temporary password
                 // is answered 403 PASSWORD_CHANGE_REQUIRED everywhere but PUT /me/password.
                 .addFilterAfter(new TemporaryPasswordFilter(), BearerTokenAuthenticationFilter.class)
-                // Then a voucher role is kept to the voucher endpoints (a merchant till to validation and redemption).
-                .addFilterAfter(new VoucherRoleFilter(), TemporaryPasswordFilter.class)
-                // And a SuperApp borrower's session to the borrower endpoints, which answer nobody else.
-                .addFilterAfter(new BorrowerSessionFilter(), VoucherRoleFilter.class)
+                // Then a SuperApp borrower's session is kept to the borrower endpoints, which answer nobody else.
+                .addFilterAfter(new BorrowerSessionFilter(), TemporaryPasswordFilter.class)
                 .build();
     }
 }

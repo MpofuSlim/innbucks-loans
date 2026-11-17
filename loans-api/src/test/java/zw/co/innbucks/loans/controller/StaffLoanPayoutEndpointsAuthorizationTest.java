@@ -34,9 +34,7 @@ import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.StaffMemberRepository;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDispatcher;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMetrics;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutRequests;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus;
@@ -45,7 +43,6 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanProperties;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanRepository;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus;
-import zw.co.innbucks.loans.core.staff.loan.UnredeemedVoucherTreatment;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationService;
 import zw.co.innbucks.loans.core.user.User;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
@@ -193,9 +190,7 @@ class StaffLoanPayoutEndpointsAuthorizationTest {
                 .employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
                 .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2027, 2, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2027, 2, 2, 7, 12, 5))
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET)
                 .payoutAccount("263773456789").payoutStatus(payout).build();
     }
 

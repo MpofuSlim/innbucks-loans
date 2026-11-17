@@ -12,7 +12,7 @@ import java.util.Set;
 public enum StaffLoanStatus {
     /** Accepted; nothing paid yet. Cancellable. */
     AWAITING_DISBURSEMENT,
-    /** Paid to its merchant and the voucher issued; owed until it is collected from salary. */
+    /** Paid into the borrower's InnBucks wallet; owed until it is collected from salary. */
     DISBURSED,
     /** Collected in full. */
     REPAID,

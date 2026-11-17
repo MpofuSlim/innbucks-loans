@@ -53,7 +53,7 @@ public class WhatsAppNotificationClient {
 
     /**
      * As {@link #sendCustomNotification(String, String)}; with {@code withholdUpstreamReply}, a rejection is logged
-     * without the gateway's reply, for a message whose text must never reach a log (a voucher code) in case the reply
+     * without the gateway's reply, for a message whose text must never reach a log (a code or a secret) in case the reply
      * echoes it.
      */
     public void sendCustomNotification(String to, String notification, boolean withholdUpstreamReply) {

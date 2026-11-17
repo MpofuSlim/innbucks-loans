@@ -20,13 +20,10 @@ import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.exception.ConflictException;
 import zw.co.innbucks.loans.core.exception.NotFoundException;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
-import zw.co.innbucks.loans.core.loan.DisbursementType;
-import zw.co.innbucks.loans.core.merchant.Merchant;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatusChanged;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationService;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationTemplate;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -66,16 +63,14 @@ class StaffLoanServiceTest {
     private final StaffLoanEmploymentFlagNotifier notifier = mock(StaffLoanEmploymentFlagNotifier.class);
     private final StaffNotificationService notifications = mock(StaffNotificationService.class);
     private final StaffLoanService service = new StaffLoanService(loans, agreements,
-            new StaffLoanPolicy(new StaffLoanProperties(), new VoucherProperties()), authService, audit,
+            new StaffLoanPolicy(new StaffLoanProperties()), authService, audit,
             new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-10-01T09:02:17Z"), ZoneOffset.UTC)), notifier,
             notifications);
     private final StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(2L)
             .offerId(31L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
             .amount(new BigDecimal("300.00")).currency("USD").interestRate(BigDecimal.ZERO)
             .totalRepayable(new BigDecimal("300.00")).dueDate(LocalDate.of(2026, 11, 20))
-            .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
-            .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41))
-            .merchant(getMore()).build();
+            .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41)).build();
 
     /** Nyasha Dube's loan, paid out on 8 October. */
     private final StaffLoan paidOut = paidOutLoan(StaffLoanStatus.DISBURSED);
@@ -85,17 +80,8 @@ class StaffLoanServiceTest {
                 .offerId(1L).employeeNumber("E1001").fullName("Nyasha Dube").msisdn("263782606983").grade("C4")
                 .amount(new BigDecimal("250.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("250.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
                 .status(status).acceptedAt(LocalDateTime.of(2026, 10, 8, 5, 58, 30))
-                .disbursedAt(LocalDateTime.of(2026, 10, 8, 6, 5, 38)).disbursementReference("BRNET-20261008-0002")
-                .merchant(getMore()).build();
-    }
-
-    private static Merchant getMore() {
-        Merchant merchant = Merchant.builder().merchantCode("getmore-groceries").companyName("GetMore Groceries")
-                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).staffLoanMerchant(true).build();
-        merchant.setId(3L);
-        return merchant;
+                .disbursedAt(LocalDateTime.of(2026, 10, 8, 6, 5, 38)).disbursementReference("BRNET-20261008-0002").build();
     }
 
     {
@@ -120,7 +106,7 @@ class StaffLoanServiceTest {
         verify(loans).save(loan);
         assertThat(audited().getEventType()).isEqualTo(StaffLoanService.CANCELLED);
         assertThat(audited().getChannelUsed()).isEqualTo("admin-portal");
-        assertThat(loan.getPayoutStatus()).as("a voucher loan has no payout").isNull();
+        assertThat(loan.getPayoutStatus()).as("accepted before vouchers were withdrawn: no payout").isNull();
         verifyNoInteractions(notifications);
     }
 
@@ -130,10 +116,7 @@ class StaffLoanServiceTest {
                 .offerId(32L).employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
                 .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
                 .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS)
-                .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41))
-                .merchant(getMore()).payoutMethod(StaffLoanPayoutMethod.CASH)
-                .payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET).payoutAccount("263773456789")
+                .status(StaffLoanStatus.AWAITING_DISBURSEMENT).acceptedAt(LocalDateTime.of(2026, 10, 1, 7, 10, 41)).payoutAccount("263773456789")
                 .payoutStatus(payout).payoutClaimedAt(payout == StaffLoanPayoutStatus.SENDING ? NOW : null).build();
         when(loans.lockById(144L)).thenReturn(Optional.of(cash));
         return cash;
@@ -375,14 +358,14 @@ class StaffLoanServiceTest {
                 any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(paidOut)));
 
-        StaffLoanResponse listed = service.loans(null, null, true, null, null,
+        StaffLoanResponse listed = service.loans(null, null, true, null,
                 org.springframework.data.domain.PageRequest.of(0, 20)).getContent().getFirst();
 
         assertThat(listed.employmentFlag().action()).isEqualTo(EmploymentFlagAction.RECOVER_FROM_TERMINAL_BENEFITS);
     }
 
     @Test
-    @DisplayName("the list filters on the payout's status and on how loans are paid out, each only when asked")
+    @DisplayName("the list filters on the payout's status only when asked")
     @SuppressWarnings("unchecked")
     void listByPayout() {
         ArgumentCaptor<Specification<StaffLoan>> filter = ArgumentCaptor.forClass(Specification.class);
@@ -390,27 +373,22 @@ class StaffLoanServiceTest {
         Root<StaffLoan> root = mock(Root.class);
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Path<Object> payoutStatus = mock(Path.class);
-        Path<Object> payoutMethod = mock(Path.class);
         when(root.get("payoutStatus")).thenReturn(payoutStatus);
-        when(root.get("payoutMethod")).thenReturn(payoutMethod);
 
-        service.loans(null, null, null, StaffLoanPayoutStatus.IN_DOUBT, StaffLoanPayoutMethod.CASH,
-                PageRequest.of(0, 20));
+        service.loans(null, null, null, StaffLoanPayoutStatus.IN_DOUBT, PageRequest.of(0, 20));
         filter.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
 
         verify(cb).equal(payoutStatus, StaffLoanPayoutStatus.IN_DOUBT);
-        verify(cb).equal(payoutMethod, StaffLoanPayoutMethod.CASH);
 
         Root<StaffLoan> unfiltered = mock(Root.class);
-        service.loans(null, null, null, null, null, PageRequest.of(0, 20));
+        service.loans(null, null, null, null, PageRequest.of(0, 20));
         filter.getValue().toPredicate(unfiltered, mock(CriteriaQuery.class), mock(CriteriaBuilder.class));
         verify(unfiltered, never()).get("payoutStatus");
-        verify(unfiltered, never()).get("payoutMethod");
     }
 
     @Test
-    @DisplayName("a cash loan as the portal sees it: where it is paid, by the last four digits, and where its payout"
-            + " stands")
+    @DisplayName("a loan as the portal sees it: the wallet it is paid into, by the last four digits, and where its"
+            + " payout stands")
     void cashLoanAsListed() {
         StaffLoan cash = cashLoan(StaffLoanPayoutStatus.READY);
         cash.claimPayout(NOW);
@@ -420,26 +398,22 @@ class StaffLoanServiceTest {
         StaffLoanResponse listed = service.summary(144L);
 
         assertThat(listed.reference()).isEqualTo("SGL-2026-000144");
-        assertThat(listed.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-        assertThat(listed.payoutDestination()).isEqualTo(StaffLoanPayoutDestination.VEENGU_WALLET);
         assertThat(listed.payoutAccount()).isEqualTo("****6789");
         assertThat(listed.payoutStatus()).isEqualTo(StaffLoanPayoutStatus.IN_DOUBT);
         assertThat(listed.payoutMessage()).isEqualTo("The bank answered HTTP 504");
         assertThat(listed.payoutLastAnswer()).isEqualTo("{\"responseCode\":\"999\"}");
         assertThat(listed.payoutClaimedAt()).isNull();
         assertThat(listed.payoutBankSeenAt()).isNull();
-        assertThat(listed.merchantCode()).as("recorded, not used").isEqualTo("getmore-groceries");
         assertThat(listed.toString()).doesNotContain("263773456789".substring(0, 8));
     }
 
     @Test
-    @DisplayName("a voucher loan carries no payout field at all, not even its method: it reads as it did before cash"
-            + " payouts; an unknown loan is not found")
-    void voucherLoanAsListed() {
+    @DisplayName("a loan accepted before vouchers were withdrawn carries no payout field at all; an unknown loan is not"
+            + " found")
+    void loanWithoutAPayoutAsListed() {
         StaffLoanResponse listed = service.summary(143L);
 
-        assertThat(listed).extracting(StaffLoanResponse::payoutMethod, StaffLoanResponse::payoutDestination,
-                StaffLoanResponse::payoutAccount, StaffLoanResponse::payoutStatus, StaffLoanResponse::payoutMessage,
+        assertThat(listed).extracting(StaffLoanResponse::payoutAccount, StaffLoanResponse::payoutStatus, StaffLoanResponse::payoutMessage,
                 StaffLoanResponse::payoutApplyAnswer, StaffLoanResponse::payoutLastAnswer,
                 StaffLoanResponse::payoutCheckedAt, StaffLoanResponse::payoutDeclinedAt,
                 StaffLoanResponse::bankLoanAccount).containsOnlyNulls();

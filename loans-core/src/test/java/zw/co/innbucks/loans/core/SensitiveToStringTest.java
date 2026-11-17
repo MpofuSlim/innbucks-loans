@@ -49,8 +49,6 @@ import zw.co.innbucks.loans.core.notice.OutgoingNotice;
 import zw.co.innbucks.loans.core.notifications.InnbucksNotifyProperties;
 import zw.co.innbucks.loans.core.notifications.WhatsAppProperties;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoan;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutStatus;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPolicy;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanStatus;
@@ -317,14 +315,13 @@ class SensitiveToStringTest {
     }
 
     @Test
-    @DisplayName("a staff loan paid in cash, its booking and the bank's answers print no account, ID number or answer")
+    @DisplayName("a staff loan paid into a wallet, its booking and the bank's answers print no number, ID or answer")
     void staffCashPayoutsHideAccountsAndAnswers() {
         String wallet = "263772123123";
         String answer = "{\"loanDetails\":{\"status\":\"SETTLED\",\"idNumber\":\"" + NATIONAL_ID + "\"}}";
         StaffLoan loan = StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(12L)
                 .fullName("Chipo Banda").msisdn(wallet).status(StaffLoanStatus.AWAITING_DISBURSEMENT)
-                .payoutMethod(StaffLoanPayoutMethod.CASH).payoutDestination(StaffLoanPayoutDestination.BR_ACCOUNT)
-                .payoutAccount(ACCOUNT_NUMBER).payoutStatus(StaffLoanPayoutStatus.BOOKED).payoutLastAnswer(answer)
+                .payoutAccount(wallet).payoutStatus(StaffLoanPayoutStatus.BOOKED).payoutLastAnswer(answer)
                 .bankLoanAccount("LA-55443322").build();
         PreApprovedLoanBooking booking = new PreApprovedLoanBooking("SGL-2026-000143", "Chipo", "Banda", NATIONAL_ID,
                 new BigDecimal("150.00"), "USD", "STAFFGROC", "PERSONAL", 1, wallet, ACCOUNT_NUMBER, "InnBucks",
@@ -337,14 +334,13 @@ class SensitiveToStringTest {
                 .build();
         InquiryAnswer inquiry = new InquiryAnswer(InquiryAnswer.Kind.FOUND, "000", "SETTLED", "LA-55443322",
                 "SGL-2026-000143", new BigDecimal("15000"), BigDecimal.ZERO, wallet, ACCOUNT_NUMBER, answer, 200);
-        StaffLoanPolicy.PayoutTarget target = new StaffLoanPolicy.PayoutTarget(StaffLoanPayoutDestination.BR_ACCOUNT,
-                ACCOUNT_NUMBER);
+        StaffLoanPolicy.PayoutTarget target = new StaffLoanPolicy.PayoutTarget(wallet);
 
         for (Object value : List.of(loan, booking, application, inquiry, target)) {
             assertNoPii(value);
             assertThat(value.toString()).doesNotContain(wallet, "LA-55443322", "Chipo Banda");
         }
-        assertThat(loan.toString()).contains("SGL-2026-000143", "CASH", "BOOKED");
+        assertThat(loan.toString()).contains("SGL-2026-000143", "BOOKED");
         assertThat(booking.toString()).contains("SGL-2026-000143", "****3123", "****4556", "150.00")
                 .doesNotContain("12 Main Road", "Jane Banda", "14-05-1990", "1500");
         PreApprovedLoanRequest staffBody = new PreApprovedLoanRequest("Chipo", "Banda", NATIONAL_ID,
@@ -355,7 +351,7 @@ class SensitiveToStringTest {
         assertThat(staffBody.toString()).contains("SGL-2026-000143", "****3123", "autoSettle=true")
                 .doesNotContain(wallet, "Chipo", "Banda", "12 Main Road", "14-05-1990", "Jane", "1500");
         assertThat(inquiry.toString()).contains("FOUND", "SETTLED");
-        assertThat(target.toString()).contains("BR_ACCOUNT", "****4556");
+        assertThat(target.toString()).contains("****3123");
     }
 
     @Test

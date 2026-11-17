@@ -5,17 +5,17 @@ import org.springframework.stereotype.Component;
 import zw.co.innbucks.loans.core.MsisdnUtils;
 import zw.co.innbucks.loans.core.instrument.StaffLoanTerms;
 import zw.co.innbucks.loans.core.staff.StaffMember;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * The Staff Grocery Loan's terms, from the settings: which amounts may be taken from an offer (FR-SGL-012), when it is
- * due, what is owed (FR-SGL-026), and how a loan accepted now is paid out. Interest-free and without fees, so what is
- * owed is what is borrowed.
+ * due, what is owed (FR-SGL-026), and the InnBucks wallet a loan accepted now is paid into. Interest-free and without
+ * fees, so what is owed is what is borrowed.
  */
 @Component
 @RequiredArgsConstructor
@@ -24,7 +24,6 @@ public class StaffLoanPolicy {
     static final BigDecimal INTEREST_RATE = BigDecimal.ZERO;
 
     private final StaffLoanProperties properties;
-    private final VoucherProperties voucherProperties;
 
     /** The amounts {@code offerAmount} may be drawn in. An offer under the minimum draw can only be taken in full. */
     public DrawRules drawRules(BigDecimal offerAmount) {
@@ -70,71 +69,43 @@ public class StaffLoanPolicy {
         return properties.getCurrency();
     }
 
-    public int voucherValidityDays() {
-        return voucherProperties.getValidityDays();
-    }
-
-    public UnredeemedVoucherTreatment unredeemedVoucherTreatment() {
-        return properties.getUnredeemedVoucherTreatment();
-    }
-
     public int arrearsGraceDays() {
         return properties.getArrearsGraceDays();
     }
 
-    /** How a loan accepted now is paid out; each loan keeps the way it was accepted under. */
-    public StaffLoanPayoutMethod payoutMethod() {
-        return properties.getPayout().getMethod();
-    }
-
-    /** Where a loan accepted now is paid when it is paid in cash; null when none is set. */
-    public StaffLoanPayoutDestination payoutDestination() {
-        return properties.getPayout().getDestination();
-    }
-
     /**
-     * Where a cash loan {@code member} accepts now is paid, as the register holds it now: their registered phone for
-     * VEENGU_WALLET, the register's account number for BR_ACCOUNT ({@link StaffLoanPayoutDestination#accountOf}).
-     * Empty when loans are paid by voucher, or when the register holds no such account for them: a member whose
-     * register entry holds a wallet has no account to be paid into.
+     * Where a loan {@code member} accepts now is paid: their InnBucks (Veengu) wallet, the registered phone they prove
+     * with their PIN. Empty when the register holds no wallet-shaped phone for them ({@link PayoutTarget#WALLET}).
      */
     public Optional<PayoutTarget> payoutTarget(StaffMember member) {
-        StaffLoanProperties.Payout payout = properties.getPayout();
-        if (!payout.cash() || payout.getDestination() == null) {
+        if (member == null || member.getMsisdn() == null || !PayoutTarget.WALLET.matcher(member.getMsisdn()).matches()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(payout.getDestination().accountOf(member))
-                .map(account -> new PayoutTarget(payout.getDestination(), account));
+        return Optional.of(new PayoutTarget(member.getMsisdn()));
     }
 
     /**
-     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, for a voucher spent at
-     * {@code merchantName}, as the agreement names them.
+     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, paid into {@code payout},
+     * as the agreement names them.
      */
     public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay,
-                                          String merchantName) {
-        return signing(member, amount, acceptedDay, merchantName, null);
-    }
-
-    /**
-     * The terms {@code member} would accept borrowing {@code amount} on {@code acceptedDay}, as the agreement names
-     * them: with {@code payout} null, for a voucher spent at {@code merchantName}; with it, paid in cash into that
-     * account, and nothing about a voucher (the caller passes no merchant).
-     */
-    public StaffLoanTerms.Signing signing(StaffMember member, BigDecimal amount, LocalDate acceptedDay,
-                                          String merchantName, PayoutTarget payout) {
-        boolean cash = payout != null;
+                                          PayoutTarget payout) {
         return new StaffLoanTerms.Signing(member.getFullName(), member.getEmployeeNumber(), member.getNationalId(),
                 member.getMsisdn(), member.getDepartment(), money(amount), currency(), INTEREST_RATE,
-                totalRepayable(amount), dueDate(acceptedDay), merchantName, cash ? 0 : voucherValidityDays(),
-                cash ? null : unredeemedVoucherTreatment().terms(), cash ? payout.named() : null, acceptedDay);
+                totalRepayable(amount), dueDate(acceptedDay), payout.named(), acceptedDay);
     }
 
     /**
-     * The account a cash loan is paid into, and its kind. Shown and written only by its last four digits; the
-     * account itself is kept on the loan alone.
+     * The InnBucks wallet a loan is paid into: the borrower's registered phone. Shown and written only by its last four
+     * digits; the number itself is kept on the loan alone.
      */
-    public record PayoutTarget(StaffLoanPayoutDestination destination, String account) {
+    public record PayoutTarget(String account) {
+
+        /** How the borrower is told where the money goes: "your InnBucks wallet ending 3123". */
+        public static final String LABEL = "InnBucks wallet";
+
+        /** A wallet: a Zimbabwean mobile number as the register stores it, 2637XXXXXXXX. */
+        static final Pattern WALLET = Pattern.compile("2637[13789]\\d{7}");
 
         /** {@code ****3123}. */
         public String masked() {
@@ -148,12 +119,12 @@ public class StaffLoanPolicy {
 
         /** How the agreement names it: {@code InnBucks wallet ****3123}. */
         public String named() {
-            return destination.label() + " " + masked();
+            return LABEL + " " + masked();
         }
 
         @Override
         public String toString() {
-            return "PayoutTarget[" + destination + " " + masked() + "]";
+            return "PayoutTarget[" + masked() + "]";
         }
     }
 

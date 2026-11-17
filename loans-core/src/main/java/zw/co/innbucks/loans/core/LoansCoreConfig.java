@@ -15,7 +15,6 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanProperties;
 import zw.co.innbucks.loans.core.staff.notification.StaffNotificationProperties;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferProperties;
 import zw.co.innbucks.loans.core.user.PortalProperties;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 
 @EnableScheduling
@@ -28,7 +27,6 @@ import zw.co.innbucks.loans.core.voucher.VoucherProperties;
         LoanApplicationDraftProperties.class,
         StaffOfferProperties.class,
         StaffNotificationProperties.class,
-        VoucherProperties.class,
         BorrowerProperties.class,
         StaffLoanProperties.class,
         PortalProperties.class})

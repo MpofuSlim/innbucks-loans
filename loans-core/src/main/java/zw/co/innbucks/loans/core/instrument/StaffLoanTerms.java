@@ -16,13 +16,12 @@ import java.util.regex.Pattern;
 /**
  * The terms the Staff Grocery Loan agreement's wording can name, as {@code {{placeholder}}}s, and how they are filled
  * (FR-SGL-026, FR-SGL-027). Its own set, apart from {@link InstrumentTerms}: a staff loan has no tenor, instalment or
- * SSB deduction, and an SSB loan has no repayment date or voucher. As there, an unknown name is refused when the
- * wording is published, never left unfilled in an accepted agreement, and amounts are written with two decimals.
+ * SSB deduction, and an SSB loan has no repayment date. As there, an unknown name is refused when the wording is
+ * published, never left unfilled in an accepted agreement, and amounts are written with two decimals.
  *
- * <p>A loan is paid by voucher or in cash, and the wording must fit the way it is paid: a cash agreement names where
- * the money goes ({@link #CASH_ONLY}) and nothing about a voucher ({@link #VOUCHER_ONLY}), and a voucher agreement
- * names no account. The journey refuses an agreement that does not fit, so no borrower signs for one and is paid the
- * other way.
+ * <p>Every loan is paid in cash into the borrower's InnBucks wallet, and the wording must say where the money goes
+ * ({@link #REQUIRED}). The journey refuses an agreement that does not, or that names a term which no longer exists
+ * (one written for the withdrawn voucher), so no borrower signs for something they would not get.
  */
 public final class StaffLoanTerms {
 
@@ -31,24 +30,16 @@ public final class StaffLoanTerms {
     /**
      * What a staff loan agreement is filled with: the borrower as the register holds them, and the terms disclosed.
      *
-     * @param unredeemedVoucherTerms the sentence that says what happens to the loan when the voucher is not spent
-     *                               in full before it expires (OQ-09)
-     * @param payoutAccount          where a cash loan is paid, never in full: {@code InnBucks wallet ****3123}; null
-     *                               for a voucher loan
+     * @param payoutAccount where the loan is paid, never in full: {@code InnBucks wallet ****3123}
      */
     public record Signing(String borrowerName, String employeeNumber, String nationalIdNumber, String mobileNumber,
                           String department, BigDecimal amount, String currency, BigDecimal interestRate,
-                          BigDecimal totalRepayable, LocalDate repaymentDate, String merchantName,
-                          int voucherValidityDays, String unredeemedVoucherTerms, String payoutAccount,
+                          BigDecimal totalRepayable, LocalDate repaymentDate, String payoutAccount,
                           LocalDate acceptedDate) {
     }
 
-    /** What only a cash agreement names: where the money is paid. A cash agreement must name it. */
-    public static final Set<String> CASH_ONLY = Set.of("payoutAccount");
-
-    /** What only a voucher agreement names: the voucher, and where it is spent. A cash agreement names none of it. */
-    public static final Set<String> VOUCHER_ONLY = Set.of("merchantName", "voucherValidityDays",
-            "unredeemedVoucherTerms");
+    /** What every agreement must name: where the money is paid. One that does not is never offered for signing. */
+    public static final Set<String> REQUIRED = Set.of("payoutAccount");
 
     private record Term(String description, Function<Signing, String> value) {
     }
@@ -67,13 +58,8 @@ public final class StaffLoanTerms {
         TERMS.put("totalRepayable", new Term("Total to repay", s -> money(s.totalRepayable())));
         TERMS.put("repaymentDate", new Term("Date it is collected from salary, yyyy-MM-dd",
                 s -> date(s.repaymentDate())));
-        TERMS.put("merchantName", new Term("Where the voucher can be spent", s -> text(s.merchantName())));
-        TERMS.put("voucherValidityDays", new Term("Days the voucher can be spent for",
-                s -> String.valueOf(s.voucherValidityDays())));
-        TERMS.put("unredeemedVoucherTerms", new Term("What happens if the voucher is not spent in full before it"
-                + " expires", s -> text(s.unredeemedVoucherTerms())));
-        TERMS.put("payoutAccount", new Term("Where a cash loan is paid, by its last four digits, e.g. InnBucks"
-                + " wallet ****3123 (blank for a voucher loan)", s -> text(s.payoutAccount())));
+        TERMS.put("payoutAccount", new Term("Where the loan is paid, by its last four digits, e.g. InnBucks wallet"
+                + " ****3123", s -> text(s.payoutAccount())));
         TERMS.put("acceptedDate", new Term("Date accepted, yyyy-MM-dd", s -> date(s.acceptedDate())));
     }
 
@@ -100,7 +86,7 @@ public final class StaffLoanTerms {
     }
 
     /** The placeholders in the wording that are not terms, in order of first appearance. */
-    static List<String> unknownPlaceholders(String body) {
+    public static List<String> unknownPlaceholders(String body) {
         Set<String> unknown = new LinkedHashSet<>();
         Matcher matcher = PLACEHOLDER.matcher(body);
         while (matcher.find()) {

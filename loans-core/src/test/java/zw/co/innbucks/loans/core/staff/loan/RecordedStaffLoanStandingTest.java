@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
 import zw.co.innbucks.loans.core.staff.StaffMember;
 import zw.co.innbucks.loans.core.staff.offer.StaffLoanStanding.Standing;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -37,7 +36,7 @@ class RecordedStaffLoanStandingTest {
     private final StaffLoanRepository repository = mock(StaffLoanRepository.class);
     private final StaffLoanProperties properties = new StaffLoanProperties();
     private final RecordedStaffLoanStanding standing = new RecordedStaffLoanStanding(repository,
-            new StaffLoanPolicy(properties, new VoucherProperties()),
+            new StaffLoanPolicy(properties),
             new MarketTimeZone("ZW", Clock.fixed(Instant.parse("2026-11-23T08:00:00Z"), ZoneOffset.UTC)));
 
     {

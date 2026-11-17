@@ -1,7 +1,6 @@
 package zw.co.innbucks.loans.core.staff.loan;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import zw.co.innbucks.loans.core.config.MarketTimeZone;
@@ -16,9 +15,8 @@ import java.util.List;
  * settled: {@link StaffLoanPayoutStatusService}, which reads the bank's status and never sends a booking. It moves no
  * money, and depends on nothing that does ({@code StaffLoanPayoutWiringTest}).
  *
- * <p>On its own switch, not {@code STAFF_LOANS_JOBS_ENABLED}: it runs wherever payouts are paid in cash
- * ({@code loans.staff-loans.payout.method=CASH}), because a payout the bank took is only recorded paid by asking it, and
- * that switch also starts the Monday offer run. Every {@code status-check-interval} (PT3M), on the one scheduler
+ * <p>Always on, never behind {@code STAFF_LOANS_JOBS_ENABLED}: every Staff Grocery Loan is paid in cash, a payout the
+ * bank took is only recorded paid by asking it, and that switch also starts the Monday offer run. Every {@code status-check-interval} (PT3M), on the one scheduler
  * thread, so a run stops once the bank cannot be reached (no answer, a failed login, a 5xx) or the inquiry breaks: every
  * one behind it would most likely end the same way, and it must not hold that thread for long. The rest wait for the
  * next run. An answer about one loan that says nothing (a bare 404, an HTML page), or one that could not be saved, is
@@ -27,7 +25,6 @@ import java.util.List;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(prefix = "loans.staff-loans.payout", name = "method", havingValue = "CASH")
 public class StaffLoanPayoutStatusJob {
 
     private final StaffLoanPayoutStatusService statusService;

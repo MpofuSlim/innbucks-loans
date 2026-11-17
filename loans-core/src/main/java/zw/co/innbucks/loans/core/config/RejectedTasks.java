@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * and says so in the log, at most once every {@link #WARN_EVERY_NANOS ten seconds} with the count since the last line.
  * The counter is registered at 0 when the executor is built, so a first drop shows as an increase rather than as a
  * series appearing. The log line names the executor and its load, never the task: a task carries a phone number, a
- * message or a voucher id.
+ * message or an id.
  */
 @Slf4j
 public final class RejectedTasks {

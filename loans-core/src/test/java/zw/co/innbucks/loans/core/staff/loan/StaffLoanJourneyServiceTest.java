@@ -26,9 +26,6 @@ import zw.co.innbucks.loans.core.instrument.InstrumentTemplate;
 import zw.co.innbucks.loans.core.instrument.InstrumentTemplateService;
 import zw.co.innbucks.loans.core.instrument.InstrumentType;
 import zw.co.innbucks.loans.core.instrument.SigningContext;
-import zw.co.innbucks.loans.core.loan.DisbursementType;
-import zw.co.innbucks.loans.core.merchant.Merchant;
-import zw.co.innbucks.loans.core.merchant.StaffLoanMerchantService;
 import zw.co.innbucks.loans.core.staff.StaffEmploymentStatus;
 import zw.co.innbucks.loans.core.staff.StaffGradeLimit;
 import zw.co.innbucks.loans.core.staff.StaffMember;
@@ -43,10 +40,6 @@ import zw.co.innbucks.loans.core.staff.offer.StaffOfferRepository;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferRunService;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferStatus;
 import zw.co.innbucks.loans.core.staff.offer.StaffOfferVerdict;
-import zw.co.innbucks.loans.core.voucher.BorrowerVoucherResponse;
-import zw.co.innbucks.loans.core.voucher.VoucherProperties;
-import zw.co.innbucks.loans.core.voucher.VoucherService;
-import zw.co.innbucks.loans.core.voucher.VoucherStatus;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -72,7 +65,6 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -90,7 +82,10 @@ class StaffLoanJourneyServiceTest {
     private static final MarketTimeZone ZW = new MarketTimeZone("ZW", Clock.fixed(NOW, ZoneOffset.UTC));
     private static final StaffGradeLimit C4 = new StaffGradeLimit(1L, "C4", "Band C", new BigDecimal("300.00"),
             LocalDate.of(2026, 9, 1), "credit2", LocalDateTime.of(2026, 8, 31, 8, 0));
-    private static final String BODY = "I, {{borrowerName}}, borrow {{currency}} {{amount}} and repay"
+    private static final String BODY = "I, {{borrowerName}}, borrow {{currency}} {{amount}}, paid into my"
+            + " {{payoutAccount}}, and repay {{totalRepayable}} on {{repaymentDate}}.";
+    /** An agreement worded before loans were paid into the wallet: it never says where the money goes. */
+    private static final String UNPAID_BODY = "I, {{borrowerName}}, borrow {{currency}} {{amount}} and repay"
             + " {{totalRepayable}} on {{repaymentDate}}.";
 
     private final StaffMember chipo = StaffMember.builder().id(2L).employeeNumber("E1012").fullName("Chipo Banda")
@@ -105,27 +100,23 @@ class StaffLoanJourneyServiceTest {
     private final StaffLoanAgreementRepository agreements = mock(StaffLoanAgreementRepository.class);
     private final InstrumentTemplateService templates = mock(InstrumentTemplateService.class);
     private final AssertionUses assertionUses = mock(AssertionUses.class);
-    private final VoucherService vouchers = mock(VoucherService.class);
     private final AuditService audit = mock(AuditService.class);
     private final BorrowerProperties borrowerProperties = testAssertions();
     private final TestAssertionSigner signer = new TestAssertionSigner(borrowerProperties, ZW);
     private final StaffLoanProperties properties = new StaffLoanProperties();
-    private final StaffLoanPolicy policy = new StaffLoanPolicy(properties, new VoucherProperties());
+    private final StaffLoanPolicy policy = new StaffLoanPolicy(properties);
     private final StaffLoanPayoutDispatcher dispatcher = mock(StaffLoanPayoutDispatcher.class);
-    private final StaffLoanMerchantService merchants = mock(StaffLoanMerchantService.class);
     private final StaffArrearsOverrideService arrearsOverrides = mock(StaffArrearsOverrideService.class);
-    private Merchant merchant = merchant(3L, "getmore-groceries", "GetMore Groceries");
     private final List<StaffLoan> saved = new ArrayList<>();
     private StaffOfferVerdict verdict = StaffOfferVerdict.ELIGIBLE;
     private String unavailable;
     private StaffArrearsOverride arrearsOverride;
     private final StaffLoanJourneyService journey = new StaffLoanJourneyService(members, offers, offerService, loans,
-            agreements, policy, merchants, arrearsOverrides, templates,
+            agreements, policy, arrearsOverrides, templates,
             new MiddlewareAssertionVerifier(borrowerProperties, ZW, signer),
-            assertionUses, vouchers, audit, ZW, dispatcher);
+            assertionUses, audit, ZW, dispatcher);
 
     {
-        when(merchants.current()).thenAnswer(i -> Optional.ofNullable(merchant));
         when(members.findById(2L)).thenReturn(Optional.of(chipo));
         when(offers.findById(31L)).thenReturn(Optional.of(offer));
         when(offers.findByStaffMemberIdAndStatus(2L, StaffOfferStatus.ACTIVE)).thenReturn(Optional.of(offer));
@@ -154,7 +145,7 @@ class StaffLoanJourneyServiceTest {
         assertThat(home.canApply()).isFalse();
         assertThat(home.unavailable()).isNull();
         assertThat(home.offer()).isEqualTo(new StaffLoanOfferView(31L, new BigDecimal("300.00"), "USD",
-                NOW_UTC.plusDays(4), new DrawRules(new BigDecimal("10.00"), new BigDecimal("5.00"),
+                NOW_UTC.plusDays(4), new DrawRules(new BigDecimal("20.00"), new BigDecimal("5.00"),
                 new BigDecimal("300.00"), "USD")));
     }
 
@@ -188,71 +179,76 @@ class StaffLoanJourneyServiceTest {
     }
 
     @Test
-    @DisplayName("holding a loan: the tile shows it, with its voucher once paid out")
+    @DisplayName("holding a loan: the tile shows it, and the wallet it is paid into by its last four digits")
     void homeShowsTheLoan() {
-        StaffLoan awaiting = loan(StaffLoanStatus.AWAITING_DISBURSEMENT);
-        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any())).thenReturn(Optional.of(awaiting));
+        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
+                .thenReturn(Optional.of(loan(StaffLoanStatus.AWAITING_DISBURSEMENT)));
 
         StaffLoanView view = journey.home(2L).loan();
 
         assertThat(view.reference()).isEqualTo("SGL-2026-000143");
-        assertThat(view.statusMessage()).isEqualTo("Your loan is approved. Your voucher will be sent to you once the"
-                + " loan is paid out to GetMore Groceries.");
+        assertThat(view.statusMessage())
+                .isEqualTo("Your loan is approved. USD 300.00 is being paid into your InnBucks wallet ending 6789.");
         assertThat(view.outstandingBalance()).isEqualByComparingTo("300.00");
         assertThat(view.repaymentDate()).isEqualTo(LocalDate.of(2026, 11, 20));
-        assertThat(view.voucher()).isNull();
-        verify(vouchers, never()).forBorrower(anyLong(), any());
+        assertThat(view.payoutAccount()).isEqualTo("****6789");
 
-        BorrowerVoucherResponse voucher = new BorrowerVoucherResponse(VoucherStatus.ISSUED,
-                new BigDecimal("300.00"), new BigDecimal("300.00"), "USD", NOW_UTC.plusDays(30),
-                "**** **** **** 8406", "4829 1506 7331 8406", "4829150673318406");
-        when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(voucher));
         when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
                 .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
-        assertThat(journey.home(2L).loan().voucher()).isEqualTo(voucher);
+        assertThat(journey.home(2L).loan().statusMessage()).isEqualTo("USD 300.00 was paid into your InnBucks"
+                + " wallet ending 6789. USD 300.00 will be collected from your salary on 20 Nov 2026.");
     }
 
     @Test
-    @DisplayName("a loan keeps the merchant it was accepted for, whichever is set for new loans since")
-    void loanKeepsItsMerchant() {
-        merchant = merchant(9L, "pick-n-pay", "Pick n Pay");
+    @DisplayName("a loan keeps the wallet it was accepted for, whatever the register holds since")
+    void loanKeepsItsWallet() {
+        chipo.setMsisdn("263771112223");
         when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
                 .thenReturn(Optional.of(loan(StaffLoanStatus.DISBURSED)));
 
         StaffLoanView view = journey.home(2L).loan();
 
-        assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
-        assertThat(view.statusMessage()).as("paid out, voucher not issued yet")
-                .isEqualTo("Your loan has been paid out to GetMore Groceries. Your voucher will be sent to you.");
+        assertThat(view.payoutAccount()).isEqualTo("****6789");
+        assertThat(view.statusMessage()).startsWith("USD 300.00 was paid into your InnBucks wallet ending 6789.");
     }
 
     @Test
-    @DisplayName("with no merchant set, a borrower without a loan is told loans are unavailable, and none can be taken")
-    void noMerchantSet() {
-        merchant = null;
+    @DisplayName("a member the register holds no wallet number for is declined DETAILS_NOT_CONFIRMED everywhere,"
+            + " before an offer is made or the assertion spent")
+    void noWalletOnTheRegister() {
+        String assertion = signer.sign("+263773456789", List.of("pin")).assertion();
+        chipo.setMsisdn("263242123456");
 
-        assertThat(journey.home(2L).unavailable().reason()).isEqualTo(StaffLoanDecline.TEMPORARILY_UNAVAILABLE);
-        assertThatThrownBy(() -> journey.apply(2L)).isInstanceOf(StaffLoanDeclinedException.class)
-                .hasMessage(StaffLoanDecline.TEMPORARILY_UNAVAILABLE.message());
-        assertThatThrownBy(() -> journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300"))))
-                .isInstanceOf(StaffLoanDeclinedException.class)
-                .hasMessage(StaffLoanDecline.TEMPORARILY_UNAVAILABLE.message());
+        assertThat(journey.home(2L).unavailable().reason()).isEqualTo(StaffLoanDecline.DETAILS_NOT_CONFIRMED);
+        assertThat(journey.home(2L).offer()).as("the offer they hold is not shown").isNull();
+        for (Runnable step : List.<Runnable>of(
+                () -> journey.apply(2L),
+                () -> journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150"))),
+                () -> journey.accept(2L, new AcceptStaffLoanRequest(31L, new BigDecimal("150"), 1, "0".repeat(64),
+                        assertion), signing("device-1")))) {
+            assertThatThrownBy(step::run).isInstanceOf(StaffLoanDeclinedException.class)
+                    .satisfies(e -> assertThat(((StaffLoanDeclinedException) e).decline())
+                            .isEqualTo(StaffLoanDecline.DETAILS_NOT_CONFIRMED))
+                    .hasMessage("We could not confirm your details with payroll. Please contact Human Capital.");
+        }
         verify(offerService, never()).apply(anyLong());
+        verify(assertionUses, never()).spend(any(), any(), any());
         assertThat(saved).isEmpty();
+        assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.ACTIVE);
+        verifyNoInteractions(dispatcher);
     }
 
     // --- Their loans ---
 
     @Test
-    @DisplayName("their loans: every one, newest first, as the tile shows a loan; vouchers looked up once paid out")
+    @DisplayName("their loans: every one, newest first, as the tile shows a loan; one accepted before vouchers were"
+            + " withdrawn names no wallet")
     void history() {
         StaffLoan repaid = loan(StaffLoanStatus.REPAID);
         StaffLoan cancelled = loan(StaffLoanStatus.CANCELLED);
+        StaffLoan beforeVouchersWereWithdrawn = legacyLoan();
         when(loans.findByStaffMemberId(eq(2L), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(cancelled, repaid)));
-        BorrowerVoucherResponse lapsed = new BorrowerVoucherResponse(VoucherStatus.EXPIRED, new BigDecimal("300.00"),
-                new BigDecimal("120.00"), "USD", NOW_UTC.plusDays(30), "**** **** **** 8406", null, null);
-        when(vouchers.forBorrower(2L, "SGL-2026-000143")).thenReturn(Optional.of(lapsed));
+                .thenReturn(new PageImpl<>(List.of(cancelled, repaid, beforeVouchersWereWithdrawn)));
 
         List<StaffLoanView> views = journey.loans(2L, PageRequest.of(1, 5)).getContent();
 
@@ -262,14 +258,18 @@ class StaffLoanJourneyServiceTest {
         assertThat(asked.getValue().getPageSize()).isEqualTo(5);
         assertThat(asked.getValue().getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "id"));
         assertThat(views).extracting(StaffLoanView::status)
-                .containsExactly(StaffLoanStatus.CANCELLED, StaffLoanStatus.REPAID);
+                .containsExactly(StaffLoanStatus.CANCELLED, StaffLoanStatus.REPAID, StaffLoanStatus.CANCELLED);
         assertThat(views.get(0).statusMessage())
                 .isEqualTo("This loan was cancelled before it was paid out. Nothing is owed.");
         assertThat(views.get(0).outstandingBalance()).isEqualByComparingTo("0.00");
-        assertThat(views.get(0).voucher()).isNull();
         assertThat(views.get(1).statusMessage()).isEqualTo("Repaid in full. Thank you.");
-        assertThat(views.get(1).voucher()).isEqualTo(lapsed);
-        verify(vouchers, times(1)).forBorrower(anyLong(), any());
+        assertThat(views).extracting(StaffLoanView::payoutAccount).containsExactly("****6789", "****6789", null);
+        assertThat(views.get(2).statusMessage())
+                .isEqualTo("This loan was cancelled before it was paid out. Nothing is owed.");
+        JsonMapper json = JsonMapper.builder().build();
+        assertThat(json.readTree(json.writeValueAsString(views.get(0))).propertyNames()).contains("payoutAccount");
+        assertThat(json.readTree(json.writeValueAsString(views.get(2))).propertyNames()).as("no wallet, no key")
+                .doesNotContain("payoutAccount");
     }
 
     @Test
@@ -303,29 +303,28 @@ class StaffLoanJourneyServiceTest {
     // --- The quote ---
 
     @Test
-    @DisplayName("the quote names the merchant set now; changing it changes the agreement, so an old quote is refused")
-    void quoteNamesTheMerchantSetNow() {
-        StaffLoanQuote getMore = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
-        when(templates.currentTemplate(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)).thenReturn(Optional.of(
-                InstrumentTemplate.builder().id(2L).instrumentType(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)
-                        .version(1).title("Staff Grocery Loan Agreement")
-                        .body("I, {{borrowerName}}, spend it at {{merchantName}}.").publishedBy("admin")
-                        .publishedAt(LocalDateTime.of(2026, 9, 30, 8, 0)).build()));
-        StaffLoanQuote atGetMore = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
-        merchant = merchant(9L, "pick-n-pay", "Pick n Pay");
+    @DisplayName("the quote names the wallet the register holds now; a new phone changes the agreement, so an old"
+            + " quote is refused, nothing spent")
+    void quoteNamesTheWalletHeldNow() {
+        StaffLoanQuote before = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+        String assertion = signer.sign("+263773456789", List.of("pin")).assertion();
+        chipo.setMsisdn("263771112223");
 
-        StaffLoanQuote atPickNPay = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
+        StaffLoanQuote after = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
 
-        assertThat(getMore.merchantName()).isEqualTo("GetMore Groceries");
-        assertThat(atPickNPay.merchantName()).isEqualTo("Pick n Pay");
-        assertThat(atPickNPay.agreement().content()).isEqualTo("I, Chipo Banda, spend it at Pick n Pay.");
-        assertThatThrownBy(() -> journey.accept(2L, request(atGetMore, signer.sign("+263773456789", List.of("pin"))
-                .assertion()), signing("a1f3c9e2-7b4d"))).isInstanceOf(StaffLoanTermsChangedException.class);
+        assertThat(before.payoutAccount()).isEqualTo("****6789");
+        assertThat(after.payoutAccount()).isEqualTo("****2223");
+        assertThat(after.agreement().content()).contains("paid into my InnBucks wallet ****2223");
+        assertThatThrownBy(() -> journey.accept(2L, request(before, assertion), signing("a1f3c9e2-7b4d")))
+                .isInstanceOf(StaffLoanTermsChangedException.class);
+        verify(assertionUses, never()).spend(any(), any(), any());
         assertThat(saved).isEmpty();
+        verifyNoInteractions(dispatcher);
     }
 
     @Test
-    @DisplayName("the quote discloses the terms (FR-SGL-026) and fills the agreement with them, fingerprinted")
+    @DisplayName("the quote discloses the terms (FR-SGL-026) and where the money is paid, and fills the agreement with"
+            + " them, fingerprinted")
     void quote() {
         StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("250")));
 
@@ -337,13 +336,17 @@ class StaffLoanJourneyServiceTest {
         assertThat(quote.repaymentDate()).isEqualTo(LocalDate.of(2026, 11, 20));
         assertThat(quote.collection()).isEqualTo("USD 250.00 will be collected automatically from your salary on"
                 + " 2026-11-20. There is nothing for you to pay yourself.");
-        assertThat(quote.redemption()).isEqualTo("You receive a voucher for USD 250.00 to spend at GetMore Groceries"
-                + " only, valid for 30 days. The loan is never paid into your wallet.");
-        assertThat(quote.unredeemedVoucher()).isEqualTo(UnredeemedVoucherTreatment.DEBT_STANDS.terms());
+        assertThat(quote.paidInto())
+                .isEqualTo("Once you accept, USD 250.00 is paid into your InnBucks wallet ending 6789.");
+        assertThat(quote.payoutAccount()).isEqualTo("****6789");
         assertThat(quote.agreement().version()).isEqualTo(1);
-        assertThat(quote.agreement().content())
-                .isEqualTo("I, Chipo Banda, borrow USD 250.00 and repay 250.00 on 2026-11-20.");
+        assertThat(quote.agreement().content()).isEqualTo("I, Chipo Banda, borrow USD 250.00, paid into my InnBucks"
+                + " wallet ****6789, and repay 250.00 on 2026-11-20.");
         assertThat(quote.agreement().contentSha256()).isEqualTo(AuditService.sha256Hex(quote.agreement().content()));
+        JsonMapper json = JsonMapper.builder().build();
+        assertThat(json.readTree(json.writeValueAsString(quote)).propertyNames()).doesNotContain("merchantName",
+                "redemption", "unredeemedVoucher", "voucherValidityDays", "payoutMethod", "payoutDestination");
+        verifyNoInteractions(dispatcher);
     }
 
     @Test
@@ -398,15 +401,19 @@ class StaffLoanJourneyServiceTest {
             assertThat(loan.getInterestRate()).isZero();
             assertThat(loan.getTotalRepayable()).isEqualByComparingTo("300.00");
             assertThat(loan.getDueDate()).isEqualTo(LocalDate.of(2026, 11, 20));
-            assertThat(loan.getUnredeemedVoucherTreatment()).isEqualTo(UnredeemedVoucherTreatment.DEBT_STANDS);
             assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
             assertThat(loan.getAcceptedAt()).isEqualTo(NOW_UTC);
-            assertThat(loan.getMerchant().getMerchantCode()).isEqualTo("getmore-groceries");
             assertThat(loan.getArrearsOverrideId()).isNull();
+            assertThat(loan.getPayoutAccount()).isEqualTo("263773456789");
+            assertThat(loan.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.READY);
+            assertThat(loan.getPayoutClaimedAt()).isNull();
+            assertThat(loan.hasPayout()).isTrue();
         });
         verify(arrearsOverrides, never()).use(any(), any(), any());
         assertThat(view.status()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
-        assertThat(view.merchantName()).isEqualTo("GetMore Groceries");
+        assertThat(view.statusMessage())
+                .isEqualTo("Your loan is approved. USD 300.00 is being paid into your InnBucks wallet ending 6789.");
+        assertThat(view.payoutAccount()).isEqualTo("****6789");
         assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.TAKEN_UP);
         assertThat(offer.getClosedReason()).isEqualTo("Taken up as SGL-2026-000143");
 
@@ -431,7 +438,17 @@ class StaffLoanJourneyServiceTest {
             assertThat(a.getAssertionId()).isEqualTo(spent.getValue().jti());
             assertThat(a.getEvidenceSha256()).isEqualTo(StaffLoanJourneyService.evidenceSha256(a));
         });
+        assertThat(agreement.getValue().getContent()).contains("paid into my InnBucks wallet ****6789")
+                .doesNotContain("263773456789");
         assertThat(events()).containsExactly(StaffLoanJourneyService.ACCEPTED);
+        assertThat(audited(StaffLoanJourneyService.ACCEPTED).getDetail()).matches("reference:SGL-2026-000143;"
+                + "offer:31;amount:300.00;dueDate:2026-11-20;agreement:v1;account:\\*\\*\\*\\*6789;"
+                + "assertion:[^;]+");
+        InOrder order = inOrder(loans, agreements, dispatcher);
+        order.verify(loans).save(any());
+        order.verify(agreements).save(any());
+        order.verify(dispatcher).afterCommit(143L);
+        verifyNoMoreInteractions(dispatcher);
     }
 
     @Test
@@ -541,60 +558,16 @@ class StaffLoanJourneyServiceTest {
     void acceptWithoutAKey() {
         BorrowerProperties off = new BorrowerProperties();
         StaffLoanJourneyService unconfigured = new StaffLoanJourneyService(members, offers, offerService, loans,
-                agreements, policy, merchants, arrearsOverrides, templates,
+                agreements, policy, arrearsOverrides, templates,
                 new MiddlewareAssertionVerifier(off, ZW, new TestAssertionSigner(off, ZW)),
-                assertionUses, vouchers, audit, ZW, dispatcher);
+                assertionUses, audit, ZW, dispatcher);
         StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
 
         assertThatThrownBy(() -> unconfigured.accept(2L, request(quote, "x"), signing("device-1")))
                 .isInstanceOf(BorrowerSignInUnavailableException.class);
     }
 
-    // --- Paid by voucher, the default: nothing about a payout ---
-
-    @Test
-    @DisplayName("by voucher (the default) a loan is made as before: no payout, its audit as before, nothing handed to"
-            + " the payout thread")
-    void voucherAcceptHasNoPayout() {
-        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("300")));
-
-        StaffLoanView view = journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin"))
-                .assertion()), signing("a1f3c9e2-7b4d"));
-
-        assertThat(saved).singleElement().satisfies(loan -> {
-            assertThat(loan.getPayoutMethod()).isEqualTo(StaffLoanPayoutMethod.VOUCHER);
-            assertThat(loan.getPayoutDestination()).isNull();
-            assertThat(loan.getPayoutAccount()).isNull();
-            assertThat(loan.getPayoutStatus()).isNull();
-        });
-        assertThat(quote.payoutMethod()).as("a voucher loan reads as before: no payout method").isNull();
-        assertThat(quote.payoutAccount()).isNull();
-        assertThat(quote.voucherValidityDays()).isEqualTo(30);
-        assertThat(view.payoutMethod()).isNull();
-        assertThat(view.payoutAccount()).isNull();
-        JsonMapper json = JsonMapper.builder().build();
-        assertThat(json.readTree(json.writeValueAsString(quote)).propertyNames()).as("the quote's wire, as before")
-                .doesNotContain("payoutMethod", "payoutAccount");
-        assertThat(json.readTree(json.writeValueAsString(view)).propertyNames()).as("the loan's wire, as before")
-                .doesNotContain("payoutMethod", "payoutAccount");
-        assertThat(audited(StaffLoanJourneyService.ACCEPTED).getDetail()).matches("reference:SGL-2026-000143;"
-                + "offer:31;amount:300.00;dueDate:2026-11-20;merchant:getmore-groceries;agreement:v1;assertion:[^;]+");
-        verifyNoInteractions(dispatcher);
-    }
-
-    // --- Paid in cash ---
-
-    private static final String CASH_BODY = "I, {{borrowerName}}, borrow {{currency}} {{amount}}, paid into my"
-            + " {{payoutAccount}}, and repay {{totalRepayable}} on {{repaymentDate}}.";
-
-    /** Loans paid in cash into {@code destination}, under a cash agreement, v3. */
-    private void paidInCash(StaffLoanPayoutDestination destination) {
-        properties.getPayout().setMethod(StaffLoanPayoutMethod.CASH);
-        properties.getPayout().setDestination(destination);
-        properties.getPayout().setProduct("SGL01");
-        properties.getPayout().setLoanType("PERSONAL");
-        publish(CASH_BODY);
-    }
+    // --- The agreement ---
 
     private void publish(String body) {
         when(templates.currentTemplate(InstrumentType.STAFF_GROCERY_LOAN_AGREEMENT)).thenReturn(Optional.of(
@@ -604,213 +577,40 @@ class StaffLoanJourneyServiceTest {
     }
 
     @Test
-    @DisplayName("in cash, the quote says where the money is paid, by its last four digits, and nothing of a voucher")
-    void cashQuote() {
-        paidInCash(StaffLoanPayoutDestination.VEENGU_WALLET);
-
-        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150")));
-
-        assertThat(quote.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-        assertThat(quote.payoutAccount()).isEqualTo("****6789");
-        assertThat(quote.redemption())
-                .isEqualTo("Once you accept, USD 150.00 is paid into your InnBucks wallet ending 6789.");
-        assertThat(quote.merchantName()).isNull();
-        assertThat(quote.voucherValidityDays()).isNull();
-        assertThat(quote.unredeemedVoucher()).isNull();
-        assertThat(quote.totalRepayable()).isEqualByComparingTo("150.00");
-        assertThat(quote.collection()).isEqualTo("USD 150.00 will be collected automatically from your salary on"
-                + " 2026-11-20. There is nothing for you to pay yourself.");
-        assertThat(quote.agreement().version()).isEqualTo(3);
-        assertThat(quote.agreement().content()).isEqualTo("I, Chipo Banda, borrow USD 150.00, paid into my InnBucks"
-                + " wallet ****6789, and repay 150.00 on 2026-11-20.");
-        verifyNoInteractions(dispatcher);
-    }
-
-    @Test
-    @DisplayName("accepting in cash keeps the wallet it is paid into and makes it READY, to be paid once the"
-            + " acceptance commits")
-    void cashAccept() {
-        paidInCash(StaffLoanPayoutDestination.VEENGU_WALLET);
-        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150")));
-
-        StaffLoanView view = journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin"))
-                .assertion()), signing("a1f3c9e2-7b4d"));
-
-        assertThat(saved).singleElement().satisfies(loan -> {
-            assertThat(loan.getStatus()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
-            assertThat(loan.getAmount()).isEqualByComparingTo("150.00");
-            assertThat(loan.getPayoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-            assertThat(loan.getPayoutDestination()).isEqualTo(StaffLoanPayoutDestination.VEENGU_WALLET);
-            assertThat(loan.getPayoutAccount()).isEqualTo("263773456789");
-            assertThat(loan.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.READY);
-            assertThat(loan.getPayoutClaimedAt()).isNull();
-            assertThat(loan.getMerchant().getMerchantCode()).as("recorded, not used").isEqualTo("getmore-groceries");
-        });
-        InOrder order = inOrder(loans, agreements, dispatcher);
-        order.verify(loans).save(any());
-        order.verify(agreements).save(any());
-        order.verify(dispatcher).afterCommit(143L);
-        verifyNoMoreInteractions(dispatcher);
-        ArgumentCaptor<StaffLoanAgreement> agreement = ArgumentCaptor.forClass(StaffLoanAgreement.class);
-        verify(agreements).save(agreement.capture());
-        assertThat(agreement.getValue().getContent()).isEqualTo(quote.agreement().content())
-                .contains("paid into my InnBucks wallet ****6789").doesNotContain("263773456789");
-        assertThat(audited(StaffLoanJourneyService.ACCEPTED).getDetail()).matches("reference:SGL-2026-000143;"
-                + "offer:31;amount:150.00;dueDate:2026-11-20;merchant:getmore-groceries;agreement:v3;payout:CASH;"
-                + "destination:VEENGU_WALLET;account:\\*\\*\\*\\*6789;assertion:[^;]+");
-        assertThat(view.status()).isEqualTo(StaffLoanStatus.AWAITING_DISBURSEMENT);
-        assertThat(view.statusMessage())
-                .isEqualTo("Your loan is approved. USD 150.00 is being paid into your InnBucks wallet ending 6789.");
-        assertThat(view.merchantName()).isNull();
-        assertThat(view.voucher()).isNull();
-        assertThat(view.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-        assertThat(view.payoutAccount()).isEqualTo("****6789");
-        verify(assertionUses).spend(any(), eq(BorrowerAssertionUse.Purpose.STEP_UP), eq(2L));
-    }
-
-    @Test
-    @DisplayName("in cash into the account: the register's account number, kept as it was at acceptance")
-    void cashAcceptIntoTheAccount() {
-        paidInCash(StaffLoanPayoutDestination.BR_ACCOUNT);
-        chipo.setWalletAccountNumber("1234567890");
-        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150")));
-
-        journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin")).assertion()),
-                signing("a1f3c9e2-7b4d"));
-
-        assertThat(quote.redemption())
-                .isEqualTo("Once you accept, USD 150.00 is paid into your InnBucks account ending 7890.");
-        assertThat(quote.payoutAccount()).isEqualTo("****7890");
-        assertThat(quote.agreement().content()).contains("paid into my InnBucks account ****7890");
-        assertThat(saved).singleElement().satisfies(loan -> {
-            assertThat(loan.getPayoutDestination()).isEqualTo(StaffLoanPayoutDestination.BR_ACCOUNT);
-            assertThat(loan.getPayoutAccount()).isEqualTo("1234567890");
-            assertThat(loan.getPayoutStatus()).isEqualTo(StaffLoanPayoutStatus.READY);
-        });
-        assertThat(audited(StaffLoanJourneyService.ACCEPTED).getDetail())
-                .contains(";payout:CASH;destination:BR_ACCOUNT;account:****7890;").doesNotContain("1234567890");
-        verify(dispatcher).afterCommit(143L);
-    }
-
-    @Test
-    @DisplayName("in cash, a member the register holds no account for (a wallet where the account would be) is"
-            + " declined DETAILS_NOT_CONFIRMED everywhere, before an offer is made or the assertion spent")
-    void cashWithoutAnAccount() {
-        paidInCash(StaffLoanPayoutDestination.BR_ACCOUNT);
-        chipo.setWalletAccountNumber("263773456789");
-        String assertion = signer.sign("+263773456789", List.of("pin")).assertion();
-
-        assertThat(journey.home(2L).unavailable().reason()).isEqualTo(StaffLoanDecline.DETAILS_NOT_CONFIRMED);
-        assertThat(journey.home(2L).offer()).as("the offer they hold is not shown").isNull();
-        for (Runnable step : List.<Runnable>of(
-                () -> journey.apply(2L),
-                () -> journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150"))),
-                () -> journey.accept(2L, new AcceptStaffLoanRequest(31L, new BigDecimal("150"), 3, "0".repeat(64),
-                        assertion), signing("device-1")))) {
-            assertThatThrownBy(step::run).isInstanceOf(StaffLoanDeclinedException.class)
-                    .satisfies(e -> assertThat(((StaffLoanDeclinedException) e).decline())
-                            .isEqualTo(StaffLoanDecline.DETAILS_NOT_CONFIRMED))
-                    .hasMessage("We could not confirm your details with payroll. Please contact Human Capital.");
-        }
-        verify(offerService, never()).apply(anyLong());
-        verify(assertionUses, never()).spend(any(), any(), any());
-        assertThat(saved).isEmpty();
-        assertThat(offer.getStatus()).isEqualTo(StaffOfferStatus.ACTIVE);
-        verifyNoInteractions(dispatcher);
-    }
-
-    @Test
-    @DisplayName("in cash, an account changed on the register between quote and acceptance changes the agreement:"
-            + " refused, nothing spent")
-    void cashAccountChangedAfterTheQuote() {
-        paidInCash(StaffLoanPayoutDestination.BR_ACCOUNT);
-        chipo.setWalletAccountNumber("1234567890");
-        StaffLoanQuote quote = journey.quote(2L, new StaffLoanQuoteRequest(31L, new BigDecimal("150")));
-        chipo.setWalletAccountNumber("9876543210");
-
-        assertThatThrownBy(() -> journey.accept(2L, request(quote, signer.sign("+263773456789", List.of("pin"))
-                .assertion()), signing("device-1"))).isInstanceOf(StaffLoanTermsChangedException.class);
-
-        verify(assertionUses, never()).spend(any(), any(), any());
-        assertThat(saved).isEmpty();
-        verifyNoInteractions(dispatcher);
-    }
-
-    @Test
-    @DisplayName("an agreement that does not fit the way loans are paid now is never offered for signing: 503 both"
-            + " ways, before anything is spent")
-    void agreementMustFitThePayout() {
-        paidInCash(StaffLoanPayoutDestination.VEENGU_WALLET);
+    @DisplayName("an agreement that does not say where the money is paid, or names a withdrawn voucher's terms, is"
+            + " never offered for signing: 503, before anything is spent")
+    void agreementMustSayWhereTheMoneyGoes() {
         String assertion = signer.sign("+263773456789", List.of("pin")).assertion();
         StaffLoanQuoteRequest asked = new StaffLoanQuoteRequest(31L, new BigDecimal("150"));
 
-        publish(BODY);
-        assertThatThrownBy(() -> journey.quote(2L, asked)).as("a voucher-era agreement naming no account")
+        publish(UNPAID_BODY);
+        assertThatThrownBy(() -> journey.quote(2L, asked)).as("an agreement naming no wallet")
                 .isInstanceOf(StaffLoanTermsUnavailableException.class);
         assertThatThrownBy(() -> journey.accept(2L, new AcceptStaffLoanRequest(31L, new BigDecimal("150"), 3,
                 "0".repeat(64), assertion), signing("device-1")))
                 .isInstanceOf(StaffLoanTermsUnavailableException.class);
-        publish(CASH_BODY + " Spend it at {{merchantName}}.");
-        assertThatThrownBy(() -> journey.quote(2L, asked)).as("a cash agreement that also names a voucher")
+        publish(BODY + " Spend it at {{merchantName}}.");
+        assertThatThrownBy(() -> journey.quote(2L, asked)).as("one still naming the voucher's merchant")
                 .isInstanceOf(StaffLoanTermsUnavailableException.class);
-
-        properties.getPayout().setMethod(StaffLoanPayoutMethod.VOUCHER);
-        publish(CASH_BODY);
-        assertThatThrownBy(() -> journey.quote(2L, asked)).as("loans paid by voucher under a cash agreement")
-                .isInstanceOf(StaffLoanTermsUnavailableException.class);
-        publish(BODY);
-        assertThat(journey.quote(2L, asked).payoutMethod()).as("a voucher quote reads as before: no payout method")
-                .isNull();
 
         verify(assertionUses, never()).spend(any(), any(), any());
         assertThat(saved).isEmpty();
+        verifyNoInteractions(dispatcher);
     }
 
     @Test
-    @DisplayName("a cash agreement names the account and no voucher; a voucher agreement names no account")
+    @DisplayName("an agreement must name the wallet, and no term that no longer exists")
     void agreementMisfit() {
-        assertThat(StaffLoanJourneyService.agreementMisfit(CASH_BODY, StaffLoanPayoutMethod.CASH)).isNull();
-        assertThat(StaffLoanJourneyService.agreementMisfit(BODY, StaffLoanPayoutMethod.CASH))
+        assertThat(StaffLoanJourneyService.agreementMisfit(BODY)).isNull();
+        assertThat(StaffLoanJourneyService.agreementMisfit(UNPAID_BODY))
                 .isEqualTo("does not name where the money is paid ({{payoutAccount}})");
-        assertThat(StaffLoanJourneyService.agreementMisfit(CASH_BODY + " Spend it at {{merchantName}} within"
-                + " {{ voucherValidityDays }} days.", StaffLoanPayoutMethod.CASH))
-                .isEqualTo("names a voucher ({{merchantName}}, {{voucherValidityDays}})");
-        assertThat(StaffLoanJourneyService.agreementMisfit(BODY + " At {{merchantName}}.",
-                StaffLoanPayoutMethod.VOUCHER)).isNull();
-        assertThat(StaffLoanJourneyService.agreementMisfit(CASH_BODY, StaffLoanPayoutMethod.VOUCHER))
-                .isEqualTo("names an account a cash loan is paid into ({{payoutAccount}})");
-    }
-
-    @Test
-    @DisplayName("a cash loan on the tile and in the history says where it was paid; it has no merchant, and no"
-            + " voucher is looked up for it")
-    void cashLoanShown() {
-        StaffLoan paidInCash = cashLoan(StaffLoanStatus.DISBURSED);
-        when(loans.findFirstByStaffMemberIdAndStatusInOrderByIdDesc(eq(2L), any()))
-                .thenReturn(Optional.of(paidInCash));
-
-        StaffLoanView view = journey.home(2L).loan();
-
-        assertThat(view.reference()).isEqualTo("SGL-2026-000144");
-        assertThat(view.statusMessage()).isEqualTo("USD 150.00 was paid into your InnBucks wallet ending 6789."
-                + " USD 150.00 will be collected from your salary on 20 Nov 2026.");
-        assertThat(view.merchantName()).isNull();
-        assertThat(view.voucher()).isNull();
-        assertThat(view.payoutMethod()).isEqualTo(StaffLoanPayoutMethod.CASH);
-        assertThat(view.payoutAccount()).isEqualTo("****6789");
-
-        when(loans.findByStaffMemberId(eq(2L), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(paidInCash, loan(StaffLoanStatus.REPAID))));
-        List<StaffLoanView> views = journey.loans(2L, PageRequest.of(0, 20)).getContent();
-
-        assertThat(views).extracting(StaffLoanView::payoutMethod)
-                .containsExactly(StaffLoanPayoutMethod.CASH, null);
-        JsonMapper json = JsonMapper.builder().build();
-        assertThat(json.readTree(json.writeValueAsString(views.get(0))).propertyNames())
-                .contains("payoutMethod", "payoutAccount");
-        assertThat(views.get(1).merchantName()).isEqualTo("GetMore Groceries");
-        verify(vouchers, times(1)).forBorrower(2L, "SGL-2026-000143");
-        verify(vouchers, never()).forBorrower(anyLong(), eq("SGL-2026-000144"));
+        assertThat(StaffLoanJourneyService.agreementMisfit(BODY + " Spend it at {{merchantName}} within"
+                + " {{ voucherValidityDays }} days. {{unredeemedVoucherTerms}}"))
+                .isEqualTo("names terms that no longer exist ({{merchantName}}, {{voucherValidityDays}},"
+                        + " {{unredeemedVoucherTerms}})");
+        assertThat(StaffLoanJourneyService.agreementMisfit(UNPAID_BODY + " {{favouriteColour}}"))
+                .as("an unknown term is named first").isEqualTo("names terms that no longer exist"
+                        + " ({{favouriteColour}})");
     }
 
     // --- Fixtures ---
@@ -838,45 +638,37 @@ class StaffLoanJourneyServiceTest {
                 .publishedAt(LocalDateTime.of(2026, 9, 30, 8, 0)).build();
     }
 
-    private StaffLoan loan(StaffLoanStatus status) {
+    /** Chipo's SGL-2026-000143, USD 300.00 paid into her wallet ending 6789, its payout as far as {@code status}. */
+    private static StaffLoan loan(StaffLoanStatus status) {
+        StaffLoanPayoutStatus payout = switch (status) {
+            case AWAITING_DISBURSEMENT -> StaffLoanPayoutStatus.READY;
+            case CANCELLED -> StaffLoanPayoutStatus.WITHDRAWN;
+            default -> StaffLoanPayoutStatus.PAID;
+        };
         return StaffLoan.builder().id(143L).reference("SGL-2026-000143").staffMemberId(2L).offerId(31L)
                 .employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
                 .amount(new BigDecimal("300.00")).currency("USD").interestRate(BigDecimal.ZERO)
-                .totalRepayable(new BigDecimal("300.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS).status(status)
-                .acceptedAt(NOW_UTC).merchant(merchant(3L, "getmore-groceries", "GetMore Groceries")).build();
+                .totalRepayable(new BigDecimal("300.00")).dueDate(LocalDate.of(2026, 11, 20)).status(status)
+                .acceptedAt(NOW_UTC).payoutAccount("263773456789").payoutStatus(payout).build();
     }
 
-    /** Chipo's SGL-2026-000144, USD 150.00 paid in cash into her wallet; its merchant is never read, so none is set. */
-    private static StaffLoan cashLoan(StaffLoanStatus status) {
-        return StaffLoan.builder().id(144L).reference("SGL-2026-000144").staffMemberId(2L).offerId(32L)
+    /** Chipo's SGL-2026-000112, accepted before vouchers were withdrawn and cancelled by V37: it has no payout. */
+    private static StaffLoan legacyLoan() {
+        return StaffLoan.builder().id(112L).reference("SGL-2026-000112").staffMemberId(2L).offerId(20L)
                 .employeeNumber("E1012").fullName("Chipo Banda").msisdn("263773456789").grade("C4")
-                .amount(new BigDecimal("150.00")).currency("USD").interestRate(BigDecimal.ZERO)
-                .totalRepayable(new BigDecimal("150.00")).dueDate(LocalDate.of(2026, 11, 20))
-                .unredeemedVoucherTreatment(UnredeemedVoucherTreatment.DEBT_STANDS).status(status)
-                .acceptedAt(NOW_UTC).payoutMethod(StaffLoanPayoutMethod.CASH)
-                .payoutDestination(StaffLoanPayoutDestination.VEENGU_WALLET).payoutAccount("263773456789")
-                .payoutStatus(status == StaffLoanStatus.DISBURSED ? StaffLoanPayoutStatus.PAID
-                        : StaffLoanPayoutStatus.READY).build();
-    }
-
-    private static Merchant merchant(long id, String code, String name) {
-        Merchant merchant = Merchant.builder().merchantCode(code).companyName(name)
-                .disbursementType(DisbursementType.MERCHANT_MOBILE_WALLET).staffLoanMerchant(true).build();
-        merchant.setId(id);
-        return merchant;
+                .amount(new BigDecimal("200.00")).currency("USD").interestRate(BigDecimal.ZERO)
+                .totalRepayable(new BigDecimal("200.00")).dueDate(LocalDate.of(2026, 10, 20))
+                .status(StaffLoanStatus.CANCELLED).acceptedAt(NOW_UTC.minusDays(30)).build();
     }
 
     private static StaffLoan copyWithId(StaffLoan loan, long id) {
         return StaffLoan.builder().id(id).reference(loan.getReference()).staffMemberId(loan.getStaffMemberId())
                 .offerId(loan.getOfferId()).employeeNumber(loan.getEmployeeNumber()).fullName(loan.getFullName())
-                .msisdn(loan.getMsisdn()).grade(loan.getGrade()).merchant(loan.getMerchant()).amount(loan.getAmount())
+                .msisdn(loan.getMsisdn()).grade(loan.getGrade()).amount(loan.getAmount())
                 .currency(loan.getCurrency())
                 .interestRate(loan.getInterestRate()).totalRepayable(loan.getTotalRepayable())
-                .dueDate(loan.getDueDate()).unredeemedVoucherTreatment(loan.getUnredeemedVoucherTreatment())
-                .status(loan.getStatus()).acceptedAt(loan.getAcceptedAt())
-                .arrearsOverrideId(loan.getArrearsOverrideId()).payoutMethod(loan.getPayoutMethod())
-                .payoutDestination(loan.getPayoutDestination()).payoutAccount(loan.getPayoutAccount())
+                .dueDate(loan.getDueDate()).status(loan.getStatus()).acceptedAt(loan.getAcceptedAt())
+                .arrearsOverrideId(loan.getArrearsOverrideId()).payoutAccount(loan.getPayoutAccount())
                 .payoutStatus(loan.getPayoutStatus()).build();
     }
 

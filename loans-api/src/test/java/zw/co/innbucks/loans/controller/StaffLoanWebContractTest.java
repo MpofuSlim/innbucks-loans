@@ -30,8 +30,6 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanDeclinedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanHome;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanJourneyService;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanOfferView;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutDestination;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutNotRecordedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutQueueFullException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutRequests;
@@ -46,7 +44,6 @@ import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsChangedException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanTermsUnavailableException;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanView;
 import zw.co.innbucks.loans.core.staff.loan.StepUpRequiredException;
-import zw.co.innbucks.loans.core.staff.loan.UnredeemedVoucherTreatment;
 import zw.co.innbucks.loans.security.ApiSecurityConfig;
 import zw.co.innbucks.loans.web.GlobalExceptionHandler;
 import zw.co.innbucks.loans.web.StaffLoanApiExamples;
@@ -89,12 +86,13 @@ class StaffLoanWebContractTest {
 
     private static final String JOURNEY = "/lending/v1/borrower/staff-grocery-loan";
     private static final StaffLoanOfferView OFFER = new StaffLoanOfferView(31L, new BigDecimal("300.00"), "USD",
-            LocalDateTime.of(2026, 10, 5, 6, 0), new DrawRules(new BigDecimal("10.00"), new BigDecimal("5.00"),
+            LocalDateTime.of(2026, 10, 5, 6, 0), new DrawRules(new BigDecimal("20.00"), new BigDecimal("5.00"),
             new BigDecimal("300.00"), "USD"));
     private static final StaffLoanView LOAN = new StaffLoanView("SGL-2026-000143",
-            StaffLoanStatus.AWAITING_DISBURSEMENT, "Your loan is approved.", new BigDecimal("300.00"), "USD",
-            new BigDecimal("300.00"), new BigDecimal("300.00"), LocalDate.of(2026, 11, 20), "GetMore Groceries",
-            LocalDateTime.of(2026, 10, 1, 7, 10, 41), null, StaffLoanPayoutMethod.VOUCHER, null);
+            StaffLoanStatus.AWAITING_DISBURSEMENT,
+            "Your loan is approved. USD 300.00 is being paid into your InnBucks wallet ending 6789.",
+            new BigDecimal("300.00"), "USD", new BigDecimal("300.00"), new BigDecimal("300.00"),
+            LocalDate.of(2026, 11, 20), LocalDateTime.of(2026, 10, 1, 7, 10, 41), "****6789");
 
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean StaffLoanJourneyService journeyService;
@@ -157,8 +155,7 @@ class StaffLoanWebContractTest {
     void history() throws Exception {
         StaffLoanView repaid = new StaffLoanView("SGL-2026-000143", StaffLoanStatus.REPAID, "Repaid in full. Thank you.",
                 new BigDecimal("300.00"), "USD", new BigDecimal("300.00"), new BigDecimal("0.00"),
-                LocalDate.of(2026, 11, 20), "GetMore Groceries", LocalDateTime.of(2026, 10, 6, 7, 10, 41), null,
-                StaffLoanPayoutMethod.VOUCHER, null);
+                LocalDate.of(2026, 11, 20), LocalDateTime.of(2026, 10, 6, 7, 10, 41), "****6789");
         when(journeyService.loans(eq(2L), any())).thenReturn(new PageImpl<>(List.of(repaid),
                 org.springframework.data.domain.PageRequest.of(1, 5), 6));
 
@@ -280,14 +277,13 @@ class StaffLoanWebContractTest {
         mvc.perform(as("borrower", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
         mvc.perform(as("AGENTS", get("/lending/v1/staff-loans"))).andExpect(status().isForbidden());
 
-        when(loanService.loans(any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+        when(loanService.loans(any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
         mvc.perform(as("HUMAN_CAPITAL", get("/lending/v1/staff-loans").param("status", "AWAITING_DISBURSEMENT")))
                 .andExpect(status().isOk());
-        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), isNull(), isNull(), isNull(),
-                any());
+        verify(loanService).loans(eq(StaffLoanStatus.AWAITING_DISBURSEMENT), any(), isNull(), isNull(), any());
         mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "true")))
                 .andExpect(status().isOk());
-        verify(loanService).loans(isNull(), isNull(), eq(true), isNull(), isNull(), any());
+        verify(loanService).loans(isNull(), isNull(), eq(true), isNull(), any());
         mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("flagged", "maybe")))
                 .andExpect(status().isBadRequest());
         mvc.perform(as("HUMAN_CAPITAL", post("/lending/v1/staff-loans/143/cancel"))
@@ -312,26 +308,21 @@ class StaffLoanWebContractTest {
 
     private static StaffLoanResponse cashLoan(StaffLoanPayoutStatus payout) {
         return new StaffLoanResponse(245L, "SGL-2027-000245", 58L, 2L, "E1012", "Chipo Banda", "****6789", "C4",
-                "getmore-groceries", "GetMore Groceries", new BigDecimal("150.00"), "USD", BigDecimal.ZERO,
-                new BigDecimal("150.00"), LocalDate.of(2027, 2, 20),
-                UnredeemedVoucherTreatment.DEBT_STANDS,
+                new BigDecimal("150.00"), "USD", BigDecimal.ZERO, new BigDecimal("150.00"), LocalDate.of(2027, 2, 20),
                 StaffLoanStatus.AWAITING_DISBURSEMENT, false, LocalDateTime.of(2027, 2, 2, 7, 12, 5), null, null, null,
-                null, null, null, null, null, StaffLoanPayoutMethod.CASH,
-                StaffLoanPayoutDestination.VEENGU_WALLET, "****6789", payout,
+                null, null, null, null, null, "****6789", payout,
                 null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
-    @DisplayName("the list filters on payout status and method")
+    @DisplayName("the list filters on payout status")
     void listFiltersOnPayout() throws Exception {
-        when(loanService.loans(any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+        when(loanService.loans(any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
 
-        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("payoutStatus", "IN_DOUBT")
-                        .param("payoutMethod", "CASH")))
+        mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("payoutStatus", "IN_DOUBT")))
                 .andExpect(status().isOk());
 
-        verify(loanService).loans(isNull(), isNull(), isNull(), eq(StaffLoanPayoutStatus.IN_DOUBT),
-                eq(StaffLoanPayoutMethod.CASH), any());
+        verify(loanService).loans(isNull(), isNull(), isNull(), eq(StaffLoanPayoutStatus.IN_DOUBT), any());
         mvc.perform(as("FINANCE", get("/lending/v1/staff-loans").param("payoutStatus", "LANDED")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
@@ -350,7 +341,7 @@ class StaffLoanWebContractTest {
                 .andExpect(jsonPath("$.message").value("Payout of SGL-2027-000245 queued"))
                 .andExpect(jsonPath("$.data.payoutStatus").value("READY"))
                 .andExpect(jsonPath("$.data.payoutAccount").value("****6789"))
-                .andExpect(jsonPath("$.data.payoutMethod").value("CASH"))
+                .andExpect(jsonPath("$.data.payoutMethod").doesNotExist())
                 .andExpect(jsonPath("$.data.payoutMessage").doesNotExist())
                 .andExpect(jsonPath("$.data.bankLoanAccount").doesNotExist());
 

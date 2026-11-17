@@ -108,9 +108,9 @@ public class StaffLoanPayoutRequests {
     /** Makes a READY or REFUSED payout READY to send, under the loan's row lock, unless the caller may not send it. */
     private Asked readyToSend(Long staffLoanId, User user) {
         StaffLoan loan = loanRepository.lockById(staffLoanId).orElseThrow(() -> notFound(staffLoanId));
-        if (loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH) {
-            throw new ConflictException("Staff loan " + loan.getReference() + " is a voucher loan: it is not paid out"
-                    + " in cash");
+        if (!loan.hasPayout()) {
+            throw new ConflictException("Staff loan " + loan.getReference() + " was accepted before vouchers were"
+                    + " withdrawn: it has no payout");
         }
         StaffLoanPayoutStatus was = loan.getPayoutStatus();
         if (loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT || was == null || !was.cancellable()) {

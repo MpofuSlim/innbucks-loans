@@ -205,7 +205,7 @@ public class StaffLoanPayoutStatusService {
     public boolean holdIfAbandoned(Long staffLoanId, LocalDateTime now) {
         LocalDateTime cutoff = staleCutoff(now);
         Optional<Abandoned> abandoned = transactionTemplate.execute(status -> loanRepository.lockById(staffLoanId)
-                .filter(loan -> loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH
+                .filter(loan -> loan.hasPayout()
                         && loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
                         && loan.getPayoutStatus() == StaffLoanPayoutStatus.SENDING
                         && loan.getPayoutClaimedAt() != null && loan.getPayoutClaimedAt().isBefore(cutoff))
@@ -314,7 +314,7 @@ public class StaffLoanPayoutStatusService {
      * @param actor who asked
      * @return what the inquiry came to; SKIPPED when the payout was settled by someone else meanwhile
      * @throws NotFoundException                   no such loan
-     * @throws ConflictException                   not a payout the bank's inquiry settles: a voucher loan, a payout
+     * @throws ConflictException                   not a payout the bank's inquiry settles: a loan with no payout, a payout
      *                                             READY, REFUSED or settled, or one being sent right now
      * @throws StaffLoanPayoutUnansweredException  the bank's inquiry did not answer, said nothing to go on, or broke:
      *                                             nothing changed
@@ -329,9 +329,9 @@ public class StaffLoanPayoutStatusService {
         }
         LocalDateTime now = marketTimeZone.nowUtc();
         StaffLoan loan = loanRepository.findById(staffLoanId).orElseThrow(() -> notFound(staffLoanId));
-        if (loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH) {
-            throw new ConflictException("Staff loan " + loan.getReference() + " is a voucher loan: it has no payout for"
-                    + " the bank to report on");
+        if (!loan.hasPayout()) {
+            throw new ConflictException("Staff loan " + loan.getReference() + " was accepted before vouchers were"
+                    + " withdrawn: it has no payout for the bank to report on");
         }
         if (loan.getStatus() == StaffLoanStatus.AWAITING_DISBURSEMENT
                 && loan.getPayoutStatus() == StaffLoanPayoutStatus.SENDING) {
@@ -382,7 +382,7 @@ public class StaffLoanPayoutStatusService {
         // commits is flagged either here or by the register approval, never by neither.
         memberRepository.lockRegister(StaffRegisterService.REGISTER_LOCK);
         StaffLoan loan = loanRepository.lockById(staffLoanId).orElseThrow(() -> notFound(staffLoanId));
-        if (loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH
+        if (!loan.hasPayout()
                 || loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT
                 || loan.getPayoutStatus() == null || !loan.getPayoutStatus().awaitsInquiry()) {
             throw new ConflictException("Staff loan " + loan.getReference() + " has " + describe(loan)
@@ -454,7 +454,7 @@ public class StaffLoanPayoutStatusService {
 
     /** Why this loan's payout cannot be recorded as never booked, or null when it can. */
     private String notBookedRefusal(StaffLoan loan, LocalDateTime evidenceBy, LocalDateTime answeredSince) {
-        if (loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH
+        if (!loan.hasPayout()
                 || loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT) {
             return "it has " + describe(loan) + "; only a cash payout BOOKED or IN_DOUBT can be";
         }
@@ -525,7 +525,7 @@ public class StaffLoanPayoutStatusService {
 
     /** Whether the bank's inquiry is asked about this loan now. */
     private boolean asksAbout(StaffLoan loan, LocalDateTime now) {
-        if (loan.getPayoutMethod() != StaffLoanPayoutMethod.CASH || loan.getPayoutStatus() == null) {
+        if (!loan.hasPayout() || loan.getPayoutStatus() == null) {
             return false;
         }
         if (loan.getPayoutStatus() == StaffLoanPayoutStatus.FAILED) {
@@ -691,10 +691,8 @@ public class StaffLoanPayoutStatusService {
     /**
      * What the bank's "paid" answer names that is not this loan's, for each of these it carries (one it leaves out is
      * not checked): its reference; its amount, which must be the loan's in dollars exactly, as it was booked; and where
-     * it paid, read by the payout's destination. A wallet payout pays the borrower's phone, so the echoed
-     * {@code msisdn} is the account (by its last nine digits, however the bank writes a phone) and a
-     * {@code settlementAccount} is not read. An account payout pays {@code settlementAccount}, compared by its digits,
-     * and the echoed {@code msisdn} must be the borrower's phone. One field is never read in place of the other.
+     * it paid. The loan pays the borrower's InnBucks wallet, their phone, so the echoed {@code msisdn} is the account
+     * (by its last nine digits, however the bank writes a phone); a {@code settlementAccount} is not read.
      */
     static List<String> echoMismatches(StaffLoan loan, InquiryAnswer answer) {
         List<String> mismatches = new ArrayList<>();
@@ -705,15 +703,7 @@ public class StaffLoanPayoutStatusService {
         if (amount != null && loan.getAmount() != null && amount.compareTo(loan.getAmount()) != 0) {
             mismatches.add("amount");
         }
-        if (loan.getPayoutDestination() == StaffLoanPayoutDestination.BR_ACCOUNT) {
-            if (answer.echoedSettlementAccount() != null && !digits(answer.echoedSettlementAccount()).equals(
-                    digits(loan.getPayoutAccount()))) {
-                mismatches.add("account");
-            }
-            if (answer.echoedMsisdn() != null && !samePhone(loan.getMsisdn(), answer.echoedMsisdn())) {
-                mismatches.add("phone");
-            }
-        } else if (answer.echoedMsisdn() != null && !samePhone(loan.getPayoutAccount(), answer.echoedMsisdn())) {
+        if (answer.echoedMsisdn() != null && !samePhone(loan.getPayoutAccount(), answer.echoedMsisdn())) {
             mismatches.add("account");
         }
         return mismatches;
@@ -733,7 +723,7 @@ public class StaffLoanPayoutStatusService {
     private void notifyPaid(StaffLoan loan) {
         notificationService.notifyLoan(loan, StaffNotificationTemplate.LOAN_PAID_OUT,
                 StaffNotificationTemplate.LOAN_PAID_OUT.paidOutText(loan.getCurrency(), loan.getAmount(),
-                        loan.getPayoutDestination().label(), MsisdnUtils.lastFourDigits(loan.getPayoutAccount()),
+                        StaffLoanPolicy.PayoutTarget.LABEL, MsisdnUtils.lastFourDigits(loan.getPayoutAccount()),
                         loan.getDueDate(), loan.getReference()));
     }
 
@@ -765,8 +755,8 @@ public class StaffLoanPayoutStatusService {
     }
 
     private String paidDetail(StaffLoan loan) {
-        return "amount:" + loan.getAmount().toPlainString() + ";currency:" + loan.getCurrency() + ";destination:"
-                + loan.getPayoutDestination() + ";account:" + MsisdnUtils.mask(loan.getPayoutAccount())
+        return "amount:" + loan.getAmount().toPlainString() + ";currency:" + loan.getCurrency() + ";account:"
+                + MsisdnUtils.mask(loan.getPayoutAccount())
                 + (loan.getBankLoanAccount() == null ? ""
                 : ";bankLoanAccount:" + StaffLoanResponse.maskLoanAccount(loan.getBankLoanAccount()));
     }
@@ -804,9 +794,9 @@ public class StaffLoanPayoutStatusService {
     }
 
     private static String describe(StaffLoan loan) {
-        return loan.getPayoutMethod() == StaffLoanPayoutMethod.CASH
+        return loan.hasPayout()
                 ? "payout " + loan.getPayoutStatus() + " (loan " + loan.getStatus() + ")"
-                : "no payout (a voucher loan, " + loan.getStatus() + ")";
+                : "no payout (accepted before vouchers were withdrawn, " + loan.getStatus() + ")";
     }
 
     private static String digits(String value) {

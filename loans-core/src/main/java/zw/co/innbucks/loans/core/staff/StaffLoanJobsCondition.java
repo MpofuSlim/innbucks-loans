@@ -12,7 +12,7 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
  *
  * <p>The setting exists so the cell can run these jobs without {@code scheduled-tasks}, which also starts the jobs
  * that book with InnBucks (which pays) and lodge Ndasenda deductions (which cannot be taken back). These move no money:
- * the weekly offer run and its messages (FR-SGL-015), retrying staff messages left pending, and voucher upkeep. It is a
+ * the weekly offer run and its messages (FR-SGL-015), and retrying staff messages left pending. It is a
  * setting rather than a profile because a profile can arrive under several names and the cell keeps the paying jobs'
  * profile behind a guard ({@code ScheduledTasksKubernetesGuard}); this is one key in loans' own Secret.</p>
  *

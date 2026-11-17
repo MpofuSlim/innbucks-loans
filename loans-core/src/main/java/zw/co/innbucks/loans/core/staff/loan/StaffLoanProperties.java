@@ -23,8 +23,8 @@ import java.util.Locale;
 
 /**
  * The Staff Grocery Loan's terms as a borrower takes it up in the SuperApp. The partial draw (FR-SGL-012, OQ-03), the
- * due date (BRD 3.7's design conflict, OQ-02) and the unredeemed-voucher treatment (OQ-09) are open questions for the
- * business, so each is a setting with the working answer as its default.
+ * due date (BRD 3.7's design conflict, OQ-02) are open questions for the business, so each is a setting with the
+ * working answer as its default. Every loan is paid in cash into the borrower's InnBucks wallet ({@link Payout}).
  */
 @Data
 @Validated
@@ -32,12 +32,13 @@ import java.util.Locale;
 public class StaffLoanProperties {
 
     /**
-     * The least a borrower may take (FR-SGL-012). An offer below it can only be taken in full.
+     * The least a borrower may take (FR-SGL-012): 20.00, the least the bank's GETMOR product books. An offer below it
+     * can only be taken in full.
      */
     @NotNull
     @DecimalMin(value = "0.01", message = "loans.staff-loans.minimum-draw must be at least 0.01")
     @Digits(integer = 17, fraction = 2, message = "loans.staff-loans.minimum-draw has at most 2 decimals")
-    private BigDecimal minimumDraw = new BigDecimal("10.00");
+    private BigDecimal minimumDraw = new BigDecimal("20.00");
 
     /**
      * The steps an amount below the full offer is chosen in (FR-SGL-012): a multiple of this. The full offer can always
@@ -80,10 +81,6 @@ public class StaffLoanProperties {
     @Pattern(regexp = "[A-Z]{3}", message = "loans.staff-loans.currency must be a 3-letter ISO code, such as USD")
     private String currency = "USD";
 
-    /** OQ-09, until Finance and Legal decide. */
-    @NotNull
-    private UnredeemedVoucherTreatment unredeemedVoucherTreatment = UnredeemedVoucherTreatment.DEBT_STANDS;
-
     /**
      * Payroll's mailboxes (FR-SGL-007, BRD 3.8): told, with Human Capital, when a borrower leaves owing a paid-out loan,
      * so it is recovered from their terminal benefits. Empty, Human Capital alone is told, and the boot log says so.
@@ -92,7 +89,7 @@ public class StaffLoanProperties {
     private List<@Email(message = "loans.staff-loans.payroll-emails must be email addresses") String> payrollEmails =
             new ArrayList<>();
 
-    /** How a loan accepted from now on is paid out, and for a cash payout, where and how the bank books it. */
+    /** How the bank books the payout of a loan accepted from now on, and how its answers are read. */
     @Valid
     @NotNull
     private Payout payout = new Payout();
@@ -110,38 +107,21 @@ public class StaffLoanProperties {
     }
 
     /**
-     * How a Staff Grocery Loan accepted from now on is paid out (loans.staff-loans.payout). Each loan keeps the method,
-     * destination and account it was accepted under, so a change here reaches only loans accepted after it. CASH is
-     * refused at boot without a destination and a product; {@link StaffLoanPayoutBootCheck} refuses it without the
-     * InnBucks credentials too.
+     * How the bank books a Staff Grocery Loan's payout (loans.staff-loans.payout). Every loan is paid in cash into the
+     * borrower's InnBucks (Veengu) wallet, the phone they prove with their PIN: the bank books it as a pre-approved
+     * loan of type {@link #LOAN_TYPE} and pays it out on that one call. {@link StaffLoanPayoutBootCheck} refuses to
+     * start without the InnBucks credentials.
      */
     @Data
     public static class Payout {
 
-        /** The pre-approved booking types the bank takes; {@link #effectiveLoanType()} is one of them. */
-        public static final String PERSONAL = "PERSONAL";
-        public static final String CONSUMER_FINANCE = "CONSUMER_FINANCE";
+        /** The booking's {@code type}: a wallet payee is booked as a personal loan. */
+        public static final String LOAN_TYPE = "PERSONAL";
 
-        /**
-         * VOUCHER: as before (the loan waits for the voucher disbursement; nothing is sent to the bank). CASH: paid into
-         * the borrower's own account by the bank as soon as the acceptance commits.
-         */
-        @NotNull(message = "loans.staff-loans.payout.method must be VOUCHER or CASH")
-        private StaffLoanPayoutMethod method = StaffLoanPayoutMethod.VOUCHER;
-
-        /** CASH only: VEENGU_WALLET or BR_ACCOUNT. No default: the business decides. */
-        private StaffLoanPayoutDestination destination;
-
-        /** CASH only: the bank's product code for the Staff Grocery Loan (NANOUS is the SSB loan's). */
-        private String product = "";
-
-        /**
-         * The booking's {@code type}. Blank: PERSONAL for a VEENGU_WALLET payout (what a wallet payee is booked as
-         * today); a BR_ACCOUNT payout needs it set, until the bank says which it takes.
-         */
-        @Pattern(regexp = "(PERSONAL|CONSUMER_FINANCE)?",
-                message = "loans.staff-loans.payout.loan-type must be PERSONAL or CONSUMER_FINANCE")
-        private String loanType;
+        /** The bank's product code for the Staff Grocery Loan (NANOUS is the SSB loan's). */
+        @NotBlank(message = "loans.staff-loans.payout.product is required: the bank's product code for the Staff"
+                + " Grocery Loan")
+        private String product = "GETMOR";
 
         /** Sent to the bank as the borrower's {@code employer}; blank, it is left out. */
         private String employerName = "InnBucks MicroBank";
@@ -206,18 +186,6 @@ public class StaffLoanProperties {
         @NotNull
         private List<String> failedStatuses = new ArrayList<>(List.of("REJECTED", "CANCELLED", "FAILED"));
 
-        public boolean cash() {
-            return method == StaffLoanPayoutMethod.CASH;
-        }
-
-        /** The booking's {@code type}: the one set, else PERSONAL for a VEENGU_WALLET payout; null when neither. */
-        public String effectiveLoanType() {
-            if (loanType != null && !loanType.isBlank()) {
-                return loanType.strip();
-            }
-            return destination == StaffLoanPayoutDestination.VEENGU_WALLET ? PERSONAL : null;
-        }
-
         /** Whether the bank's {@code status} means the money is in the account. */
         public boolean isPaidStatus(String status) {
             return contains(paidStatuses, status);
@@ -231,18 +199,6 @@ public class StaffLoanProperties {
         /** Whether the bank's {@code status} means it holds the loan and did not pay it, and will not. */
         public boolean isFailedStatus(String status) {
             return contains(failedStatuses, status);
-        }
-
-        @AssertTrue(message = "loans.staff-loans.payout.method CASH needs loans.staff-loans.payout.destination"
-                + " (VEENGU_WALLET or BR_ACCOUNT) and loans.staff-loans.payout.product")
-        public boolean isCashConfigured() {
-            return !cash() || (destination != null && product != null && !product.isBlank());
-        }
-
-        @AssertTrue(message = "loans.staff-loans.payout.destination BR_ACCOUNT needs loans.staff-loans.payout.loan-type"
-                + " (PERSONAL or CONSUMER_FINANCE): ask the bank which type pays an account")
-        public boolean isAccountLoanTypeSet() {
-            return !cash() || destination != StaffLoanPayoutDestination.BR_ACCOUNT || effectiveLoanType() != null;
         }
 
         @AssertTrue(message = "loans.staff-loans.payout.status-check-interval, not-booked-min-age and failed-watch must"

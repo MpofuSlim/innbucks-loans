@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import zw.co.innbucks.loans.core.staff.loan.CancelStaffLoanRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanDetailResponse;
-import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutMethod;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutNotBookedRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutPaidRequest;
 import zw.co.innbucks.loans.core.staff.loan.StaffLoanPayoutRequests;
@@ -42,13 +41,11 @@ import static zw.co.innbucks.loans.LoansApiApplication.BEARER_TOKEN;
 
 @Tag(name = "Staff Grocery Loans", description = "Staff Grocery Loans accepted in the SuperApp, for Credit, Finance"
         + " and Human Capital: each with the terms accepted and the agreement it was accepted under, with its evidence"
-        + " (device, address, how it was authenticated). How a loan is paid out was decided when it was accepted"
-        + " (payoutMethod CASH; a voucher loan carries no payoutMethod). A voucher loan awaits disbursement through"
-        + " the bank's system. A CASH loan is booked with"
-        + " the bank as a pre-approved loan and paid into the borrower's own account (payoutDestination,"
-        + " payoutAccount) as soon as it is accepted, never twice: payoutStatus says where that stands, payoutMessage"
-        + " why, and Finance sends it again, asks the bank about it, or records what the bank said here. Credit can"
-        + " cancel a loan until it is paid out, but never a cash payout the bank may have taken. A borrower who stops"
+        + " (device, address, how it was authenticated). Each loan is booked with the bank as a pre-approved loan and"
+        + " paid into the borrower's InnBucks wallet (payoutAccount) as soon as it is accepted, never twice:"
+        + " payoutStatus says where that stands, payoutMessage why, and Finance sends it again, asks the bank about"
+        + " it, or records what the bank said here. Credit can cancel a loan until it is paid out, but never one whose"
+        + " payout the bank may have taken. A borrower who stops"
         + " being ACTIVE on the register has theirs cancelled at once; once it is paid out, it is flagged instead"
         + " (employmentFlag) and Human Capital and Payroll, or Credit, are emailed.")
 @RestController
@@ -73,10 +70,10 @@ public class StaffLoanController {
                     + " Capital and the Payroll mailboxes were emailed), CREDIT_TO_DECIDE when they are SUSPENDED or"
                     + " on UNPAID_LEAVE (Credit was emailed). It clears when they are ACTIVE again. flagged=true lists"
                     + " only those. arrearsOverrideId is set on a loan accepted under Credit's arrears override"
-                    + " (FR-SGL-014), when the borrower owed a written-off loan. A CASH loan carries its payout:"
+                    + " (FR-SGL-014), when the borrower owed a written-off loan. Each loan carries its payout:"
                     + " payoutStatus READY (to be sent), SENDING (being sent), BOOKED (the bank took it), IN_DOUBT (it"
                     + " may or may not have been booked: never sent again, settled by the bank's inquiry or a person),"
-                    + " REFUSED (the bank said no: nothing was booked), PAID (in the borrower's account, the loan"
+                    + " REFUSED (the bank said no: nothing was booked), PAID (in the borrower's wallet, the loan"
                     + " DISBURSED), FAILED (confirmed never booked, the loan CANCELLED) or WITHDRAWN (cancelled before"
                     + " anything was booked); payoutMessage says why it stands there, payoutApplyAnswer is the bank's"
                     + " answer to the booking and payoutLastAnswer its last answer (account, ID and phone numbers"
@@ -84,9 +81,8 @@ public class StaffLoanController {
                     + " inquiry first said it holds nothing under the reference, payoutDeclinedAt when it first held it"
                     + " in a declined status (REJECTED, CANCELLED, FAILED), payoutCheckedAt when its inquiry last"
                     + " answered, and bankLoanAccount the bank's own loan account by its last four characters. A payout"
-                    + " field with no value is left out, and a voucher loan carries none of them (not even"
-                    + " payoutMethod), exactly as before. payoutStatus and payoutMethod (VOUCHER or CASH) filter the"
-                    + " list.")
+                    + " field with no value is left out (a loan accepted before vouchers were withdrawn has none)."
+                    + " payoutStatus filters the list.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Success", content = @Content(examples = {
                     @ExampleObject(name = "All", value = StaffLoanApiExamples.STAFF_LOANS),
@@ -109,15 +105,13 @@ public class StaffLoanController {
             @Parameter(description = "true: only loans flagged for a borrower no longer ACTIVE; false: only those not",
                     example = "true")
             @RequestParam(required = false) Boolean flagged,
-            @Parameter(description = "Only cash loans whose payout is in this status", example = "IN_DOUBT")
+            @Parameter(description = "Only loans whose payout is in this status", example = "IN_DOUBT")
             @RequestParam(required = false) StaffLoanPayoutStatus payoutStatus,
-            @Parameter(description = "Only loans paid out this way: VOUCHER or CASH", example = "CASH")
-            @RequestParam(required = false) StaffLoanPayoutMethod payoutMethod,
             @Parameter(description = "Zero-based page", example = "0") @RequestParam(required = false) Integer page,
             @Parameter(description = "Page size, 1 to 100", example = "20")
             @RequestParam(required = false) Integer size) {
         return ApiResult.ok(PageResponse.from(loanService.loans(status, employeeNumber, flagged, payoutStatus,
-                payoutMethod, Paging.of(page, size))));
+                Paging.of(page, size))));
     }
 
     @Operation(summary = "A Staff Grocery Loan",
