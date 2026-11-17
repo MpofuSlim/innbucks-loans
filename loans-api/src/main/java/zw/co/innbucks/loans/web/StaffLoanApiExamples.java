@@ -717,13 +717,13 @@ public final class StaffLoanApiExamples {
     private static final String BOOKED_ANSWER = "{\\\"responseCode\\\":\\\"000\\\",\\\"responseDescription\\\":"
             + "\\\"Approved or completed successfully\\\",\\\"participantReference\\\":\\\"SGL-2027-000245\\\","
             + "\\\"additionalData\\\":{\\\"loanDetails\\\":{\\\"status\\\":\\\"PROCESSING\\\","
-            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":15000,\\\"interestRate\\\":0.0,"
+            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":150.0,\\\"interestRate\\\":0.0,"
             + "\\\"msisdn\\\":\\\"****6789\\\",\\\"loanAccountNumber\\\":\\\"***\\\"}}}";
 
     private static final String SETTLED_ANSWER = "{\\\"responseCode\\\":\\\"000\\\",\\\"responseDescription\\\":"
             + "\\\"Approved or completed successfully\\\",\\\"participantReference\\\":\\\"SGL-2027-000245\\\","
             + "\\\"additionalData\\\":{\\\"loanDetails\\\":{\\\"status\\\":\\\"SETTLED\\\","
-            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":15000,\\\"interestRate\\\":0.0,"
+            + "\\\"participantReference\\\":\\\"SGL-2027-000245\\\",\\\"amount\\\":150.0,\\\"interestRate\\\":0.0,"
             + "\\\"msisdn\\\":\\\"****6789\\\",\\\"loanAccountNumber\\\":\\\"***\\\"}}}";
 
     private static final String NOT_FOUND_ANSWER =
