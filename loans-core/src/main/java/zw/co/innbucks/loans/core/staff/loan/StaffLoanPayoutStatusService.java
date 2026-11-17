@@ -456,7 +456,7 @@ public class StaffLoanPayoutStatusService {
     private String notBookedRefusal(StaffLoan loan, LocalDateTime evidenceBy, LocalDateTime answeredSince) {
         if (!loan.hasPayout()
                 || loan.getStatus() != StaffLoanStatus.AWAITING_DISBURSEMENT) {
-            return "it has " + describe(loan) + "; only a cash payout BOOKED or IN_DOUBT can be";
+            return "it has " + describe(loan) + "; only a payout BOOKED or IN_DOUBT can be";
         }
         if (loan.getPayoutStatus() == null || !loan.getPayoutStatus().awaitsInquiry()) {
             return "its payout is " + loan.getPayoutStatus() + "; only one BOOKED or IN_DOUBT can be";

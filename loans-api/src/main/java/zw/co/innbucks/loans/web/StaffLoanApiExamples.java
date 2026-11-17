@@ -571,7 +571,7 @@ public final class StaffLoanApiExamples {
                   "dueDate": "2027-02-20",
 """;
 
-    private static final String STAFF_LOAN_245_CASH = """
+    private static final String STAFF_LOAN_245_PAYOUT = """
 
                   "employmentFlag": null,
                   "arrearsOverrideId": null,
@@ -587,7 +587,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
-                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+                  "cancellationReason": null,""" + STAFF_LOAN_245_PAYOUT;
 
     private static final String REFUSED_ANSWER =
             "{\\\"responseCode\\\":\\\"400\\\",\\\"responseDescription\\\":\\\"Product STAFFGROC is not set up for"
@@ -656,7 +656,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": null,
                   "cancelledBy": null,
-                  "cancellationReason": null,""" + STAFF_LOAN_245_CASH;
+                  "cancellationReason": null,""" + STAFF_LOAN_245_PAYOUT;
 
     // 11:46:30: Finance's check-now found it SETTLED (the 11:44:01 inquiry had found it PROCESSING).
     private static final String STAFF_LOAN_245_PAID = STAFF_LOAN_245_DISBURSED + """
@@ -697,7 +697,7 @@ public final class StaffLoanApiExamples {
                   "settledAt": null,
                   "cancelledAt": "2027-02-03T14:20:00+02:00",
                   "cancelledBy": "admin",
-                  "cancellationReason": "The bank confirmed this loan's payout was never booked (recorded by admin)",""" + STAFF_LOAN_245_CASH + """
+                  "cancellationReason": "The bank confirmed this loan's payout was never booked (recorded by admin)",""" + STAFF_LOAN_245_PAYOUT + """
 
                   "payoutStatus": "FAILED",
                   "payoutMessage": "The bank confirmed this loan's payout was never booked (recorded by admin)",
